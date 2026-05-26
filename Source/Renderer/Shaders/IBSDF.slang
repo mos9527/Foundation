@@ -8,8 +8,18 @@ SamplerState lutSampler;
 public float2 SampleGGXLutE(uint32_t ggxLutEIndex, float mu, float roughness) {
     return textures[NonUniformResourceIndex(ggxLutEIndex)].SampleLevel(lutSampler, float2(mu, roughness), 0).xy;
 }
+public float SampleGGXLutEavg(uint32_t ggxLutEavgIndex, float roughness) {
+    return textures[NonUniformResourceIndex(ggxLutEavgIndex)].SampleLevel(lutSampler, float2(roughness, 0.5f), 0).x;
+}
 public float SampleGGXLutEIOR(uint32_t ggxLutEIORIndex, uint32_t ggxLutEIORInvIndex, float mu, float roughness, float ior) {
-    return textures3D[NonUniformResourceIndex(ior > 1.0f ? ggxLutEIORIndex : ggxLutEIORInvIndex)].SampleLevel(lutSampler, float3(mu, roughness, ZFromIor(ior)), 0).x;
+    uint32_t lut = ior > 1.0f ? ggxLutEIORIndex : ggxLutEIORInvIndex;
+    float z = ZFromIor(ior > 1.0f ? ior : 1.0f / ior);
+    return textures3D[NonUniformResourceIndex(lut)].SampleLevel(lutSampler, float3(mu, roughness, z), 0).x;
+}
+public float SampleGGXLutEIORavg(uint32_t ggxLutEIORavgIndex, uint32_t ggxLutEIORInvavgIndex, float roughness, float ior) {
+    uint32_t lut = ior > 1.0f ? ggxLutEIORavgIndex : ggxLutEIORInvavgIndex;
+    float z = ZFromIor(ior > 1.0f ? ior : 1.0f / ior);
+    return textures[NonUniformResourceIndex(lut)].SampleLevel(lutSampler, float2(roughness, z), 0).x;
 }
 public float4 SampleSheenLTC(uint32_t sheenLtcIndex, float mu, float roughness) {
     if (sheenLtcIndex == ~0u) return float4(0.0f);
@@ -17,8 +27,7 @@ public float4 SampleSheenLTC(uint32_t sheenLtcIndex, float mu, float roughness) 
 }
 // -- OSL stdlib routines
 import glsl;
-// Directional Albedo
-// Compensation a la [Turquin 2019] https://blog.selfshadow.com/publications/turquin/ms_comp_final.pdf
+// Directional Albedo for reflectance
 public float reflectance(float F0, float F90, float2 lutE) {
     return F0 * lutE.x + (F90 - F0) * lutE.y;
 }
@@ -61,11 +70,36 @@ public void CalcAnisotropicAlpha(float roughness, float anisotropyStrength, out 
     alphaY = alpha;
 }
 // BSDF Layering function
+// https://academysoftwarefoundation.github.io/OpenPBR/#formalism/layering
 public float layer(float base, float top, float topReflectance) {
     return top + base * (1.0f - topReflectance);
 }
 public float3 layer(float3 base, float3 top, float3 topReflectance) {
     return top + base * (1.0f - topReflectance);
+}
+// mix is simply mix/lerp
+
+// Favg
+// https://mos9527.com/posts/foundation/pt-6-path-tracing-adventures/#%E5%B9%B3%E5%9D%87%E5%8F%8D%E5%B0%84%E7%8E%87-f_avg
+float3 SchlickFresnelAverage(float3 F0, float3 F90)
+{
+    return lerp(F0, F90, 1.0f / 21.0f);
+}
+
+// Fms from Revisiting Physically Based Shading at Imageworks.
+// Fss is the hemispherical-average Fresnel term used for multiscatter color compensation.
+float3 MicrofacetGGXEnergyCompensationScale(
+    float3 Favg,
+    float3 E,
+    float Eavg,
+    bool energyCompensation)
+{
+    if (!energyCompensation) return float3(1.0f);
+
+    E = max(E, EPS);
+    float3 Fms = (Favg * Eavg) /
+        max(1.0f - Favg * (1.0f - Eavg), EPS);
+    return 1.0f + Fms * (1.0f / E - 1.0f);
 }
 
 // Torrance-Sparrow reflection with Schlick Fresnel + energy compensation
@@ -73,6 +107,7 @@ float3 TorranceSparrowReflection(
     float3 wo, float3 wi,
     float3 F0, float3 F90,
     float2 lutE,
+    float lutEavg,
     TrowbridgeReitzDistribution mfDistrib,
     bool energyCompensation)
 {
@@ -81,20 +116,18 @@ float3 TorranceSparrowReflection(
     if (cosWo < EPS || cosWi < EPS) return 0.0f;
     float3 wm = normalize(wo + wi);
     float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
-    float3 Fms = 0.0f;
-    if (energyCompensation) {
-        float3 Epp = max(reflectance(F0, F90, lutE), EPS);
-        Fms = F0 * (1.0f / Epp - 1.0f) * Fss;
-    }
-    return (Fss + Fms) * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
+    float3 Favg = SchlickFresnelAverage(F0, F90);
+    Fss *= MicrofacetGGXEnergyCompensationScale(Favg, reflectance(F0, F90, lutE), lutEavg, energyCompensation);
+    return Fss * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
 }
 
-// Torrance-Sparrow transmittance with Schlick Fresnel
+// Torrance-Sparrow transmittance with Schlick Fresnel + energy compensation
 public float3 TorranceSparrowTransmittance(
     float3 wo, float3 wi,
     float3 F0, float3 F90,
     float eta,
     float lutEIOR,
+    float lutEIORavg,
     TrowbridgeReitzDistribution mfDistrib,
     bool energyCompensation)
 {
@@ -104,15 +137,13 @@ public float3 TorranceSparrowTransmittance(
     float3 wm = normalize(wo + wi * etap);
     wm = FaceForward(wm, float3(0, 0, 1));
     float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
+    float3 Favg = SchlickFresnelAverage(F0, F90);
+
     float3 T = max(1.0f - Fss, 0.0f);
-    float3 Fms = 0.0f;
-    if (energyCompensation) {
-        float Epp = max(lutEIOR, EPS);
-        Fms = F0 * (1.0f / Epp - 1.0f) * Fss;
-    }
     float denom = Sqr(dot(wo, wm) + dot(wi, wm) * etap) * abs(CosTheta(wi) * CosTheta(wo));
     if (denom < EPS) return 0.0f;
-    return (T + Fms) * mfDistrib.D(wm) * mfDistrib.G(wo, wi) * abs(dot(wi, wm) * dot(wo, wm) / denom);
+    T *= MicrofacetGGXEnergyCompensationScale(Favg, lutEIOR, lutEIORavg, energyCompensation);
+    return T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) * abs(dot(wi, wm) * dot(wo, wm) / denom);
 }
 
 // Glossy reflection PDF (Torrance-Sparrow Jacobian)
@@ -182,11 +213,14 @@ public struct GlassBSDF : IBxDF {
     bool   energyCompensation;
     TrowbridgeReitzDistribution mfDistrib;
     uint32_t ggxLutEIndex;
+    uint32_t ggxLutEavgIndex;
     uint32_t ggxLutEIORIndex;
+    uint32_t ggxLutEIORavgIndex;
     uint32_t ggxLutEIORInvIndex;
+    uint32_t ggxLutEIORInvavgIndex;
 
     public __init(float3 baseColor, float eta, float3 transmittanceF0, float3 transmittanceF90,
-                  float roughness, float anisotropyStrength, bool energyCompensation, uint32_t ggxLutEIndex, uint32_t ggxLutEIORIndex, uint32_t ggxLutEIORInvIndex) {
+                  float roughness, float anisotropyStrength, bool energyCompensation, uint32_t ggxLutEIndex, uint32_t ggxLutEavgIndex, uint32_t ggxLutEIORIndex, uint32_t ggxLutEIORavgIndex, uint32_t ggxLutEIORInvIndex, uint32_t ggxLutEIORInvavgIndex) {
         this.baseColor          = baseColor;
         this.eta                = eta;
         this.transmittanceF0    = transmittanceF0;
@@ -195,8 +229,11 @@ public struct GlassBSDF : IBxDF {
         this.anisotropyStrength = anisotropyStrength;
         this.energyCompensation = energyCompensation;
         this.ggxLutEIndex       = ggxLutEIndex;
+        this.ggxLutEavgIndex    = ggxLutEavgIndex;
         this.ggxLutEIORIndex    = ggxLutEIORIndex;
+        this.ggxLutEIORavgIndex = ggxLutEIORavgIndex;
         this.ggxLutEIORInvIndex = ggxLutEIORInvIndex;
+        this.ggxLutEIORInvavgIndex = ggxLutEIORInvavgIndex;
         float alphaX, alphaY;
         CalcAnisotropicAlpha(roughness, anisotropyStrength, alphaX, alphaY);
         this.mfDistrib = TrowbridgeReitzDistribution(alphaX, alphaY);
@@ -208,7 +245,8 @@ public struct GlassBSDF : IBxDF {
         if (SameHemisphere(wo, wi)) return 0.0f;
         float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
         float lutEIOR = SampleGGXLutEIOR(ggxLutEIORIndex, ggxLutEIORInvIndex, AbsCosTheta(wo), roughness, eta);
-        float3 val = baseColor * TorranceSparrowTransmittance(wo, wi, transmittanceF0, transmittanceF90, eta, lutEIOR, mfDistrib, energyCompensation);
+        float lutEIORavg = SampleGGXLutEIORavg(ggxLutEIORavgIndex, ggxLutEIORInvavgIndex, roughness, eta);
+        float3 val = baseColor * TorranceSparrowTransmittance(wo, wi, transmittanceF0, transmittanceF90, eta, lutEIOR, lutEIORavg, mfDistrib, energyCompensation);
         if (mode == TransportMode::Radiance)
             val *= Sqr(etap);
         return val;
@@ -239,15 +277,17 @@ public struct GlossyBSDF : IBxDF {
     bool   energyCompensation;
     TrowbridgeReitzDistribution mfDistrib;
     uint32_t ggxLutEIndex;
+    uint32_t ggxLutEavgIndex;
 
     public __init(float3 glossyF0, float3 glossyF90, float roughness, float anisotropyStrength, bool energyCompensation,
-                  uint32_t ggxLutEIndex) {
+                  uint32_t ggxLutEIndex, uint32_t ggxLutEavgIndex) {
         this.glossyF0           = glossyF0;
         this.glossyF90          = glossyF90;
         this.roughness          = roughness;
         this.anisotropyStrength = anisotropyStrength;
         this.energyCompensation = energyCompensation;
         this.ggxLutEIndex       = ggxLutEIndex;
+        this.ggxLutEavgIndex    = ggxLutEavgIndex;
         float alphaX, alphaY;
         CalcAnisotropicAlpha(roughness, anisotropyStrength, alphaX, alphaY);
         this.mfDistrib = TrowbridgeReitzDistribution(alphaX, alphaY);
@@ -258,7 +298,8 @@ public struct GlossyBSDF : IBxDF {
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (!SameHemisphere(wo, wi)) return 0.0f;
         float2 lutE = SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness);
-        return TorranceSparrowReflection(wo, wi, glossyF0, glossyF90, lutE, mfDistrib, energyCompensation);
+        float lutEavg = SampleGGXLutEavg(ggxLutEavgIndex, roughness);
+        return TorranceSparrowReflection(wo, wi, glossyF0, glossyF90, lutE, lutEavg, mfDistrib, energyCompensation);
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
@@ -284,14 +325,16 @@ public struct MetallicBSDF : IBxDF {
     bool   energyCompensation;
     TrowbridgeReitzDistribution mfDistrib;
     uint32_t ggxLutEIndex;
+    uint32_t ggxLutEavgIndex;
 
     public __init(float3 metalF0, float roughness, float anisotropyStrength, bool energyCompensation,
-                  uint32_t ggxLutEIndex) {
+                  uint32_t ggxLutEIndex, uint32_t ggxLutEavgIndex) {
         this.metalF0            = metalF0;
         this.roughness          = roughness;
         this.anisotropyStrength = anisotropyStrength;
         this.energyCompensation = energyCompensation;
         this.ggxLutEIndex       = ggxLutEIndex;
+        this.ggxLutEavgIndex    = ggxLutEavgIndex;
         float alphaX, alphaY;
         CalcAnisotropicAlpha(roughness, anisotropyStrength, alphaX, alphaY);
         this.mfDistrib = TrowbridgeReitzDistribution(alphaX, alphaY);
@@ -302,7 +345,8 @@ public struct MetallicBSDF : IBxDF {
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (!SameHemisphere(wo, wi)) return 0.0f;
         float2 lutE = SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness);
-        return TorranceSparrowReflection(wo, wi, metalF0, float3(1.0f), lutE, mfDistrib, energyCompensation);
+        float lutEavg = SampleGGXLutEavg(ggxLutEavgIndex, roughness);
+        return TorranceSparrowReflection(wo, wi, metalF0, float3(1.0f), lutE, lutEavg, mfDistrib, energyCompensation);
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
@@ -895,7 +939,7 @@ public struct PrincipledBSDF : IBSDF {
     public __init(float3 baseColor, float metallic, float roughness, float ior, float specularFactor = 1.0f,
                   float transmission = 0.0f, bool energyCompensation = true, float3 wo = float3(0,0,1),
                   float diffuseWeight = 1.0f, float anisotropyStrength = 0.0f,
-                  float3 specularColorFactor = float3(1.0f), uint32_t ggxLutEIndex = ~0u, uint32_t ggxLutEIORIndex = ~0u, uint32_t ggxLutEIORInvIndex = ~0u,
+                  float3 specularColorFactor = float3(1.0f), uint32_t ggxLutEIndex = ~0u, uint32_t ggxLutEavgIndex = ~0u, uint32_t ggxLutEIORIndex = ~0u, uint32_t ggxLutEIORavgIndex = ~0u, uint32_t ggxLutEIORInvIndex = ~0u, uint32_t ggxLutEIORInvavgIndex = ~0u,
                   float sheenWeight = 0.0f, float sheenRoughness = 0.0f, float3 sheenTint = float3(1.0f),
                   uint32_t sheenLtcIndex = ~0u,
                   float coatWeight = 0.0f, float coatRoughness = 0.0f) {
@@ -950,11 +994,11 @@ public struct PrincipledBSDF : IBSDF {
         // Construct each lobe
         this.diffuse  = DiffuseBSDF(baseColor, dielF0, dielF90, roughness, ggxLutEIndex);
         this.glass     = GlassBSDF(baseColor, ior, dielF0, dielF90, roughness, anisotropyStrength, energyCompensation,
-                                   ggxLutEIndex, ggxLutEIORIndex, ggxLutEIORInvIndex);
+                                   ggxLutEIndex, ggxLutEavgIndex, ggxLutEIORIndex, ggxLutEIORavgIndex, ggxLutEIORInvIndex, ggxLutEIORInvavgIndex);
         this.glossy    = GlossyBSDF(dielF0, dielF90, roughness, anisotropyStrength, energyCompensation,
-                                    ggxLutEIndex);
-        this.metallic  = MetallicBSDF(baseColor, roughness, anisotropyStrength, energyCompensation, ggxLutEIndex);
-        this.coat      = GlossyBSDF(coatF0, coatF90, coatRoughness, 0.0f, energyCompensation, ggxLutEIndex);
+                                    ggxLutEIndex, ggxLutEavgIndex);
+        this.metallic  = MetallicBSDF(baseColor, roughness, anisotropyStrength, energyCompensation, ggxLutEIndex, ggxLutEavgIndex);
+        this.coat      = GlossyBSDF(coatF0, coatF90, coatRoughness, 0.0f, energyCompensation, ggxLutEIndex, ggxLutEavgIndex);
     }
 
     public void f(float3 wo, float3 wi, TransportMode mode,

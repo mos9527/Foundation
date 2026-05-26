@@ -16,6 +16,11 @@ void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfi
     CHECK(renderer->GetDevice()->GetCapabilities().raytracingPipeline);
     scene.gsGlobals->ptAccumulatedFrames = 0u;
     scene.gsGlobals->ggxLutEIndex = gpu->GetGGXLutEIndex();
+    scene.gsGlobals->ggxLutEavgIndex = gpu->GetGGXLutEavgIndex();
+    scene.gsGlobals->ggxLutEIORIndex = gpu->GetGGXLutEIORIndex();
+    scene.gsGlobals->ggxLutEIORavgIndex = gpu->GetGGXLutEIORavgIndex();
+    scene.gsGlobals->ggxLutEIORInvIndex = gpu->GetGGXLutEIORInvIndex();
+    scene.gsGlobals->ggxLutEIORInvavgIndex = gpu->GetGGXLutEIORInvavgIndex();
     scene.gsGlobals->sheenLtcIndex = gpu->GetSheenLtcIndex();
     scene.gsGlobals->viewLutIndex = cfg.enableHDR ? gpu->GetViewLutHdrIndex() : gpu->GetViewLutSdrIndex();
     scene.gsGlobals->envMapTextureIndex = gpu->GetEnvMapIndexOrDefault();

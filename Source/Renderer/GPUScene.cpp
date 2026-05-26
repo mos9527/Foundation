@@ -315,8 +315,11 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
     // Upload precomputed LUTs
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
+        auto lutEavg = MakeLUT(kGGXlutEavg, RHIResourceFormat::R32SignedFloat, 32, 1, 1, RHITextureDimension::E2D);
         auto lutEIOR = MakeLUT(kGGXlutEIOR, RHIResourceFormat::R32SignedFloat, 16, 16, 16, RHITextureDimension::E3D);
-        auto lutEIORInv = MakeLUT(kGGXlutEIORavg, RHIResourceFormat::R32SignedFloat, 16, 16, 16, RHITextureDimension::E3D);
+        auto lutEIORavg = MakeLUT(kGGXlutEIORavg, RHIResourceFormat::R32SignedFloat, 32, 32);
+        auto lutEIORInv = MakeLUT(kGGXlutEInvIOR, RHIResourceFormat::R32SignedFloat, 16, 16, 16, RHITextureDimension::E3D);
+        auto lutEIORInvavg = MakeLUT(kGGXlutEInvIORavg, RHIResourceFormat::R32SignedFloat, 32, 32);
         auto sheenLtc = MakeLUT(kSheenLTCLut, RHIResourceFormat::R32G32B32A32SignedFloat, 32, 32);
         FTexture foundationDefaultTexture2D(mAllocator);
         foundationDefaultTexture2D.Initialize(RHIResourceFormat::R32G32B32A32SignedFloat, RHITextureDimension::E2D, 1, 1);
@@ -335,14 +338,17 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
             .size = foundationDefaultBufferFloatSize
         });
-        const size_t budget = lutE.GetSize() + lutEIOR.GetSize() + lutEIORInv.GetSize() + sheenLtc.GetSize() + foundationDefaultTexture2D.GetSize() +
+        const size_t budget = lutE.GetSize() + lutEavg.GetSize() + lutEIOR.GetSize() + lutEIORavg.GetSize() + lutEIORInv.GetSize() + lutEIORInvavg.GetSize() + sheenLtc.GetSize() + foundationDefaultTexture2D.GetSize() +
             foundationDefaultTexture2DFloat.GetSize() + sizeof(kSobolMatrices32) + foundationDefaultBufferFloatSize +
             defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize() + kGPUSceneByteBudgetSlack;
         ImmediateUpload upload(mDevice, budget);
         upload.Begin();
         Upload(&upload, lutE, mLUTGGXEIndex);
+        Upload(&upload, lutEavg, mLUTGGXEavgIndex);
         Upload(&upload, lutEIOR, mLUTGGXEIORIndex);
+        Upload(&upload, lutEIORavg, mLUTGGXEIORavgIndex);
         Upload(&upload, lutEIORInv, mLUTGGXEIORInvIndex);
+        Upload(&upload, lutEIORInvavg, mLUTGGXEIORInvavgIndex);
         Upload(&upload, sheenLtc, mLUTSheenLTCIndex);
         Upload(&upload, foundationDefaultTexture2D, mFoundationDefaultTexture2DIndex, "_FoundationDefaultTexture2D");
         Upload(&upload, foundationDefaultTexture2DFloat, mFoundationDefaultTexture2DFloatIndex,

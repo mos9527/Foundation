@@ -23,6 +23,7 @@ public struct PrincipledMaterial : IMaterial {
     // exitance radiance.
     float3 emission;
     uint32_t ggxLutEIndex;
+    uint32_t ggxLutEavgIndex;
 
     float pSurface;
     float pSubsurface;
@@ -43,8 +44,11 @@ public struct PrincipledMaterial : IMaterial {
         float anisotropyStrength = 0.0f,
         float3 specularColorFactor = float3(1.0f),
         uint32_t ggxLutEIndex = ~0u,
+        uint32_t ggxLutEavgIndex = ~0u,
         uint32_t ggxLutEIORIndex = ~0u,
+        uint32_t ggxLutEIORavgIndex = ~0u,
         uint32_t ggxLutEIORInvIndex = ~0u,
+        uint32_t ggxLutEIORInvavgIndex = ~0u,
         float sheenWeight = 0.0f,
         float sheenRoughness = 0.0f,
         float3 sheenTint = float3(1.0f),
@@ -82,7 +86,7 @@ public struct PrincipledMaterial : IMaterial {
 
         this.surface = PrincipledBSDF(
             baseColor, metallic, roughness, ior, specularFactor, transmission,
-            energyCompensation, wo, diffuseWeight, anisotropyStrength, specularColorFactor, ggxLutEIndex, ggxLutEIORIndex, ggxLutEIORInvIndex,
+            energyCompensation, wo, diffuseWeight, anisotropyStrength, specularColorFactor, ggxLutEIndex, ggxLutEavgIndex, ggxLutEIORIndex, ggxLutEIORavgIndex, ggxLutEIORInvIndex, ggxLutEIORInvavgIndex,
             sheenWeight, sheenRoughness, sheenTint, sheenLtcIndex,
             clearcoatFactor, clearcoatRoughness);
         this.subsurface = DisneyBurleyBSSRDF(
@@ -92,6 +96,7 @@ public struct PrincipledMaterial : IMaterial {
         this.clearcoatFactor = clearcoatFactor;
         this.clearcoatRoughness = clearcoatRoughness;
         this.ggxLutEIndex = ggxLutEIndex;
+        this.ggxLutEavgIndex = ggxLutEavgIndex;
 
         // Weigh surface/subsurface events by energy
         this.pSubsurface = clamp(eventWeightSum > 0.0f ? rawSubsurface / eventWeightSum : 0.0f, 0.0f, 1.0f);

@@ -192,13 +192,6 @@ Also w/ blog post series update on:
 - [ ] MNEE (Manifold NEE) for *much* better caustics convergence
   - https://jo.dreggn.org/home/2015_mnee_talk.pdf
 - [ ] Volume rendering
-- [Revisiting Physically Based Shading at Imageworks - Kulla & Conty 2017](https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_slides_v2.pdf)
-  - [ ] *Complete* Multiscatter Energy Compensation
-    - See also `Scripts/LUTPrecomputeGGX.ipynb`
-    - [x] Dielectrics Reflection
-      - Approximate aniso materials with the same LUT
-    - [ ] Dielectrics Transmission
-      - Implies another dimension on IOR
 - [ ] Thin Film Iridescence
   - "A Practical Extension to Microfacet Theory for the Modeling of Varying Iridescence" https://dl.acm.org/doi/pdf/10.1145/3072959.3073620
 
@@ -225,6 +218,13 @@ Done, awaiting Blog Update:
 - [x] Importance sampling Infinite Image Lights
 
 Done:
+- [Revisiting Physically Based Shading at Imageworks - Kulla & Conty 2017](https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_slides_v2.pdf)
+  - [x] *Complete* Multiscatter Energy Compensation
+    - See also `Scripts/LUTPrecomputeGGX.ipynb`
+    - [x] Dielectrics Reflection
+      - Approximate aniso materials with the same LUT
+    - [x] Dielectrics Transmission
+      - Implies another dimension on IOR
 - [x] Texture sampling rate via ray differentials for primary rays
   - Easy for camera rays, not so much for ones bouncing off BSDFs 
 - [x] Coat BSDF

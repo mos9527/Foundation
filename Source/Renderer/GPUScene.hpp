@@ -215,6 +215,9 @@ class GPUScene
     BindlessPool mTexture3DPool;
     // Precomputed LUTs (stored in texture2D pool)
     uint32_t mLUTGGXEIndex{UINT32_MAX};
+    uint32_t mLUTGGXEavgIndex{UINT32_MAX};
+    uint32_t mLUTGGXEIORavgIndex{UINT32_MAX};
+    uint32_t mLUTGGXEIORInvavgIndex{UINT32_MAX};
     // Precomputed LUTs (stored in texture3D pool)
     uint32_t mLUTGGXEIORIndex{UINT32_MAX};
     uint32_t mLUTGGXEIORInvIndex{UINT32_MAX};
@@ -376,8 +379,11 @@ public:
     [[nodiscard]] BindlessPool* GetTexture3DPool() { return &mTexture3DPool; }
     [[nodiscard]] BindlessPool* GetTexturePool() { return GetTexture2DPool(); }
     [[nodiscard]] uint32_t GetGGXLutEIndex() const { return mLUTGGXEIndex; }
+    [[nodiscard]] uint32_t GetGGXLutEavgIndex() const { return mLUTGGXEavgIndex; }
     [[nodiscard]] uint32_t GetGGXLutEIORIndex() const { return mLUTGGXEIORIndex; }
+    [[nodiscard]] uint32_t GetGGXLutEIORavgIndex() const { return mLUTGGXEIORavgIndex; }
     [[nodiscard]] uint32_t GetGGXLutEIORInvIndex() const { return mLUTGGXEIORInvIndex; }
+    [[nodiscard]] uint32_t GetGGXLutEIORInvavgIndex() const { return mLUTGGXEIORInvavgIndex; }
     [[nodiscard]] uint32_t GetSheenLtcIndex() const { return mLUTSheenLTCIndex; }
     void UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr);
     [[nodiscard]] uint32_t GetViewLutSdrIndex() const { return mLUTViewSdrIndex; }

@@ -53,6 +53,11 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
     CHECK(gpu);
     CHECK(renderer->GetDevice()->GetCapabilities().meshShaders);
     scene.gsGlobals->ggxLutEIndex = gpu->GetGGXLutEIndex();
+    scene.gsGlobals->ggxLutEavgIndex = gpu->GetGGXLutEavgIndex();
+    scene.gsGlobals->ggxLutEIORIndex = gpu->GetGGXLutEIORIndex();
+    scene.gsGlobals->ggxLutEIORavgIndex = gpu->GetGGXLutEIORavgIndex();
+    scene.gsGlobals->ggxLutEIORInvIndex = gpu->GetGGXLutEIORInvIndex();
+    scene.gsGlobals->ggxLutEIORInvavgIndex = gpu->GetGGXLutEIORInvavgIndex();
     scene.gsGlobals->sheenLtcIndex = gpu->GetSheenLtcIndex();
     scene.gsGlobals->viewLutIndex = cfg.enableHDR ? gpu->GetViewLutHdrIndex() : gpu->GetViewLutSdrIndex();
     scene.gsGlobals->envMapTextureIndex = gpu->GetEnvMapIndexOrDefault();
@@ -485,6 +490,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
             r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
             r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
+            r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
@@ -496,6 +502,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
                 return;
             r->CmdSetPipeline(self, cmd);
             r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
+            r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());
             r->CmdDispatch(self, cmd, {w, h, 1});
         });
 
