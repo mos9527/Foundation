@@ -261,7 +261,6 @@ bool ApplyViewLUTSelection()
     GEditor.shaderGlobals.viewLutIndex = GContext->enableHDR
         ? GContext->gpuScene->GetViewLutHdrIndex()
         : GContext->gpuScene->GetViewLutSdrIndex();
-    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
     return true;
 }
 
