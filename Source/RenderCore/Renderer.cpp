@@ -994,7 +994,11 @@ void Renderer::BuildPipelineState(PassHandle pass)
             auto& [dsv_handle, desc] = mSetup->trackedViews[tracked.dsv];
             pso_desc.depthStencil.depthFormat = desc.format;
         }
+        auto const compileStart = std::chrono::steady_clock::now();
         tracked.pso = mDevice->CreatePipelineState(pso_desc);
+        auto const compileEnd = std::chrono::steady_clock::now();
+        double const compileSec = std::chrono::duration<double>(compileEnd - compileStart).count();
+        LOG(Renderer, LogDebug, "** {} [{}] Compiled in {:.3f}s", tracked.name, pass, compileSec);
         tracked.pso->DebugSetObjectName(fmt::format("PSO of {} [{}]", tracked.name, pass).c_str());
     }
     else
