@@ -1464,8 +1464,7 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
         curveAABBBytes += GPUScene::CalculateCurveAABBSize(curve);
     }
 
-    const size_t maxStorageBufferRange = std::min<size_t>(caps.maxStorageBufferRange, UINT32_MAX);
-    desc.primitiveBudget = ByteGPUSceneBudget(primitiveBytes, desc.primitiveBudget, size_t(4), maxStorageBufferRange);
+    desc.primitiveBudget = ByteGPUSceneBudget(primitiveBytes, desc.primitiveBudget, size_t(4));
     desc.curveAABBBudget = ByteGPUSceneBudget(curveAABBBytes, desc.curveAABBBudget, alignof(Foundation::RHI::RHIAccelerationStructureAABB));
 
     size_t areaLightCount = 0;

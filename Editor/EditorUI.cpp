@@ -991,10 +991,6 @@ void EditorDockSpaceAndMenuBar()
                 ImGui::InputInt("Samples / pixel", &GEditor.renderTask.samplePopupInput);
                 if (GEditor.renderTask.samplePopupInput < 1)
                     GEditor.renderTask.samplePopupInput = 1;
-                uint32_t dispatchFrames = PTDispatchesForPixelSamples(
-                    GEditor.shaderGlobals, static_cast<uint32_t>(GEditor.renderTask.samplePopupInput));
-                ImGui::Text("Current SPP: %s, dispatch frames: %u",
-                            kPTSPPOptions[PTSPPOptionIndex(GEditor.shaderGlobals)].label, dispatchFrames);
             }
             else
             {
@@ -1006,6 +1002,11 @@ void EditorDockSpaceAndMenuBar()
                 GEditor.renderTask.renderPaused = false;
                 GEditor.renderTask.renderAutoPaused = false;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.renderTask.previousSpp = GEditor.shaderGlobals.ptSamplesPerPixel;
+                GEditor.renderTask.previousSppTile = GEditor.shaderGlobals.ptDispatchTileSide;
+                // Go for 1spp always during rendering
+                GEditor.shaderGlobals.ptSamplesPerPixel = 1;
+                GEditor.shaderGlobals.ptDispatchTileSide = 1;
                 GEditor.state = FERendering;
                 ImGui::CloseCurrentPopup();
             }
@@ -2030,9 +2031,7 @@ void FRendering(RendererHandles const& handles)
     ImGui::NewFrame();
 
     bool cancelRendering = false;
-    uint32_t targetFrames = GEditor.rendererMode == ERendererMode::PathTracer
-        ? PTAccumulationStepTarget(GEditor.shaderGlobals, static_cast<uint32_t>(GEditor.renderTask.targetSamples))
-        : static_cast<uint32_t>(GEditor.renderTask.targetSamples);
+    uint32_t targetFrames = static_cast<uint32_t>(GEditor.renderTask.targetSamples);
     // Full-width progress bar at the top
     {
         auto& io = ImGui::GetIO();
@@ -2084,13 +2083,13 @@ void FRendering(RendererHandles const& handles)
     renderer->EndExecute();
     GEditor.shaderGlobals.ptAccumulatedFrames += PTSamplesPerDispatch(GEditor.shaderGlobals);
 
-    if (cancelRendering)
+    if (cancelRendering || GEditor.shaderGlobals.ptAccumulatedFrames >= targetFrames)
     {
-        GEditor.state = FERunning;
-    }
-    else if (GEditor.shaderGlobals.ptAccumulatedFrames >= targetFrames)
-    {
-        DoRenderReadback(handles);
+        // Restore spp preview settings
+        GEditor.shaderGlobals.ptSamplesPerPixel = GEditor.renderTask.previousSpp;
+        GEditor.shaderGlobals.ptDispatchTileSide = GEditor.renderTask.previousSppTile;
+        if (!cancelRendering)
+            DoRenderReadback(handles);
         GEditor.state = FERunning;
     }
 }

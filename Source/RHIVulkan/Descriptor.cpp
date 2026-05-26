@@ -44,10 +44,6 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
         size_t range = b.size == kFullSize ? b.buffer->mDesc.size - b.offset : b.size;
         CHECK_MSG(b.offset + range <= b.buffer->mDesc.size, "Descriptor buffer range [{}, {}) exceeds buffer size {}",
                   b.offset, b.offset + range, b.buffer->mDesc.size);
-        CHECK_MSG(desc.type != RHIDescriptorType::StorageBuffer ||
-                      range <= mPool.GetDevice().GetCapabilities().maxStorageBufferRange,
-                  "Storage buffer descriptor range {} exceeds device maxStorageBufferRange {}", range,
-                  mPool.GetDevice().GetCapabilities().maxStorageBufferRange);
         buffers[i] = vk::DescriptorBufferInfo{.buffer = static_cast<VulkanBuffer*>(b.buffer)->GetVkBuffer(),
                                               .offset = b.offset,
                                               .range = range};

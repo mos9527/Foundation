@@ -128,47 +128,50 @@ void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfi
                 r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::RayTracingShader, "AS");
             const bool shaderExecutionReordering =
                 cfg.ptShaderExecutionReordering && r->GetDevice()->GetCapabilities().shaderExecutionReordering;
-            const uint ptCompileOptions = PTPackCompileOptions(shaderExecutionReordering, cfg.ptSampler, cfg.forceTextureLOD0);
-            const auto pathTracerShader = PathsResolve("Data/Shaders/ERTPathTracer.spv");
-            r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", pathTracerShader,
+            const uint ptCompileOptions = PTPackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0);
+            const auto shader = PathsResolve(
+                !shaderExecutionReordering ? "Data/Shaders/ERTPathTracer.spv" : "Data/Shaders/ERTPathTracer_SER.spv"
+            );
+            LOG(PT, LogInfo, "Loading PT Shader: {}", shader);
+            r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,
                           AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 0);
+                          shader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 0);
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "RayOpacityAnyHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 0);
+                          shader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 0);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "RayMiss",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)));
+                          shader, AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "ShadowRayAnyHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 1);
+                          shader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 1);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "ShadowRayMiss",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)));
+                          shader, AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "BSSRDFQueryAnyHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 2);
+                          shader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 2);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "BSSRDFQueryMiss",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)));
+                          shader, AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "RectLightIntersection",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kRectLightSBTOffset,
+                          shader, AsBytes(AsSpan(ptCompileOptions)), kRectLightSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RectLightClosestHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kRectLightSBTOffset,
+                          shader, AsBytes(AsSpan(ptCompileOptions)), kRectLightSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "DiskLightIntersection",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kDiskLightSBTOffset,
+                          shader, AsBytes(AsSpan(ptCompileOptions)), kDiskLightSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "DiskLightClosestHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kDiskLightSBTOffset,
+                          shader, AsBytes(AsSpan(ptCompileOptions)), kDiskLightSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "CurveIntersection",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset,
+                          shader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "CurveClosestHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset,
+                          shader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "CurveIntersection",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset + 1u,
+                          shader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset + 1u,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "CurveShadowAnyHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset + 1u,
+                          shader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset + 1u,
                           RTHitGroupType::Procedural);
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitives");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");

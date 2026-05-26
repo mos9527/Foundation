@@ -178,7 +178,7 @@ Editor
     - See also https://docs.blender.org/manual/en/latest/render/color_management/
     - Obtains 1-to-1 matching output :)
 - [ ] Animation (Skinning, BlendShapes...why not)
-
+- [ ] Coroutines in place of...whatever this is.
 Good to have, not necessary.
 - [ ] Scene Graph, instead of AoS to represent instances.
 

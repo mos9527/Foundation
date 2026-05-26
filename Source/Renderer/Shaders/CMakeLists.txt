@@ -18,7 +18,7 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             spvSparseResidency
             spvMinLod
             spvFragmentFullyCoveredEXT
-            spvShaderInvocationReorderEXT
+            spvGroupNonUniform
             spvGroupNonUniformBallot
             spvGroupNonUniformArithmetic
             spvRayQueryKHR
@@ -29,5 +29,19 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             OUTPUT_DIR      "${SHADER_BUILD_DIR}"
             CAPABILITIES    ${ShaderCapabilities}
     )
+    # Variants (Yes, in CMake.)
+    # SER is a special case since it's always there in the IR - and some drivers (Lavapipe) doesn't understand it.
+    # Avoid emitting them in the first place with a macro guard.
+    if (ShaderName STREQUAL "ERTPathTracer")
+        slangc_compile(
+                "Shader_${ShaderName}_SER"
+                SOURCE          "${SlangFile}"
+                OUTPUT_DIR      "${SHADER_BUILD_DIR}"
+                OUTPUT_NAME     "${ShaderName}_SER"
+                CAPABILITIES    ${ShaderCapabilities} spvShaderInvocationReorderEXT
+                DEFINES         "USE_SER=1"
+        )
+        add_dependencies(Foundation_Shaders "Shader_${ShaderName}_SER")
+    endif()
     add_dependencies(Foundation_Shaders "Shader_${ShaderName}")
 endforeach()

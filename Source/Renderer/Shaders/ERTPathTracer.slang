@@ -39,7 +39,6 @@ RWTexture2D<uint32_t> pickIDBuffer; // Instance ID map, ~0u = no object (written
 //   [5:0] mixed material/light key
 static const uint kSERCoherenceHintBits = 8u;
 // Packed path-tracer compile options. Must match Render.hpp.
-static const uint kPTCompileOptionShaderExecutionReordering = 1u << 0;
 static const uint kPTCompileOptionSamplerSobol = 1u << 1;
 static const uint kPTCompileOptionSamplerPCG = 1u << 2;
 static const uint kPTCompileOptionForceTextureLOD0 = 1u << 3;
@@ -1501,7 +1500,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     RayDesc ray = cameraRay.ray;
     for (uint bounce = 0; ; bounce++) {
         HitPayload payload;
-        if ((ptCompileOptions & kPTCompileOptionShaderExecutionReordering) != 0 /* SER */) {
+        #ifdef USE_SER
             // SER
             // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
             // https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_invocation_reorder/README.html
@@ -1513,8 +1512,9 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);
             // Invoke closest hit / miss to populate the payload
             HitObject::Invoke(AS, hitObj, payload);
-        } else
+        #else
             TraceRay(AS, 0, 0xFF, kRayTypeSurface, 0, 0, ray, payload);
+        #endif
         // Outgoing direction
         float3 view = -ray.Direction;
         HitRecord hit = MakeHitRecord(payload, ray);

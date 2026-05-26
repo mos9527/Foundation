@@ -93,18 +93,6 @@ inline uint32_t PTCompletedPixelSamples(UBO const& ubo)
     return ubo.ptAccumulatedFrames / PTTileSampleCount(ubo);
 }
 
-inline uint32_t PTAccumulationStepTarget(UBO const& ubo, uint32_t targetSamples)
-{
-    return targetSamples * PTTileSampleCount(ubo);
-}
-
-inline uint32_t PTDispatchesForPixelSamples(UBO const& ubo, uint32_t targetSamples)
-{
-    uint32_t samplesPerDispatch = PTSamplesPerDispatch(ubo);
-    uint32_t targetSteps = PTAccumulationStepTarget(ubo, targetSamples);
-    return (targetSteps + samplesPerDispatch - 1u) / samplesPerDispatch;
-}
-
 static const int kViewOverdraw = 1 << 0;
 static const int kViewMeshlet = 1 << 1;
 static const int kViewBaseColor = 1 << 2;
@@ -131,14 +119,13 @@ static const int kCullStageLate = 1 << 17;
 static constexpr uint32_t kPTSamplerPCG = 0u;
 static constexpr uint32_t kPTSamplerSobol = 1u;
 
-static constexpr uint32_t kPTCompileOptionShaderExecutionReordering = 1u << 0;
 static constexpr uint32_t kPTCompileOptionSamplerSobol = 1u << 1;
 static constexpr uint32_t kPTCompileOptionSamplerPCG = 1u << 2;
 static constexpr uint32_t kPTCompileOptionForceTextureLOD0 = 1u << 3;
 
-inline uint32_t PTPackCompileOptions(bool shaderExecutionReordering, uint32_t sampler, bool forceTextureLOD0)
+inline uint32_t PTPackCompileOptions(uint32_t sampler, bool forceTextureLOD0)
 {
-    uint32_t options = shaderExecutionReordering ? kPTCompileOptionShaderExecutionReordering : 0u;
+    uint32_t options = 0u;
     options |= sampler == kPTSamplerPCG ? kPTCompileOptionSamplerPCG : kPTCompileOptionSamplerSobol;
     options |= forceTextureLOD0 ? kPTCompileOptionForceTextureLOD0 : 0u;
     return options;
