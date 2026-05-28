@@ -896,8 +896,8 @@ RayDesc MakeCameraRay(float3 direction, float2 lensSample)
     if (globalParams.aperture > EPS)
     {
         float3 focalPoint = globalParams.focalDistance * ray.Direction;
-        float3 T = mul(globalParams.inverseView, float4(1, 0, 0, 0)).xyz;
-        float3 B = mul(globalParams.inverseView, float4(0, 1, 0, 0)).xyz;
+        float3 T = mul(globalParams.inverseViewProj, float4(1, 0, 0, 0)).xyz;
+        float3 B = mul(globalParams.inverseViewProj, float4(0, 1, 0, 0)).xyz;
         float3 lensPoint = lensSample.x * T + lensSample.y * B;
         ray.Origin += lensPoint;
         ray.Direction = normalize(focalPoint - lensPoint);
