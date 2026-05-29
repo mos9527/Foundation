@@ -763,7 +763,7 @@ public float IorFromF0(float f0)
 }
 // For GGX_IOR table, see also Scripts/GGXPrecompute.slang
 public float ZFromIor(float ior) {
-    return sqrt(sqrt((ior - 1.0f) / (ior + 1.0f)));
+    return sqrt(abs((ior - 1.0f) / (ior + 1.0f)));
 }
 // Schlick Fresnel approximation for float
 public float SchlickFresnel(float ior, float cosTheta)

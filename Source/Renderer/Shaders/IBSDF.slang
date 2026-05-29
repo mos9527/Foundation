@@ -102,6 +102,45 @@ float3 MicrofacetGGXEnergyCompensationScale(
     return 1.0f + Fms * (1.0f / E - 1.0f);
 }
 
+float FresnelDielectricAverage(float eta)
+{
+    // Fit from Imageworks/Cycles for integral_0^1 2*cos(theta) F(cos(theta), eta) d_cos(theta).
+    if (eta < 1.0f)
+        return 0.997118f + eta * (0.1014f - eta * (0.965241f + eta * 0.130607f));
+    return (eta - 1.0f) / (4.08567f + 1.00071f * eta);
+}
+
+float MicrofacetGGXDielectricEnergyCompensationScale(
+    float eta,
+    float E,
+    float Eavg,
+    bool energyCompensation)
+{
+    if (!energyCompensation) return 1.0f;
+
+    E = clamp(E, EPS, 1.0f);
+    Eavg = clamp(Eavg, EPS, 1.0f);
+    float Fss = FresnelDielectricAverage(eta);
+    float Fms = (Fss * Eavg) / max(1.0f - Fss * (1.0f - Eavg), EPS);
+    return 1.0f + Fms * (1.0f / E - 1.0f);
+}
+
+float3 MicrofacetGGXDielectricEnergyCompensationScale(
+    float3 Fss,
+    float E,
+    float Eavg,
+    bool energyCompensation)
+{
+    if (!energyCompensation) return float3(1.0f);
+
+    E = clamp(E, EPS, 1.0f);
+    Eavg = clamp(Eavg, EPS, 1.0f);
+    Fss = saturate(Fss);
+    float3 Fms = (Fss * Eavg) /
+        max(1.0f - Fss * (1.0f - Eavg), EPS);
+    return 1.0f + Fms * (1.0f / E - 1.0f);
+}
+
 // Torrance-Sparrow reflection with Schlick Fresnel + energy compensation
 float3 TorranceSparrowReflection(
     float3 wo, float3 wi,
@@ -119,31 +158,6 @@ float3 TorranceSparrowReflection(
     float3 Favg = SchlickFresnelAverage(F0, F90);
     Fss *= MicrofacetGGXEnergyCompensationScale(Favg, reflectance(F0, F90, lutE), lutEavg, energyCompensation);
     return Fss * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
-}
-
-// Torrance-Sparrow transmittance with Schlick Fresnel + energy compensation
-public float3 TorranceSparrowTransmittance(
-    float3 wo, float3 wi,
-    float3 F0, float3 F90,
-    float eta,
-    float lutEIOR,
-    float lutEIORavg,
-    TrowbridgeReitzDistribution mfDistrib,
-    bool energyCompensation)
-{
-    float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
-    // Note: our Refract() uses eta = eta_t/eta_i. The corresponding transmission half-vector is
-    // wm = normalize(wo + eta * wi), not normalize(eta * wo + wi).
-    float3 wm = normalize(wo + wi * etap);
-    wm = FaceForward(wm, float3(0, 0, 1));
-    float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
-    float3 Favg = SchlickFresnelAverage(F0, F90);
-
-    float3 T = max(1.0f - Fss, 0.0f);
-    float denom = Sqr(dot(wo, wm) + dot(wi, wm) * etap) * abs(CosTheta(wi) * CosTheta(wo));
-    if (denom < EPS) return 0.0f;
-    T *= MicrofacetGGXEnergyCompensationScale(Favg, lutEIOR, lutEIORavg, energyCompensation);
-    return T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) * abs(dot(wi, wm) * dot(wo, wm) / denom);
 }
 
 // Glossy reflection PDF (Torrance-Sparrow Jacobian)
@@ -206,8 +220,8 @@ public struct DiffuseBSDF : IBxDF {
 public struct GlassBSDF : IBxDF {
     float3 baseColor;
     float  eta;
-    float3 transmittanceF0;
-    float3 transmittanceF90;
+    float3 dielectricF0;
+    float3 dielectricF90;
     float  roughness;
     float  anisotropyStrength;
     bool   energyCompensation;
@@ -223,8 +237,8 @@ public struct GlassBSDF : IBxDF {
                   float roughness, float anisotropyStrength, bool energyCompensation, uint32_t ggxLutEIndex, uint32_t ggxLutEavgIndex, uint32_t ggxLutEIORIndex, uint32_t ggxLutEIORavgIndex, uint32_t ggxLutEIORInvIndex, uint32_t ggxLutEIORInvavgIndex) {
         this.baseColor          = baseColor;
         this.eta                = eta;
-        this.transmittanceF0    = transmittanceF0;
-        this.transmittanceF90   = transmittanceF90;
+        this.dielectricF0       = transmittanceF0;
+        this.dielectricF90      = transmittanceF90;
         this.roughness          = roughness;
         this.anisotropyStrength = anisotropyStrength;
         this.energyCompensation = energyCompensation;
@@ -239,33 +253,196 @@ public struct GlassBSDF : IBxDF {
         this.mfDistrib = TrowbridgeReitzDistribution(alphaX, alphaY);
     }
 
-    public BxDFFlags Flags() { return BxDFFlags::GlossyTransmission; }
+    float RelativeEta(float3 wo) {
+        return (CosTheta(wo) > 0.0f) ? eta : 1.0f / eta;
+    }
+
+    bool UseSpecularPath(float3 wo) {
+        return mfDistrib.EffectivelySmooth() || abs(RelativeEta(wo) - 1.0f) <= 0.01f;
+    }
+
+    bool IsSpecularDirection(float3 a, float3 b) {
+        return LengthSquared(a - b) <= 1e-6f;
+    }
+
+    float3 SpecularF(float3 wo, float3 wi, TransportMode mode) {
+        float R = FrDielectric(CosTheta(wo), eta);
+        float T = max(1.0f - R, 0.0f);
+
+        if (SameHemisphere(wo, wi)) {
+            float3 wr = float3(-wo.x, -wo.y, wo.z);
+            float cosWi = AbsCosTheta(wi);
+            if (!IsSpecularDirection(wi, wr) || cosWi < EPS) return float3(0.0f);
+            return float3(R / cosWi);
+        }
+
+        float3 wt;
+        float etap;
+        if (!Refract(wo, float3(0.0f, 0.0f, 1.0f), eta, wt, etap)) return float3(0.0f);
+        float cosWi = AbsCosTheta(wi);
+        if (!IsSpecularDirection(wi, wt) || cosWi < EPS) return float3(0.0f);
+        float3 ft = baseColor * (T / cosWi);
+        if (mode == TransportMode::Radiance)
+            ft *= Sqr(etap);
+        return ft;
+    }
+
+    float SpecularPDF(float3 wo, float3 wi, BxDFReflTransFlags flags) {
+        bool allowReflection = (flags & BxDFReflTransFlags::Reflection);
+        bool allowTransmission = (flags & BxDFReflTransFlags::Transmission);
+        float R = FrDielectric(CosTheta(wo), eta);
+        float T = max(1.0f - R, 0.0f);
+        float pr = allowReflection ? R : 0.0f;
+        float pt = allowTransmission ? T : 0.0f;
+        float pSum = pr + pt;
+        if (pSum <= EPS) return 0.0f;
+
+        if (SameHemisphere(wo, wi)) {
+            float3 wr = float3(-wo.x, -wo.y, wo.z);
+            return allowReflection && IsSpecularDirection(wi, wr) ? pr / pSum : 0.0f;
+        }
+
+        float3 wt;
+        float etap;
+        if (!Refract(wo, float3(0.0f, 0.0f, 1.0f), eta, wt, etap)) return 0.0f;
+        return allowTransmission && IsSpecularDirection(wi, wt) ? pt / pSum : 0.0f;
+    }
+
+    float GlassDirectionalAlbedo(float3 wo) {
+        float etap = RelativeEta(wo);
+        if (abs(etap - 1.0f) <= 0.01f) return 1.0f;
+        return SampleGGXLutEIOR(ggxLutEIORIndex, ggxLutEIORInvIndex, AbsCosTheta(wo), roughness, etap);
+    }
+
+    float GlassAverageAlbedo(float3 wo) {
+        float etap = RelativeEta(wo);
+        if (abs(etap - 1.0f) <= 0.01f) return 1.0f;
+        return SampleGGXLutEIORavg(ggxLutEIORavgIndex, ggxLutEIORInvavgIndex, roughness, etap);
+    }
+
+    float3 EnergyScale(float3 wo) {
+        return MicrofacetGGXDielectricEnergyCompensationScale(
+            baseColor, GlassDirectionalAlbedo(wo), GlassAverageAlbedo(wo), energyCompensation);
+    }
+
+    public BxDFFlags Flags() { return BxDFFlags::GlossyReflection | BxDFFlags::GlossyTransmission; }
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
-        if (SameHemisphere(wo, wi)) return 0.0f;
-        float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
-        float lutEIOR = SampleGGXLutEIOR(ggxLutEIORIndex, ggxLutEIORInvIndex, AbsCosTheta(wo), roughness, eta);
-        float lutEIORavg = SampleGGXLutEIORavg(ggxLutEIORavgIndex, ggxLutEIORInvavgIndex, roughness, eta);
-        float3 val = baseColor * TorranceSparrowTransmittance(wo, wi, transmittanceF0, transmittanceF90, eta, lutEIOR, lutEIORavg, mfDistrib, energyCompensation);
+        float cosWo = CosTheta(wo);
+        float cosWi = CosTheta(wi);
+        if (cosWo == 0.0f || cosWi == 0.0f) return 0.0f;
+        if (UseSpecularPath(wo)) return SpecularF(wo, wi, mode);
+
+        bool reflected = SameHemisphere(wo, wi);
+        float etap = reflected ? 1.0f : RelativeEta(wo);
+        float3 wmUnnormalized = reflected ? wo + wi : wo + wi * etap;
+        if (LengthSquared(wmUnnormalized) == 0.0f) return 0.0f;
+        float3 wm = FaceForward(normalize(wmUnnormalized), float3(0.0f, 0.0f, 1.0f));
+
+        if (dot(wm, wi) * cosWi < 0.0f || dot(wm, wo) * cosWo < 0.0f) return 0.0f;
+
+        float F = FrDielectric(dot(wo, wm), eta);
+        float3 scale = EnergyScale(wo);
+
+        if (reflected) {
+            float cosWoAbs = AbsCosTheta(wo);
+            float cosWiAbs = AbsCosTheta(wi);
+            if (cosWoAbs < EPS || cosWiAbs < EPS) return 0.0f;
+            return float3(F) * scale * mfDistrib.D(wm) * mfDistrib.G(wo, wi) /
+                (4.0f * cosWoAbs * cosWiAbs);
+        }
+
+        float T = max(1.0f - F, 0.0f);
+        float denom = Sqr(dot(wo, wm) + dot(wi, wm) * etap) * abs(cosWi * cosWo);
+        if (denom < EPS) return 0.0f;
+
+        float3 ft = baseColor * T * scale * mfDistrib.D(wm) * mfDistrib.G(wo, wi) *
+            abs(dot(wi, wm) * dot(wo, wm) / denom);
         if (mode == TransportMode::Radiance)
-            val *= Sqr(etap);
-        return val;
+            ft *= Sqr(etap);
+        return ft;
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
-        if (!(flags & BxDFReflTransFlags::Transmission)) return BSDFSample();
+        bool allowReflection = (flags & BxDFReflTransFlags::Reflection);
+        bool allowTransmission = (flags & BxDFReflTransFlags::Transmission);
+        if (!allowReflection && !allowTransmission) return BSDFSample();
+
+        if (UseSpecularPath(wo)) {
+            float R = FrDielectric(CosTheta(wo), eta);
+            float T = max(1.0f - R, 0.0f);
+            float pr = allowReflection ? R : 0.0f;
+            float pt = allowTransmission ? T : 0.0f;
+            float pSum = pr + pt;
+            if (pSum <= EPS) return BSDFSample();
+
+            if (uc < pr / pSum) {
+                float3 wi = float3(-wo.x, -wo.y, wo.z);
+                float cosWi = AbsCosTheta(wi);
+                if (cosWi < EPS) return BSDFSample();
+                return BSDFSample(float3(R / cosWi), wi, pr / pSum, BxDFFlags::SpecularReflection);
+            }
+
+            float3 wi;
+            float etap;
+            if (!Refract(wo, float3(0.0f, 0.0f, 1.0f), eta, wi, etap)) return BSDFSample();
+            float cosWi = AbsCosTheta(wi);
+            if (cosWi < EPS) return BSDFSample();
+            float3 ft = baseColor * (T / cosWi);
+            if (mode == TransportMode::Radiance)
+                ft *= Sqr(etap);
+            return BSDFSample(ft, wi, pt / pSum, BxDFFlags::SpecularTransmission, etap);
+        }
+
         float3 wm = mfDistrib.Sample_wm(wo, u);
+        float F = FrDielectric(dot(wo, wm), eta);
+        float R = F;
+        float T = max(1.0f - F, 0.0f);
+        float pr = allowReflection ? R : 0.0f;
+        float pt = allowTransmission ? T : 0.0f;
+        float pSum = pr + pt;
+        if (pSum <= EPS) return BSDFSample();
+
+        if (uc < pr / pSum) {
+            float3 wi = Reflect(wo, wm);
+            if (!SameHemisphere(wo, wi)) return BSDFSample();
+            float pdf = PDFGlossy(wo, wi, mfDistrib) * pr / pSum;
+            if (pdf < 1e-7f) return BSDFSample();
+            return BSDFSample(this.f(wo, wi, mode), wi, pdf, BxDFFlags::GlossyReflection);
+        }
+
         float etap;
         float3 wi;
         bool tir = !Refract(wo, wm, eta, wi, etap);
         if (tir || SameHemisphere(wo, wi) || wi.z == 0) return BSDFSample();
-        float pdf = PDFTransmittance(wo, wi, eta, mfDistrib);
+        float pdf = PDFTransmittance(wo, wi, eta, mfDistrib) * pt / pSum;
+        if (pdf < 1e-7f) return BSDFSample();
         return BSDFSample(this.f(wo, wi, mode), wi, pdf, BxDFFlags::GlossyTransmission, etap);
     }
 
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
-        if (!(flags & BxDFReflTransFlags::Transmission) || SameHemisphere(wo, wi)) return 0.0f;
-        return PDFTransmittance(wo, wi, eta, mfDistrib);
+        bool allowReflection = (flags & BxDFReflTransFlags::Reflection);
+        bool allowTransmission = (flags & BxDFReflTransFlags::Transmission);
+        if (!allowReflection && !allowTransmission) return 0.0f;
+        if (UseSpecularPath(wo)) return SpecularPDF(wo, wi, flags);
+
+        bool reflected = SameHemisphere(wo, wi);
+        float etap = reflected ? 1.0f : RelativeEta(wo);
+        float3 wmUnnormalized = reflected ? wo + wi : wo + wi * etap;
+        if (LengthSquared(wmUnnormalized) == 0.0f) return 0.0f;
+        float3 wm = FaceForward(normalize(wmUnnormalized), float3(0.0f, 0.0f, 1.0f));
+
+        if (dot(wm, wi) * CosTheta(wi) < 0.0f || dot(wm, wo) * CosTheta(wo) < 0.0f) return 0.0f;
+
+        float F = FrDielectric(dot(wo, wm), eta);
+        float pr = allowReflection ? F : 0.0f;
+        float pt = allowTransmission ? max(1.0f - F, 0.0f) : 0.0f;
+        float pSum = pr + pt;
+        if (pSum <= EPS) return 0.0f;
+
+        if (reflected)
+            return allowReflection ? PDFGlossy(wo, wi, mfDistrib) * pr / pSum : 0.0f;
+        return allowTransmission ? PDFTransmittance(wo, wi, eta, mfDistrib) * pt / pSum : 0.0f;
     }
 };
 
@@ -960,11 +1137,15 @@ public struct PrincipledBSDF : IBSDF {
         this.cSheen = this.cUnderCoat * clamp(sheenReflectance, 0.0f, 1.0f);
         this.cBase = max(this.cUnderCoat - this.cSheen, 0.0f);
 
+        metallic = saturate(metallic);
+        transmission = saturate(transmission);
+        float opaqueDielectric = this.cBase * (1.0f - metallic) * (1.0f - transmission);
+        float translucentDielectric = this.cBase * (1.0f - metallic) * transmission;
         float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90, SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness)));
-        float rawDiffuseFamily = this.cBase * (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
+        float rawDiffuseFamily = opaqueDielectric * max(1.0f - sampleGlossy, 0.0f);
         float rawMetal = this.cBase * metallic;
-        float rawDielSpec = this.cBase * (1.0f - metallic) * sampleGlossy;
-        float rawTrans = this.cBase * (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
+        float rawDielSpec = opaqueDielectric * sampleGlossy;
+        float rawTrans = translucentDielectric;
         float rawDiffuse = rawDiffuseFamily * diffuseWeight;
         float rawSheen = this.cSheen;
         float rawCoat = this.cCoat;
@@ -986,9 +1167,9 @@ public struct PrincipledBSDF : IBSDF {
         this.wSheen    = rawSheen    / this.weightSum;
         this.wCoat     = rawCoat     / this.weightSum;
 
-        this.cDiffuse  = this.cBase * (1.0f - metallic) * (1.0f - transmission) * diffuseWeight;
-        this.cTrans    = this.cBase * (1.0f - metallic) * transmission;
-        this.cDielSpec = this.cBase * (1.0f - metallic);
+        this.cDiffuse  = opaqueDielectric * diffuseWeight;
+        this.cTrans    = translucentDielectric;
+        this.cDielSpec = opaqueDielectric;
         this.cMetal    = this.cBase * metallic;
 
         // Construct each lobe

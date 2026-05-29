@@ -30,6 +30,7 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 ### Path Tracer
 - **Full Foundation Material support**
 - Unidirectional megakernel integrator with tiled sampling
+- Energy conserving BSDFs with Cycles output parity 
 - Sobol & PCG samplers
 - Path-traced Subsurface scattering
 - Path-traced Chiang Hair/fur shading
@@ -225,6 +226,11 @@ Done:
       - Approximate aniso materials with the same LUT
     - [x] Dielectrics Transmission
       - Implies another dimension on IOR
+      - Darkening *still* noticeable at medium roughness.
+        - Cycles suffer from the same issue. Try out https://github.com/mos9527/Foundation-Resources/tree/master/white-furnace
+        - The slides, curiously, does not demonstrate white furnace for glass compensation
+        - TODO Implement Heitz Random Walk ab initio?
+          - https://mos9527.com/posts/foundation/pt-6-path-tracing-adventures/#random-walk-heitz-2016 
 - [x] Texture sampling rate via ray differentials for primary rays
   - Easy for camera rays, not so much for ones bouncing off BSDFs 
 - [x] Coat BSDF

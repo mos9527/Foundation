@@ -70,6 +70,8 @@ public struct PrincipledMaterial : IMaterial {
         // too strong relative to the white specular component.
         float3 dielF0, dielF90;
         CalcGlossyFresnel(ior, specularFactor, specularColorFactor, dielF0, dielF90);
+        metallic = saturate(metallic);
+        transmission = saturate(transmission);
         float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90,
             SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness)));
         float rawCoat = clamp(MaxComponent(CoatReflectance(clearcoatFactor, clearcoatRoughness, wo, ggxLutEIndex)), 0.0f, 1.0f);
@@ -77,10 +79,12 @@ public struct PrincipledMaterial : IMaterial {
         SheenBSDF sampleSheen = SheenBSDF(sheenWeight, sheenRoughness, sheenTint, sheenLtcIndex, wo);
         float rawSheen = rawUnderCoat * (sampleSheen.IsValid() ? clamp(MaxComponent(sampleSheen.Reflectance()), 0.0f, 1.0f) : 0.0f);
         float rawBase = max(rawUnderCoat - rawSheen, 0.0f);
-        float rawDiffuseFamily = rawBase * (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
+        float opaqueDielectric = rawBase * (1.0f - metallic) * (1.0f - transmission);
+        float translucentDielectric = rawBase * (1.0f - metallic) * transmission;
+        float rawDiffuseFamily = opaqueDielectric * max(1.0f - sampleGlossy, 0.0f);
         float rawMetal = rawBase * metallic;
-        float rawDielSpec = rawBase * (1.0f - metallic) * sampleGlossy;
-        float rawTrans = rawBase * (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
+        float rawDielSpec = opaqueDielectric * sampleGlossy;
+        float rawTrans = translucentDielectric;
         float rawSubsurface = rawDiffuseFamily * activeSubsurface;
         float eventWeightSum = rawDiffuseFamily + rawTrans + rawDielSpec + rawMetal + rawSheen + rawCoat;
 
