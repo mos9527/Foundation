@@ -13,3 +13,4 @@ docs/
 .codebuddy/
 *.pyc
 dist/
+cmake-build-*/

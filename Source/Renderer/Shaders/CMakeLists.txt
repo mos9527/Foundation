@@ -18,7 +18,6 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             spvSparseResidency
             spvMinLod
             spvFragmentFullyCoveredEXT
-            spvGroupNonUniform
             spvGroupNonUniformBallot
             spvGroupNonUniformArithmetic
             spvRayQueryKHR
