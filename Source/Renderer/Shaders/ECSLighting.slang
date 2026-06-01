@@ -115,7 +115,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
                 l = toLight / dist;
                 lightDist = dist;
                 atten = 1.0f / dist2;
-                if (gl.range > 0.0f && dist > gl.range) continue;
+                if (gl.type == 1 || gl.type == 2)
+                    if (gl.range > 0.0f && dist > gl.range) continue;
                 if (gl.type == 2) { // Spot
                     float cosTheta = dot(gl.direction, -l);
                     if (cosTheta < gl.spotOuterCosAngle) continue;
@@ -128,11 +129,13 @@ void main(uint2 tid: SV_DispatchThreadID) {
 
             float3 wi = toLocal.rotate(l);
             float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
-            float vis;
+            float vis = 1.0f;
             if ((flags & kEnableRasterRTShadows) != 0) {
-                float3 shadowNormalFF = dot(l, n) < 0.0f ? -n : n;
-                float3 shadowOrigin = OffsetRay(p, n);
-                vis = shadow(shadowOrigin, l, lightDist) ? 0.0f : 1.0f;
+                if (gl.type == 1 || gl.type == 2) {
+                    float3 shadowNormalFF = dot(l, n) < 0.0f ? -n : n;
+                    float3 shadowOrigin = OffsetRay(p, n);
+                    vis = shadow(shadowOrigin, l, lightDist) ? 0.0f : 1.0f;
+                }
             }
             else
                 vis = 1.0f;

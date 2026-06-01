@@ -71,7 +71,7 @@ target_sources(Editor PRIVATE
 target_link_libraries(
         Editor PRIVATE
         Editor_Context
-        Foundation_PathTrace
+        Foundation_Pathtracer
         Foundation_Rasterizer
         Foundation_RHIVulkan
         ThirdParty_ImGui argh nfd

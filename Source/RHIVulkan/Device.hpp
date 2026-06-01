@@ -107,7 +107,7 @@ namespace Foundation::RHI
         VmaVirtualBlock mBlock{nullptr};
         Map<uint64_t, VmaVirtualAllocation> mAllocations;
         uint64_t mCapacity{0};
-        uint64_t mHighWater{0};
+        uint64_t mPeakUsage{0};
     public:
         VulkanVirtualAllocator(const VulkanDevice& device, uint64_t size);
         ~VulkanVirtualAllocator() override;
@@ -116,7 +116,7 @@ namespace Foundation::RHI
         void Clear() override;
         [[nodiscard]] uint64_t GetUsedBytes() const override;
         [[nodiscard]] uint64_t GetCapacity() const override { return mCapacity; }
-        [[nodiscard]] uint64_t GetHighWaterMark() const override { return mHighWater; }
+        [[nodiscard]] uint64_t GetPeakUsage() const override { return mPeakUsage; }
     };
     class VulkanDevice : public RHIDevice
     {

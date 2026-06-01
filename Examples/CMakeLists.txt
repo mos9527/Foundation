@@ -45,3 +45,7 @@ add_dependencies(Example_MeshShaderHierarchicalLOD Shader_MeshShaderHierarchical
 add_executable(Example_CIEChromacity "CIEChromacity.cpp")
 target_link_libraries(Example_CIEChromacity PUBLIC Example_Common)
 add_dependencies(Example_CIEChromacity Shader_CIEChromacity)
+
+add_executable(Example_GPUScene "GPUScene.cpp")
+target_link_libraries(Example_GPUScene PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
+add_dependencies(Example_GPUScene Foundation_Shaders Editor_Data Examples_SampleFiles)

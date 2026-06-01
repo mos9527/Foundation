@@ -726,3 +726,14 @@ public:
 
     void Reset();
 };
+
+ENUM_NAME_CONV_BEGIN(GPUScene::Result)
+    ENUM_NAME(Ready)
+    ENUM_NAME(InProgress)
+    ENUM_NAME(InvalidInput)
+    ENUM_NAME(InvalidHandle)
+    ENUM_NAME(OutOfMemory)
+    ENUM_NAME(DecodeFailed)
+    ENUM_NAME(SubmitFailed)
+    ENUM_NAME(Cancelled)
+ENUM_NAME_CONV_END()

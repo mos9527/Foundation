@@ -1169,7 +1169,7 @@ uint64_t VulkanVirtualAllocator::Allocate(uint64_t size, uint64_t alignment)
     if (vmaVirtualAllocate(mBlock, &info, &alloc, &offset) != VK_SUCCESS)
         return kInvalidOffset;
     mAllocations.emplace(static_cast<uint64_t>(offset), alloc);
-    mHighWater = std::max(mHighWater, static_cast<uint64_t>(offset) + size);
+    mPeakUsage = std::max(mPeakUsage, static_cast<uint64_t>(offset) + size);
     return static_cast<uint64_t>(offset);
 }
 
@@ -1185,7 +1185,7 @@ void VulkanVirtualAllocator::Clear()
 {
     vmaClearVirtualBlock(mBlock);
     mAllocations.clear();
-    mHighWater = 0;
+    mPeakUsage = 0;
 }
 
 uint64_t VulkanVirtualAllocator::GetUsedBytes() const

@@ -136,7 +136,7 @@ namespace Foundation::RHI
         [[nodiscard]] virtual uint64_t GetUsedBytes() const = 0;
         [[nodiscard]] virtual uint64_t GetCapacity() const = 0;
         // Highest (offset + size) ever allocated, for partial flushes of mapped buffers.
-        [[nodiscard]] virtual uint64_t GetHighWaterMark() const = 0;
+        [[nodiscard]] virtual uint64_t GetPeakUsage() const = 0;
     };
     struct RHITextureDesc
     {

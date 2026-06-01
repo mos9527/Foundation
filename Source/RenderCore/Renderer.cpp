@@ -47,7 +47,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> dev
 
 void Renderer::BeginSetup()
 {
-    CHECK_MSG(mState == State::Undefined || mState == State::PostSetup, "Bad Setup state. Current state is {}", mState);
+    CHECK_MSG(mState == State::Undefined, "Bad Setup state. Current state is {}. Note that the Renderer can only be set up once.", mState);
     mState = State::Setup;
     mSetup = ConstructUnique<RendererSetup>(mAllocator, mAllocator);
     if (mDesc.present)

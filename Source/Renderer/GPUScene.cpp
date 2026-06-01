@@ -133,10 +133,10 @@ void GPUScene::FlushDirectGeometryUpload()
 {
     if (!mDirectGeometryUpload)
         return;
-    if (mPrimitiveAlloc->GetHighWaterMark())
-        mPrimitiveBuffer->Flush(0, mPrimitiveAlloc->GetHighWaterMark());
-    if (mCurveAABBAlloc->GetHighWaterMark())
-        mCurveAABBBuffer->Flush(0, mCurveAABBAlloc->GetHighWaterMark());
+    if (mPrimitiveAlloc->GetPeakUsage())
+        mPrimitiveBuffer->Flush(0, mPrimitiveAlloc->GetPeakUsage());
+    if (mCurveAABBAlloc->GetPeakUsage())
+        mCurveAABBBuffer->Flush(0, mCurveAABBAlloc->GetPeakUsage());
 }
 
 GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc,
@@ -421,6 +421,12 @@ GPUScene::~GPUScene()
 {
     if (mUploadThread.joinable())
         mUploadThread.join();
+    // Release every outstanding suballocation before the VMA virtual blocks are destroyed;
+    // a non-empty block trips a VMA assert on teardown (geometry need not be GC'd first).
+    if (mPrimitiveAlloc)
+        mPrimitiveAlloc->Clear();
+    if (mCurveAABBAlloc)
+        mCurveAABBAlloc->Clear();
 }
 
 Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)
