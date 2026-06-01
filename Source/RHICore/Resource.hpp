@@ -113,6 +113,31 @@ namespace Foundation::RHI
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
+    /**
+     * @brief Sub-allocates byte ranges within an abstract fixed-size space.
+     *
+     * Backs offset-based suballocation of a single GPU buffer (e.g. GPUScene geometry):
+     * freed ranges are reused, live ranges never move. Implementation-defined, backed by
+     * the platform memory allocator (VMA virtual blocks on Vulkan).
+     */
+    class RHIVirtualAllocator : public RHIObject
+    {
+    public:
+        static constexpr uint64_t kInvalidOffset = ~0ull;
+        /**
+         * @brief Sub-allocates `size` bytes with the given alignment.
+         * @return The byte offset, or kInvalidOffset when the space is exhausted.
+         */
+        [[nodiscard]] virtual uint64_t Allocate(uint64_t size, uint64_t alignment) = 0;
+        // Frees a range previously returned by Allocate.
+        virtual void Free(uint64_t offset) = 0;
+        // Frees all live allocations at once.
+        virtual void Clear() = 0;
+        [[nodiscard]] virtual uint64_t GetUsedBytes() const = 0;
+        [[nodiscard]] virtual uint64_t GetCapacity() const = 0;
+        // Highest (offset + size) ever allocated, for partial flushes of mapped buffers.
+        [[nodiscard]] virtual uint64_t GetHighWaterMark() const = 0;
+    };
     struct RHITextureDesc
     {
         RHIResourceDesc resource{};

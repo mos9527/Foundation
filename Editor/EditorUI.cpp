@@ -295,9 +295,9 @@ static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
 
 static bool IsSelectedInstanceValid()
 {
-    return GEditor.HasScene() &&
+    return GEditor.HasScene() && GContext->gpuScene &&
            GEditor.selectedInstance >= 0 &&
-           GEditor.selectedInstance < static_cast<int>(GEditor.instances.size()) &&
+           GEditor.selectedInstance < static_cast<int>(GContext->gpuScene->GetInstanceCount()) &&
            GEditor.selectedInstance < static_cast<int>(GEditor.Scene().GetInstances().size());
 }
 
@@ -313,45 +313,18 @@ static const char* InstanceTypeName(uint32_t type)
 
 static int GetSelectedMaterialIndex()
 {
-    if (IsSelectedInstanceValid())
-        return static_cast<int>(GEditor.instances[GEditor.selectedInstance].materialIndex);
+    if (IsSelectedInstanceValid() && GContext->gpuScene)
+        return static_cast<int>(GContext->gpuScene->GetInstance(
+            static_cast<uint32_t>(GEditor.selectedInstance)).materialIndex);
     return GEditor.selectedMaterial;
 }
 
 static bool IsMaterialIndexValid(int materialIndex)
 {
-    return GEditor.HasScene() &&
+    return GEditor.HasScene() && GContext->gpuScene &&
            materialIndex >= 0 &&
-           materialIndex < static_cast<int>(GEditor.materials.size()) &&
+           materialIndex < static_cast<int>(GContext->gpuScene->GetMaterialCount()) &&
            materialIndex < static_cast<int>(GEditor.Scene().GetMaterials().size());
-}
-
-static void SyncMaterialToGPU(uint32_t materialIndex)
-{
-    auto& src = GEditor.Scene().GetMaterials()[materialIndex];
-    auto& dst = GEditor.materials[materialIndex];
-    dst.baseColorFactor = src.baseColorFactor;
-    dst.emissiveFactor = src.emissiveFactor * src.emissiveFactor.w;
-    dst.metallicFactor = src.metallicFactor;
-    dst.roughnessFactor = src.roughnessFactor;
-    dst.transmissionFactor = src.transmissionFactor;
-    dst.ior = src.ior;
-    dst.specularFactor = src.specularFactor;
-    dst.specularColorFactor = src.specularColorFactor;
-    dst.anisotropyStrength = src.anisotropyStrength;
-    dst.anisotropyRotation = src.anisotropyRotation;
-    dst.sheenColorFactor = src.sheenColorFactor;
-    dst.sheenRoughnessFactor = src.sheenRoughnessFactor;
-    dst.clearcoatFactor = src.clearcoatFactor;
-    dst.clearcoatRoughnessFactor = src.clearcoatRoughnessFactor;
-    dst.subsurfaceFactor = src.subsurfaceFactor;
-    dst.subsurfaceScale = src.subsurfaceScale;
-    dst.subsurfaceColor = src.subsurfaceColor;
-    dst.subsurfaceRadius = src.subsurfaceRadius;
-    dst.shaderBlockID = static_cast<uint32_t>(src.shaderBlockID);
-    dst.hairBetaM = src.hairBetaM;
-    dst.hairBetaN = src.hairBetaN;
-    dst.hairAlpha = src.hairAlpha;
 }
 
 struct TexturePreviewEntry
@@ -935,7 +908,7 @@ void EditorDockSpaceAndMenuBar()
                 }
             }
             ImGui::Separator();
-            if (!GEditor.instances.empty())
+            if (GContext->gpuScene && GContext->gpuScene->GetInstanceCount() != 0)
             {
                 if (ImGui::MenuItem("Render HDR..."))
                 {
@@ -1017,7 +990,7 @@ void EditorDockSpaceAndMenuBar()
         }
 
         // Right-aligned PT / Raster toggle
-        if (!GEditor.instances.empty())
+        if (GContext->gpuScene && GContext->gpuScene->GetInstanceCount() != 0)
         {
             float btnW_PT = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
             float btnW_R = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
@@ -1096,19 +1069,21 @@ void FHierarchyPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Hierarchy"))
     {
-        if (GEditor.instances.empty())
+        if (!GContext->gpuScene || GContext->gpuScene->GetInstanceCount() == 0)
         {
             ImGui::TextDisabled("No instances loaded");
         }
         else
         {
-            ImGui::Text("%zu instances", GEditor.instances.size());
+            auto* gpu = GContext->gpuScene;
+            uint32_t instanceCount = gpu->GetInstanceCount();
+            ImGui::Text("%u instances", instanceCount);
             ImGui::Separator();
-            for (size_t i = 0; i < GEditor.instances.size(); i++)
+            for (uint32_t i = 0; i < instanceCount; i++)
             {
-                auto& inst = GEditor.instances[i];
+                GSInstance inst = gpu->GetInstance(i);
                 char label[128];
-                snprintf(label, sizeof(label), "%s %zu -- Resource %u, Mat %u",
+                snprintf(label, sizeof(label), "%s %u -- Resource %u, Mat %u",
                          InstanceTypeName(inst.type), i, inst.resourceIndex, inst.materialIndex);
                 bool selected = (GEditor.selectedInstance == static_cast<int>(i));
                 if (ImGui::Selectable(label, selected))
@@ -1133,7 +1108,7 @@ void FHierarchyPanel()
             GEditor.selectedMaterial = materialIndex;
 
             auto& material = GEditor.Scene().GetMaterials()[materialIndex];
-            auto& gpuMaterial = GEditor.materials[materialIndex];
+            GSMaterial gpuMaterial = GContext->gpuScene->GetMaterial(materialIndex);
             ImGui::Text("Material %d", materialIndex);
             if (IsSelectedInstanceValid())
                 ImGui::Text("From Instance %d", GEditor.selectedInstance);
@@ -1204,7 +1179,8 @@ void FHierarchyPanel()
 
             if (changed)
             {
-                SyncMaterialToGPU(static_cast<uint32_t>(materialIndex));
+                // Material edits live on the scene; the commit refills the GPU table
+                // (with texture remap) from it.
                 CommitSceneToGPU(true);
             }
         }
@@ -1227,7 +1203,7 @@ void FHierarchyPanel()
         if (IsSelectedInstanceValid())
         {
             auto& pi = SelectedSceneInstance();
-            auto& inst = GEditor.instances[GEditor.selectedInstance];
+            GSInstance inst = GContext->gpuScene->GetInstance(static_cast<uint32_t>(GEditor.selectedInstance));
             ImGui::Text("%s Instance %d", InstanceTypeName(inst.type), GEditor.selectedInstance);
             ImGui::Separator();
             bool changed = false;
@@ -1283,17 +1259,20 @@ void FHierarchyPanel()
             }
             if (changed)
             {
-                // Sync CPU scene to GPU-side data
-                inst.transform = pi.transform.transform;
-                inst.rotation = pi.transform.rotation;
-                inst.scale = pi.transform.scale;
+                // The transform edit lives on the scene instance; recommit refills the
+                // GPU instance table. Reread the snapshot for the readout below.
                 CommitSceneToGPU(true);
+                inst = GContext->gpuScene->GetInstance(static_cast<uint32_t>(GEditor.selectedInstance));
             }
             ImGui::Separator();
             ImGui::Text("Type: %s", InstanceTypeName(inst.type));
             ImGui::Text("Resource Offset: %u", inst.resourceOffset);
             ImGui::Text("Material Index: %u", inst.materialIndex);
             ImGui::Text("Resource Index: %u", inst.resourceIndex);
+            ImGui::Separator();
+            // Invalidates inst/pi references; must be the last use this frame.
+            if (ImGui::Button("Delete Instance"))
+                DeleteSelectedInstance();
         }
         else
         {

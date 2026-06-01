@@ -150,11 +150,9 @@ struct RendererPicking
 
 struct RendererScene
 {
+    // GPUScene owns all scene-data residency (geometry, instances, lights, materials);
+    // the renderer only carries view/render config and picking state.
     UBO* gsGlobals;
-    Vector<GSInstance>* gsInstances;
-    Vector<uint32_t>* gsBLASes;
-    Vector<uint32_t>* gsCurveBLASes;
-    Vector<GSLight>* gsLights;
     RendererPicking* picking;
     bool* rendererRebuildRequested{nullptr};
 };

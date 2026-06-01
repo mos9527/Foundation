@@ -326,6 +326,10 @@ namespace Foundation::RHI
         [[nodiscard]] virtual RHIDeviceQueryPool* GetQueryPool(Handle handle) const = 0;
         virtual void DestroyQueryPool(Handle handle) = 0;
 
+        [[nodiscard]] virtual RHIDeviceScopedHandle<RHIVirtualAllocator> CreateVirtualAllocator(uint64_t size) = 0;
+        [[nodiscard]] virtual RHIVirtualAllocator* GetVirtualAllocator(Handle handle) const = 0;
+        virtual void DestroyVirtualAllocator(Handle handle) = 0;
+
         [[nodiscard]] virtual RHIAccelerationStructureSizeInfo
         GetAccelerationStructureSizeInfo(RHIAccelerationStructureBuildDesc const& desc,
                                          Allocator* scratchAllocator = nullptr) const = 0;
@@ -463,6 +467,12 @@ namespace Foundation::RHI
             return device->GetPipelineCache(handle);
         }
         static void Destroy(RHIDevice* device, Handle handle) { device->DestroyPipelineCache(handle); }
+    };
+    template <>
+    struct RHIObjectTraits<RHIDevice, RHIVirtualAllocator>
+    {
+        static RHIVirtualAllocator* Get(RHIDevice const* device, Handle handle) { return device->GetVirtualAllocator(handle); }
+        static void Destroy(RHIDevice* device, Handle handle) { device->DestroyVirtualAllocator(handle); }
     };
     template <>
     struct RHIObjectTraits<RHIDevice, RHIDeviceQueryPool>

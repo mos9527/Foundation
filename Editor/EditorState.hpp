@@ -175,13 +175,13 @@ inline float ApertureRadiusFromFStop(float fStop, float sensorHeight, float fovY
 
 struct EditorState
 {
-    Vector<GSInstance> instances{GLOBAL_ALLOC};
-    Vector<GSMaterial> materials{GLOBAL_ALLOC};
-    Vector<GSMesh>     meshes{GLOBAL_ALLOC};
-    Vector<uint32_t>   blases{GLOBAL_ALLOC};
-    Vector<GSCurveSet> curves{GLOBAL_ALLOC};
-    Vector<uint32_t>   curveBlases{GLOBAL_ALLOC};
-    Vector<GSLight>    lights{GLOBAL_ALLOC};
+    // GPUScene owns all scene-data residency (geometry, textures) and the committed
+    // instance/material/light tables. The editor keeps the bindings needed to refill
+    // those tables from the FSCN scene: resident geometry handles per mesh/curve
+    // resource, and the FSCN texture index -> bindless index remap.
+    Vector<GeometryHandle> meshGeometry{GLOBAL_ALLOC};
+    Vector<GeometryHandle> curveGeometry{GLOBAL_ALLOC};
+    Vector<TextureHandle> textureIDMap{GLOBAL_ALLOC};
     Optional<MemoryMappedFile> sceneFile;
     Optional<FImportedScene>     scene;
     String             currentSavePath;
@@ -237,7 +237,11 @@ extern EditorState GEditor;
 
 void CommitSceneToGPU(bool resetAccumulation = true);
 void UpdateSceneLights();
+void DeleteSelectedInstance();
 void LoadScene(StringView path);
+// Advances an in-flight async scene load; returns true while one is still streaming.
+// Must be pumped once per editor frame.
+bool PumpSceneLoad();
 void LoadEnvMap(StringView path);
 bool ApplyViewLUTSelection();
 void HandleFile(const char* filePath);

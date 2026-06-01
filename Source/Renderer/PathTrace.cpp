@@ -15,17 +15,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfi
     CHECK(gpu);
     CHECK(renderer->GetDevice()->GetCapabilities().raytracingPipeline);
     scene.gsGlobals->ptAccumulatedFrames = 0u;
-    scene.gsGlobals->ggxLutEIndex = gpu->GetGGXLutEIndex();
-    scene.gsGlobals->ggxLutEavgIndex = gpu->GetGGXLutEavgIndex();
-    scene.gsGlobals->ggxLutEIORIndex = gpu->GetGGXLutEIORIndex();
-    scene.gsGlobals->ggxLutEIORavgIndex = gpu->GetGGXLutEIORavgIndex();
-    scene.gsGlobals->ggxLutEIORInvIndex = gpu->GetGGXLutEIORInvIndex();
-    scene.gsGlobals->ggxLutEIORInvavgIndex = gpu->GetGGXLutEIORInvavgIndex();
-    scene.gsGlobals->sheenLtcIndex = gpu->GetSheenLtcIndex();
-    scene.gsGlobals->viewLutIndex = cfg.enableHDR ? gpu->GetViewLutHdrIndex() : gpu->GetViewLutSdrIndex();
-    scene.gsGlobals->envMapTextureIndex = gpu->GetEnvMapIndexOrDefault();
-    scene.gsGlobals->envMapMarginalCDFIndex = gpu->GetEnvMapMarginalCDFIndexOrDefault();
-    scene.gsGlobals->envMapConditionalCDFIndex = gpu->GetEnvMapConditionalCDFIndexOrDefault();
+    gpu->FillGlobals(*scene.gsGlobals, cfg.enableHDR);
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
@@ -47,8 +37,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfi
             "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
             {
-                auto result = gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsCurveBLASes,
-                                             *scene.gsLights, true);
+                auto result = gpu->BuildTLAS(cmd, true);
                 if (result == GPUScene::TLASBuildResult::NeedsRendererRebuild && scene.rendererRebuildRequested)
                     *scene.rendererRebuildRequested = true;
             });

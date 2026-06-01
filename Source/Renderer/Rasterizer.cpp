@@ -52,17 +52,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
     CHECK(renderer);
     CHECK(gpu);
     CHECK(renderer->GetDevice()->GetCapabilities().meshShaders);
-    scene.gsGlobals->ggxLutEIndex = gpu->GetGGXLutEIndex();
-    scene.gsGlobals->ggxLutEavgIndex = gpu->GetGGXLutEavgIndex();
-    scene.gsGlobals->ggxLutEIORIndex = gpu->GetGGXLutEIORIndex();
-    scene.gsGlobals->ggxLutEIORavgIndex = gpu->GetGGXLutEIORavgIndex();
-    scene.gsGlobals->ggxLutEIORInvIndex = gpu->GetGGXLutEIORInvIndex();
-    scene.gsGlobals->ggxLutEIORInvavgIndex = gpu->GetGGXLutEIORInvavgIndex();
-    scene.gsGlobals->sheenLtcIndex = gpu->GetSheenLtcIndex();
-    scene.gsGlobals->viewLutIndex = cfg.enableHDR ? gpu->GetViewLutHdrIndex() : gpu->GetViewLutSdrIndex();
-    scene.gsGlobals->envMapTextureIndex = gpu->GetEnvMapIndexOrDefault();
-    scene.gsGlobals->envMapMarginalCDFIndex = gpu->GetEnvMapMarginalCDFIndexOrDefault();
-    scene.gsGlobals->envMapConditionalCDFIndex = gpu->GetEnvMapConditionalCDFIndexOrDefault();
+    gpu->FillGlobals(*scene.gsGlobals, cfg.enableHDR);
     /* UBO for everyone */
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
@@ -142,8 +132,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
             "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
             {
-                auto result = gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsCurveBLASes,
-                                             *scene.gsLights, true);
+                auto result = gpu->BuildTLAS(cmd, true);
                 if (result == GPUScene::TLASBuildResult::NeedsRendererRebuild && scene.rendererRebuildRequested)
                     *scene.rendererRebuildRequested = true;
             });

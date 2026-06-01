@@ -2,6 +2,7 @@
 #include <RHICore/Device.hpp>
 #include <SDL3/SDL.h>
 #include <vk_mem_alloc.h>
+#include <mutex>
 
 #include "Application.hpp"
 #include "Common.hpp"
@@ -100,6 +101,23 @@ namespace Foundation::RHI
         Span<const uint64_t> GetResults(bool wait) override;
         void DebugSetObjectName(const char* name) override;
     };
+    class VulkanVirtualAllocator : public RHIVirtualAllocator
+    {
+        const VulkanDevice& mDevice;
+        VmaVirtualBlock mBlock{nullptr};
+        Map<uint64_t, VmaVirtualAllocation> mAllocations;
+        uint64_t mCapacity{0};
+        uint64_t mHighWater{0};
+    public:
+        VulkanVirtualAllocator(const VulkanDevice& device, uint64_t size);
+        ~VulkanVirtualAllocator() override;
+        [[nodiscard]] uint64_t Allocate(uint64_t size, uint64_t alignment) override;
+        void Free(uint64_t offset) override;
+        void Clear() override;
+        [[nodiscard]] uint64_t GetUsedBytes() const override;
+        [[nodiscard]] uint64_t GetCapacity() const override { return mCapacity; }
+        [[nodiscard]] uint64_t GetHighWaterMark() const override { return mHighWater; }
+    };
     class VulkanDevice : public RHIDevice
     {
         const VulkanApplication& mApp;
@@ -119,11 +137,15 @@ namespace Foundation::RHI
         RHIObjectPool<> mStorage;
         // Queues
         UniquePtr<VulkanDeviceQueues> mQueues{nullptr};
+        // Serializes queue submit/present/wait-idle: VkQueue access must be externally
+        // synchronized, and background uploads may submit while the renderer does.
+        mutable std::mutex mQueueSubmitMutex;
 
         vk::PhysicalDeviceProperties mPhysicalDeviceProperties{};
         RHIPipelineStateCacheKey mPipelineCacheKey{};
         RHIDeviceCapabilities mDeviceCaps{};
     public:
+        [[nodiscard]] std::mutex& GetQueueSubmitMutex() const { return mQueueSubmitMutex; }
         VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice,
                      SDL_Window* window = nullptr);
         ~VulkanDevice() override;
@@ -197,6 +219,10 @@ namespace Foundation::RHI
         CreateQueryPool(RHIDeviceQueryPool::QueryPoolDesc const& desc) override;
         RHIDeviceQueryPool* GetQueryPool(Handle handle) const override;
         void DestroyQueryPool(Handle handle) override;
+
+        RHIDeviceScopedHandle<RHIVirtualAllocator> CreateVirtualAllocator(uint64_t size) override;
+        RHIVirtualAllocator* GetVirtualAllocator(Handle handle) const override;
+        void DestroyVirtualAllocator(Handle handle) override;
 
         [[nodiscard]] RHIAccelerationStructureSizeInfo GetAccelerationStructureSizeInfo(
                     RHIAccelerationStructureBuildDesc const& desc,

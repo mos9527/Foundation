@@ -1,15 +1,57 @@
 #include "GPUScene.hpp"
+#include "Renderer.hpp"
 #include "Precompute.hpp"
 #include "Tables/GGX.hpp"
 #include "Tables/GGX_IOR.hpp"
 #include "Tables/LTCSheen.hpp"
 #include "Tables/Sobol.hpp"
 #include "Tables/ViewLUTs.hpp"
+#include <Core/Allocator.hpp>
 #include <Core/AllocatorStack.hpp>
+#include <Core/Atomic.hpp>
 #include <Core/Paths.hpp>
+#include <Core/ThreadPool.hpp>
 #include <Math/Quantize.hpp>
 #include <algorithm>
+#include <atomic>
 #include <limits>
+#include <thread>
+
+// Per-resource staging footprint slack, mirrored from the previous Editor scheduler.
+static constexpr size_t kUploadBudgetSlack = 1ull * (1ull << 20);
+static constexpr size_t kUploadStagingBudgetSlack = 32ull * (1ull << 20);
+static constexpr size_t kUploadStagingBuffers = 3u;
+
+static size_t GPUSceneTextureSubresourceFootprint(FTextureHeader const& metadata, uint32_t layer, uint32_t mip)
+{
+    uint32_t const alignment = std::max(metadata.GetBpp() / 8, metadata.GetBlockSize());
+    CHECK_MSG(alignment != 0, "Unsupported texture format {}", metadata.GetFormat());
+    size_t const size = metadata.GetSubresourceSize(layer, mip);
+    CHECK_MSG(size <= std::numeric_limits<size_t>::max() - (alignment - 1u),
+              "Texture subresource staging footprint exceeds addressable range");
+    return size + alignment - 1u;
+}
+
+// Pending-job counter helpers (a job batch is "done" when the counter reaches zero).
+static void GPUSceneCompleteJob(std::atomic<size_t>* counter)
+{
+    if (!counter)
+        return;
+    size_t const previous = counter->fetch_sub(1, std::memory_order_release);
+    CHECK_MSG(previous > 0, "GPUScene upload job counter underflow");
+    if (previous == 1)
+        counter->notify_all();
+}
+
+static void GPUSceneWaitJobs(std::atomic<size_t>* counter)
+{
+    size_t pending = counter->load(std::memory_order_acquire);
+    while (pending != 0)
+    {
+        counter->wait(pending, std::memory_order_relaxed);
+        pending = counter->load(std::memory_order_acquire);
+    }
+}
 
 static FTexture LoadLUT(Allocator* allocator, StringView path)
 {
@@ -56,50 +98,45 @@ size_t GPUScene::CalculateCurveAABBSize(FSerializedCurve const& src)
     return src.aabbs.decodedSize;
 }
 
-bool GPUScene::StagedUploadJob::NeedsScratch() const
+// Threaded decode of one blob payload into its mapped staging/direct destination.
+struct GPUSceneBlobDecodeJob final : Foundation::Core::ThreadPoolJob
 {
-    return kind == Kind::Blob && blob.codec != FBlobCodec::None;
-}
+    GPUSceneBlobWrite write{};
+    FBlobDeserializer blobs{Span<const unsigned char>{}};
+    Span<Arena> scratchArenas{};
+    Span<AllocatorStack> scratchAllocators{};
+    std::atomic<size_t>* counter{nullptr};
 
-void GPUScene::StagedUploadJob::Write(FBlobDeserializer const& blobs, Allocator* scratchAlloc) const
-{
-    switch (kind)
+    GPUSceneBlobDecodeJob(GPUSceneBlobWrite const& write, FBlobDeserializer const& blobs,
+                          Span<Arena> scratchArenas, Span<AllocatorStack> scratchAllocators,
+                          std::atomic<size_t>* counter) :
+        write(write), blobs(blobs), scratchArenas(scratchArenas), scratchAllocators(scratchAllocators),
+        counter(counter) {}
+
+    void Execute(size_t workerID) noexcept override
     {
-    case Kind::None:
-        return;
-    case Kind::MeshHeader:
-        CHECK(ptr != nullptr);
-        CHECK(size == sizeof(GSMesh));
-        std::memcpy(ptr, &meshData, sizeof(GSMesh));
-        return;
-    case Kind::CurveHeader:
-        CHECK(ptr != nullptr);
-        CHECK(size == sizeof(GSCurveSet));
-        std::memcpy(ptr, &curveData, sizeof(GSCurveSet));
-        return;
-    case Kind::Blob:
-    {
-        CHECK(ptr != nullptr || size == 0);
-        if (NeedsScratch())
-            CHECK(scratchAlloc != nullptr);
-        CHECK(size == static_cast<size_t>(blob.decodedSize));
-        CHECK(blobs.ReadBytes(blob, ptr, size, scratchAlloc));
-        return;
+        if (write.blob.codec != FBlobCodec::None)
+        {
+            AllocatorStack& scratch = scratchAllocators[workerID];
+            scratch.Reset(scratchArenas[workerID]);
+            blobs.ReadBytes(write.blob, write.dst, write.size, &scratch);
+        }
+        else
+        {
+            blobs.ReadBytes(write.blob, write.dst, write.size, nullptr);
+        }
+        GPUSceneCompleteJob(counter);
     }
-    default:
-        CHECK_MSG(false, "Unsupported staged upload job kind {}", static_cast<uint32_t>(kind));
-        return;
-    }
-}
+};
 
 void GPUScene::FlushDirectGeometryUpload()
 {
     if (!mDirectGeometryUpload)
         return;
-    if (mPrimitiveOffset)
-        mPrimitiveBuffer->Flush(0, mPrimitiveOffset);
-    if (mCurveAABBOffset)
-        mCurveAABBBuffer->Flush(0, mCurveAABBOffset);
+    if (mPrimitiveAlloc->GetHighWaterMark())
+        mPrimitiveBuffer->Flush(0, mPrimitiveAlloc->GetHighWaterMark());
+    if (mCurveAABBAlloc->GetHighWaterMark())
+        mCurveAABBBuffer->Flush(0, mCurveAABBAlloc->GetHighWaterMark());
 }
 
 GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc,
@@ -112,14 +149,30 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
     mTexture2DPool(device, allocator, {.maxBindings = desc.texturesBudget}),
     mTexture3DPool(device, allocator,
                    {.maxBindings = kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack}),
+    mTexture2DSlots(allocator),
+    mTexture3DSlots(allocator),
     mBLASes(allocator),
     mBLASBuffers(allocator),
+    mFreeBLASSlots(allocator),
     mCurveBLASes(allocator), mCurveBLASBuffers(allocator),
+    mFreeCurveBLASSlots(allocator),
+    mGeometry(allocator),
+    mFreeGeometrySlots(allocator),
+    mCommittedInstances(allocator),
+    mCommittedLights(allocator),
+    mCommittedMaterials(allocator),
+    mPickMap(allocator),
+    mPendingGeometry(allocator),
+    mPendingTextures(allocator),
+    mPendingBuffers(allocator),
+    mInstanceScratch(allocator),
     mTLASInstanceStride(mDevice->WriteAccelerationStructureInstanceData({}, nullptr)),
     mTLASInstances(device, desc.tlasInstanceBudget * mTLASInstanceStride)
 {
     CHECK(mDevice != nullptr);
     CHECK(mAllocator != nullptr);
+    mPrimitiveAlloc = mDevice->CreateVirtualAllocator(desc.primitiveBudget);
+    mCurveAABBAlloc = mDevice->CreateVirtualAllocator(desc.curveAABBBudget);
     auto caps = mDevice->GetCapabilities();
     size_t directGeometryBudget = static_cast<size_t>(desc.primitiveBudget) + desc.curveAABBBudget;
     size_t minDirectGeometryHeapSize = std::max(directGeometryBudget, kMinDirectGeometryUploadHeapSize);
@@ -338,30 +391,36 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
             .size = foundationDefaultBufferFloatSize
         });
-        const size_t budget = lutE.GetSize() + lutEavg.GetSize() + lutEIOR.GetSize() + lutEIORavg.GetSize() + lutEIORInv.GetSize() + lutEIORInvavg.GetSize() + sheenLtc.GetSize() + foundationDefaultTexture2D.GetSize() +
-            foundationDefaultTexture2DFloat.GetSize() + sizeof(kSobolMatrices32) + foundationDefaultBufferFloatSize +
-            defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize() + kGPUSceneByteBudgetSlack;
-        ImmediateUpload upload(mDevice, budget);
-        upload.Begin();
-        Upload(&upload, lutE, mLUTGGXEIndex);
-        Upload(&upload, lutEavg, mLUTGGXEavgIndex);
-        Upload(&upload, lutEIOR, mLUTGGXEIORIndex);
-        Upload(&upload, lutEIORavg, mLUTGGXEIORavgIndex);
-        Upload(&upload, lutEIORInv, mLUTGGXEIORInvIndex);
-        Upload(&upload, lutEIORInvavg, mLUTGGXEIORInvavgIndex);
-        Upload(&upload, sheenLtc, mLUTSheenLTCIndex);
-        Upload(&upload, foundationDefaultTexture2D, mFoundationDefaultTexture2DIndex, "_FoundationDefaultTexture2D");
-        Upload(&upload, foundationDefaultTexture2DFloat, mFoundationDefaultTexture2DFloatIndex,
-               "_FoundationDefaultTexture2DFloat");
-        float foundationDefaultBufferFloat = 1.0f;
-        char* defaultBufferPtr = upload.Upload(mFoundationDefaultBufferFloat.Get(), foundationDefaultBufferFloatSize, 0);
-        std::memcpy(defaultBufferPtr, &foundationDefaultBufferFloat, foundationDefaultBufferFloatSize);
-        char* ptr = upload.Upload(mSobolMatricesBuffer.Get(), sizeof(kSobolMatrices32), 0);
-        std::memcpy(ptr, kSobolMatrices32, sizeof(kSobolMatrices32));
-        UploadViewLUTs(&upload, defaultViewLutSdr, defaultViewLutHdr);
-        upload.End();
-        upload.WaitIdle();
+        // Textures (incl. view LUTs) go through the unified upload queue.
+        // Pinned: GPUScene-owned singletons that Collect must never reclaim.
+        Upload(lutE, mLUTGGXEIndex, nullptr, true);
+        Upload(lutEavg, mLUTGGXEavgIndex, nullptr, true);
+        Upload(lutEIOR, mLUTGGXEIORIndex, nullptr, true);
+        Upload(lutEIORavg, mLUTGGXEIORavgIndex, nullptr, true);
+        Upload(lutEIORInv, mLUTGGXEIORInvIndex, nullptr, true);
+        Upload(lutEIORInvavg, mLUTGGXEIORInvavgIndex, nullptr, true);
+        Upload(sheenLtc, mLUTSheenLTCIndex, nullptr, true);
+        Upload(foundationDefaultTexture2D, mFoundationDefaultTexture2DIndex, "_FoundationDefaultTexture2D", true);
+        Upload(foundationDefaultTexture2DFloat, mFoundationDefaultTexture2DFloatIndex,
+               "_FoundationDefaultTexture2DFloat", true);
+        UploadViewLUTs(defaultViewLutSdr, defaultViewLutHdr);
+
+        // Plain device-local buffers ride the same upload queue.
+        const float foundationDefaultBufferFloat = 1.0f;
+        Upload(mFoundationDefaultBufferFloat.Get(),
+               Span<const unsigned char>(reinterpret_cast<const unsigned char*>(&foundationDefaultBufferFloat),
+                                         foundationDefaultBufferFloatSize));
+        Upload(mSobolMatricesBuffer.Get(),
+               Span<const unsigned char>(reinterpret_cast<const unsigned char*>(kSobolMatrices32),
+                                         sizeof(kSobolMatrices32)));
+        Join();
     }
+}
+
+GPUScene::~GPUScene()
+{
+    if (mUploadThread.joinable())
+        mUploadThread.join();
 }
 
 Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)
@@ -384,46 +443,112 @@ Pair<Alias*, uint32_t> GPUScene::AllocateLightAliasTable(uint32_t count)
     return mLightAliasTableBuffer.Allocate(count);
 }
 
-GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances, Span<const GSMaterial> materials, Span<const GSLight> lights)
+GPUScene::GPUSceneTables GPUScene::BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount)
 {
-    UpdateResult res{};
-    if (!instances.empty()) {
-        auto [ptr, off] = AllocateInstance(static_cast<uint32_t>(instances.size()));
-        std::memcpy(ptr, instances.data(), instances.size() * sizeof(GSInstance));
-        res.firstInstance = off;
-        res.numInstances = static_cast<uint32_t>(instances.size());
+    CHECK_MSG(!mOpenTables.open, "BeginScene called while a scene table is already open");
+    GPUSceneTables tables{};
+    if (instanceCount != 0)
+    {
+        auto [ptr, off] = AllocateInstance(instanceCount);
+        mInstanceScratch.assign(instanceCount, InstanceDesc{});
+        tables.instances = Span<InstanceDesc>(mInstanceScratch.data(), instanceCount);
+        tables.firstInstance = off;
+        mOpenTables.instancePtr = ptr;
+        mOpenTables.instanceCount = instanceCount;
     }
-    if (!materials.empty()) {
-        auto [ptr, off] = AllocateMaterial(static_cast<uint32_t>(materials.size()));
-        std::memcpy(ptr, materials.data(), materials.size() * sizeof(GSMaterial));
-        res.firstMaterial = off;
-        res.numMaterials = static_cast<uint32_t>(materials.size());
+    if (materialCount != 0)
+    {
+        auto [ptr, off] = AllocateMaterial(materialCount);
+        tables.materials = Span<GSMaterial>(ptr, materialCount);
+        tables.firstMaterial = off;
     }
-    if (!lights.empty()) {
-        auto [ptr, off] = AllocateLight(static_cast<uint32_t>(lights.size()));
-        auto [aliasPtr, aliasOff] = AllocateLightAliasTable(static_cast<uint32_t>(lights.size()));
-        Allocator* scratch = mFrameScratch ? mFrameScratch : mAllocator;
+    if (lightCount != 0)
+    {
+        auto [ptr, off] = AllocateLight(lightCount);
+        auto [aliasPtr, aliasOff] = AllocateLightAliasTable(lightCount);
+        tables.lights = Span<GSLight>(ptr, lightCount);
+        tables.firstLight = off;
+        tables.firstLightAliasTable = aliasOff;
+        mOpenTables.firstAliasTable = aliasOff;
+        mOpenTables.aliasPtr = aliasPtr;
+    }
+    mOpenTables.open = true;
+    return tables;
+}
 
-        // Alias table
-        Vector<float> powers(lights.size(), scratch);
+GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables)
+{
+    CHECK_MSG(mOpenTables.open, "EndScene called without a matching BeginScene");
+    UpdateResult res{};
+    res.firstInstance = tables.firstInstance;
+    res.numInstances = static_cast<uint32_t>(tables.instances.size());
+    res.firstMaterial = tables.firstMaterial;
+    res.numMaterials = static_cast<uint32_t>(tables.materials.size());
+
+    // Translate each caller-facing InstanceDesc into a GPU GSInstance, resolving the
+    // primitive-buffer offset and geometry type from the bound GeometryHandle. resourceOffset/
+    // type are known at Upload() time, so this is valid even while geometry still streams in.
+    // The committed snapshot is the authoritative CPU-side scene used by BuildTLAS, picking,
+    // and Collect(); it must not alias ring memory overwritten by a later commit.
+    CHECK(tables.instances.size() == mOpenTables.instanceCount);
+    mCommittedInstances.resize(tables.instances.size());
+    for (size_t i = 0; i < tables.instances.size(); ++i)
+    {
+        InstanceDesc const& desc = tables.instances[i];
+        GeometryResidency const* g = ResolveGeometry(desc.geometry);
+        CHECK_MSG(g, "EndScene instance references invalid geometry (index {}, generation {})",
+                  desc.geometry.index, desc.geometry.generation);
+        GSInstance inst{
+            .transform = desc.transform,
+            .rotation = desc.rotation,
+            .scale = desc.scale,
+            .resourceOffset = g->resourceOffset,
+            .materialIndex = desc.materialIndex,
+            .resourceIndex = desc.geometry.index,
+            .type = g->type,
+        };
+        mOpenTables.instancePtr[i] = inst; // ring (GPU)
+        mCommittedInstances[i] = inst;     // committed snapshot
+    }
+
+    mCommittedMaterials.assign(tables.materials.begin(), tables.materials.end());
+    mCommittedLights.assign(tables.lights.begin(), tables.lights.end());
+
+    if (!tables.lights.empty())
+    {
+        Allocator* scratch = mFrameScratch ? mFrameScratch : mAllocator;
+        Vector<float> powers(tables.lights.size(), scratch);
         float weightSum = 0.0f;
-        for (size_t i = 0; i < lights.size(); ++i)
+        for (size_t i = 0; i < tables.lights.size(); ++i)
         {
-            powers[i] = lights[i].selectionWeight;
+            powers[i] = tables.lights[i].selectionWeight;
             weightSum += powers[i];
         }
-        res.firstLightAliasTable = aliasOff;
-        res.sceneLightWeightSum = weightSum;
         AliasTable table(powers, scratch);
-        std::memcpy(aliasPtr, table.mBins.data(), table.mBins.size() * sizeof(Alias));
-
-        // Lights
-        std::memcpy(ptr, lights.data(), lights.size() * sizeof(GSLight));
-        res.firstLight = off;
-        res.numLights = static_cast<uint32_t>(lights.size());
-
+        CHECK(mOpenTables.aliasPtr != nullptr);
+        std::memcpy(mOpenTables.aliasPtr, table.mBins.data(), table.mBins.size() * sizeof(Alias));
+        res.firstLight = tables.firstLight;
+        res.firstLightAliasTable = mOpenTables.firstAliasTable;
+        res.numLights = static_cast<uint32_t>(tables.lights.size());
+        res.sceneLightWeightSum = weightSum;
     }
+    mOpenTables = OpenTables{};
     return res;
+}
+
+void GPUScene::FillGlobals(UBO& globals, bool hdr) const
+{
+    globals.ggxLutEIndex = mLUTGGXEIndex.index;
+    globals.ggxLutEavgIndex = mLUTGGXEavgIndex.index;
+    globals.ggxLutEIORIndex = mLUTGGXEIORIndex.index;
+    globals.ggxLutEIORavgIndex = mLUTGGXEIORavgIndex.index;
+    globals.ggxLutEIORInvIndex = mLUTGGXEIORInvIndex.index;
+    globals.ggxLutEIORInvavgIndex = mLUTGGXEIORInvavgIndex.index;
+    globals.sheenLtcIndex = mLUTSheenLTCIndex.index;
+    globals.viewLutIndex = (hdr ? mLUTViewHdrIndex : mLUTViewSdrIndex).index;
+    globals.envMapTextureIndex = GetEnvMapIndexOrDefault();
+    globals.envMapMarginalCDFIndex = GetEnvMapMarginalCDFIndexOrDefault();
+    globals.envMapConditionalCDFIndex = GetEnvMapConditionalCDFIndexOrDefault();
 }
 
 void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
@@ -493,11 +618,11 @@ String GPUScene::DbgGetBufferStatistics() const
     auto texture3DStats = mTexture3DPool.GetStats();
     fmt::format_to(std::back_inserter(res), "Primitive Buffer: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
                    mPrimitiveBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
-                   mPrimitiveOffset / static_cast<float>(1 << 20u),
+                   mPrimitiveAlloc->GetUsedBytes() / static_cast<float>(1 << 20u),
                    mPrimitiveBuffer->mDesc.size / static_cast<float>(1 << 20u));
     fmt::format_to(std::back_inserter(res), "Curve AABB Buffer: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
                    mCurveAABBBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
-                   mCurveAABBOffset / static_cast<float>(1 << 20u),
+                   mCurveAABBAlloc->GetUsedBytes() / static_cast<float>(1 << 20u),
                    mCurveAABBBuffer->mDesc.size / static_cast<float>(1 << 20u));
     fmt::format_to(std::back_inserter(res), "Texture2D Pool: {:.1f} MB owned, {:.1f} MB referenced, used {} / {} bindings, owned {} textures\n",
                    texture2DStats.ownedTextureBytes / static_cast<float>(1 << 20u),
@@ -522,89 +647,78 @@ String GPUScene::DbgGetBufferStatistics() const
     return res;
 }
 
-size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FSerializedMesh const& src,
-                             GSMesh& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
+GPUScene::Result GPUScene::ReserveMesh(FSerializedMesh const& src, GSMesh& outData, uint32_t& outOffset)
 {
-    CHECK_MSG(!src.lods.empty(), "Serialized mesh has no LODs");
+    if (src.lods.empty())
+        return Result::InvalidInput;
     auto const& lod0 = src.lods[0];
     const size_t size = CalculateMeshPrimitiveSize(src);
     constexpr size_t kAlign = 4;
-    outOffset = AlignUp(mPrimitiveOffset, kAlign);
-    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size,
-              "GPUScene primitive buffer overflow for serialized mesh. Need {} bytes more, have {} left",
-              size, mPrimitiveBuffer->mDesc.size - outOffset);
+    uint64_t base = mPrimitiveAlloc->Allocate(size, kAlign);
+    if (base == RHIVirtualAllocator::kInvalidOffset)
+    {
+        LOG(GPUScene, LogError, "Primitive buffer overflow for serialized mesh. Need {} bytes, {} used of {}",
+            size, mPrimitiveAlloc->GetUsedBytes(), mPrimitiveAlloc->GetCapacity());
+        return Result::OutOfMemory;
+    }
+    outOffset = static_cast<uint32_t>(base);
+
+    // Compute the shader header / absolute sub-offsets. The byte layout here MUST match
+    // StageMesh, which derives local offsets from the header.
+    outData = GSMesh{};
+    uint32_t cursor = 0;
+    auto Skip = [&](size_t bytes) { uint32_t off = cursor; cursor += static_cast<uint32_t>(bytes); return off; };
+    Skip(sizeof(GSMesh));
+    outData.vtxCount = src.vertexCount;
+    outData.vtxOffset = outOffset + Skip(static_cast<size_t>(src.vertices.decodedSize));
+    outData.idxCount = lod0.indexCount;
+    outData.idxOffset = outOffset + Skip(static_cast<size_t>(lod0.indices.decodedSize));
+    outData.groupCount = src.dagGroups.count;
+    outData.groupOffset = outOffset + Skip(static_cast<size_t>(src.dagGroups.decodedSize));
+    outData.meshletCount = src.dagMeshlets.count;
+    outData.meshletOffset = outOffset + Skip(static_cast<size_t>(src.dagMeshlets.decodedSize));
+    outData.meshletVtxOffset = outOffset + Skip(static_cast<size_t>(src.dagMeshletVtx.decodedSize));
+    outData.meshletTriOffset = outOffset + Skip(static_cast<size_t>(src.dagMeshletTri.decodedSize));
+    outData.meshletGlobalIndex = mMeshletGlobalCounter;
+    mMeshletGlobalCounter += outData.meshletCount;
+    CHECK_MSG(cursor == size, "Mesh layout mismatch: expected {} got {}", size, cursor);
+    return Result::InProgress;
+}
+
+size_t GPUScene::StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src, GSMesh const& header,
+                           uint32_t offset, Vector<GPUSceneBlobWrite>& outWrites)
+{
+    const size_t size = CalculateMeshPrimitiveSize(src);
     char* ptr = nullptr;
     if (mDirectGeometryUpload)
     {
         CHECK(mPrimitiveMapped != nullptr);
-        ptr = mPrimitiveMapped + outOffset;
+        ptr = mPrimitiveMapped + offset;
     }
     else
     {
         if (ctx->ptr + size > ctx->end)
             return 0;
-
-        ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
+        ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, offset);
         CHECK(ptr != nullptr);
     }
-    char* dst = ptr;
-    auto Skip = [&](size_t bytes)
+    // The header is a trivial copy, written inline; only payloads need threaded decode.
+    std::memcpy(ptr, &header, sizeof(GSMesh));
+    auto AppendBlobWrite = [&](FBlobRef const& blob, uint32_t absOffset)
     {
-        uint32_t off = static_cast<uint32_t>(dst - ptr);
-        dst += bytes;
-        return off;
+        outWrites.push_back({blob, ptr + (absOffset - offset), static_cast<size_t>(blob.decodedSize)});
     };
-    auto AppendBlobJob = [&](FBlobRef const& blob, char* dstPtr)
-    {
-        StagedUploadJob job{};
-            job.kind = StagedUploadJob::Kind::Blob;
-        job.blob = blob;
-        job.ptr = dstPtr;
-        job.size = static_cast<size_t>(blob.decodedSize);
-        outJobs.push_back(job);
-    };
-
-    Skip(sizeof(GSMesh));
-    outData.vtxCount = src.vertexCount;
-    uint32_t vtxOffset = Skip(static_cast<size_t>(src.vertices.decodedSize));
-    outData.vtxOffset = outOffset + vtxOffset;
-    AppendBlobJob(src.vertices, ptr + vtxOffset);
-    outData.idxCount = lod0.indexCount;
-    uint32_t idxOffset = Skip(static_cast<size_t>(lod0.indices.decodedSize));
-    outData.idxOffset = outOffset + idxOffset;
-    AppendBlobJob(lod0.indices, ptr + idxOffset);
-    outData.groupCount = src.dagGroups.count;
-    uint32_t groupOffset = Skip(static_cast<size_t>(src.dagGroups.decodedSize));
-    outData.groupOffset = outOffset + groupOffset;
-    AppendBlobJob(src.dagGroups, ptr + groupOffset);
-    outData.meshletCount = src.dagMeshlets.count;
-    uint32_t meshletOffset = Skip(static_cast<size_t>(src.dagMeshlets.decodedSize));
-    outData.meshletOffset = outOffset + meshletOffset;
-    AppendBlobJob(src.dagMeshlets, ptr + meshletOffset);
-    uint32_t meshletVtxOffset = Skip(static_cast<size_t>(src.dagMeshletVtx.decodedSize));
-    outData.meshletVtxOffset = outOffset + meshletVtxOffset;
-    AppendBlobJob(src.dagMeshletVtx, ptr + meshletVtxOffset);
-    uint32_t meshletTriOffset = Skip(static_cast<size_t>(src.dagMeshletTri.decodedSize));
-    outData.meshletTriOffset = outOffset + meshletTriOffset;
-    AppendBlobJob(src.dagMeshletTri, ptr + meshletTriOffset);
-    outData.meshletGlobalIndex = mMeshletGlobalCounter;
-
-    StagedUploadJob headerJob{};
-    headerJob.kind = StagedUploadJob::Kind::MeshHeader;
-    headerJob.ptr = ptr;
-    headerJob.size = sizeof(GSMesh);
-    headerJob.meshData = outData;
-    outJobs.push_back(headerJob);
-
-    size_t written = dst - ptr;
-    CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
-    mPrimitiveOffset = outOffset + size;
-    mMeshletGlobalCounter += outData.meshletCount;
-    return written;
+    auto const& lod0 = src.lods[0];
+    AppendBlobWrite(src.vertices, header.vtxOffset);
+    AppendBlobWrite(lod0.indices, header.idxOffset);
+    AppendBlobWrite(src.dagGroups, header.groupOffset);
+    AppendBlobWrite(src.dagMeshlets, header.meshletOffset);
+    AppendBlobWrite(src.dagMeshletVtx, header.meshletVtxOffset);
+    AppendBlobWrite(src.dagMeshletTri, header.meshletTriOffset);
+    return size;
 }
 
-size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FSerializedCurve const& src,
-                             GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
+GPUScene::Result GPUScene::ReserveCurve(FSerializedCurve const& src, GSCurveSet& outData, uint32_t& outOffset)
 {
     static_assert(sizeof(FCurvePoint) == sizeof(GSCurvePoint));
     static_assert(alignof(FCurvePoint) == alignof(GSCurvePoint));
@@ -613,7 +727,8 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FSerializedCurve const& src,
     static_assert(sizeof(FSerializedCurveAABB) == sizeof(RHIAccelerationStructureAABB));
     static_assert(alignof(FSerializedCurveAABB) == alignof(RHIAccelerationStructureAABB));
 
-    CHECK_MSG(src.points.decodedSize != 0 && src.segments.count > 0, "Curve set has no renderable segments");
+    if (src.points.decodedSize == 0 || src.segments.count == 0)
+        return Result::InvalidInput;
     CHECK_MSG(src.points.stride == sizeof(GSCurvePoint), "Serialized curve point stride mismatch");
     CHECK_MSG(src.segments.stride == sizeof(GSCurveSegment), "Serialized curve segment stride mismatch");
     CHECK_MSG(src.aabbs.stride == sizeof(RHIAccelerationStructureAABB), "Serialized curve AABB stride mismatch");
@@ -625,87 +740,73 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FSerializedCurve const& src,
               "Serialized curve AABB blob size mismatch");
 
     const size_t pointCount = static_cast<size_t>(src.points.decodedSize / sizeof(GSCurvePoint));
-    const size_t segmentCount = src.segments.count;
     const size_t size = CalculateCurvePrimitiveSize(src);
     constexpr size_t kAlign = 4;
-    outOffset = AlignUp(mPrimitiveOffset, kAlign);
-    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size,
-              "GPUScene primitive buffer overflow for serialized curve. Need {} bytes more, have {} left",
-              size, mPrimitiveBuffer->mDesc.size - outOffset);
+    uint64_t base = mPrimitiveAlloc->Allocate(size, kAlign);
+    if (base == RHIVirtualAllocator::kInvalidOffset)
+    {
+        LOG(GPUScene, LogError, "Primitive buffer overflow for serialized curve. Need {} bytes, {} used of {}",
+            size, mPrimitiveAlloc->GetUsedBytes(), mPrimitiveAlloc->GetCapacity());
+        return Result::OutOfMemory;
+    }
+    outOffset = static_cast<uint32_t>(base);
 
     const size_t aabbSize = CalculateCurveAABBSize(src);
-    uint32_t aabbOffset = static_cast<uint32_t>(AlignUp(mCurveAABBOffset, alignof(RHIAccelerationStructureAABB)));
-    CHECK_MSG(aabbOffset + aabbSize <= mCurveAABBBuffer->mDesc.size,
-              "GPUScene curve AABB buffer overflow. Need {} bytes more, have {} left",
-              aabbSize, mCurveAABBBuffer->mDesc.size - aabbOffset);
+    uint64_t aabbBase = mCurveAABBAlloc->Allocate(aabbSize, alignof(RHIAccelerationStructureAABB));
+    if (aabbBase == RHIVirtualAllocator::kInvalidOffset)
+    {
+        mPrimitiveAlloc->Free(outOffset);
+        LOG(GPUScene, LogError, "Curve AABB buffer overflow. Need {} bytes, {} used of {}",
+            aabbSize, mCurveAABBAlloc->GetUsedBytes(), mCurveAABBAlloc->GetCapacity());
+        return Result::OutOfMemory;
+    }
+
+    outData = GSCurveSet{};
+    uint32_t cursor = 0;
+    auto Skip = [&](size_t bytes) { uint32_t off = cursor; cursor += static_cast<uint32_t>(bytes); return off; };
+    Skip(sizeof(GSCurveSet));
+    outData.pointCount = static_cast<uint32_t>(pointCount);
+    outData.pointOffset = outOffset + Skip(static_cast<size_t>(src.points.decodedSize));
+    outData.segmentCount = static_cast<uint32_t>(src.segments.count);
+    outData.segmentOffset = outOffset + Skip(static_cast<size_t>(src.segments.decodedSize));
+    outData.materialIndex = src.materialIndex;
+    outData.aabbOffset = static_cast<uint32_t>(aabbBase);
+    CHECK_MSG(cursor == size, "Curve layout mismatch: expected {} got {}", size, cursor);
+    return Result::InProgress;
+}
+
+size_t GPUScene::StageCurve(ImmediateUpload* ctx, FSerializedCurve const& src, GSCurveSet const& header,
+                            uint32_t offset, Vector<GPUSceneBlobWrite>& outWrites)
+{
+    const size_t size = CalculateCurvePrimitiveSize(src);
+    const size_t aabbSize = CalculateCurveAABBSize(src);
     char* ptr = nullptr;
     char* aabbPtr = nullptr;
     if (mDirectGeometryUpload)
     {
         CHECK(mPrimitiveMapped != nullptr);
         CHECK(mCurveAABBMapped != nullptr);
-        ptr = mPrimitiveMapped + outOffset;
-        aabbPtr = mCurveAABBMapped + aabbOffset;
+        ptr = mPrimitiveMapped + offset;
+        aabbPtr = mCurveAABBMapped + header.aabbOffset;
     }
     else
     {
         if (ctx->ptr + size + aabbSize > ctx->end)
             return 0;
-
-        ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
+        ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, offset);
         CHECK(ptr != nullptr);
-        aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, aabbOffset);
+        aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, header.aabbOffset);
         CHECK(aabbPtr != nullptr);
     }
-
-    char* dst = ptr;
-    auto Skip = [&](size_t bytes)
+    std::memcpy(ptr, &header, sizeof(GSCurveSet));
+    auto AppendBlobWrite = [&](FBlobRef const& blob, char* dstPtr)
     {
-        uint32_t off = static_cast<uint32_t>(dst - ptr);
-        dst += bytes;
-        return off;
+        outWrites.push_back({blob, dstPtr, static_cast<size_t>(blob.decodedSize)});
     };
-    auto AppendBlobJob = [&](FBlobRef const& blob, char* dstPtr)
-    {
-        StagedUploadJob job{};
-            job.kind = StagedUploadJob::Kind::Blob;
-        job.blob = blob;
-        job.ptr = dstPtr;
-        job.size = static_cast<size_t>(blob.decodedSize);
-        outJobs.push_back(job);
-    };
-
-    Skip(sizeof(GSCurveSet));
-    outData.pointCount = static_cast<uint32_t>(pointCount);
-    uint32_t pointOffset = Skip(static_cast<size_t>(src.points.decodedSize));
-    outData.pointOffset = outOffset + pointOffset;
-    AppendBlobJob(src.points, ptr + pointOffset);
-    outData.segmentCount = static_cast<uint32_t>(segmentCount);
-    uint32_t segmentOffset = Skip(static_cast<size_t>(src.segments.decodedSize));
-    outData.segmentOffset = outOffset + segmentOffset;
-    AppendBlobJob(src.segments, ptr + segmentOffset);
-    outData.materialIndex = src.materialIndex;
-    outData.aabbOffset = aabbOffset;
-    AppendBlobJob(src.aabbs, aabbPtr);
-
-    StagedUploadJob headerJob{};
-    headerJob.kind = StagedUploadJob::Kind::CurveHeader;
-    headerJob.ptr = ptr;
-    headerJob.size = sizeof(GSCurveSet);
-    headerJob.curveData = outData;
-    outJobs.push_back(headerJob);
-
-    size_t written = dst - ptr;
-    CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
-    mPrimitiveOffset = outOffset + size;
-    mCurveAABBOffset = outData.aabbOffset + aabbSize;
-    return written + aabbSize;
-}
-
-size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName)
-{
-    return Upload(ctx, static_cast<FTextureHeader const&>(source),
-                  Span<const unsigned char>(source.bytes.data(), source.bytes.size()), outIndex, debugName);
+    AppendBlobWrite(src.points, ptr + (header.pointOffset - offset));
+    AppendBlobWrite(src.segments, ptr + (header.segmentOffset - offset));
+    AppendBlobWrite(src.aabbs, aabbPtr);
+    return size + aabbSize;
 }
 
 static bool IsTexture3DView(RHITextureDimension dimension)
@@ -734,210 +835,54 @@ static uint32_t GetTextureUploadAlignment(FTextureHeader const& metadata)
     return alignment;
 }
 
-size_t GPUScene::UploadOrUpdateTexture(ImmediateUpload* ctx, FTexture const& source, uint32_t& index,
-                                       const char* debugName)
+// Views an in-memory FTexture as an FSerializedTexture whose subresource blobs point
+// directly into `source.bytes` (codec=None), so the same async upload queue can carry
+// CPU-resident textures (built-in LUTs, env map, view LUTs) as well as scene textures.
+static FSerializedTexture MakeInMemoryTextureAdaptor(FTexture const& source, Allocator* alloc)
 {
-    CHECK_MSG(source.IsValid(), "Texture is invalid");
-    auto const& metadata = static_cast<FTextureHeader const&>(source);
-    CHECK_MSG(source.bytes.size() == metadata.GetSize(), "Texture data size mismatch: data {} header {}",
-              source.bytes.size(), metadata.GetSize());
+    FSerializedTexture adaptor(alloc);
+    static_cast<FTextureHeader&>(adaptor) = static_cast<FTextureHeader const&>(source);
+    uint32_t const layers = adaptor.GetNumLayers();
+    uint32_t const mips = adaptor.GetNumMips();
+    adaptor.subresources.resize(static_cast<size_t>(layers) * mips);
+    const unsigned char* base = source.bytes.data();
+    for (uint32_t layer = 0; layer < layers; ++layer)
+        for (uint32_t mip = 0; mip < mips; ++mip)
+        {
+            Span<unsigned char> sub = source.GetSubresource(mip, layer);
+            FBlobRef ref{};
+            ref.offset = static_cast<uint64_t>(sub.data() - base);
+            ref.storedSize = sub.size_bytes();
+            ref.decodedSize = sub.size_bytes();
+            ref.codec = FBlobCodec::None;
+            adaptor.subresources[adaptor.GetSubresourceIndex(layer, mip)] = ref;
+        }
+    return adaptor;
+}
 
-    auto texture = mDevice->CreateTexture(metadata.GetDesc());
-    if (debugName)
-        texture->DebugSetObjectName(debugName);
-    size_t written = 0;
+static void TransitionTextureLayout(RHICommandList* cmd, RHITexture* texture, FTextureHeader const& metadata,
+                                    RHITextureLayout from, RHITextureLayout to)
+{
     auto range = RHITextureSubresourceRange::Create(
         RHITextureAspectFlagBits::Color,
         0, metadata.GetNumMips(),
         0, texture->mDesc.arrayLayers);
-    auto* cmd = ctx->Get();
     cmd->BeginTransition();
-    cmd->SetImageTransition(texture.Get(), {
-                                .dstImgLayout = RHITextureLayout::TransferDst,
+    cmd->SetImageTransition(texture, {
+                                .srcImgLayout = from,
+                                .dstImgLayout = to,
                                 .srcImgRange = range
                             });
     cmd->EndTransition();
-
-    uint32_t blockSize = metadata.GetBlockSize(), blockDim = 4;
-    if (!blockSize)
-        blockSize = metadata.GetBpp() / 8, blockDim = 1;
-    CHECK_MSG(blockSize && blockDim, "Unsupported texture format {}", metadata.GetFormat());
-
-    for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
-    {
-        uint64_t layerOffset =
-            uint64_t(layer) * FTextureHeader::CalculateTextureImageSize(
-                                  metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                  metadata.GetNumMips(), blockSize, blockDim);
-        for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
-        {
-            uint64_t mipOffset = FTextureHeader::CalculateTextureImageSize(
-                metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(), mip, blockSize, blockDim);
-            RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
-            uint64_t mipSize64 = FTextureHeader::CalculateTextureImageSize(
-                mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
-            CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(),
-                      "Texture subresource size {} exceeds addressable range", mipSize64);
-            size_t mipSize = static_cast<size_t>(mipSize64);
-            uint64_t subresourceOffset = layerOffset + mipOffset;
-            uint64_t subresourceEnd = subresourceOffset + mipSize64;
-            CHECK_MSG(subresourceEnd <= source.bytes.size(),
-                      "Texture subresource out of range: layer {}, mip {} (size {}), data size {}",
-                      layer, mip, mipSize, source.bytes.size());
-            if (!ctx->Align(std::max(metadata.GetBpp() / 8, metadata.GetBlockSize())))
-                return 0;
-            char* ptr = ctx->Upload(texture.Get(), mipSize,
-                                    {
-                                        .aspect = RHITextureAspectFlagBits::Color,
-                                        .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1
-                                    },
-                                    {0, 0, 0}, mipExtent);
-            if (ptr == nullptr)
-                return 0;
-            std::memcpy(ptr, source.bytes.data() + subresourceOffset, mipSize);
-            written += mipSize;
-        }
-    }
-    cmd->BeginTransition();
-    cmd->SetImageTransition(texture.Get(), {
-                                .srcImgLayout = RHITextureLayout::TransferDst,
-                                .dstImgLayout = RHITextureLayout::ShaderReadOnly,
-                                .srcImgRange = range
-                            });
-    cmd->EndTransition();
-    auto view = texture->CreateTextureView({
-        .format = metadata.GetFormat(),
-        .dimension = metadata.GetViewDimension(),
-        .range = RHITextureSubresourceRange::Create(
-            RHITextureAspectFlagBits::Color,
-            0, metadata.GetNumMips(),
-            0, texture->mDesc.arrayLayers)
-    });
-    BindlessPool& texturePool = SelectTexturePool(metadata.GetViewDimension());
-    if (index == UINT32_MAX)
-        index = texturePool.Allocate(std::move(texture), std::move(view));
-    else
-        texturePool.Update(index, std::move(texture), std::move(view));
-    return written;
 }
 
-size_t GPUScene::Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Span<const unsigned char> data,
-                        uint32_t& outIndex, const char* debugName)
+size_t GPUScene::StageTextureSubresource(ImmediateUpload* ctx, FSerializedTexture const& source, RHITexture* texture,
+                                         uint32_t layer, uint32_t mip, Vector<GPUSceneBlobWrite>& outWrites)
 {
-    CHECK_MSG(metadata.IsValid(), "Texture is invalid");
-    CHECK_MSG(data.size_bytes() == metadata.GetSize(), "Texture data size mismatch: data {} header {}",
-              data.size_bytes(), metadata.GetSize());
-
-    auto texture = mDevice->CreateTexture(metadata.GetDesc());
-    if (debugName)
-        texture->DebugSetObjectName(debugName);
-    size_t written = 0;
-    auto range = RHITextureSubresourceRange::Create(
-        RHITextureAspectFlagBits::Color,
-        0, metadata.GetNumMips(),
-        0, texture->mDesc.arrayLayers);
-    auto* cmd = ctx->Get();
-    cmd->BeginTransition();
-    cmd->SetImageTransition(texture.Get(), {
-                                .dstImgLayout = RHITextureLayout::TransferDst,
-                                .srcImgRange = range
-                            });
-    cmd->EndTransition();
-
-    uint32_t blockSize = metadata.GetBlockSize(), blockDim = 4;
-    if (!blockSize)
-        blockSize = metadata.GetBpp() / 8, blockDim = 1;
-    CHECK_MSG(blockSize && blockDim, "Unsupported texture format {}", metadata.GetFormat());
-
-    for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
-    {
-        uint64_t layerOffset =
-            uint64_t(layer) * FTextureHeader::CalculateTextureImageSize(
-                                  metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                  metadata.GetNumMips(), blockSize, blockDim);
-        for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
-        {
-            uint64_t mipOffset = FTextureHeader::CalculateTextureImageSize(
-                metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(), mip, blockSize, blockDim);
-            RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
-            uint64_t mipSize64 = FTextureHeader::CalculateTextureImageSize(
-                mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
-            CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(),
-                      "Texture subresource size {} exceeds addressable range", mipSize64);
-            size_t mipSize = static_cast<size_t>(mipSize64);
-            uint64_t subresourceOffset = layerOffset + mipOffset;
-            uint64_t subresourceEnd = subresourceOffset + mipSize64;
-            CHECK_MSG(subresourceEnd <= data.size_bytes(),
-                      "Texture subresource out of range: layer {}, mip {} (size {}), data size {}",
-                      layer, mip, mipSize, data.size_bytes());
-            if (!ctx->Align(std::max(metadata.GetBpp() / 8, metadata.GetBlockSize())))
-                return 0;
-            char* ptr = ctx->Upload(texture.Get(), mipSize,
-                                    {
-                                        .aspect = RHITextureAspectFlagBits::Color,
-                                        .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1
-                                    },
-                                    {0, 0, 0}, mipExtent);
-            if (ptr == nullptr)
-                return 0;
-            std::memcpy(ptr, data.data() + subresourceOffset, mipSize);
-            written += mipSize;
-        }
-    }
-    cmd->BeginTransition();
-    cmd->SetImageTransition(texture.Get(), {
-                                .srcImgLayout = RHITextureLayout::TransferDst,
-                                .dstImgLayout = RHITextureLayout::ShaderReadOnly,
-                                .srcImgRange = range
-                            });
-    cmd->EndTransition();
-    auto view = texture->CreateTextureView({
-        .format = metadata.GetFormat(),
-        .dimension = metadata.GetViewDimension(),
-        .range = RHITextureSubresourceRange::Create(
-            RHITextureAspectFlagBits::Color,
-            0, metadata.GetNumMips(),
-            0, texture->mDesc.arrayLayers)
-    });
-    outIndex = SelectTexturePool(metadata.GetViewDimension()).Allocate(std::move(texture), std::move(view));
-    return written;
-}
-
-GPUScene::TextureUpload GPUScene::BeginTextureUpload(ImmediateUpload* ctx, FSerializedTexture const& source,
-                                                     const char* debugName)
-{
+    CHECK(texture != nullptr);
     CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
 
     FTextureHeader const& metadata = static_cast<FTextureHeader const&>(source);
-    TextureUpload upload{};
-    upload.metadata = metadata;
-    upload.texture = mDevice->CreateTexture(metadata.GetDesc());
-    if (debugName)
-        upload.texture->DebugSetObjectName(debugName);
-
-    auto range = RHITextureSubresourceRange::Create(
-        RHITextureAspectFlagBits::Color,
-        0, metadata.GetNumMips(),
-        0, upload.texture->mDesc.arrayLayers);
-    auto* cmd = ctx->Get();
-    cmd->BeginTransition();
-    cmd->SetImageTransition(upload.texture.Get(), {
-                                .dstImgLayout = RHITextureLayout::TransferDst,
-                                .srcImgRange = range
-                            });
-    cmd->EndTransition();
-    return upload;
-}
-
-size_t GPUScene::BeginTextureSubresourceUpload(ImmediateUpload* ctx, FSerializedTexture const& source, TextureUpload& upload,
-                                               uint32_t layer, uint32_t mip,
-                                               Vector<StagedUploadJob>& outJobs)
-{
-    CHECK(upload.IsValid());
-    CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
-
-    FTextureHeader const& metadata = static_cast<FTextureHeader const&>(source);
-    CHECK_MSG(upload.metadata.GetSize() == metadata.GetSize(), "Texture upload metadata mismatch");
     FBlobRef const& subresourceBlob = source.GetSubresourceBlob(layer, mip);
     size_t const subresourceSize = metadata.GetSubresourceSize(layer, mip);
     CHECK_MSG(subresourceBlob.decodedSize == subresourceSize,
@@ -951,123 +896,85 @@ size_t GPUScene::BeginTextureSubresourceUpload(ImmediateUpload* ctx, FSerialized
 
     CHECK(ctx->Align(alignment));
     RHIExtent3D const mipExtent = metadata.GetMipExtent(mip);
-    char* ptr = ctx->Upload(upload.texture.Get(), subresourceSize,
+    char* ptr = ctx->Upload(texture, subresourceSize,
                             {
                                 .aspect = RHITextureAspectFlagBits::Color,
                                 .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1
                             },
                             {0, 0, 0}, mipExtent);
     CHECK(ptr != nullptr);
-
-    StagedUploadJob job{};
-    job.kind = StagedUploadJob::Kind::Blob;
-    job.blob = subresourceBlob;
-    job.ptr = ptr;
-    job.size = subresourceSize;
-    outJobs.push_back(job);
+    outWrites.push_back({subresourceBlob, ptr, subresourceSize});
     return subresourceSize;
 }
 
-void GPUScene::EndTextureUpload(ImmediateUpload* ctx, TextureUpload&& upload, uint32_t& outIndex)
-{
-    CHECK(upload.IsValid());
-    FTextureHeader const& metadata = upload.metadata;
-    auto range = RHITextureSubresourceRange::Create(
-        RHITextureAspectFlagBits::Color,
-        0, metadata.GetNumMips(),
-        0, upload.texture->mDesc.arrayLayers);
-    auto* cmd = ctx->Get();
-    cmd->BeginTransition();
-    cmd->SetImageTransition(upload.texture.Get(), {
-                                .srcImgLayout = RHITextureLayout::TransferDst,
-                                .dstImgLayout = RHITextureLayout::ShaderReadOnly,
-                                .srcImgRange = range
-                            });
-    cmd->EndTransition();
+/* --- Public resource upload work queue --- */
 
-    auto view = upload.texture->CreateTextureView({
-        .format = metadata.GetFormat(),
-        .dimension = metadata.GetViewDimension(),
-        .range = RHITextureSubresourceRange::Create(
-            RHITextureAspectFlagBits::Color,
-            0, metadata.GetNumMips(),
-            0, upload.texture->mDesc.arrayLayers)
-    });
-    outIndex = SelectTexturePool(metadata.GetViewDimension()).Allocate(std::move(upload.texture), std::move(view));
+GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle)
+{
+    CHECK(blobs != nullptr);
+    GSMesh header{};
+    uint32_t offset = 0;
+    Result r = ReserveMesh(source, header, offset);
+    if (r != Result::InProgress)
+        return r;
+    uint32_t slot = AcquireGeometrySlot();
+    GeometryResidency& g = mGeometry[slot];
+    uint32_t generation = g.generation;
+    g = GeometryResidency{};
+    g.generation = generation;
+    g.type = kGSInstanceTypeMesh;
+    g.blasSlot = UINT32_MAX;
+    g.resourceOffset = offset;
+    g.mesh = header;
+    g.state = ResourceState::Queued;
+    g.live = true;
+    outHandle = {slot, generation};
+    mPendingGeometry.push_back({.handle = outHandle, .blobs = *blobs, .mesh = &source, .curve = nullptr,
+                                .footprint = mDirectGeometryUpload ? 1 : CalculateMeshPrimitiveSize(source)});
+    return Result::InProgress;
 }
 
-size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FSerializedTexture const& source,
-                             uint32_t& outIndex, Vector<StagedUploadJob>& outJobs, const char* debugName)
+GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle)
 {
-    CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
+    CHECK(blobs != nullptr);
+    GSCurveSet header{};
+    uint32_t offset = 0;
+    Result r = ReserveCurve(source, header, offset);
+    if (r != Result::InProgress)
+        return r;
+    uint32_t slot = AcquireGeometrySlot();
+    GeometryResidency& g = mGeometry[slot];
+    uint32_t generation = g.generation;
+    g = GeometryResidency{};
+    g.generation = generation;
+    g.type = kGSInstanceTypeCurve;
+    g.blasSlot = UINT32_MAX;
+    g.resourceOffset = offset;
+    g.curve = header;
+    g.state = ResourceState::Queued;
+    g.live = true;
+    outHandle = {slot, generation};
+    const size_t footprint = CalculateCurvePrimitiveSize(source) + CalculateCurveAABBSize(source);
+    mPendingGeometry.push_back({.handle = outHandle, .blobs = *blobs, .mesh = nullptr, .curve = &source,
+                                .footprint = mDirectGeometryUpload ? 1 : footprint});
+    return Result::InProgress;
+}
 
+GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedTexture const& source,
+                                  TextureHandle& outTextureIndex, const char* debugName, bool pinned)
+{
+    CHECK(blobs != nullptr);
+    if (!source.IsValid())
+        return Result::InvalidInput;
+    // Create the destination texture + view up front and bind the bindless slot now so
+    // the handle is usable as a Query key while contents/layout become Ready during
+    // Join(). A valid `outTextureIndex` updates that slot in place (env map / view LUT
+    // reload); otherwise a new slot is allocated.
     FTextureHeader const& metadata = static_cast<FTextureHeader const&>(source);
-    uint32_t alignment = GetTextureUploadAlignment(metadata);
-    char* preflight = ctx->ptr;
-    for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
-    {
-        for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
-        {
-            FBlobRef const& subresourceBlob = source.GetSubresourceBlob(layer, mip);
-            size_t const subresourceSize = metadata.GetSubresourceSize(layer, mip);
-            CHECK_MSG(subresourceBlob.decodedSize == subresourceSize,
-                      "Serialized texture subresource size mismatch: layer {}, mip {}, blob {}, expected {}",
-                      layer, mip, subresourceBlob.decodedSize, subresourceSize);
-            preflight = reinterpret_cast<char*>(AlignUp(reinterpret_cast<uintptr_t>(preflight), alignment));
-            if (preflight >= ctx->end || static_cast<size_t>(ctx->end - preflight) < subresourceSize)
-                return 0;
-            preflight += subresourceSize;
-        }
-    }
-
+    bool const is3D = IsTexture3DView(metadata.GetViewDimension());
     auto texture = mDevice->CreateTexture(metadata.GetDesc());
     if (debugName)
         texture->DebugSetObjectName(debugName);
-    size_t written = 0;
-    auto range = RHITextureSubresourceRange::Create(
-        RHITextureAspectFlagBits::Color,
-        0, metadata.GetNumMips(),
-        0, texture->mDesc.arrayLayers);
-    auto* cmd = ctx->Get();
-    cmd->BeginTransition();
-    cmd->SetImageTransition(texture.Get(), {
-                                .dstImgLayout = RHITextureLayout::TransferDst,
-                                .srcImgRange = range
-                            });
-    cmd->EndTransition();
-
-    for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
-    {
-        for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
-        {
-            FBlobRef const& subresourceBlob = source.GetSubresourceBlob(layer, mip);
-            size_t const subresourceSize = metadata.GetSubresourceSize(layer, mip);
-            CHECK(ctx->Align(alignment));
-            RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
-            char* ptr = ctx->Upload(texture.Get(), subresourceSize,
-                                    {
-                                        .aspect = RHITextureAspectFlagBits::Color,
-                                        .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1
-                                    },
-                                    {0, 0, 0}, mipExtent);
-            CHECK(ptr != nullptr);
-
-            StagedUploadJob job{};
-                    job.kind = StagedUploadJob::Kind::Blob;
-            job.blob = subresourceBlob;
-            job.ptr = ptr;
-            job.size = subresourceSize;
-            outJobs.push_back(job);
-            written += subresourceSize;
-        }
-    }
-    cmd->BeginTransition();
-    cmd->SetImageTransition(texture.Get(), {
-                                .srcImgLayout = RHITextureLayout::TransferDst,
-                                .dstImgLayout = RHITextureLayout::ShaderReadOnly,
-                                .srcImgRange = range
-                            });
-    cmd->EndTransition();
     auto view = texture->CreateTextureView({
         .format = metadata.GetFormat(),
         .dimension = metadata.GetViewDimension(),
@@ -1076,8 +983,402 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FSerializedTexture const& sou
             0, metadata.GetNumMips(),
             0, texture->mDesc.arrayLayers)
     });
-    outIndex = SelectTexturePool(metadata.GetViewDimension()).Allocate(std::move(texture), std::move(view));
-    return written;
+    BindlessPool& pool = TexturePool(is3D);
+    Vector<TextureSlot>& slots = TextureSlots(is3D);
+    if (!outTextureIndex.IsValid())
+    {
+        uint32_t slot = pool.Allocate(std::move(texture), std::move(view));
+        if (slot >= slots.size())
+            slots.resize(slot + 1);
+        slots[slot].live = true;
+        slots[slot].pinned = pinned;
+        outTextureIndex = {slot, slots[slot].generation, is3D};
+    }
+    else
+    {
+        // In-place refresh (env map / view LUT reload) keeps the same slot + generation.
+        CHECK_MSG(outTextureIndex.is3D == is3D && outTextureIndex.index < slots.size() &&
+                      slots[outTextureIndex.index].live &&
+                      slots[outTextureIndex.index].generation == outTextureIndex.generation,
+                  "Upload in-place update on a stale texture handle (slot {}, generation {})",
+                  outTextureIndex.index, outTextureIndex.generation);
+        slots[outTextureIndex.index].pinned = pinned;
+        pool.Update(outTextureIndex.index, std::move(texture), std::move(view));
+    }
+    mPendingTextures.push_back({.index = outTextureIndex.index, .blobs = *blobs, .source = &source});
+    return Result::InProgress;
+}
+
+GPUScene::Result GPUScene::Upload(FTexture const& source, TextureHandle& outTextureIndex, const char* debugName,
+                                  bool pinned)
+{
+    if (!source.IsValid())
+        return Result::InvalidInput;
+    // Route CPU-resident textures through the same work queue via an in-memory adaptor.
+    // `adaptor` / `blobs` reference `source` and stay alive until Join() drains.
+    FSerializedTexture adaptor = MakeInMemoryTextureAdaptor(source, mAllocator);
+    FBlobDeserializer blobs(Span<const unsigned char>(source.bytes.data(), source.bytes.size()));
+    Result r = Upload(&blobs, adaptor, outTextureIndex, debugName, pinned);
+    if (r != Result::InProgress)
+        return r;
+    Join();
+    return Result::Ready;
+}
+
+GPUScene::Result GPUScene::Upload(RHIBuffer* dst, Span<const unsigned char> data, uint32_t dstOffset)
+{
+    if (!dst || data.empty())
+        return Result::InvalidInput;
+    PendingBufferUpload pending{dst, dstOffset, Vector<unsigned char>(mAllocator)};
+    pending.data.assign(data.begin(), data.end());
+    mPendingBuffers.push_back(std::move(pending));
+    return Result::InProgress;
+}
+
+GPUScene::Result GPUScene::Query(GeometryHandle handle) const
+{
+    GeometryResidency const* g = ResolveGeometry(handle);
+    if (!g)
+        return Result::InvalidHandle;
+    switch (g->state)
+    {
+    case ResourceState::Ready: return Result::Ready;
+    case ResourceState::Failed: return Result::DecodeFailed;
+    default: return Result::InProgress;
+    }
+}
+
+GPUScene::Result GPUScene::Query(TextureHandle texture) const
+{
+    Vector<TextureSlot> const& slots = TextureSlots(texture.is3D);
+    if (!texture.IsValid() || texture.index >= slots.size() || !slots[texture.index].live ||
+        slots[texture.index].generation != texture.generation)
+        return Result::InvalidHandle;
+    for (auto const& p : mPendingTextures)
+        if (p.index == texture.index &&
+            IsTexture3DView(static_cast<FTextureHeader const&>(*p.source).GetViewDimension()) == texture.is3D)
+            return Result::InProgress;
+    return Result::Ready;
+}
+
+void GPUScene::Join()
+{
+    if (mUploadThread.joinable())
+    {
+        mUploadThread.join();
+        return;
+    }
+    if (mPendingGeometry.empty() && mPendingTextures.empty() && mPendingBuffers.empty())
+        return;
+    ProcessPendingUploads();
+}
+
+void GPUScene::StartUploads()
+{
+    CHECK_MSG(!mUploadThread.joinable(), "StartUploads called while a drain is already in flight");
+    if (mPendingGeometry.empty() && mPendingTextures.empty() && mPendingBuffers.empty())
+        return;
+    mUploadFailed.store(false, std::memory_order_release);
+    mUploadsDone.store(false, std::memory_order_release);
+    mUploadThread = std::thread([this]
+    {
+        try
+        {
+            ProcessPendingUploads();
+        }
+        catch (std::exception const& e)
+        {
+            mUploadFailed.store(true, std::memory_order_release);
+            LOG(GPUScene, LogError, "Background upload failed: {}", e.what());
+        }
+        catch (...)
+        {
+            mUploadFailed.store(true, std::memory_order_release);
+            LOG(GPUScene, LogError, "Background upload failed");
+        }
+        mUploadsDone.store(true, std::memory_order_release);
+    });
+}
+
+GPUScene::Result GPUScene::Poll()
+{
+    if (!mUploadThread.joinable())
+    {
+        // Lazily kick the background drain the first time we're polled with queued work.
+        if (mPendingGeometry.empty() && mPendingTextures.empty() && mPendingBuffers.empty())
+            return Result::Ready;
+        StartUploads();
+        return Result::InProgress;
+    }
+    if (!mUploadsDone.load(std::memory_order_acquire))
+        return Result::InProgress;
+    mUploadThread.join(); // reap the finished worker
+    return mUploadFailed.load(std::memory_order_acquire) ? Result::SubmitFailed : Result::Ready;
+}
+
+void GPUScene::ProcessPendingUploads()
+{
+    const bool direct = mDirectGeometryUpload;
+    const bool hadTextures = !mPendingTextures.empty();
+
+    // --- Budgets: staging lane size and per-worker blob decode scratch. ---
+    size_t maxFootprint = 0;
+    size_t maxBlob = 0;
+    auto IncludeBlobScratch = [&](FBlobRef const& b)
+    {
+        if (b.codec != FBlobCodec::None)
+            maxBlob = std::max(maxBlob, static_cast<size_t>(b.decodedSize));
+    };
+    size_t totalFootprint = 0;
+    if (!direct)
+        for (auto const& p : mPendingGeometry)
+        {
+            maxFootprint = std::max(maxFootprint, p.footprint);
+            totalFootprint += p.footprint;
+        }
+    for (auto const& p : mPendingGeometry)
+    {
+        if (p.mesh)
+        {
+            IncludeBlobScratch(p.mesh->vertices);
+            if (!p.mesh->lods.empty())
+                IncludeBlobScratch(p.mesh->lods[0].indices);
+            IncludeBlobScratch(p.mesh->dagGroups);
+            IncludeBlobScratch(p.mesh->dagMeshlets);
+            IncludeBlobScratch(p.mesh->dagMeshletVtx);
+            IncludeBlobScratch(p.mesh->dagMeshletTri);
+        }
+        else if (p.curve)
+        {
+            IncludeBlobScratch(p.curve->points);
+            IncludeBlobScratch(p.curve->segments);
+            IncludeBlobScratch(p.curve->aabbs);
+        }
+    }
+    size_t textureSubresCount = 0;
+    for (auto const& p : mPendingTextures)
+    {
+        FTextureHeader const& md = static_cast<FTextureHeader const&>(*p.source);
+        for (uint32_t layer = 0; layer < md.GetNumLayers(); ++layer)
+            for (uint32_t mip = 0; mip < md.GetNumMips(); ++mip)
+            {
+                size_t fp = GPUSceneTextureSubresourceFootprint(md, layer, mip) + kUploadBudgetSlack;
+                maxFootprint = std::max(maxFootprint, fp);
+                totalFootprint += fp;
+                IncludeBlobScratch(p.source->GetSubresourceBlob(layer, mip));
+                ++textureSubresCount;
+            }
+    }
+    for (auto const& b : mPendingBuffers)
+    {
+        maxFootprint = std::max(maxFootprint, b.data.size());
+        totalFootprint += b.data.size();
+    }
+    // The lane must fit the largest resource; the extra slack lets several resources
+    // pack per flush during big loads, but is clamped to the total so single small
+    // uploads (LUTs, env CDFs) don't over-allocate staging.
+    const size_t stagingSlack = std::min(totalFootprint, kUploadStagingBudgetSlack);
+    const size_t stagingBudget = std::max<size_t>(maxFootprint, 1u) + stagingSlack;
+
+    // --- Threaded blob decode pool + per-worker scratch lanes. ---
+    const size_t taskUpper = mPendingGeometry.size() * 7u + textureSubresCount;
+    const size_t workerCount = std::min<size_t>(std::max<size_t>(1u, std::thread::hardware_concurrency()),
+                                                std::max<size_t>(1u, taskUpper));
+    ThreadPool pool(workerCount, ThreadPool::getTaskSize(std::max<size_t>(taskUpper, 1u) + 2u), mAllocator,
+                    "GPUSceneUpload");
+    const size_t laneBudget = std::max<size_t>(maxBlob + kUploadBudgetSlack, alignof(std::max_align_t));
+    ScopedArena scratchArena(mAllocator, laneBudget * workerCount);
+    CHECK(scratchArena);
+    Vector<Arena> scratchArenas(workerCount, mAllocator);
+    Vector<AllocatorStack> scratchAllocators(workerCount, mAllocator);
+    char* scratchMem = static_cast<char*>(scratchArena.arena.memory);
+    for (size_t i = 0; i < workerCount; ++i)
+    {
+        scratchArenas[i] = Arena{scratchMem + i * laneBudget, laneBudget};
+        scratchAllocators[i].Reset(scratchArenas[i]);
+    }
+    Span<Arena> arenaSpan(scratchArenas.data(), scratchArenas.size());
+    Span<AllocatorStack> allocSpan(scratchAllocators.data(), scratchAllocators.size());
+
+    ImmediateUpload upload(mDevice, stagingBudget, RHIDeviceQueueType::Transfer, kUploadStagingBuffers);
+    upload.Begin();
+    std::atomic<size_t> pendingJobs{0};
+    Vector<GPUSceneBlobWrite> writes(mAllocator);
+    auto ScheduleWrites = [&](FBlobDeserializer const& blobs)
+    {
+        if (writes.empty())
+            return;
+        pendingJobs.fetch_add(writes.size(), std::memory_order_relaxed);
+        for (auto const& w : writes)
+            pool.PushImpl<GPUSceneBlobDecodeJob>(w, blobs, arenaSpan, allocSpan, &pendingJobs);
+        writes.clear();
+    };
+    auto FlushUpload = [&]
+    {
+        GPUSceneWaitJobs(&pendingJobs);
+        upload.End();
+        upload.Begin();
+    };
+
+    auto uploadTimeline = mDevice->CreateSemaphore(true);
+    constexpr size_t kGeometryReady = 1u;
+    constexpr size_t kTextureReady = 2u;
+
+    // --- Geometry: first-fit-decreasing staging, threaded decode, transfer, BLAS. ---
+    {
+        Vector<size_t> order(mPendingGeometry.size(), mAllocator);
+        for (size_t i = 0; i < order.size(); ++i)
+            order[i] = i;
+        std::sort(order.begin(), order.end(),
+                  [&](size_t a, size_t b) { return mPendingGeometry[a].footprint > mPendingGeometry[b].footprint; });
+        for (size_t idx : order)
+        {
+            PendingGeometryUpload& p = mPendingGeometry[idx];
+            GeometryResidency* g = ResolveGeometry(p.handle);
+            CHECK_MSG(g, "Pending geometry references a freed slot");
+            g->state = ResourceState::Uploading;
+            auto Stage = [&] {
+                return p.mesh ? StageMesh(&upload, *p.mesh, g->mesh, g->resourceOffset, writes)
+                              : StageCurve(&upload, *p.curve, g->curve, g->resourceOffset, writes);
+            };
+            size_t staged = Stage();
+            if (staged == 0)
+            {
+                FlushUpload();
+                staged = Stage();
+                CHECK_MSG(staged != 0, "Staging buffer too small for a single geometry upload");
+            }
+            ScheduleWrites(p.blobs);
+        }
+        // Plain buffer copies share the geometry transfer submit (no decode jobs).
+        for (auto const& b : mPendingBuffers)
+        {
+            char* ptr = upload.Upload(b.dst, b.data.size(), b.dstOffset);
+            if (!ptr)
+            {
+                FlushUpload();
+                ptr = upload.Upload(b.dst, b.data.size(), b.dstOffset);
+                CHECK_MSG(ptr != nullptr, "Staging buffer too small for a single buffer upload");
+            }
+            std::memcpy(ptr, b.data.data(), b.data.size());
+        }
+        GPUSceneWaitJobs(&pendingJobs);
+        if (direct)
+            FlushDirectGeometryUpload();
+        RHIDeviceQueue::TimelinePair geomSignal{uploadTimeline.Get(), kGeometryReady};
+        upload.End(ImmediateSubmitDesc{.timelineSignals = {&geomSignal, 1}});
+    }
+
+    if (!mPendingGeometry.empty())
+    {
+        ImmediateContext blasCtx(RHIDeviceQueueType::Compute, mDevice);
+        Vector<GeometryHandle> meshHandles(mAllocator), curveHandles(mAllocator);
+        Vector<GSMesh> meshHeaders(mAllocator);
+        Vector<GSCurveSet> curveHeaders(mAllocator);
+        for (auto const& p : mPendingGeometry)
+        {
+            GeometryResidency* g = ResolveGeometry(p.handle);
+            CHECK(g);
+            if (g->type == kGSInstanceTypeCurve)
+                curveHandles.push_back(p.handle), curveHeaders.push_back(g->curve);
+            else
+                meshHandles.push_back(p.handle), meshHeaders.push_back(g->mesh);
+        }
+        RHIDeviceQueue::TimelinePair wait{uploadTimeline.Get(), kGeometryReady};
+        RHIPipelineStage waitStage = RHIPipelineStageBits::AccelerationBuild;
+        ImmediateSubmitDesc firstSubmit{.timelineWaits = {&wait, 1}, .waitStages = {&waitStage, 1}};
+        constexpr size_t kBLASBuildBatch = 32u;
+        bool usedFirst = false;
+        Vector<uint32_t> meshSlots(meshHeaders.size(), mAllocator);
+        for (size_t i = 0; i < meshHeaders.size(); i += kBLASBuildBatch)
+        {
+            size_t bs = std::min(kBLASBuildBatch, meshHeaders.size() - i);
+            BuildBLAS(&blasCtx, Span<const GSMesh>(meshHeaders.data() + i, bs), Span<uint32_t>(meshSlots.data() + i, bs),
+                      usedFirst ? ImmediateSubmitDesc{} : firstSubmit);
+            usedFirst = true;
+        }
+        Vector<uint32_t> curveSlots(curveHeaders.size(), mAllocator);
+        for (size_t i = 0; i < curveHeaders.size(); i += kBLASBuildBatch)
+        {
+            size_t bs = std::min(kBLASBuildBatch, curveHeaders.size() - i);
+            BuildCurveBLAS(&blasCtx, Span<const GSCurveSet>(curveHeaders.data() + i, bs),
+                           Span<uint32_t>(curveSlots.data() + i, bs), usedFirst ? ImmediateSubmitDesc{} : firstSubmit);
+            usedFirst = true;
+        }
+        for (size_t i = 0; i < meshHandles.size(); ++i)
+            ResolveGeometry(meshHandles[i])->blasSlot = meshSlots[i];
+        for (size_t i = 0; i < curveHandles.size(); ++i)
+            ResolveGeometry(curveHandles[i])->blasSlot = curveSlots[i];
+    }
+    for (auto const& p : mPendingGeometry)
+        if (GeometryResidency* g = ResolveGeometry(p.handle))
+            g->state = ResourceState::Ready;
+    mPendingGeometry.clear();
+
+    // --- Textures: stage subresources, transition, transfer, mark Ready. ---
+    if (!mPendingTextures.empty())
+    {
+        upload.Begin();
+        struct Subresource { size_t slot; uint32_t layer; uint32_t mip; size_t footprint; };
+        Vector<Subresource> subs(mAllocator);
+        for (size_t slot = 0; slot < mPendingTextures.size(); ++slot)
+        {
+            FTextureHeader const& md = static_cast<FTextureHeader const&>(*mPendingTextures[slot].source);
+            for (uint32_t layer = 0; layer < md.GetNumLayers(); ++layer)
+                for (uint32_t mip = 0; mip < md.GetNumMips(); ++mip)
+                    subs.push_back({slot, layer, mip, GPUSceneTextureSubresourceFootprint(md, layer, mip)});
+        }
+        std::sort(subs.begin(), subs.end(),
+                  [](Subresource const& a, Subresource const& b) { return a.footprint > b.footprint; });
+        Vector<uint8_t> transferDstDone(mPendingTextures.size(), 0u, mAllocator);
+        for (Subresource const& sub : subs)
+        {
+            PendingTextureUpload& pt = mPendingTextures[sub.slot];
+            FTextureHeader const& md = static_cast<FTextureHeader const&>(*pt.source);
+            RHITexture* tex = SelectTexturePool(md.GetViewDimension()).GetResource(pt.index);
+            CHECK(tex != nullptr);
+            auto StageSub = [&] {
+                if (!transferDstDone[sub.slot])
+                {
+                    TransitionTextureLayout(upload.Get(), tex, md, RHITextureLayout::Undefined,
+                                            RHITextureLayout::TransferDst);
+                    transferDstDone[sub.slot] = 1u;
+                }
+                return StageTextureSubresource(&upload, *pt.source, tex, sub.layer, sub.mip, writes);
+            };
+            size_t staged = StageSub();
+            if (staged == 0)
+            {
+                FlushUpload();
+                staged = StageSub();
+                CHECK_MSG(staged != 0, "Staging buffer too small for a single texture subresource");
+            }
+            ScheduleWrites(pt.blobs);
+        }
+        GPUSceneWaitJobs(&pendingJobs);
+        for (size_t slot = 0; slot < mPendingTextures.size(); ++slot)
+        {
+            if (!transferDstDone[slot])
+                continue;
+            PendingTextureUpload& pt = mPendingTextures[slot];
+            FTextureHeader const& md = static_cast<FTextureHeader const&>(*pt.source);
+            RHITexture* tex = SelectTexturePool(md.GetViewDimension()).GetResource(pt.index);
+            TransitionTextureLayout(upload.Get(), tex, md, RHITextureLayout::TransferDst,
+                                    RHITextureLayout::ShaderReadOnly);
+        }
+        RHIDeviceQueue::TimelinePair texSignal{uploadTimeline.Get(), kTextureReady};
+        upload.End(ImmediateSubmitDesc{.timelineSignals = {&texSignal, 1}});
+    }
+    mPendingTextures.clear();
+    mPendingBuffers.clear();
+
+    // Block until the last submitted transfer completes. The texture submit (if any)
+    // chains after the geometry+buffer submit on the Transfer queue, so waiting the
+    // highest signaled value covers everything.
+    RHIDeviceQueue::TimelinePair finalWait{uploadTimeline.Get(), hadTextures ? kTextureReady : kGeometryReady};
+    mDevice->WaitForTimelineSemaphores(Span<const RHIDeviceQueue::TimelinePair>(&finalWait, 1), -1);
+
+    pool.Join();
 }
 
 // Reference:
@@ -1232,9 +1533,10 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
             .offset = compactOffsets[i],
             .size = static_cast<uint32_t>(compactSizes[i])
         };
-        outBLASIndices[i] = static_cast<uint32_t>(mBLASes.size());
-        auto& blas = mBLASes.emplace_back(device->CreateAccelerationStructure(as));
-        cmd->CopyAccelerationStructure(newBLASPtrs[i], blas.Get(), true /* compact */);
+        uint32_t slot = AcquireMeshBLASSlot();
+        outBLASIndices[i] = slot;
+        mBLASes[slot] = device->CreateAccelerationStructure(as);
+        cmd->CopyAccelerationStructure(newBLASPtrs[i], mBLASes[slot].Get(), true /* compact */);
     }
     cmd->End(), ctx->Submit(), ctx->WaitIdle();
     for (auto handle : newBLASHandles)
@@ -1318,11 +1620,12 @@ void GPUScene::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curv
             .offset = blasOffsets[i],
             .size = sizeInfo[i].accelerationStructureSize
         };
-        outBLASIndices[i] = static_cast<uint32_t>(mCurveBLASes.size());
-        auto& blas = mCurveBLASes.emplace_back(device->CreateAccelerationStructure(as));
+        uint32_t slot = AcquireCurveBLASSlot();
+        outBLASIndices[i] = slot;
+        mCurveBLASes[slot] = device->CreateAccelerationStructure(as);
         desc.scratchBuffer = scratchBuffer.Get();
         desc.scratchBufferOffset = scratchOffsets[i];
-        desc.dstAS = blas.Get();
+        desc.dstAS = mCurveBLASes[slot].Get();
         cmd->BuildAccelerationStructure({{{desc}}});
     }
     cmd->End(), ctx->Submit(firstSubmitDesc), ctx->WaitIdle();
@@ -1330,18 +1633,210 @@ void GPUScene::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curv
         curves.size(), blasOffset / 1e6);
 }
 
-uint32_t GPUScene::CountTLASInstances(Span<const GSInstance> instances, Span<const GSLight> lights) const
+uint32_t GPUScene::AcquireMeshBLASSlot()
+{
+    if (!mFreeBLASSlots.empty())
+    {
+        uint32_t slot = mFreeBLASSlots.back();
+        mFreeBLASSlots.pop_back();
+        return slot;
+    }
+    mBLASes.emplace_back();
+    return static_cast<uint32_t>(mBLASes.size()) - 1;
+}
+
+uint32_t GPUScene::AcquireCurveBLASSlot()
+{
+    if (!mFreeCurveBLASSlots.empty())
+    {
+        uint32_t slot = mFreeCurveBLASSlots.back();
+        mFreeCurveBLASSlots.pop_back();
+        return slot;
+    }
+    mCurveBLASes.emplace_back();
+    return static_cast<uint32_t>(mCurveBLASes.size()) - 1;
+}
+
+/* --- Residency table helpers --- */
+
+GPUScene::GeometryResidency* GPUScene::ResolveGeometry(GeometryHandle handle)
+{
+    if (!handle.IsValid() || handle.index >= mGeometry.size())
+        return nullptr;
+    GeometryResidency& g = mGeometry[handle.index];
+    if (!g.live || g.generation != handle.generation)
+        return nullptr;
+    return &g;
+}
+
+GPUScene::GeometryResidency const* GPUScene::ResolveGeometry(GeometryHandle handle) const
+{
+    return const_cast<GPUScene*>(this)->ResolveGeometry(handle);
+}
+
+uint32_t GPUScene::AcquireGeometrySlot()
+{
+    if (!mFreeGeometrySlots.empty())
+    {
+        uint32_t slot = mFreeGeometrySlots.back();
+        mFreeGeometrySlots.pop_back();
+        return slot;
+    }
+    mGeometry.emplace_back();
+    return static_cast<uint32_t>(mGeometry.size()) - 1;
+}
+
+void GPUScene::FreeGeometry(uint32_t slot)
+{
+    CHECK(slot < mGeometry.size());
+    GeometryResidency& g = mGeometry[slot];
+    if (!g.live)
+        return;
+    mPrimitiveAlloc->Free(g.resourceOffset);
+    if (g.type == kGSInstanceTypeCurve)
+    {
+        mCurveAABBAlloc->Free(g.curve.aabbOffset);
+        if (g.blasSlot < mCurveBLASes.size())
+        {
+            mCurveBLASes[g.blasSlot].Reset();
+            mFreeCurveBLASSlots.push_back(g.blasSlot);
+        }
+    }
+    else if (g.blasSlot < mBLASes.size())
+    {
+        mBLASes[g.blasSlot].Reset();
+        mFreeBLASSlots.push_back(g.blasSlot);
+    }
+    g.live = false;
+    g.state = ResourceState::Queued;
+    ++g.generation; // invalidate outstanding handles to this slot
+    mFreeGeometrySlots.push_back(slot);
+}
+
+void GPUScene::FreeTextureSlot(bool is3D, uint32_t slot)
+{
+    Vector<TextureSlot>& slots = TextureSlots(is3D);
+    CHECK(slot < slots.size());
+    TextureSlot& s = slots[slot];
+    if (!s.live)
+        return;
+    TexturePool(is3D).Free(slot); // releases the bindless binding + owned resource
+    s.live = false;
+    ++s.generation; // invalidate outstanding handles to this slot
+}
+
+void GPUScene::Collect()
+{
+    // Mark geometry referenced by the committed instance table; free the rest. Pending
+    // uploads keep their geometry live (handles are referenced by mPendingGeometry).
+    Vector<uint8_t> referenced(mGeometry.size(), 0u, mAllocator);
+    for (GSInstance const& inst : mCommittedInstances)
+        if (inst.resourceIndex < referenced.size())
+            referenced[inst.resourceIndex] = 1u;
+    for (auto const& p : mPendingGeometry)
+        if (p.handle.index < referenced.size())
+            referenced[p.handle.index] = 1u;
+
+    uint32_t freed = 0;
+    for (uint32_t slot = 0; slot < mGeometry.size(); ++slot)
+    {
+        if (mGeometry[slot].live && !referenced[slot])
+        {
+            FreeGeometry(slot);
+            ++freed;
+        }
+    }
+    if (freed)
+        LOG(GPUScene, LogDebug, "Collect freed {} unreferenced geometry resources", freed);
+
+    // Mark 2D textures referenced by the committed material table (scene material textures
+    // live in the 2D pool); free the rest, except pinned singletons (LUTs / defaults / env
+    // map) and slots backing in-flight uploads. The 3D pool holds only pinned LUTs.
+    Vector<uint8_t> referencedTex(mTexture2DSlots.size(), 0u, mAllocator);
+    auto MarkTexture = [&](uint32_t index)
+    {
+        if (index != UINT32_MAX && index < referencedTex.size())
+            referencedTex[index] = 1u;
+    };
+    for (GSMaterial const& m : mCommittedMaterials)
+    {
+        MarkTexture(m.baseColorTexture);
+        MarkTexture(m.emissiveTexture);
+        MarkTexture(m.metallicRoughnessTexture);
+        MarkTexture(m.normalTexture);
+        MarkTexture(m.transmissionTexture);
+        MarkTexture(m.specularTexture);
+        MarkTexture(m.specularColorTexture);
+        MarkTexture(m.anisotropyTexture);
+        MarkTexture(m.sheenColorTexture);
+        MarkTexture(m.sheenRoughnessTexture);
+        MarkTexture(m.clearcoatTexture);
+        MarkTexture(m.clearcoatRoughnessTexture);
+    }
+    for (auto const& p : mPendingTextures)
+        if (!IsTexture3DView(static_cast<FTextureHeader const&>(*p.source).GetViewDimension()))
+            MarkTexture(p.index);
+
+    uint32_t freedTex = 0;
+    for (uint32_t slot = 0; slot < mTexture2DSlots.size(); ++slot)
+    {
+        TextureSlot const& s = mTexture2DSlots[slot];
+        if (s.live && !s.pinned && !referencedTex[slot])
+        {
+            FreeTextureSlot(false, slot);
+            ++freedTex;
+        }
+    }
+    if (freedTex)
+        LOG(GPUScene, LogDebug, "Collect freed {} unreferenced textures", freedTex);
+}
+
+GSInstance GPUScene::GetInstance(uint32_t index) const
+{
+    CHECK_MSG(index < mCommittedInstances.size(), "GetInstance index {} out of range ({})", index,
+              mCommittedInstances.size());
+    return mCommittedInstances[index];
+}
+
+uint32_t GPUScene::ResolvePickedInstance(uint32_t pickID) const
+{
+    // pickID is a TLAS instanceID = index into the last build's written (ready) set.
+    if (pickID >= mPickMap.size())
+        return UINT32_MAX;
+    return mPickMap[pickID];
+}
+
+GSLight GPUScene::GetLight(uint32_t index) const
+{
+    CHECK_MSG(index < mCommittedLights.size(), "GetLight index {} out of range ({})", index, mCommittedLights.size());
+    return mCommittedLights[index];
+}
+
+GSMaterial GPUScene::GetMaterial(uint32_t index) const
+{
+    CHECK_MSG(index < mCommittedMaterials.size(), "GetMaterial index {} out of range ({})", index,
+              mCommittedMaterials.size());
+    return mCommittedMaterials[index];
+}
+
+uint32_t GPUScene::CountLiveInstances() const
+{
+    return static_cast<uint32_t>(mCommittedInstances.size());
+}
+
+uint32_t GPUScene::CountTLASInstances() const
 {
     uint32_t numAreaLights = 0;
-    for (const auto& light : lights)
+    for (const auto& light : mCommittedLights)
     {
         if (light.type == 3 || light.type == 4)
             numAreaLights++;
     }
-    CHECK_MSG(instances.size() <= UINT32_MAX - numAreaLights,
+    uint32_t numInstances = CountLiveInstances();
+    CHECK_MSG(numInstances <= UINT32_MAX - numAreaLights,
               "TLAS instance count overflow: {} scene instances and {} area lights",
-              instances.size(), numAreaLights);
-    return static_cast<uint32_t>(instances.size()) + numAreaLights;
+              numInstances, numAreaLights);
+    return numInstances + numAreaLights;
 }
 
 bool GPUScene::EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate)
@@ -1419,36 +1914,53 @@ bool GPUScene::EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate)
     return true;
 }
 
-bool GPUScene::EnsureTLASCapacity(Span<const GSInstance> instances, Span<const GSLight> lights)
+GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update)
 {
-    return EnsureTLASCapacity(CountTLASInstances(instances, lights), true);
-}
+    auto GeometryReady = [&](uint32_t resourceIndex) -> bool
+    {
+        if (resourceIndex >= mGeometry.size())
+            return false;
+        GeometryResidency const& g = mGeometry[resourceIndex];
+        if (!g.live || g.state != ResourceState::Ready)
+            return false;
+        return g.type == kGSInstanceTypeCurve ? g.blasSlot < mCurveBLASes.size() : g.blasSlot < mBLASes.size();
+    };
 
-GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances,
-                                             Span<const uint32_t> blasIndices,
-                                             Span<const uint32_t> curveBLASIndices,
-                                             Span<const GSLight> lights, bool update)
-{
-    uint32_t totalInstances = CountTLASInstances(instances, lights);
+    // Reserve capacity for the full instance set so streaming residency in (a growing
+    // ready-instance count over frames) doesn't churn TLAS buffers.
+    uint32_t capacityInstances = CountTLASInstances();
+    if (capacityInstances != 0 && !EnsureTLASCapacity(capacityInstances, !update))
+        return TLASBuildResult::NeedsRendererRebuild;
+
+    // Only instances whose geometry is Ready can be written this build; the rest are
+    // skipped and will appear once their upload + BLAS completes (nonfatal).
+    uint32_t areaLights = 0;
+    for (GSLight const& light : mCommittedLights)
+        if (light.type == 3 || light.type == 4)
+            ++areaLights;
+    uint32_t readyInstances = 0;
+    for (GSInstance const& inst : mCommittedInstances)
+        if (GeometryReady(inst.resourceIndex))
+            ++readyInstances;
+    uint32_t totalInstances = readyInstances + areaLights;
     if (totalInstances == 0)
     {
         mLastTLASInstancesCount = 0;
+        mPickMap.clear();
         return TLASBuildResult::Empty;
     }
-    if (!EnsureTLASCapacity(totalInstances, !update))
-        return TLASBuildResult::NeedsRendererRebuild;
     if (totalInstances != mLastTLASInstancesCount)
     {
         update = false;
         mLastTLASInstancesCount = totalInstances;
     }
 
-    auto ConvertInstance = [&](const GSInstance* src) -> RHIAccelerationStructureGeometryInstance
+    auto ConvertInstance = [&](GSInstance const& src, uint32_t instanceID) -> RHIAccelerationStructureGeometryInstance
     {
         RHIAccelerationStructureGeometryInstance res{
-            .instanceID = static_cast<uint32_t>(src - instances.data()),
+            .instanceID = instanceID,
         };
-        if (src->type == kGSInstanceTypeCurve)
+        if (src.type == kGSInstanceTypeCurve)
         {
             res.mask = 0x04; // CURVE_MASK
             res.shaderBindingTableRecordOffset = kCurveSBTOffset;
@@ -1457,20 +1969,20 @@ GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GS
         {
             res.mask = 0x01; // MESH_MASK
         }
-        mat3 basis = transpose(mat3(scale(src->scale)) * mat3_cast(src->rotation));
+        mat3 basis = transpose(mat3(scale(src.scale)) * mat3_cast(src.rotation));
         std::memcpy(res.transformBasisRowMajor[0], &basis[0], sizeof(float) * 3);
         std::memcpy(res.transformBasisRowMajor[1], &basis[1], sizeof(float) * 3);
         std::memcpy(res.transformBasisRowMajor[2], &basis[2], sizeof(float) * 3);
-        res.transformTranslation[0] = src->transform.x;
-        res.transformTranslation[1] = src->transform.y;
-        res.transformTranslation[2] = src->transform.z;
+        res.transformTranslation[0] = src.transform.x;
+        res.transformTranslation[1] = src.transform.y;
+        res.transformTranslation[2] = src.transform.z;
         return res;
     };
 
-    auto ConvertLight = [&](const GSLight* src) -> RHIAccelerationStructureGeometryInstance
+    auto ConvertLight = [&](const GSLight* src, uint32_t lightIndex) -> RHIAccelerationStructureGeometryInstance
     {
         RHIAccelerationStructureGeometryInstance res{
-            .instanceID = static_cast<uint32_t>(src - lights.data()) | (1u << 23),
+            .instanceID = lightIndex | (1u << 23),
             .mask = 0x02, // LIGHT_MASK
         };
         float3 u = src->dpdu;
@@ -1496,28 +2008,26 @@ GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GS
     };
 
     auto [pInstances, instancesOffset] = mTLASInstances.Allocate(mTLASInstanceStride * totalInstances);
-    for (const auto & instance : instances)
+    // Ready instances are written in committed order; the TLAS instanceID is their
+    // compacted write position, mapped back to the committed index via mPickMap.
+    mPickMap.clear();
+    for (uint32_t i = 0; i < mCommittedInstances.size(); ++i)
     {
-        auto data = ConvertInstance(&instance);
-        if (instance.type == kGSInstanceTypeCurve)
-        {
-            CHECK_MSG(instance.resourceIndex < curveBLASIndices.size(), "Curve instance references invalid curve BLAS {}",
-                      instance.resourceIndex);
-            data.blas = mCurveBLASes[curveBLASIndices[instance.resourceIndex]].Get();
-        }
-        else
-        {
-            CHECK_MSG(instance.resourceIndex < blasIndices.size(), "Mesh instance references invalid mesh BLAS {}",
-                      instance.resourceIndex);
-            data.blas = mBLASes[blasIndices[instance.resourceIndex]].Get();
-        }
+        GSInstance const& inst = mCommittedInstances[i];
+        if (!GeometryReady(inst.resourceIndex))
+            continue;
+        GeometryResidency const* g = &mGeometry[inst.resourceIndex];
+        auto data = ConvertInstance(inst, static_cast<uint32_t>(mPickMap.size()));
+        data.blas = (g->type == kGSInstanceTypeCurve) ? mCurveBLASes[g->blasSlot].Get() : mBLASes[g->blasSlot].Get();
         pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);
+        mPickMap.push_back(i);
     }
-    for (const auto & light : lights)
+    for (uint32_t i = 0; i < mCommittedLights.size(); ++i)
     {
+        GSLight const& light = mCommittedLights[i];
         if (light.type == 3 || light.type == 4)
         {
-            auto data = ConvertLight(&light);
+            auto data = ConvertLight(&light, i);
             pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);
         }
     }
@@ -1550,10 +2060,10 @@ GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GS
     return TLASBuildResult::Built;
 }
 
-void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture const& source)
+GPUScene::Result GPUScene::UploadEnvMap(FTexture const& source)
 {
-    CHECK_MSG(UploadOrUpdateTexture(ctx, source, mEnvMapIndex, "Environment Map"),
-              "Environment map staging budget exhausted");
+    if (Result r = Upload(source, mEnvMapIndex, "Environment Map", true); r != Result::Ready)
+        return r;
     // Compute CDFs for importance sampling
     uint32_t width = source.GetWidth();
     uint32_t height = source.GetHeight();
@@ -1583,8 +2093,9 @@ void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture const& source)
     const size_t marginalSize = cdf.mMarginal->mCDF.size() * sizeof(float);
     marginalTex.bytes.resize(marginalSize);
     std::memcpy(marginalTex.bytes.data(), cdf.mMarginal->mCDF.data(), marginalSize);
-    CHECK_MSG(UploadOrUpdateTexture(ctx, marginalTex, mEnvMapMarginalCDFIndex, "Environment Map Marginal CDF"),
-              "Environment map marginal CDF staging budget exhausted");
+    if (Result r = Upload(marginalTex, mEnvMapMarginalCDFIndex, "Environment Map Marginal CDF", true);
+        r != Result::Ready)
+        return r;
     
     // Upload Conditional CDF as Texture2D
     FTexture conditionalTex(mAllocator);
@@ -1601,10 +2112,12 @@ void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture const& source)
                     cdf.mConditional[y]->mCDF.size() * sizeof(float));
     }
     
-    CHECK_MSG(UploadOrUpdateTexture(ctx, conditionalTex, mEnvMapConditionalCDFIndex, "Environment Map Conditional CDF"),
-              "Environment map conditional CDF staging budget exhausted");
+    if (Result r = Upload(conditionalTex, mEnvMapConditionalCDFIndex, "Environment Map Conditional CDF", true);
+        r != Result::Ready)
+        return r;
 
     LOG(GPUScene, LogInfo, "Environment map uploaded: {}x{}", source.GetWidth(), source.GetHeight());
+    return Result::Ready;
 }
 
 static void CheckViewLUT(FTexture const& source, StringView name)
@@ -1619,13 +2132,13 @@ static void CheckViewLUT(FTexture const& source, StringView name)
               "{} view LUT must be RGB10A2, RGBA16F, or RGBA32F, got {}", name, format);
 }
 
-void GPUScene::UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr)
+GPUScene::Result GPUScene::UploadViewLUTs(FTexture const& sdr, FTexture const& hdr)
 {
     CheckViewLUT(sdr, "SDR");
     CheckViewLUT(hdr, "HDR");
-    CHECK_MSG(UploadOrUpdateTexture(ctx, sdr, mLUTViewSdrIndex, "View LUT SDR") &&
-              UploadOrUpdateTexture(ctx, hdr, mLUTViewHdrIndex, "View LUT HDR"),
-              "View LUT staging budget exhausted");
+    if (Result r = Upload(sdr, mLUTViewSdrIndex, "View LUT SDR", true); r != Result::Ready)
+        return r;
+    return Upload(hdr, mLUTViewHdrIndex, "View LUT HDR", true);
 }
 
 static RHITexture* ResolvePoolTexture(BindlessPool& pool, uint32_t index)
@@ -1637,12 +2150,12 @@ static RHITexture* ResolvePoolTexture(BindlessPool& pool, uint32_t index)
 
 RHITexture* GPUScene::GetFoundationDefaultTexture2D() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mFoundationDefaultTexture2DIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mFoundationDefaultTexture2DIndex.index);
 }
 
 RHITexture* GPUScene::GetFoundationDefaultTexture2DFloat() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mFoundationDefaultTexture2DFloatIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mFoundationDefaultTexture2DFloatIndex.index);
 }
 
 RHIBuffer* GPUScene::GetSobolMatricesBuffer() const
@@ -1652,14 +2165,28 @@ RHIBuffer* GPUScene::GetSobolMatricesBuffer() const
 
 void GPUScene::Reset()
 {
-    mPrimitiveOffset = 0;
-    mCurveAABBOffset = 0;
+    if (mUploadThread.joinable())
+        mUploadThread.join();
+    mPrimitiveAlloc->Clear();
+    mCurveAABBAlloc->Clear();
     mMeshletGlobalCounter = 0;
     mLastTLASInstancesCount = 0;
     mBLASes.clear();
     mBLASBuffers.clear();
+    mFreeBLASSlots.clear();
     mCurveBLASes.clear();
     mCurveBLASBuffers.clear();
+    mFreeCurveBLASSlots.clear();
+    mGeometry.clear();
+    mFreeGeometrySlots.clear();
+    mPendingGeometry.clear();
+    mPendingTextures.clear();
+    mPendingBuffers.clear();
+    mCommittedInstances.clear();
+    mCommittedLights.clear();
+    mCommittedMaterials.clear();
+    mPickMap.clear();
+    mOpenTables = OpenTables{};
     mMaterialBuffer.Reset();
     mInstanceBuffer.Reset();
     mLightBuffer.Reset();

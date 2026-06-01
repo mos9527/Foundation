@@ -740,7 +740,11 @@ void VulkanDevice::DebugSetObjectName(const char* name)
                                         .pObjectName = name});
 }
 
-void VulkanDeviceQueue::WaitIdle() const { mQueue.waitIdle(); }
+void VulkanDeviceQueue::WaitIdle() const
+{
+    std::lock_guard<std::mutex> submitLock(mDevice.GetQueueSubmitMutex());
+    mQueue.waitIdle();
+}
 
 void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* completionFence) const
 {
@@ -812,6 +816,7 @@ void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* com
             info.setPNext(tinfo);
         submits.push_back(info);
     }
+    std::lock_guard<std::mutex> submitLock(mDevice.GetQueueSubmitMutex());
     mQueue.submit(
         submits, completionFence ? static_cast<VulkanDeviceFence*>(completionFence)->GetVkFence() : vk::Fence(nullptr));
 }
@@ -837,6 +842,7 @@ void VulkanDeviceQueue::Present(PresentDesc const& desc) const
     };
     try
     {
+        std::lock_guard<std::mutex> submitLock(mDevice.GetQueueSubmitMutex());
         auto res = mQueue.presentKHR(present_info);
         CHECK(res == vk::Result::eSuccess && "failed to present");
     }
@@ -1138,3 +1144,65 @@ RHIDeviceQueryPool* VulkanDevice::GetQueryPool(Handle handle) const
 }
 
 void VulkanDevice::DestroyQueryPool(Handle handle) { mStorage.DestroyObject(handle); }
+
+VulkanVirtualAllocator::VulkanVirtualAllocator(const VulkanDevice& device, uint64_t size) :
+    mDevice(device), mAllocations(device.GetAllocator()), mCapacity(size)
+{
+    VmaVirtualBlockCreateInfo info{};
+    info.size = size;
+    CHECK(vmaCreateVirtualBlock(&info, &mBlock) == VK_SUCCESS && "failed to create VMA virtual block");
+}
+
+VulkanVirtualAllocator::~VulkanVirtualAllocator()
+{
+    if (mBlock)
+        vmaDestroyVirtualBlock(mBlock);
+}
+
+uint64_t VulkanVirtualAllocator::Allocate(uint64_t size, uint64_t alignment)
+{
+    VmaVirtualAllocationCreateInfo info{};
+    info.size = size;
+    info.alignment = alignment;
+    VmaVirtualAllocation alloc{};
+    VkDeviceSize offset = 0;
+    if (vmaVirtualAllocate(mBlock, &info, &alloc, &offset) != VK_SUCCESS)
+        return kInvalidOffset;
+    mAllocations.emplace(static_cast<uint64_t>(offset), alloc);
+    mHighWater = std::max(mHighWater, static_cast<uint64_t>(offset) + size);
+    return static_cast<uint64_t>(offset);
+}
+
+void VulkanVirtualAllocator::Free(uint64_t offset)
+{
+    auto it = mAllocations.find(offset);
+    CHECK_MSG(it != mAllocations.end(), "RHIVirtualAllocator::Free of untracked offset {}", offset);
+    vmaVirtualFree(mBlock, it->second);
+    mAllocations.erase(it);
+}
+
+void VulkanVirtualAllocator::Clear()
+{
+    vmaClearVirtualBlock(mBlock);
+    mAllocations.clear();
+    mHighWater = 0;
+}
+
+uint64_t VulkanVirtualAllocator::GetUsedBytes() const
+{
+    VmaStatistics stats{};
+    vmaGetVirtualBlockStatistics(mBlock, &stats);
+    return stats.allocationBytes;
+}
+
+RHIDeviceScopedHandle<RHIVirtualAllocator> VulkanDevice::CreateVirtualAllocator(uint64_t size)
+{
+    return {this, mStorage.CreateObject<VulkanVirtualAllocator>(*this, size)};
+}
+
+RHIVirtualAllocator* VulkanDevice::GetVirtualAllocator(Handle handle) const
+{
+    return mStorage.GetObjectPtr<RHIVirtualAllocator>(handle);
+}
+
+void VulkanDevice::DestroyVirtualAllocator(Handle handle) { mStorage.DestroyObject(handle); }

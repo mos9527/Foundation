@@ -100,7 +100,7 @@ static void FInitEnter()
 static void FInit()
 {
     // Transition to FERunningEnter when scene data is available
-    if (!GEditor.instances.empty())
+    if (GContext->gpuScene && GContext->gpuScene->GetInstanceCount() != 0)
         GEditor.state = FERunningEnter;
     else
     {
@@ -139,14 +139,20 @@ static void FRunningEnter()
     UpdateSwapchain(GContext);
     // Invalidate stale readback handles before rebuilding the renderer
     sRenderReadback = {};
+    // Build the TLAS up front so the render graph captures a valid, correctly-sized TLAS
+    // (a full build grows the TLAS buffers; the per-frame pass then only refits).
     if (GContext->gpuScene)
-        CHECK(GContext->gpuScene->EnsureTLASCapacity(GEditor.instances, GEditor.lights));
+    {
+        ImmediateContext tlasCtx(RHIDeviceQueueType::Compute, GContext->device.Get());
+        auto* cmd = tlasCtx.Get();
+        cmd->Begin();
+        auto tlasResult = GContext->gpuScene->BuildTLAS(cmd, false);
+        cmd->End();
+        if (tlasResult == GPUScene::TLASBuildResult::Built)
+            tlasCtx.Submit(), tlasCtx.WaitIdle();
+    }
     RendererScene scene{
         .gsGlobals = &GEditor.shaderGlobals,
-        .gsInstances = &GEditor.instances,
-        .gsBLASes = &GEditor.blases,
-        .gsCurveBLASes = &GEditor.curveBlases,
-        .gsLights = &GEditor.lights,
         .picking = &sPicking,
         .rendererRebuildRequested = &sRendererRebuildRequested
     };
@@ -224,10 +230,15 @@ static void FRunning()
         uint32_t id = *sPickResultBuffer->Map<uint32_t>();
         GEditor.selectedInstance = -1;
         GEditor.selectedMaterial = -1;
-        if (id != ~0u && id < GEditor.instances.size())
+        // The pick id is a TLAS instanceID, which equals the committed instance index
+        // (the editor commits instances 1:1 in scene-row order).
+        uint32_t picked = (id != ~0u && GContext->gpuScene)
+            ? GContext->gpuScene->ResolvePickedInstance(id)
+            : UINT32_MAX;
+        if (picked != UINT32_MAX)
         {
-            GEditor.selectedInstance = static_cast<int>(id);
-            GEditor.selectedMaterial = static_cast<int>(GEditor.instances[GEditor.selectedInstance].materialIndex);
+            GEditor.selectedInstance = static_cast<int>(picked);
+            GEditor.selectedMaterial = static_cast<int>(GContext->gpuScene->GetInstance(picked).materialIndex);
             GEditor.selectedLight = -1;
         }
         sPicking.pendingPixel = {-1, -1};
@@ -371,6 +382,8 @@ bool EditorProcessEvent(SDL_Event* event)
 bool EditorOnFrame(FContext* context)
 {
     ResetEditorFrameScratch(context);
+    // Finalize/install any scene whose background upload finished this frame.
+    PumpSceneLoad();
     switch (GEditor.state)
     {
     case FEInitEnter:
