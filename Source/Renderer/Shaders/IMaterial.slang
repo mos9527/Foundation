@@ -24,6 +24,7 @@ public struct PrincipledMaterial : IMaterial {
     float3 emission;
     uint32_t ggxLutEIndex;
     uint32_t ggxLutEavgIndex;
+    bool energyCompensation;
 
     float pSurface;
     float pSubsurface;
@@ -63,7 +64,7 @@ public struct PrincipledMaterial : IMaterial {
         float diffuseWeight = 1.0f - activeSubsurface;
 
         roughness = max(8e-3f, roughness);
-        ior = max(1.0f + 5e-3f, ior);
+        ior = max(1.0f, ior);
 
         // Keep the subsurface closure in the same energy family as diffuse.
         // Otherwise sampling probability cancels this factor and SSS becomes
@@ -72,9 +73,13 @@ public struct PrincipledMaterial : IMaterial {
         CalcGlossyFresnel(ior, specularFactor, specularColorFactor, dielF0, dielF90);
         metallic = saturate(metallic);
         transmission = saturate(transmission);
-        float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90,
-            SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness)));
-        float rawCoat = clamp(MaxComponent(CoatReflectance(clearcoatFactor, clearcoatRoughness, wo, ggxLutEIndex)), 0.0f, 1.0f);
+        float glossyAlphaX, glossyAlphaY;
+        CalcAnisotropicAlpha(roughness, anisotropyStrength, glossyAlphaX, glossyAlphaY);
+        TrowbridgeReitzDistribution glossyDistrib = TrowbridgeReitzDistribution(glossyAlphaX, glossyAlphaY);
+        float2 glossyLutE = GGXDirectionalAlbedoLut(ggxLutEIndex, wo, roughness, glossyDistrib);
+        float glossyLutEavg = GGXAverageAlbedo(ggxLutEavgIndex, roughness, glossyDistrib);
+        float sampleGlossy = MaxComponent(GlossyDirectionalReflectance(dielF0, dielF90, glossyLutE, glossyLutEavg, energyCompensation));
+        float rawCoat = clamp(MaxComponent(CoatReflectance(clearcoatFactor, clearcoatRoughness, wo, ggxLutEIndex, ggxLutEavgIndex, energyCompensation)), 0.0f, 1.0f);
         float rawUnderCoat = max(1.0f - rawCoat, 0.0f);
         SheenBSDF sampleSheen = SheenBSDF(sheenWeight, sheenRoughness, sheenTint, sheenLtcIndex, wo);
         float rawSheen = rawUnderCoat * (sampleSheen.IsValid() ? clamp(MaxComponent(sampleSheen.Reflectance()), 0.0f, 1.0f) : 0.0f);
@@ -101,6 +106,7 @@ public struct PrincipledMaterial : IMaterial {
         this.clearcoatRoughness = clearcoatRoughness;
         this.ggxLutEIndex = ggxLutEIndex;
         this.ggxLutEavgIndex = ggxLutEavgIndex;
+        this.energyCompensation = energyCompensation;
 
         // Weigh surface/subsurface events by energy
         this.pSubsurface = clamp(eventWeightSum > 0.0f ? rawSubsurface / eventWeightSum : 0.0f, 0.0f, 1.0f);
@@ -124,7 +130,7 @@ public struct PrincipledMaterial : IMaterial {
     }
 
     public float3 Le(float3 wo) {
-        return emission * CoatEscape(clearcoatFactor, clearcoatRoughness, wo, ggxLutEIndex);
+        return emission * CoatEscape(clearcoatFactor, clearcoatRoughness, wo, ggxLutEIndex, ggxLutEavgIndex, energyCompensation);
     }
 };
 

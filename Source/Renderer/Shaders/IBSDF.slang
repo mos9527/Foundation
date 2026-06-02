@@ -35,8 +35,13 @@ public float3 reflectance(float3 F0, float3 F90, float2 lutE) {
     return F0 * lutE.x + (F90 - F0) * lutE.y;
 }
 public void CalcGlossyFresnel(float ior, float specularFactor, float3 specularColorFactor, out float3 F0, out float3 F90) {
-    ior = max(1.0f + 5e-3f, ior);
+    ior = max(1.0f, ior);
     specularFactor = clamp(specularFactor, 0.0f, 1.0f);
+    if (abs(ior - 1.0f) <= 0.01f || specularFactor <= EPS) {
+        F0 = float3(0.0f);
+        F90 = float3(0.0f);
+        return;
+    }
     F0 = clamp(F0FromIor(ior) * max(specularColorFactor, float3(0.0f)), float3(0.0f), float3(1.0f)) * specularFactor;
     F90 = float3(specularFactor);
 }
@@ -46,19 +51,58 @@ public void CalcCoatFresnel(out float3 F0, out float3 F90) {
     F90 = float3(1.0f);
 }
 
-public float3 CoatReflectance(float coatWeight, float coatRoughness, float3 wo, uint32_t ggxLutEIndex) {
+public float2 GGXDirectionalAlbedoLut(uint32_t ggxLutEIndex, float3 wo, float roughness, TrowbridgeReitzDistribution mfDistrib) {
+    if (mfDistrib.EffectivelySmooth()) {
+        float mu = AbsCosTheta(wo);
+        return float2(1.0f, pow(1.0f - mu, 5.0f));
+    }
+    return SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness);
+}
+
+public float GGXAverageAlbedo(uint32_t ggxLutEavgIndex, float roughness, TrowbridgeReitzDistribution mfDistrib) {
+    if (mfDistrib.EffectivelySmooth()) return 1.0f;
+    return SampleGGXLutEavg(ggxLutEavgIndex, roughness);
+}
+
+public float3 GlossyEnergyCompensationScale(
+    float3 F0,
+    float3 F90,
+    float2 lutE,
+    float lutEavg,
+    bool energyCompensation)
+{
+    return MicrofacetGGXEnergyCompensationScale(
+        SchlickFresnelAverage(F0, F90), lutE.x, lutEavg, energyCompensation);
+}
+
+public float3 GlossyDirectionalReflectance(
+    float3 F0,
+    float3 F90,
+    float2 lutE,
+    float lutEavg,
+    bool energyCompensation)
+{
+    return reflectance(F0, F90, lutE) *
+        GlossyEnergyCompensationScale(F0, F90, lutE, lutEavg, energyCompensation);
+}
+
+public float3 CoatReflectance(float coatWeight, float coatRoughness, float3 wo, uint32_t ggxLutEIndex, uint32_t ggxLutEavgIndex, bool energyCompensation = true) {
     coatWeight = saturate(coatWeight);
     if (coatWeight <= EPS) return float3(0.0f);
     coatRoughness = max(8e-3f, coatRoughness);
 
     float3 coatF0, coatF90;
     CalcCoatFresnel(coatF0, coatF90);
-    return coatWeight * reflectance(coatF0, coatF90,
-        SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), coatRoughness));
+    float alphaX, alphaY;
+    CalcAnisotropicAlpha(coatRoughness, 0.0f, alphaX, alphaY);
+    TrowbridgeReitzDistribution mfDistrib = TrowbridgeReitzDistribution(alphaX, alphaY);
+    float2 lutE = GGXDirectionalAlbedoLut(ggxLutEIndex, wo, coatRoughness, mfDistrib);
+    float lutEavg = GGXAverageAlbedo(ggxLutEavgIndex, coatRoughness, mfDistrib);
+    return coatWeight * GlossyDirectionalReflectance(coatF0, coatF90, lutE, lutEavg, energyCompensation);
 }
 
-public float CoatEscape(float coatWeight, float coatRoughness, float3 wo, uint32_t ggxLutEIndex) {
-    return max(1.0f - MaxComponent(CoatReflectance(coatWeight, coatRoughness, wo, ggxLutEIndex)), 0.0f);
+public float CoatEscape(float coatWeight, float coatRoughness, float3 wo, uint32_t ggxLutEIndex, uint32_t ggxLutEavgIndex, bool energyCompensation = true) {
+    return max(1.0f - MaxComponent(CoatReflectance(coatWeight, coatRoughness, wo, ggxLutEIndex, ggxLutEavgIndex, energyCompensation)), 0.0f);
 }
 
 public void CalcAnisotropicAlpha(float roughness, float anisotropyStrength, out float alphaX, out float alphaY) {
@@ -90,13 +134,14 @@ float3 SchlickFresnelAverage(float3 F0, float3 F90)
 // Fss is the hemispherical-average Fresnel term used for multiscatter color compensation.
 float3 MicrofacetGGXEnergyCompensationScale(
     float3 Favg,
-    float3 E,
+    float E,
     float Eavg,
     bool energyCompensation)
 {
     if (!energyCompensation) return float3(1.0f);
 
-    E = max(E, EPS);
+    E = clamp(E, EPS, 1.0f);
+    Eavg = clamp(Eavg, EPS, 1.0f);
     float3 Fms = (Favg * Eavg) /
         max(1.0f - Favg * (1.0f - Eavg), EPS);
     return 1.0f + Fms * (1.0f / E - 1.0f);
@@ -155,8 +200,7 @@ float3 TorranceSparrowReflection(
     if (cosWo < EPS || cosWi < EPS) return 0.0f;
     float3 wm = normalize(wo + wi);
     float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
-    float3 Favg = SchlickFresnelAverage(F0, F90);
-    Fss *= MicrofacetGGXEnergyCompensationScale(Favg, reflectance(F0, F90, lutE), lutEavg, energyCompensation);
+    Fss *= GlossyEnergyCompensationScale(F0, F90, lutE, lutEavg, energyCompensation);
     return Fss * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
 }
 
@@ -184,22 +228,33 @@ public struct DiffuseBSDF : IBxDF {
     float3 dielF0;
     float3 dielF90;
     float  roughness;
+    float  anisotropyStrength;
+    bool   energyCompensation;
+    TrowbridgeReitzDistribution mfDistrib;
     uint32_t ggxLutEIndex;
+    uint32_t ggxLutEavgIndex;
 
-    public __init(float3 baseColor, float3 dielF0, float3 dielF90, float roughness, uint32_t ggxLutEIndex) {
+    public __init(float3 baseColor, float3 dielF0, float3 dielF90, float roughness, float anisotropyStrength, bool energyCompensation, uint32_t ggxLutEIndex, uint32_t ggxLutEavgIndex) {
         this.baseColor = baseColor;
         this.dielF0    = dielF0;
         this.dielF90   = dielF90;
         this.roughness = roughness;
+        this.anisotropyStrength = anisotropyStrength;
+        this.energyCompensation = energyCompensation;
         this.ggxLutEIndex = ggxLutEIndex;
+        this.ggxLutEavgIndex = ggxLutEavgIndex;
+        float alphaX, alphaY;
+        CalcAnisotropicAlpha(roughness, anisotropyStrength, alphaX, alphaY);
+        this.mfDistrib = TrowbridgeReitzDistribution(alphaX, alphaY);
     }
 
     public BxDFFlags Flags() { return BxDFFlags::DiffuseReflection; }
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (!SameHemisphere(wo, wi)) return 0.0f;
-        float2 lutE = SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness);
-        float3 specularReflectance = reflectance(dielF0, dielF90, lutE);
+        float2 lutE = GGXDirectionalAlbedoLut(ggxLutEIndex, wo, roughness, mfDistrib);
+        float lutEavg = GGXAverageAlbedo(ggxLutEavgIndex, roughness, mfDistrib);
+        float3 specularReflectance = GlossyDirectionalReflectance(dielF0, dielF90, lutE, lutEavg, energyCompensation);
         return baseColor * InvPi * max(1.0f - MaxComponent(specularReflectance), 0.0f);
     }
 
@@ -470,17 +525,36 @@ public struct GlossyBSDF : IBxDF {
         this.mfDistrib = TrowbridgeReitzDistribution(alphaX, alphaY);
     }
 
-    public BxDFFlags Flags() { return BxDFFlags::GlossyReflection; }
+    bool IsSpecularDirection(float3 a, float3 b) {
+        return LengthSquared(a - b) <= 1e-6f;
+    }
+
+    float3 SpecularF(float3 wo, float3 wi) {
+        float3 wr = float3(-wo.x, -wo.y, wo.z);
+        float cosWi = AbsCosTheta(wi);
+        if (!IsSpecularDirection(wi, wr) || cosWi < EPS) return float3(0.0f);
+        return SchlickFresnel(glossyF0, glossyF90, AbsCosTheta(wo)) / cosWi;
+    }
+
+    public BxDFFlags Flags() { return mfDistrib.EffectivelySmooth() ? BxDFFlags::SpecularReflection : BxDFFlags::GlossyReflection; }
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (!SameHemisphere(wo, wi)) return 0.0f;
-        float2 lutE = SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness);
-        float lutEavg = SampleGGXLutEavg(ggxLutEavgIndex, roughness);
+        if (mfDistrib.EffectivelySmooth()) return SpecularF(wo, wi);
+        float2 lutE = GGXDirectionalAlbedoLut(ggxLutEIndex, wo, roughness, mfDistrib);
+        float lutEavg = GGXAverageAlbedo(ggxLutEavgIndex, roughness, mfDistrib);
         return TorranceSparrowReflection(wo, wi, glossyF0, glossyF90, lutE, lutEavg, mfDistrib, energyCompensation);
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection)) return BSDFSample();
+        if (mfDistrib.EffectivelySmooth()) {
+            float3 wi = float3(-wo.x, -wo.y, wo.z);
+            float cosWi = AbsCosTheta(wi);
+            if (cosWi < EPS) return BSDFSample();
+            float3 f = SchlickFresnel(glossyF0, glossyF90, AbsCosTheta(wo)) / cosWi;
+            return BSDFSample(f, wi, 1.0f, BxDFFlags::SpecularReflection);
+        }
         float3 wm = mfDistrib.Sample_wm(wo, u);
         float3 wi = Reflect(wo, wm);
         if (!SameHemisphere(wo, wi)) return BSDFSample();
@@ -491,6 +565,10 @@ public struct GlossyBSDF : IBxDF {
 
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection) || !SameHemisphere(wo, wi)) return 0.0f;
+        if (mfDistrib.EffectivelySmooth()) {
+            float3 wr = float3(-wo.x, -wo.y, wo.z);
+            return IsSpecularDirection(wi, wr) ? 1.0f : 0.0f;
+        }
         return PDFGlossy(wo, wi, mfDistrib);
     }
 };
@@ -517,17 +595,36 @@ public struct MetallicBSDF : IBxDF {
         this.mfDistrib = TrowbridgeReitzDistribution(alphaX, alphaY);
     }
 
-    public BxDFFlags Flags() { return BxDFFlags::GlossyReflection; }
+    bool IsSpecularDirection(float3 a, float3 b) {
+        return LengthSquared(a - b) <= 1e-6f;
+    }
+
+    float3 SpecularF(float3 wo, float3 wi) {
+        float3 wr = float3(-wo.x, -wo.y, wo.z);
+        float cosWi = AbsCosTheta(wi);
+        if (!IsSpecularDirection(wi, wr) || cosWi < EPS) return float3(0.0f);
+        return SchlickFresnel(metalF0, float3(1.0f), AbsCosTheta(wo)) / cosWi;
+    }
+
+    public BxDFFlags Flags() { return mfDistrib.EffectivelySmooth() ? BxDFFlags::SpecularReflection : BxDFFlags::GlossyReflection; }
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (!SameHemisphere(wo, wi)) return 0.0f;
-        float2 lutE = SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness);
-        float lutEavg = SampleGGXLutEavg(ggxLutEavgIndex, roughness);
+        if (mfDistrib.EffectivelySmooth()) return SpecularF(wo, wi);
+        float2 lutE = GGXDirectionalAlbedoLut(ggxLutEIndex, wo, roughness, mfDistrib);
+        float lutEavg = GGXAverageAlbedo(ggxLutEavgIndex, roughness, mfDistrib);
         return TorranceSparrowReflection(wo, wi, metalF0, float3(1.0f), lutE, lutEavg, mfDistrib, energyCompensation);
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection)) return BSDFSample();
+        if (mfDistrib.EffectivelySmooth()) {
+            float3 wi = float3(-wo.x, -wo.y, wo.z);
+            float cosWi = AbsCosTheta(wi);
+            if (cosWi < EPS) return BSDFSample();
+            float3 f = SchlickFresnel(metalF0, float3(1.0f), AbsCosTheta(wo)) / cosWi;
+            return BSDFSample(f, wi, 1.0f, BxDFFlags::SpecularReflection);
+        }
         float3 wm = mfDistrib.Sample_wm(wo, u);
         float3 wi = Reflect(wo, wm);
         if (!SameHemisphere(wo, wi)) return BSDFSample();
@@ -538,6 +635,10 @@ public struct MetallicBSDF : IBxDF {
 
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection) || !SameHemisphere(wo, wi)) return 0.0f;
+        if (mfDistrib.EffectivelySmooth()) {
+            float3 wr = float3(-wo.x, -wo.y, wo.z);
+            return IsSpecularDirection(wi, wr) ? 1.0f : 0.0f;
+        }
         return PDFGlossy(wo, wi, mfDistrib);
     }
 };
@@ -1127,7 +1228,7 @@ public struct PrincipledBSDF : IBSDF {
         CalcCoatFresnel(coatF0, coatF90);
         this.cCoatWeight = saturate(coatWeight);
         coatRoughness = max(8e-3f, coatRoughness);
-        float coatReflectance = MaxComponent(CoatReflectance(this.cCoatWeight, coatRoughness, wo, ggxLutEIndex));
+        float coatReflectance = MaxComponent(CoatReflectance(this.cCoatWeight, coatRoughness, wo, ggxLutEIndex, ggxLutEavgIndex, energyCompensation));
         this.cCoat = clamp(coatReflectance, 0.0f, 1.0f);
         this.cUnderCoat = max(1.0f - this.cCoat, 0.0f);
 
@@ -1141,7 +1242,12 @@ public struct PrincipledBSDF : IBSDF {
         transmission = saturate(transmission);
         float opaqueDielectric = this.cBase * (1.0f - metallic) * (1.0f - transmission);
         float translucentDielectric = this.cBase * (1.0f - metallic) * transmission;
-        float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90, SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness)));
+        float glossyAlphaX, glossyAlphaY;
+        CalcAnisotropicAlpha(roughness, anisotropyStrength, glossyAlphaX, glossyAlphaY);
+        TrowbridgeReitzDistribution glossyDistrib = TrowbridgeReitzDistribution(glossyAlphaX, glossyAlphaY);
+        float2 glossyLutE = GGXDirectionalAlbedoLut(ggxLutEIndex, wo, roughness, glossyDistrib);
+        float glossyLutEavg = GGXAverageAlbedo(ggxLutEavgIndex, roughness, glossyDistrib);
+        float sampleGlossy = MaxComponent(GlossyDirectionalReflectance(dielF0, dielF90, glossyLutE, glossyLutEavg, energyCompensation));
         float rawDiffuseFamily = opaqueDielectric * max(1.0f - sampleGlossy, 0.0f);
         float rawMetal = this.cBase * metallic;
         float rawDielSpec = opaqueDielectric * sampleGlossy;
@@ -1173,7 +1279,7 @@ public struct PrincipledBSDF : IBSDF {
         this.cMetal    = this.cBase * metallic;
 
         // Construct each lobe
-        this.diffuse  = DiffuseBSDF(baseColor, dielF0, dielF90, roughness, ggxLutEIndex);
+        this.diffuse  = DiffuseBSDF(baseColor, dielF0, dielF90, roughness, anisotropyStrength, energyCompensation, ggxLutEIndex, ggxLutEavgIndex);
         this.glass     = GlassBSDF(baseColor, ior, dielF0, dielF90, roughness, anisotropyStrength, energyCompensation,
                                    ggxLutEIndex, ggxLutEavgIndex, ggxLutEIORIndex, ggxLutEIORavgIndex, ggxLutEIORInvIndex, ggxLutEIORInvavgIndex);
         this.glossy    = GlossyBSDF(dielF0, dielF90, roughness, anisotropyStrength, energyCompensation,
