@@ -159,10 +159,6 @@ struct FImportedMesh
      */
     [[nodiscard]] size_t CalculateQuantizedBound(bool lod, bool dag) const;
 };
-/**
- * Loads a Wavefront OBJ file into a mesh, with no optimization applied
- */
-void LoadObj(FImportedMesh& mesh, StringView path);
 
 /* -- Math Exports -- */
 void buildOrthonormalBasis(float3 n, float3& b1, float3& b2);

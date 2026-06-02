@@ -4,7 +4,6 @@ cmake_minimum_required(VERSION 3.26)
 FetchContent_MakeAvailable(stb)
 FetchContent_MakeAvailable(lz4)
 FetchContent_MakeAvailable(bc7enc)
-FetchContent_MakeAvailable(fast_obj)
 FetchContent_MakeAvailable(meshoptimizer)
 
 add_subdirectory(Shaders)
@@ -31,7 +30,6 @@ target_include_directories(Foundation_GPUScene PUBLIC
     "${stb_SOURCE_DIR}"
     "${lz4_SOURCE_DIR}/lib"
     "${bc7enc_SOURCE_DIR}"
-    "${fast_obj_SOURCE_DIR}"
     "${meshoptimizer_SOURCE_DIR}/demo"
 )
 add_library(Foundation_Rasterizer STATIC

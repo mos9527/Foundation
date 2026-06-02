@@ -22,7 +22,7 @@
 //   6. Per frame: drive the UBO from an FArcballCamera (WASD + mouse) and submit.
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp> // UBO + BuildRasterRenderGraph + Renderer{Scene,Config,Handles}
-#include <Renderer/Mesh.hpp>     // FImportedMesh / LoadObj
+#include <Editor/Scene/Mesh.hpp> // FImportedMesh / LoadObj
 #include <Editor/Camera.hpp>     // FArcballCamera
 #include "Examples.hpp"
 #include <algorithm>
