@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/Container.hpp>
 #include <Math/Math.hpp>
 #include "Serialization.hpp"
 using namespace Foundation;

@@ -5,7 +5,7 @@ using namespace Foundation;
 using namespace Core;
 using namespace Math;
 // https://www.pbr-book.org/4ed/Sampling_Algorithms/The_Alias_Method#AliasTable
-struct Alias
+struct GSAlias
 {
     float prob, select;
     uint alias;
@@ -13,7 +13,7 @@ struct Alias
 
 struct AliasTable
 {
-    Vector<Alias> mBins;
+    Vector<GSAlias> mBins;
     AliasTable(Span<const float> f, Allocator* alloc);
     // Index into mBins
     uint Sample(float u, float& pdf) const;

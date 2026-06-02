@@ -11,11 +11,6 @@
 #include <Core/Atomic.hpp>
 #include <Core/Paths.hpp>
 #include <Core/ThreadPool.hpp>
-#include <Math/Quantize.hpp>
-#include <algorithm>
-#include <atomic>
-#include <limits>
-#include <thread>
 
 // Per-resource staging footprint slack, mirrored from the previous Editor scheduler.
 static constexpr size_t kUploadBudgetSlack = 1ull * (1ull << 20);
@@ -76,6 +71,305 @@ static constexpr uint32_t kGPUScenePersistentTexture3DBindings = 2u; // default 
 static constexpr uint32_t kGPUSceneTextureBindingSlack = 8u;
 static constexpr size_t kGPUSceneByteBudgetSlack = 64u << 10u;
 
+/** @brief One deferred blob payload write: decode @ref blob into the mapped destination @ref dst. */
+struct GPUSceneBlobWrite
+{
+    FBlobRef blob{};
+    char* dst{nullptr};
+    size_t size{0};
+};
+
+BITMASK_ENUM_BEGIN(GSData, uint8_t)
+    Mesh = 1 << 0
+BITMASK_ENUM_END()
+
+#pragma pack(push, 1)
+struct GSCurveSet
+{
+    uint32_t pointOffset; // GSCurvePoint, in Primitive buffer (bytes)
+    uint32_t pointCount;
+    uint32_t segmentOffset; // GSCurveSegment, in Primitive buffer (bytes)
+    uint32_t segmentCount;
+    uint32_t aabbOffset; // RHIAccelerationStructureAABB, in curve AABB buffer (bytes)
+    uint32_t materialIndex;
+};
+struct GSCurvePoint
+{
+    float3 position;
+    float radius;
+};
+struct GSCurveSegment
+{
+    uint32_t p0;
+    uint32_t p1;
+    float u0;
+    float u1;
+};
+#pragma pack(pop)
+static_assert(sizeof(GSCurveSet) == 24);
+static_assert(sizeof(GSCurvePoint) == 16);
+static_assert(sizeof(GSCurveSegment) == 16);
+
+struct GPUSceneGeometry
+{
+    uint32_t type{kGSInstanceTypeMesh};
+    uint32_t resourceOffset{0}; // Header byte offset in the primitive buffer.
+    GSMesh mesh{};
+    GSCurveSet curve{};
+};
+
+template <typename T>
+struct UploadGPURingBuffer
+{
+    RHIDeviceScopedHandle<RHIBuffer> mBuffer;
+    T *mBegin, *mPrevRing, *mRing, *mEnd;
+
+    UploadGPURingBuffer(RHIDevice* device, size_t budget)
+    {
+        mBuffer = device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
+                                                     .hostAccess = RHIResourceHostAccess::WriteOnly,
+                                                     .coherent = true},
+                                        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
+                                        .size = budget * sizeof(T)});
+        mBegin = mRing = mPrevRing = mBuffer->Map<T>();
+        mEnd = mBegin + budget;
+    }
+    /**
+     * @breif Allocates `count` T elements in the ring buffer, returning a Span to the allocated memory.
+     *        It's up to the caller to fill in the data, which is usually write-only.
+     * @note There's no guard against allocating potentially still in-flight memory range.
+     *       Ensure enough memory budget to avoid overwriting.
+     * @return Raw mapped memory ptr, offset (element wise) in buffer.
+     */
+    Pair<T*, uint32_t> Allocate(uint32_t count)
+    {
+        CHECK_MSG(count <= Capacity(), "GPU upload ring allocation overflow: requested {} elements, capacity {}", count, Capacity());
+        T* begin = mRing;
+        if (static_cast<size_t>(mEnd - begin) < count) // Wrap
+            begin = mRing = mBegin;
+        uint32_t offset = static_cast<uint32_t>(begin - mBegin);
+        mPrevRing = begin, mRing = begin + count;
+        return {begin, offset};
+    }
+    void Reset() { mRing = mBegin; }
+    [[nodiscard]] uint32_t Used() const { return mRing - mPrevRing; }
+    [[nodiscard]] uint32_t Capacity() const { return static_cast<uint32_t>(mEnd - mBegin); }
+};
+
+/**
+ * @brief All implementation state and machinery owned by @ref GPUScene.
+ * @note Lives entirely in GPUScene.cpp via @ref GPUScene::mImpl. The committed-snapshot
+ *       tables, the LUT/env bindless indices and the plain primitive/TLAS/sobol/default
+ *       buffer handles remain direct members of the facade (so the hot read getters stay
+ *       inline); this struct reaches them through @ref owner.
+ */
+struct GPUSceneImpl
+{
+    // Re-export the facade's public nested types so member signatures read naturally.
+    using Result = GPUScene::Result;
+    using UpdateResult = GPUScene::UpdateResult;
+    using GPUSceneTables = GPUScene::GPUSceneTables;
+    using MemoryStat = GPUScene::MemoryStat;
+    using TLASBuildResult = GPUScene::TLASBuildResult;
+
+    GPUScene& owner; // Back-reference to the facade-resident state (committed tables, handles).
+
+    RHIDevice* mDevice{nullptr};
+    Allocator* mAllocator{GLOBAL_ALLOC};
+    AllocatorStack* mFrameScratch{nullptr};
+    /* Geometry */
+    char* mPrimitiveMapped{nullptr};
+    bool mDirectGeometryUpload{false};
+    // VMA-backed byte suballocator over the facade's primitive buffer (upload & free at will).
+    RHIDeviceScopedHandle<RHIVirtualAllocator> mPrimitiveAlloc;
+    // For @ref meshletGlobalIndex
+    uint32_t mMeshletGlobalCounter{0};
+    UploadGPURingBuffer<GSInstance> mInstanceBuffer;
+    UploadGPURingBuffer<GSMaterial> mMaterialBuffer;
+    UploadGPURingBuffer<GSLight> mLightBuffer;
+    UploadGPURingBuffer<GSAlias> mLightAliasTableBuffer;
+    /* Textures */
+    BindlessPool mTexture2DPool;
+    BindlessPool mTexture3DPool;
+    /**
+     * @brief Per-bindless-slot residency backing @ref TextureHandle (one table per pool,
+     *        since the 2D/3D pools have independent slot spaces).
+     * @note `generation` is bumped on free so stale handles fail @ref Query; `pinned`
+     *       marks GPUScene-owned singletons (LUTs / defaults / env map) that @ref Collect
+     *       must never reclaim.
+     */
+    struct TextureSlot
+    {
+        uint32_t generation{0};
+        bool live{false};
+        bool pinned{false};
+    };
+    Vector<TextureSlot> mTexture2DSlots;
+    Vector<TextureSlot> mTexture3DSlots;
+    [[nodiscard]] Vector<TextureSlot>& TextureSlots(bool is3D) { return is3D ? mTexture3DSlots : mTexture2DSlots; }
+    [[nodiscard]] Vector<TextureSlot> const& TextureSlots(bool is3D) const { return is3D ? mTexture3DSlots : mTexture2DSlots; }
+    [[nodiscard]] BindlessPool& TexturePool(bool is3D) { return is3D ? mTexture3DPool : mTexture2DPool; }
+    // Frees a live texture slot (pool binding + owned resource) and bumps its generation.
+    void FreeTextureSlot(bool is3D, uint32_t slot);
+    [[nodiscard]] BindlessPool& SelectTexturePool(RHITextureDimension viewDimension);
+    [[nodiscard]] BindlessPool const& SelectTexturePool(RHITextureDimension viewDimension) const;
+    /* AS */
+    // BLAS
+    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
+    Vector<RHIDeviceScopedHandle<RHIBuffer>> mBLASBuffers;
+    Vector<uint32_t> mFreeBLASSlots;
+    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mCurveBLASes;
+    Vector<RHIDeviceScopedHandle<RHIBuffer>> mCurveBLASBuffers;
+    Vector<uint32_t> mFreeCurveBLASSlots;
+    RHIDeviceScopedHandle<RHIBuffer> mCurveAABBBuffer;
+    char* mCurveAABBMapped{nullptr};
+    // VMA-backed byte suballocator over mCurveAABBBuffer.
+    RHIDeviceScopedHandle<RHIVirtualAllocator> mCurveAABBAlloc;
+    uint32_t AcquireMeshBLASSlot();
+    uint32_t AcquireCurveBLASSlot();
+
+    enum class ResourceState : uint8_t { Queued, Uploading, Ready, Failed };
+
+    /* Geometry residency (handle-owned). Slots are recycled with a bumped generation. */
+    struct GeometryResidency
+    {
+        uint32_t generation{0};
+        uint32_t type{kGSInstanceTypeMesh};
+        uint32_t blasSlot{UINT32_MAX};
+        uint32_t resourceOffset{0}; // Header byte offset in primitive buffer.
+        GSMesh mesh{};
+        GSCurveSet curve{};
+        ResourceState state{ResourceState::Queued};
+        bool live{false};
+    };
+    Vector<GeometryResidency> mGeometry;
+    Vector<uint32_t> mFreeGeometrySlots;
+
+    [[nodiscard]] GeometryResidency* ResolveGeometry(GeometryHandle handle);
+    [[nodiscard]] GeometryResidency const* ResolveGeometry(GeometryHandle handle) const;
+    uint32_t AcquireGeometrySlot();
+    void FreeGeometry(uint32_t slot);
+    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
+                   ImmediateSubmitDesc const& firstSubmitDesc = {});
+    void BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices,
+                        ImmediateSubmitDesc const& firstSubmitDesc = {});
+
+    /* --- Private upload work queue (owned staging / decode / transfer / BLAS) --- */
+    /**
+     * @brief A geometry resource reserved by @ref Upload and finalized by @ref Join / @ref Poll.
+     * @note Final primitive/AABB memory is allocated up front; staging, blob decode,
+     *       transfer and BLAS build run later when the queue is drained.
+     */
+    struct PendingGeometryUpload
+    {
+        GeometryHandle handle{};
+        FBlobDeserializer blobs{Span<const unsigned char>{}};
+        const FSerializedMesh* mesh{nullptr};
+        const FSerializedCurve* curve{nullptr};
+        size_t footprint{0}; // staging bytes (primitive [+ curve AABB]); 0/1 when direct-mapped.
+    };
+    struct PendingTextureUpload
+    {
+        uint32_t index{UINT32_MAX};
+        FBlobDeserializer blobs{Span<const unsigned char>{}};
+        const FSerializedTexture* source{nullptr};
+    };
+    /** @brief A plain device-local buffer copy; the payload is owned so the caller's source can go. */
+    struct PendingBufferUpload
+    {
+        RHIBuffer* dst{nullptr};
+        uint32_t dstOffset{0};
+        Vector<unsigned char> data;
+    };
+    Vector<PendingGeometryUpload> mPendingGeometry;
+    Vector<PendingTextureUpload> mPendingTextures;
+    Vector<PendingBufferUpload> mPendingBuffers;
+    /// Optional background drain. While in flight the owning GPUScene must not be
+    /// installed/consumed by the renderer (the worker has exclusive access to it).
+    Thread mUploadThread;
+    Atomic<bool> mUploadsDone{true};
+    Atomic<bool> mUploadFailed{false};
+
+    /** @brief Reserves final resident memory and computes the shader header (no staging yet). */
+    Result ReserveMesh(FSerializedMesh const& src, GSMesh& outHeader, uint32_t& outOffset);
+    Result ReserveCurve(FSerializedCurve const& src, GSCurveSet& outHeader, uint32_t& outOffset);
+    /**
+     * @brief Stages a reserved resource into the upload context: writes the shader header
+     *        inline and emits blob-decode jobs for its payloads.
+     * @return Bytes staged, or 0 when the staging lane is full (caller flushes and retries).
+     */
+    size_t StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src, GSMesh const& header,
+                     uint32_t offset, Vector<GPUSceneBlobWrite>& outWrites);
+    size_t StageCurve(ImmediateUpload* ctx, FSerializedCurve const& src, GSCurveSet const& header,
+                      uint32_t offset, Vector<GPUSceneBlobWrite>& outWrites);
+    /** @brief Stages one texture subresource (emits a blob-decode job); 0 when the lane is full. */
+    size_t StageTextureSubresource(ImmediateUpload* ctx, FSerializedTexture const& source, RHITexture* texture,
+                                   uint32_t layer, uint32_t mip, Vector<GPUSceneBlobWrite>& outWrites);
+    /**
+     * @brief Drains the pending upload queues: best-fit staging packing, threaded blob
+     *        decode, transfer submission, BLAS build, residency patching, Ready marking.
+     */
+    void ProcessPendingUploads();
+    /** @brief Launches @ref ProcessPendingUploads on a background worker (lazily kicked by @ref Poll). */
+    void StartUploads();
+    void FlushDirectGeometryUpload();
+
+    /* --- Table ring allocation --- */
+    Pair<GSInstance*, uint32_t> AllocateInstance(uint32_t count);
+    Pair<GSMaterial*, uint32_t> AllocateMaterial(uint32_t count);
+    Pair<GSLight*, uint32_t> AllocateLight(uint32_t count);
+    Pair<GSAlias*, uint32_t> AllocateLightAliasTable(uint32_t count);
+    struct OpenTables
+    {
+        bool open{false};
+        uint32_t firstAliasTable{0};
+        GSAlias* aliasPtr{nullptr};
+        GSInstance* instancePtr{nullptr}; // Ring destination for the translated instances.
+        uint32_t instanceCount{0};
+    } mOpenTables;
+    // Caller-facing InstanceDesc scratch handed out by BeginScene; persists until EndScene.
+    Vector<InstanceDesc> mInstanceScratch;
+    // TLAS
+    uint32_t mTLASInstanceStride{0}; // In bytes, read only once
+    RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;
+    UploadGPURingBuffer<char> mTLASInstances;
+    uint32_t CountLiveInstances() const;
+    uint32_t CountTLASInstances() const;
+    bool EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate);
+
+    // Light BLAS
+    RHIDeviceScopedHandle<RHIBuffer> mLightGeometryBuffer;
+    RHIDeviceScopedHandle<RHIAccelerationStructure> mRectBLAS;
+    RHIDeviceScopedHandle<RHIAccelerationStructure> mDiskBLAS;
+    RHIDeviceScopedHandle<RHIBuffer> mLightBLASBuffer;
+
+    GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc,
+                 AllocatorStack* frameScratch);
+    ~GPUSceneImpl();
+
+    /* --- Methods backing the facade forwarders (heavy bodies live in GPUScene.cpp) --- */
+    Result Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
+    Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
+    Result Upload(FBlobDeserializer* blobs, FSerializedTexture const& source, TextureHandle& outTexture,
+                  const char* debugName = nullptr, bool pinned = false);
+    Result Upload(FTexture const& source, TextureHandle& outTexture, const char* debugName = nullptr,
+                  bool pinned = false);
+    Result Upload(RHIBuffer* dst, Span<const unsigned char> data, uint32_t dstOffset = 0);
+    [[nodiscard]] Result Query(GeometryHandle handle) const;
+    [[nodiscard]] Result Query(TextureHandle texture) const;
+    void Join();
+    [[nodiscard]] Result Poll();
+    Result UploadViewLUTs(FTexture const& sdr, FTexture const& hdr);
+    Result UploadEnvMap(FTexture const& source);
+    GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
+    UpdateResult EndScene(GPUSceneTables& tables);
+    void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
+    [[nodiscard]] String DbgGetBufferStatistics() const;
+    [[nodiscard]] TLASBuildResult BuildTLAS(RHICommandList* cmd, bool update);
+    void Collect();
+    void Reset();
+};
+
 size_t GPUScene::CalculateMeshPrimitiveSize(FSerializedMesh const& src)
 {
     uint64_t lod0Size = src.lods.empty() ? 0 : src.lods[0].indices.decodedSize;
@@ -129,18 +423,29 @@ struct GPUSceneBlobDecodeJob final : Foundation::Core::ThreadPoolJob
     }
 };
 
-void GPUScene::FlushDirectGeometryUpload()
+void GPUSceneImpl::FlushDirectGeometryUpload()
 {
     if (!mDirectGeometryUpload)
         return;
     if (mPrimitiveAlloc->GetPeakUsage())
-        mPrimitiveBuffer->Flush(0, mPrimitiveAlloc->GetPeakUsage());
+        owner.mPrimitiveBuffer->Flush(0, mPrimitiveAlloc->GetPeakUsage());
     if (mCurveAABBAlloc->GetPeakUsage())
         mCurveAABBBuffer->Flush(0, mCurveAABBAlloc->GetPeakUsage());
 }
 
 GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc,
                    AllocatorStack* frameScratch) :
+    mCommittedInstances(allocator),
+    mCommittedLights(allocator),
+    mCommittedMaterials(allocator),
+    mPickMap(allocator)
+{
+    mImpl = ConstructUnique<GPUSceneImpl>(allocator, *this, device, allocator, desc, frameScratch);
+}
+
+GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc,
+                           AllocatorStack* frameScratch) :
+    owner(owner),
     mDevice(device), mAllocator(allocator), mFrameScratch(frameScratch),
     mInstanceBuffer(device, desc.instanceBudget),
     mMaterialBuffer(device, desc.materialBudget),
@@ -158,10 +463,6 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
     mFreeCurveBLASSlots(allocator),
     mGeometry(allocator),
     mFreeGeometrySlots(allocator),
-    mCommittedInstances(allocator),
-    mCommittedLights(allocator),
-    mCommittedMaterials(allocator),
-    mPickMap(allocator),
     mPendingGeometry(allocator),
     mPendingTextures(allocator),
     mPendingBuffers(allocator),
@@ -183,7 +484,7 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
         .hostAccess = mDirectGeometryUpload ? RHIResourceHostAccess::WriteOnly : RHIResourceHostAccess::Invisible,
         .shared = true,
     };
-    mPrimitiveBuffer = mDevice->CreateBuffer(
+    owner.mPrimitiveBuffer = mDevice->CreateBuffer(
     {.resource = geoDesc,
              .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
              RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
@@ -196,7 +497,7 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
      .size = desc.curveAABBBudget});
     if (mDirectGeometryUpload)
     {
-        mPrimitiveMapped = mPrimitiveBuffer->Map<char>();
+        mPrimitiveMapped = owner.mPrimitiveBuffer->Map<char>();
         mCurveAABBMapped = mCurveAABBBuffer->Map<char>();
         LOG(GPUScene, LogInfo, "Direct GPU Memory Access available ({} MiB budget used). Uploading via direct copy.",
             directGeometryBudget / (1u << 20));
@@ -227,9 +528,9 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
         .buffer = mTLASBuffer.Get(),
         .size = static_cast<uint32_t>(mTLASBuffer->mDesc.size)
     };
-    mTLAS = mDevice->CreateAccelerationStructure(tlasDesc);
+    owner.mTLAS = mDevice->CreateAccelerationStructure(tlasDesc);
     
-    mSobolMatricesBuffer = mDevice->CreateBuffer(
+    owner.mSobolMatricesBuffer = mDevice->CreateBuffer(
     {
         .resource = {
             .heap = RHIDeviceHeapType::Local,
@@ -238,7 +539,7 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
         .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
         .size = sizeof(kSobolMatrices32)
     });
-    mSobolMatricesBuffer->DebugSetObjectName("Sobol Matrices");
+    owner.mSobolMatricesBuffer->DebugSetObjectName("Sobol Matrices");
 
     // Initialize procedural light BLASes. Intersections are done in shader against the
     // unit disk/rect in object space; TLAS instances provide the light transform.
@@ -386,38 +687,40 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
         auto defaultViewLutHdr =
             LoadLUT(mAllocator, kViewLUTsHdr[kDefaultViewLUTHdr].path);
         const size_t foundationDefaultBufferFloatSize = sizeof(float);
-        mFoundationDefaultBufferFloat = mDevice->CreateBuffer({
+        owner.mFoundationDefaultBufferFloat = mDevice->CreateBuffer({
             .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
             .size = foundationDefaultBufferFloatSize
         });
         // Textures (incl. view LUTs) go through the unified upload queue.
         // Pinned: GPUScene-owned singletons that Collect must never reclaim.
-        Upload(lutE, mLUTGGXEIndex, nullptr, true);
-        Upload(lutEavg, mLUTGGXEavgIndex, nullptr, true);
-        Upload(lutEIOR, mLUTGGXEIORIndex, nullptr, true);
-        Upload(lutEIORavg, mLUTGGXEIORavgIndex, nullptr, true);
-        Upload(lutEIORInv, mLUTGGXEIORInvIndex, nullptr, true);
-        Upload(lutEIORInvavg, mLUTGGXEIORInvavgIndex, nullptr, true);
-        Upload(sheenLtc, mLUTSheenLTCIndex, nullptr, true);
-        Upload(foundationDefaultTexture2D, mFoundationDefaultTexture2DIndex, "_FoundationDefaultTexture2D", true);
-        Upload(foundationDefaultTexture2DFloat, mFoundationDefaultTexture2DFloatIndex,
+        Upload(lutE, owner.mLUTGGXEIndex, nullptr, true);
+        Upload(lutEavg, owner.mLUTGGXEavgIndex, nullptr, true);
+        Upload(lutEIOR, owner.mLUTGGXEIORIndex, nullptr, true);
+        Upload(lutEIORavg, owner.mLUTGGXEIORavgIndex, nullptr, true);
+        Upload(lutEIORInv, owner.mLUTGGXEIORInvIndex, nullptr, true);
+        Upload(lutEIORInvavg, owner.mLUTGGXEIORInvavgIndex, nullptr, true);
+        Upload(sheenLtc, owner.mLUTSheenLTCIndex, nullptr, true);
+        Upload(foundationDefaultTexture2D, owner.mFoundationDefaultTexture2DIndex, "_FoundationDefaultTexture2D", true);
+        Upload(foundationDefaultTexture2DFloat, owner.mFoundationDefaultTexture2DFloatIndex,
                "_FoundationDefaultTexture2DFloat", true);
         UploadViewLUTs(defaultViewLutSdr, defaultViewLutHdr);
 
         // Plain device-local buffers ride the same upload queue.
         const float foundationDefaultBufferFloat = 1.0f;
-        Upload(mFoundationDefaultBufferFloat.Get(),
+        Upload(owner.mFoundationDefaultBufferFloat.Get(),
                Span<const unsigned char>(reinterpret_cast<const unsigned char*>(&foundationDefaultBufferFloat),
                                          foundationDefaultBufferFloatSize));
-        Upload(mSobolMatricesBuffer.Get(),
+        Upload(owner.mSobolMatricesBuffer.Get(),
                Span<const unsigned char>(reinterpret_cast<const unsigned char*>(kSobolMatrices32),
                                          sizeof(kSobolMatrices32)));
         Join();
     }
 }
 
-GPUScene::~GPUScene()
+GPUScene::~GPUScene() = default;
+
+GPUSceneImpl::~GPUSceneImpl()
 {
     if (mUploadThread.joinable())
         mUploadThread.join();
@@ -429,27 +732,27 @@ GPUScene::~GPUScene()
         mCurveAABBAlloc->Clear();
 }
 
-Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)
+Pair<GSInstance*, uint32_t> GPUSceneImpl::AllocateInstance(uint32_t count)
 {
     return mInstanceBuffer.Allocate(count);
 }
 
-Pair<GSMaterial*, uint32_t> GPUScene::AllocateMaterial(uint32_t count)
+Pair<GSMaterial*, uint32_t> GPUSceneImpl::AllocateMaterial(uint32_t count)
 {
     return mMaterialBuffer.Allocate(count);
 }
 
-Pair<GSLight*, uint32_t> GPUScene::AllocateLight(uint32_t count)
+Pair<GSLight*, uint32_t> GPUSceneImpl::AllocateLight(uint32_t count)
 {
     return mLightBuffer.Allocate(count);
 }
 
-Pair<Alias*, uint32_t> GPUScene::AllocateLightAliasTable(uint32_t count)
+Pair<GSAlias*, uint32_t> GPUSceneImpl::AllocateLightAliasTable(uint32_t count)
 {
     return mLightAliasTableBuffer.Allocate(count);
 }
 
-GPUScene::GPUSceneTables GPUScene::BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount)
+GPUScene::GPUSceneTables GPUSceneImpl::BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount)
 {
     CHECK_MSG(!mOpenTables.open, "BeginScene called while a scene table is already open");
     GPUSceneTables tables{};
@@ -482,7 +785,7 @@ GPUScene::GPUSceneTables GPUScene::BeginScene(uint32_t instanceCount, uint32_t m
     return tables;
 }
 
-GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables)
+GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
 {
     CHECK_MSG(mOpenTables.open, "EndScene called without a matching BeginScene");
     UpdateResult res{};
@@ -497,7 +800,7 @@ GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables)
     // The committed snapshot is the authoritative CPU-side scene used by BuildTLAS, picking,
     // and Collect(); it must not alias ring memory overwritten by a later commit.
     CHECK(tables.instances.size() == mOpenTables.instanceCount);
-    mCommittedInstances.resize(tables.instances.size());
+    owner.mCommittedInstances.resize(tables.instances.size());
     for (size_t i = 0; i < tables.instances.size(); ++i)
     {
         InstanceDesc const& desc = tables.instances[i];
@@ -514,11 +817,11 @@ GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables)
             .type = g->type,
         };
         mOpenTables.instancePtr[i] = inst; // ring (GPU)
-        mCommittedInstances[i] = inst;     // committed snapshot
+        owner.mCommittedInstances[i] = inst;     // committed snapshot
     }
 
-    mCommittedMaterials.assign(tables.materials.begin(), tables.materials.end());
-    mCommittedLights.assign(tables.lights.begin(), tables.lights.end());
+    owner.mCommittedMaterials.assign(tables.materials.begin(), tables.materials.end());
+    owner.mCommittedLights.assign(tables.lights.begin(), tables.lights.end());
 
     if (!tables.lights.empty())
     {
@@ -532,7 +835,7 @@ GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables)
         }
         AliasTable table(powers, scratch);
         CHECK(mOpenTables.aliasPtr != nullptr);
-        std::memcpy(mOpenTables.aliasPtr, table.mBins.data(), table.mBins.size() * sizeof(Alias));
+        std::memcpy(mOpenTables.aliasPtr, table.mBins.data(), table.mBins.size() * sizeof(GSAlias));
         res.firstLight = tables.firstLight;
         res.firstLightAliasTable = mOpenTables.firstAliasTable;
         res.numLights = static_cast<uint32_t>(tables.lights.size());
@@ -557,7 +860,7 @@ void GPUScene::FillGlobals(UBO& globals, bool hdr) const
     globals.envMapConditionalCDFIndex = GetEnvMapConditionalCDFIndexOrDefault();
 }
 
-void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
+void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
 {
     auto AddBufferSize = [&](RHIDeviceScopedHandle<RHIBuffer> const& buffer) -> size_t
     {
@@ -577,7 +880,7 @@ void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
         return bytes;
     };
 
-    size_t primitiveBytes = AddBufferSize(mPrimitiveBuffer);
+    size_t primitiveBytes = AddBufferSize(owner.mPrimitiveBuffer);
     size_t curveAABBBytes = AddBufferSize(mCurveAABBBuffer);
     auto texture2DStats = mTexture2DPool.GetStats();
     auto texture3DStats = mTexture3DPool.GetStats();
@@ -592,8 +895,8 @@ void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     size_t tlasScratchBytes = AddBufferSize(mScratchBufferTLAS);
     size_t lightBLASBytes = AddBufferSize(mLightBLASBuffer);
     size_t lightGeometryBytes = AddBufferSize(mLightGeometryBuffer);
-    size_t sobolBytes = AddBufferSize(mSobolMatricesBuffer);
-    size_t defaultBufferBytes = AddBufferSize(mFoundationDefaultBufferFloat);
+    size_t sobolBytes = AddBufferSize(owner.mSobolMatricesBuffer);
+    size_t defaultBufferBytes = AddBufferSize(owner.mFoundationDefaultBufferFloat);
 
     outStats.push_back({"Primitive Buffer (Buffer)", primitiveBytes});
     outStats.push_back({"Curve AABB Buffer (Buffer)", curveAABBBytes});
@@ -611,7 +914,7 @@ void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     outStats.push_back({"Other GPUScene Buffers (Buffer)", lightGeometryBytes + sobolBytes + defaultBufferBytes});
 }
 
-String GPUScene::DbgGetBufferStatistics() const
+String GPUSceneImpl::DbgGetBufferStatistics() const
 {
     String res;
     Vector<MemoryStat> stats(GLOBAL_ALLOC);
@@ -623,9 +926,9 @@ String GPUScene::DbgGetBufferStatistics() const
     auto texture2DStats = mTexture2DPool.GetStats();
     auto texture3DStats = mTexture3DPool.GetStats();
     fmt::format_to(std::back_inserter(res), "Primitive Buffer: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
-                   mPrimitiveBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
+                   owner.mPrimitiveBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
                    mPrimitiveAlloc->GetUsedBytes() / static_cast<float>(1 << 20u),
-                   mPrimitiveBuffer->mDesc.size / static_cast<float>(1 << 20u));
+                   owner.mPrimitiveBuffer->mDesc.size / static_cast<float>(1 << 20u));
     fmt::format_to(std::back_inserter(res), "Curve AABB Buffer: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
                    mCurveAABBBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
                    mCurveAABBAlloc->GetUsedBytes() / static_cast<float>(1 << 20u),
@@ -653,12 +956,12 @@ String GPUScene::DbgGetBufferStatistics() const
     return res;
 }
 
-GPUScene::Result GPUScene::ReserveMesh(FSerializedMesh const& src, GSMesh& outData, uint32_t& outOffset)
+GPUScene::Result GPUSceneImpl::ReserveMesh(FSerializedMesh const& src, GSMesh& outData, uint32_t& outOffset)
 {
     if (src.lods.empty())
         return Result::InvalidInput;
     auto const& lod0 = src.lods[0];
-    const size_t size = CalculateMeshPrimitiveSize(src);
+    const size_t size = GPUScene::CalculateMeshPrimitiveSize(src);
     constexpr size_t kAlign = 4;
     uint64_t base = mPrimitiveAlloc->Allocate(size, kAlign);
     if (base == RHIVirtualAllocator::kInvalidOffset)
@@ -691,10 +994,10 @@ GPUScene::Result GPUScene::ReserveMesh(FSerializedMesh const& src, GSMesh& outDa
     return Result::InProgress;
 }
 
-size_t GPUScene::StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src, GSMesh const& header,
+size_t GPUSceneImpl::StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src, GSMesh const& header,
                            uint32_t offset, Vector<GPUSceneBlobWrite>& outWrites)
 {
-    const size_t size = CalculateMeshPrimitiveSize(src);
+    const size_t size = GPUScene::CalculateMeshPrimitiveSize(src);
     char* ptr = nullptr;
     if (mDirectGeometryUpload)
     {
@@ -705,7 +1008,7 @@ size_t GPUScene::StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src, GSM
     {
         if (ctx->ptr + size > ctx->end)
             return 0;
-        ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, offset);
+        ptr = ctx->Upload(owner.mPrimitiveBuffer.Get(), size, offset);
         CHECK(ptr != nullptr);
     }
     // The header is a trivial copy, written inline; only payloads need threaded decode.
@@ -724,7 +1027,7 @@ size_t GPUScene::StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src, GSM
     return size;
 }
 
-GPUScene::Result GPUScene::ReserveCurve(FSerializedCurve const& src, GSCurveSet& outData, uint32_t& outOffset)
+GPUScene::Result GPUSceneImpl::ReserveCurve(FSerializedCurve const& src, GSCurveSet& outData, uint32_t& outOffset)
 {
     static_assert(sizeof(FCurvePoint) == sizeof(GSCurvePoint));
     static_assert(alignof(FCurvePoint) == alignof(GSCurvePoint));
@@ -746,7 +1049,7 @@ GPUScene::Result GPUScene::ReserveCurve(FSerializedCurve const& src, GSCurveSet&
               "Serialized curve AABB blob size mismatch");
 
     const size_t pointCount = static_cast<size_t>(src.points.decodedSize / sizeof(GSCurvePoint));
-    const size_t size = CalculateCurvePrimitiveSize(src);
+    const size_t size = GPUScene::CalculateCurvePrimitiveSize(src);
     constexpr size_t kAlign = 4;
     uint64_t base = mPrimitiveAlloc->Allocate(size, kAlign);
     if (base == RHIVirtualAllocator::kInvalidOffset)
@@ -757,7 +1060,7 @@ GPUScene::Result GPUScene::ReserveCurve(FSerializedCurve const& src, GSCurveSet&
     }
     outOffset = static_cast<uint32_t>(base);
 
-    const size_t aabbSize = CalculateCurveAABBSize(src);
+    const size_t aabbSize = GPUScene::CalculateCurveAABBSize(src);
     uint64_t aabbBase = mCurveAABBAlloc->Allocate(aabbSize, alignof(RHIAccelerationStructureAABB));
     if (aabbBase == RHIVirtualAllocator::kInvalidOffset)
     {
@@ -781,11 +1084,11 @@ GPUScene::Result GPUScene::ReserveCurve(FSerializedCurve const& src, GSCurveSet&
     return Result::InProgress;
 }
 
-size_t GPUScene::StageCurve(ImmediateUpload* ctx, FSerializedCurve const& src, GSCurveSet const& header,
+size_t GPUSceneImpl::StageCurve(ImmediateUpload* ctx, FSerializedCurve const& src, GSCurveSet const& header,
                             uint32_t offset, Vector<GPUSceneBlobWrite>& outWrites)
 {
-    const size_t size = CalculateCurvePrimitiveSize(src);
-    const size_t aabbSize = CalculateCurveAABBSize(src);
+    const size_t size = GPUScene::CalculateCurvePrimitiveSize(src);
+    const size_t aabbSize = GPUScene::CalculateCurveAABBSize(src);
     char* ptr = nullptr;
     char* aabbPtr = nullptr;
     if (mDirectGeometryUpload)
@@ -799,7 +1102,7 @@ size_t GPUScene::StageCurve(ImmediateUpload* ctx, FSerializedCurve const& src, G
     {
         if (ctx->ptr + size + aabbSize > ctx->end)
             return 0;
-        ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, offset);
+        ptr = ctx->Upload(owner.mPrimitiveBuffer.Get(), size, offset);
         CHECK(ptr != nullptr);
         aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, header.aabbOffset);
         CHECK(aabbPtr != nullptr);
@@ -820,7 +1123,7 @@ static bool IsTexture3DView(RHITextureDimension dimension)
     return dimension == RHITextureDimension::E3D;
 }
 
-BindlessPool& GPUScene::SelectTexturePool(RHITextureDimension viewDimension)
+BindlessPool& GPUSceneImpl::SelectTexturePool(RHITextureDimension viewDimension)
 {
     if (IsTexture3DView(viewDimension))
         return mTexture3DPool;
@@ -829,9 +1132,9 @@ BindlessPool& GPUScene::SelectTexturePool(RHITextureDimension viewDimension)
     return mTexture2DPool;
 }
 
-BindlessPool const& GPUScene::SelectTexturePool(RHITextureDimension viewDimension) const
+BindlessPool const& GPUSceneImpl::SelectTexturePool(RHITextureDimension viewDimension) const
 {
-    return const_cast<GPUScene*>(this)->SelectTexturePool(viewDimension);
+    return const_cast<GPUSceneImpl*>(this)->SelectTexturePool(viewDimension);
 }
 
 static uint32_t GetTextureUploadAlignment(FTextureHeader const& metadata)
@@ -882,7 +1185,7 @@ static void TransitionTextureLayout(RHICommandList* cmd, RHITexture* texture, FT
     cmd->EndTransition();
 }
 
-size_t GPUScene::StageTextureSubresource(ImmediateUpload* ctx, FSerializedTexture const& source, RHITexture* texture,
+size_t GPUSceneImpl::StageTextureSubresource(ImmediateUpload* ctx, FSerializedTexture const& source, RHITexture* texture,
                                          uint32_t layer, uint32_t mip, Vector<GPUSceneBlobWrite>& outWrites)
 {
     CHECK(texture != nullptr);
@@ -915,7 +1218,7 @@ size_t GPUScene::StageTextureSubresource(ImmediateUpload* ctx, FSerializedTextur
 
 /* --- Public resource upload work queue --- */
 
-GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle)
+GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle)
 {
     CHECK(blobs != nullptr);
     GSMesh header{};
@@ -936,11 +1239,11 @@ GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedMesh cons
     g.live = true;
     outHandle = {slot, generation};
     mPendingGeometry.push_back({.handle = outHandle, .blobs = *blobs, .mesh = &source, .curve = nullptr,
-                                .footprint = mDirectGeometryUpload ? 1 : CalculateMeshPrimitiveSize(source)});
+                                .footprint = mDirectGeometryUpload ? 1 : GPUScene::CalculateMeshPrimitiveSize(source)});
     return Result::InProgress;
 }
 
-GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle)
+GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle)
 {
     CHECK(blobs != nullptr);
     GSCurveSet header{};
@@ -960,13 +1263,13 @@ GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedCurve con
     g.state = ResourceState::Queued;
     g.live = true;
     outHandle = {slot, generation};
-    const size_t footprint = CalculateCurvePrimitiveSize(source) + CalculateCurveAABBSize(source);
+    const size_t footprint = GPUScene::CalculateCurvePrimitiveSize(source) + GPUScene::CalculateCurveAABBSize(source);
     mPendingGeometry.push_back({.handle = outHandle, .blobs = *blobs, .mesh = nullptr, .curve = &source,
                                 .footprint = mDirectGeometryUpload ? 1 : footprint});
     return Result::InProgress;
 }
 
-GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedTexture const& source,
+GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedTexture const& source,
                                   TextureHandle& outTextureIndex, const char* debugName, bool pinned)
 {
     CHECK(blobs != nullptr);
@@ -1015,7 +1318,7 @@ GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedTexture c
     return Result::InProgress;
 }
 
-GPUScene::Result GPUScene::Upload(FTexture const& source, TextureHandle& outTextureIndex, const char* debugName,
+GPUScene::Result GPUSceneImpl::Upload(FTexture const& source, TextureHandle& outTextureIndex, const char* debugName,
                                   bool pinned)
 {
     if (!source.IsValid())
@@ -1031,7 +1334,7 @@ GPUScene::Result GPUScene::Upload(FTexture const& source, TextureHandle& outText
     return Result::Ready;
 }
 
-GPUScene::Result GPUScene::Upload(RHIBuffer* dst, Span<const unsigned char> data, uint32_t dstOffset)
+GPUScene::Result GPUSceneImpl::Upload(RHIBuffer* dst, Span<const unsigned char> data, uint32_t dstOffset)
 {
     if (!dst || data.empty())
         return Result::InvalidInput;
@@ -1041,7 +1344,7 @@ GPUScene::Result GPUScene::Upload(RHIBuffer* dst, Span<const unsigned char> data
     return Result::InProgress;
 }
 
-GPUScene::Result GPUScene::Query(GeometryHandle handle) const
+GPUScene::Result GPUSceneImpl::Query(GeometryHandle handle) const
 {
     GeometryResidency const* g = ResolveGeometry(handle);
     if (!g)
@@ -1054,7 +1357,7 @@ GPUScene::Result GPUScene::Query(GeometryHandle handle) const
     }
 }
 
-GPUScene::Result GPUScene::Query(TextureHandle texture) const
+GPUScene::Result GPUSceneImpl::Query(TextureHandle texture) const
 {
     Vector<TextureSlot> const& slots = TextureSlots(texture.is3D);
     if (!texture.IsValid() || texture.index >= slots.size() || !slots[texture.index].live ||
@@ -1067,7 +1370,7 @@ GPUScene::Result GPUScene::Query(TextureHandle texture) const
     return Result::Ready;
 }
 
-void GPUScene::Join()
+void GPUSceneImpl::Join()
 {
     if (mUploadThread.joinable())
     {
@@ -1079,14 +1382,14 @@ void GPUScene::Join()
     ProcessPendingUploads();
 }
 
-void GPUScene::StartUploads()
+void GPUSceneImpl::StartUploads()
 {
     CHECK_MSG(!mUploadThread.joinable(), "StartUploads called while a drain is already in flight");
     if (mPendingGeometry.empty() && mPendingTextures.empty() && mPendingBuffers.empty())
         return;
     mUploadFailed.store(false, std::memory_order_release);
     mUploadsDone.store(false, std::memory_order_release);
-    mUploadThread = std::thread([this]
+    mUploadThread = Thread([this]
     {
         try
         {
@@ -1106,7 +1409,7 @@ void GPUScene::StartUploads()
     });
 }
 
-GPUScene::Result GPUScene::Poll()
+GPUScene::Result GPUSceneImpl::Poll()
 {
     if (!mUploadThread.joinable())
     {
@@ -1122,7 +1425,7 @@ GPUScene::Result GPUScene::Poll()
     return mUploadFailed.load(std::memory_order_acquire) ? Result::SubmitFailed : Result::Ready;
 }
 
-void GPUScene::ProcessPendingUploads()
+void GPUSceneImpl::ProcessPendingUploads()
 {
     const bool direct = mDirectGeometryUpload;
     const bool hadTextures = !mPendingTextures.empty();
@@ -1391,7 +1694,7 @@ void GPUScene::ProcessPendingUploads()
 // - https://github.com/zeux/niagara/blob/master/src/scenert.cpp
 // - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/02_Acceleration_structures.html
 // - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/04_TLAS_animation.html
-void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
+void GPUSceneImpl::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
                          ImmediateSubmitDesc const& firstSubmitDesc)
 {
     CHECK_MSG(meshes.size() == outBLASIndices.size(), "Mismatched BLAS indices size");
@@ -1408,7 +1711,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
     Vector<uint32_t> scratchOffsets(meshes.size(), mAllocator);
     StackArena<4096> sizeInfoArena;
     AllocatorStack sizeInfoScratch(sizeInfoArena);
-    auto* primitiveBuffer = mPrimitiveBuffer.Get();
+    auto* primitiveBuffer = owner.mPrimitiveBuffer.Get();
     uint32_t scratchOffset = 0, blasOffset = 0;
     for (size_t i = 0; i < meshes.size(); i++)
     {
@@ -1553,7 +1856,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         blasOffset / 1e6);
 }
 
-void GPUScene::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices,
+void GPUSceneImpl::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices,
                               ImmediateSubmitDesc const& firstSubmitDesc)
 {
     CHECK_MSG(curves.size() == outBLASIndices.size(), "Mismatched curve BLAS indices size");
@@ -1639,7 +1942,7 @@ void GPUScene::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curv
         curves.size(), blasOffset / 1e6);
 }
 
-uint32_t GPUScene::AcquireMeshBLASSlot()
+uint32_t GPUSceneImpl::AcquireMeshBLASSlot()
 {
     if (!mFreeBLASSlots.empty())
     {
@@ -1651,7 +1954,7 @@ uint32_t GPUScene::AcquireMeshBLASSlot()
     return static_cast<uint32_t>(mBLASes.size()) - 1;
 }
 
-uint32_t GPUScene::AcquireCurveBLASSlot()
+uint32_t GPUSceneImpl::AcquireCurveBLASSlot()
 {
     if (!mFreeCurveBLASSlots.empty())
     {
@@ -1665,7 +1968,7 @@ uint32_t GPUScene::AcquireCurveBLASSlot()
 
 /* --- Residency table helpers --- */
 
-GPUScene::GeometryResidency* GPUScene::ResolveGeometry(GeometryHandle handle)
+GPUSceneImpl::GeometryResidency* GPUSceneImpl::ResolveGeometry(GeometryHandle handle)
 {
     if (!handle.IsValid() || handle.index >= mGeometry.size())
         return nullptr;
@@ -1675,12 +1978,12 @@ GPUScene::GeometryResidency* GPUScene::ResolveGeometry(GeometryHandle handle)
     return &g;
 }
 
-GPUScene::GeometryResidency const* GPUScene::ResolveGeometry(GeometryHandle handle) const
+GPUSceneImpl::GeometryResidency const* GPUSceneImpl::ResolveGeometry(GeometryHandle handle) const
 {
-    return const_cast<GPUScene*>(this)->ResolveGeometry(handle);
+    return const_cast<GPUSceneImpl*>(this)->ResolveGeometry(handle);
 }
 
-uint32_t GPUScene::AcquireGeometrySlot()
+uint32_t GPUSceneImpl::AcquireGeometrySlot()
 {
     if (!mFreeGeometrySlots.empty())
     {
@@ -1692,7 +1995,7 @@ uint32_t GPUScene::AcquireGeometrySlot()
     return static_cast<uint32_t>(mGeometry.size()) - 1;
 }
 
-void GPUScene::FreeGeometry(uint32_t slot)
+void GPUSceneImpl::FreeGeometry(uint32_t slot)
 {
     CHECK(slot < mGeometry.size());
     GeometryResidency& g = mGeometry[slot];
@@ -1719,7 +2022,7 @@ void GPUScene::FreeGeometry(uint32_t slot)
     mFreeGeometrySlots.push_back(slot);
 }
 
-void GPUScene::FreeTextureSlot(bool is3D, uint32_t slot)
+void GPUSceneImpl::FreeTextureSlot(bool is3D, uint32_t slot)
 {
     Vector<TextureSlot>& slots = TextureSlots(is3D);
     CHECK(slot < slots.size());
@@ -1731,12 +2034,12 @@ void GPUScene::FreeTextureSlot(bool is3D, uint32_t slot)
     ++s.generation; // invalidate outstanding handles to this slot
 }
 
-void GPUScene::Collect()
+void GPUSceneImpl::Collect()
 {
     // Mark geometry referenced by the committed instance table; free the rest. Pending
     // uploads keep their geometry live (handles are referenced by mPendingGeometry).
     Vector<uint8_t> referenced(mGeometry.size(), 0u, mAllocator);
-    for (GSInstance const& inst : mCommittedInstances)
+    for (GSInstance const& inst : owner.mCommittedInstances)
         if (inst.resourceIndex < referenced.size())
             referenced[inst.resourceIndex] = 1u;
     for (auto const& p : mPendingGeometry)
@@ -1764,7 +2067,7 @@ void GPUScene::Collect()
         if (index != UINT32_MAX && index < referencedTex.size())
             referencedTex[index] = 1u;
     };
-    for (GSMaterial const& m : mCommittedMaterials)
+    for (GSMaterial const& m : owner.mCommittedMaterials)
     {
         MarkTexture(m.baseColorTexture);
         MarkTexture(m.emissiveTexture);
@@ -1797,43 +2100,15 @@ void GPUScene::Collect()
         LOG(GPUScene, LogDebug, "Collect freed {} unreferenced textures", freedTex);
 }
 
-GSInstance GPUScene::GetInstance(uint32_t index) const
+uint32_t GPUSceneImpl::CountLiveInstances() const
 {
-    CHECK_MSG(index < mCommittedInstances.size(), "GetInstance index {} out of range ({})", index,
-              mCommittedInstances.size());
-    return mCommittedInstances[index];
+    return static_cast<uint32_t>(owner.mCommittedInstances.size());
 }
 
-uint32_t GPUScene::ResolvePickedInstance(uint32_t pickID) const
-{
-    // pickID is a TLAS instanceID = index into the last build's written (ready) set.
-    if (pickID >= mPickMap.size())
-        return UINT32_MAX;
-    return mPickMap[pickID];
-}
-
-GSLight GPUScene::GetLight(uint32_t index) const
-{
-    CHECK_MSG(index < mCommittedLights.size(), "GetLight index {} out of range ({})", index, mCommittedLights.size());
-    return mCommittedLights[index];
-}
-
-GSMaterial GPUScene::GetMaterial(uint32_t index) const
-{
-    CHECK_MSG(index < mCommittedMaterials.size(), "GetMaterial index {} out of range ({})", index,
-              mCommittedMaterials.size());
-    return mCommittedMaterials[index];
-}
-
-uint32_t GPUScene::CountLiveInstances() const
-{
-    return static_cast<uint32_t>(mCommittedInstances.size());
-}
-
-uint32_t GPUScene::CountTLASInstances() const
+uint32_t GPUSceneImpl::CountTLASInstances() const
 {
     uint32_t numAreaLights = 0;
-    for (const auto& light : mCommittedLights)
+    for (const auto& light : owner.mCommittedLights)
     {
         if (light.type == 3 || light.type == 4)
             numAreaLights++;
@@ -1845,7 +2120,7 @@ uint32_t GPUScene::CountTLASInstances() const
     return numInstances + numAreaLights;
 }
 
-bool GPUScene::EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate)
+bool GPUSceneImpl::EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate)
 {
     if (totalInstances == 0)
         return true;
@@ -1908,19 +2183,19 @@ bool GPUScene::EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate)
         .buffer = newTLASBuffer.Get(),
         .size = static_cast<uint32_t>(requiredTLASSize)
     });
-    mTLAS.Reset();
+    owner.mTLAS.Reset();
     mTLASBuffer.Reset();
     mScratchBufferTLAS.Reset();
     mTLASBuffer = std::move(newTLASBuffer);
     mScratchBufferTLAS = std::move(newScratchBuffer);
-    mTLAS = std::move(newTLAS);
+    owner.mTLAS = std::move(newTLAS);
     LOG(GPUScene, LogInfo, "Resized TLAS buffers: TLAS {:.1f} MB, scratch {:.1f} MB",
         requiredTLASSize / static_cast<float>(1 << 20u),
         requiredScratchSize / static_cast<float>(1 << 20u));
     return true;
 }
 
-GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update)
+GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool update)
 {
     auto GeometryReady = [&](uint32_t resourceIndex) -> bool
     {
@@ -1941,24 +2216,24 @@ GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update)
     // Only instances whose geometry is Ready can be written this build; the rest are
     // skipped and will appear once their upload + BLAS completes (nonfatal).
     uint32_t areaLights = 0;
-    for (GSLight const& light : mCommittedLights)
+    for (GSLight const& light : owner.mCommittedLights)
         if (light.type == 3 || light.type == 4)
             ++areaLights;
     uint32_t readyInstances = 0;
-    for (GSInstance const& inst : mCommittedInstances)
+    for (GSInstance const& inst : owner.mCommittedInstances)
         if (GeometryReady(inst.resourceIndex))
             ++readyInstances;
     uint32_t totalInstances = readyInstances + areaLights;
     if (totalInstances == 0)
     {
-        mLastTLASInstancesCount = 0;
-        mPickMap.clear();
+        owner.mLastTLASInstancesCount = 0;
+        owner.mPickMap.clear();
         return TLASBuildResult::Empty;
     }
-    if (totalInstances != mLastTLASInstancesCount)
+    if (totalInstances != owner.mLastTLASInstancesCount)
     {
         update = false;
-        mLastTLASInstancesCount = totalInstances;
+        owner.mLastTLASInstancesCount = totalInstances;
     }
 
     auto ConvertInstance = [&](GSInstance const& src, uint32_t instanceID) -> RHIAccelerationStructureGeometryInstance
@@ -2016,21 +2291,21 @@ GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update)
     auto [pInstances, instancesOffset] = mTLASInstances.Allocate(mTLASInstanceStride * totalInstances);
     // Ready instances are written in committed order; the TLAS instanceID is their
     // compacted write position, mapped back to the committed index via mPickMap.
-    mPickMap.clear();
-    for (uint32_t i = 0; i < mCommittedInstances.size(); ++i)
+    owner.mPickMap.clear();
+    for (uint32_t i = 0; i < owner.mCommittedInstances.size(); ++i)
     {
-        GSInstance const& inst = mCommittedInstances[i];
+        GSInstance const& inst = owner.mCommittedInstances[i];
         if (!GeometryReady(inst.resourceIndex))
             continue;
         GeometryResidency const* g = &mGeometry[inst.resourceIndex];
-        auto data = ConvertInstance(inst, static_cast<uint32_t>(mPickMap.size()));
+        auto data = ConvertInstance(inst, static_cast<uint32_t>(owner.mPickMap.size()));
         data.blas = (g->type == kGSInstanceTypeCurve) ? mCurveBLASes[g->blasSlot].Get() : mBLASes[g->blasSlot].Get();
         pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);
-        mPickMap.push_back(i);
+        owner.mPickMap.push_back(i);
     }
-    for (uint32_t i = 0; i < mCommittedLights.size(); ++i)
+    for (uint32_t i = 0; i < owner.mCommittedLights.size(); ++i)
     {
-        GSLight const& light = mCommittedLights[i];
+        GSLight const& light = owner.mCommittedLights[i];
         if (light.type == 3 || light.type == 4)
         {
             auto data = ConvertLight(&light, i);
@@ -2059,16 +2334,16 @@ GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update)
     };
     desc.scratchBuffer = mScratchBufferTLAS.Get();
     desc.scratchBufferOffset = 0;
-    desc.dstAS = mTLAS.Get();
+    desc.dstAS = owner.mTLAS.Get();
     if (update)
-        desc.srcAS = mTLAS.Get();
+        desc.srcAS = owner.mTLAS.Get();
     cmd->BuildAccelerationStructure({{{desc}}});
     return TLASBuildResult::Built;
 }
 
-GPUScene::Result GPUScene::UploadEnvMap(FTexture const& source)
+GPUScene::Result GPUSceneImpl::UploadEnvMap(FTexture const& source)
 {
-    if (Result r = Upload(source, mEnvMapIndex, "Environment Map", true); r != Result::Ready)
+    if (Result r = Upload(source, owner.mEnvMapIndex, "Environment Map", true); r != Result::Ready)
         return r;
     // Compute CDFs for importance sampling
     uint32_t width = source.GetWidth();
@@ -2099,7 +2374,7 @@ GPUScene::Result GPUScene::UploadEnvMap(FTexture const& source)
     const size_t marginalSize = cdf.mMarginal->mCDF.size() * sizeof(float);
     marginalTex.bytes.resize(marginalSize);
     std::memcpy(marginalTex.bytes.data(), cdf.mMarginal->mCDF.data(), marginalSize);
-    if (Result r = Upload(marginalTex, mEnvMapMarginalCDFIndex, "Environment Map Marginal CDF", true);
+    if (Result r = Upload(marginalTex, owner.mEnvMapMarginalCDFIndex, "Environment Map Marginal CDF", true);
         r != Result::Ready)
         return r;
     
@@ -2118,7 +2393,7 @@ GPUScene::Result GPUScene::UploadEnvMap(FTexture const& source)
                     cdf.mConditional[y]->mCDF.size() * sizeof(float));
     }
     
-    if (Result r = Upload(conditionalTex, mEnvMapConditionalCDFIndex, "Environment Map Conditional CDF", true);
+    if (Result r = Upload(conditionalTex, owner.mEnvMapConditionalCDFIndex, "Environment Map Conditional CDF", true);
         r != Result::Ready)
         return r;
 
@@ -2138,13 +2413,13 @@ static void CheckViewLUT(FTexture const& source, StringView name)
               "{} view LUT must be RGB10A2, RGBA16F, or RGBA32F, got {}", name, format);
 }
 
-GPUScene::Result GPUScene::UploadViewLUTs(FTexture const& sdr, FTexture const& hdr)
+GPUScene::Result GPUSceneImpl::UploadViewLUTs(FTexture const& sdr, FTexture const& hdr)
 {
     CheckViewLUT(sdr, "SDR");
     CheckViewLUT(hdr, "HDR");
-    if (Result r = Upload(sdr, mLUTViewSdrIndex, "View LUT SDR", true); r != Result::Ready)
+    if (Result r = Upload(sdr, owner.mLUTViewSdrIndex, "View LUT SDR", true); r != Result::Ready)
         return r;
-    return Upload(hdr, mLUTViewHdrIndex, "View LUT HDR", true);
+    return Upload(hdr, owner.mLUTViewHdrIndex, "View LUT HDR", true);
 }
 
 static RHITexture* ResolvePoolTexture(BindlessPool& pool, uint32_t index)
@@ -2156,27 +2431,22 @@ static RHITexture* ResolvePoolTexture(BindlessPool& pool, uint32_t index)
 
 RHITexture* GPUScene::GetFoundationDefaultTexture2D() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mFoundationDefaultTexture2DIndex.index);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mImpl->mTexture2DPool), mFoundationDefaultTexture2DIndex.index);
 }
 
 RHITexture* GPUScene::GetFoundationDefaultTexture2DFloat() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mFoundationDefaultTexture2DFloatIndex.index);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mImpl->mTexture2DPool), mFoundationDefaultTexture2DFloatIndex.index);
 }
 
-RHIBuffer* GPUScene::GetSobolMatricesBuffer() const
-{
-    return mSobolMatricesBuffer.Get();
-}
-
-void GPUScene::Reset()
+void GPUSceneImpl::Reset()
 {
     if (mUploadThread.joinable())
         mUploadThread.join();
     mPrimitiveAlloc->Clear();
     mCurveAABBAlloc->Clear();
     mMeshletGlobalCounter = 0;
-    mLastTLASInstancesCount = 0;
+    owner.mLastTLASInstancesCount = 0;
     mBLASes.clear();
     mBLASBuffers.clear();
     mFreeBLASSlots.clear();
@@ -2188,10 +2458,10 @@ void GPUScene::Reset()
     mPendingGeometry.clear();
     mPendingTextures.clear();
     mPendingBuffers.clear();
-    mCommittedInstances.clear();
-    mCommittedLights.clear();
-    mCommittedMaterials.clear();
-    mPickMap.clear();
+    owner.mCommittedInstances.clear();
+    owner.mCommittedLights.clear();
+    owner.mCommittedMaterials.clear();
+    owner.mPickMap.clear();
     mOpenTables = OpenTables{};
     mMaterialBuffer.Reset();
     mInstanceBuffer.Reset();
@@ -2200,3 +2470,58 @@ void GPUScene::Reset()
     // NOTE: texture pools are append-only; old bindings become dead entries.
     //       mTLAS is kept alive and rebuilt in-place by BuildTLAS.
 }
+
+/* --- Facade forwarders to the implementation (GPUSceneImpl) --- */
+
+GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle)
+{
+    return mImpl->Upload(blobs, source, outHandle);
+}
+
+GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle)
+{
+    return mImpl->Upload(blobs, source, outHandle);
+}
+
+GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedTexture const& source, TextureHandle& outTexture,
+                                  const char* debugName, bool pinned)
+{
+    return mImpl->Upload(blobs, source, outTexture, debugName, pinned);
+}
+
+GPUScene::Result GPUScene::Upload(FTexture const& source, TextureHandle& outTexture, const char* debugName, bool pinned)
+{
+    return mImpl->Upload(source, outTexture, debugName, pinned);
+}
+
+GPUScene::Result GPUScene::Upload(RHIBuffer* dst, Span<const unsigned char> data, uint32_t dstOffset)
+{
+    return mImpl->Upload(dst, data, dstOffset);
+}
+
+GPUScene::Result GPUScene::Query(GeometryHandle handle) const { return mImpl->Query(handle); }
+GPUScene::Result GPUScene::Query(TextureHandle texture) const { return mImpl->Query(texture); }
+void GPUScene::Join() { mImpl->Join(); }
+GPUScene::Result GPUScene::Poll() { return mImpl->Poll(); }
+GPUScene::Result GPUScene::UploadViewLUTs(FTexture const& sdr, FTexture const& hdr) { return mImpl->UploadViewLUTs(sdr, hdr); }
+GPUScene::Result GPUScene::UploadEnvMap(FTexture const& source) { return mImpl->UploadEnvMap(source); }
+
+GPUScene::GPUSceneTables GPUScene::BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount)
+{
+    return mImpl->BeginScene(instanceCount, materialCount, lightCount);
+}
+
+GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables) { return mImpl->EndScene(tables); }
+void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const { mImpl->DbgGetMemoryStatistics(outStats); }
+String GPUScene::DbgGetBufferStatistics() const { return mImpl->DbgGetBufferStatistics(); }
+GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update) { return mImpl->BuildTLAS(cmd, update); }
+void GPUScene::Collect() { mImpl->Collect(); }
+void GPUScene::Reset() { mImpl->Reset(); }
+
+RHIBuffer* GPUScene::GetInstanceBuffer() const { return mImpl->mInstanceBuffer.mBuffer.Get(); }
+RHIBuffer* GPUScene::GetMaterialBuffer() const { return mImpl->mMaterialBuffer.mBuffer.Get(); }
+RHIBuffer* GPUScene::GetLightBuffer() const { return mImpl->mLightBuffer.mBuffer.Get(); }
+RHIBuffer* GPUScene::GetLightAliasTableBuffer() const { return mImpl->mLightAliasTableBuffer.mBuffer.Get(); }
+BindlessPool* GPUScene::GetTexture2DPool() { return &mImpl->mTexture2DPool; }
+BindlessPool* GPUScene::GetTexture3DPool() { return &mImpl->mTexture3DPool; }
+uint32_t GPUScene::GetLightCapacity() const { return mImpl->mLightBuffer.Capacity(); }

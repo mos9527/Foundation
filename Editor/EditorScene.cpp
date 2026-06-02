@@ -5,7 +5,7 @@
 
 #include "EditorState.hpp"
 #include "Scene/Mesh.hpp"
-
+#include "Renderer/GPUScene.hpp"
 static constexpr const char* kTempScenePath = "Cache/Last.fscn";
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
 // Accounts for alignment, etc...
@@ -525,7 +525,7 @@ static size_t GPUSceneBudgetBytes(GPUSceneDesc const& desc)
            size_t(desc.instanceBudget) * sizeof(GSInstance) +
            size_t(desc.materialBudget) * sizeof(GSMaterial) +
            size_t(desc.lightBudget) * sizeof(GSLight) +
-           size_t(desc.lightBudget) * sizeof(Alias) +
+           size_t(desc.lightBudget) * sizeof(GSAlias) +
            size_t(desc.tlasInstanceBudget) * GContext->device->WriteAccelerationStructureInstanceData({}, nullptr) +
            size_t(desc.tlasBudget) +
            size_t(desc.tlasScratchBudget);

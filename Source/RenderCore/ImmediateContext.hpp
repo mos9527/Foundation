@@ -1,7 +1,5 @@
 #pragma once
-#include <Core/AtomicPool.hpp>
 #include <Core/Container.hpp>
-#include <Core/Variant.hpp>
 #include <RHICore/Command.hpp>
 #include <RHICore/Device.hpp>
 #include <RHICore/Resource.hpp>

@@ -1,7 +1,6 @@
 #pragma once
+#include <Core/Allocator.hpp>
 #include <Core/AllocatorStack.hpp>
-#include <Core/Atomic.hpp>
-#include <Core/Thread.hpp>
 #include <Core/Logging.hpp>
 #include <RenderCore/Bindless.hpp>
 #include <RenderCore/ImmediateContext.hpp>
@@ -13,6 +12,7 @@
 using namespace Math;
 using namespace RenderCore;
 struct UBO;
+struct GPUSceneImpl;
 
 // Must match the procedural hit-group bindings in Render/Pathtracer.cpp.
 inline constexpr uint32_t kRectLightSBTOffset = 3u;
@@ -27,13 +27,6 @@ inline constexpr uint32_t kGSInstanceTypeCurve = 1u;
  *       or recycled handle (@ref GPUScene::Collect).
  */
 struct GeometryHandle
-{
-    uint32_t index{~0u};
-    uint32_t generation{0};
-    [[nodiscard]] bool IsValid() const { return index != ~0u; }
-};
-/** @brief Generation-tagged reference to a scene instance slot. */
-struct InstanceHandle
 {
     uint32_t index{~0u};
     uint32_t generation{0};
@@ -69,18 +62,6 @@ struct InstanceDesc
     uint32_t materialIndex{0};
 };
 
-/** @brief One deferred blob payload write: decode @ref blob into the mapped destination @ref dst. */
-struct GPUSceneBlobWrite
-{
-    FBlobRef blob{};
-    char* dst{nullptr};
-    size_t size{0};
-};
-
-BITMASK_ENUM_BEGIN(GSData, uint8_t)
-    Mesh = 1 << 0
-BITMASK_ENUM_END()
-
 #pragma pack(push, 1)
 struct GSMesh
 {
@@ -112,27 +93,6 @@ struct GSInstance
     uint32_t materialIndex; // In Material buffer (offset)
     uint32_t resourceIndex; // Debug use
     uint32_t type{kGSInstanceTypeMesh};
-};
-struct GSCurveSet
-{
-    uint32_t pointOffset; // GSCurvePoint, in Primitive buffer (bytes)
-    uint32_t pointCount;
-    uint32_t segmentOffset; // GSCurveSegment, in Primitive buffer (bytes)
-    uint32_t segmentCount;
-    uint32_t aabbOffset; // RHIAccelerationStructureAABB, in curve AABB buffer (bytes)
-    uint32_t materialIndex;
-};
-struct GSCurvePoint
-{
-    float3 position;
-    float radius;
-};
-struct GSCurveSegment
-{
-    uint32_t p0;
-    uint32_t p1;
-    float u0;
-    float u1;
 };
 // XXX: Uber. Super, even. Surely this works for all our needs...
 struct GSMaterial
@@ -192,19 +152,8 @@ struct GSLight
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 56);
-static_assert(sizeof(GSCurveSet) == 24);
-static_assert(sizeof(GSCurvePoint) == 16);
-static_assert(sizeof(GSCurveSegment) == 16);
 static_assert(sizeof(GSMaterial) == 188);
 static_assert(sizeof(GSLight) == 96);
-
-struct GPUSceneGeometry
-{
-    uint32_t type{kGSInstanceTypeMesh};
-    uint32_t resourceOffset{0}; // Header byte offset in the primitive buffer.
-    GSMesh mesh{};
-    GSCurveSet curve{};
-};
 
 struct GPUSceneDesc
 {
@@ -219,43 +168,6 @@ struct GPUSceneDesc
     uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
 };
 
-template <typename T>
-struct UploadGPURingBuffer
-{
-    RHIDeviceScopedHandle<RHIBuffer> mBuffer;
-    T *mBegin, *mPrevRing, *mRing, *mEnd;
-
-    UploadGPURingBuffer(RHIDevice* device, size_t budget)
-    {
-        mBuffer = device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
-                                                     .hostAccess = RHIResourceHostAccess::WriteOnly,
-                                                     .coherent = true},
-                                        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
-                                        .size = budget * sizeof(T)});
-        mBegin = mRing = mPrevRing = mBuffer->Map<T>();
-        mEnd = mBegin + budget;
-    }
-    /**
-     * @breif Allocates `count` T elements in the ring buffer, returning a Span to the allocated memory.
-     *        It's up to the caller to fill in the data, which is usually write-only.
-     * @note There's no guard against allocating potentially still in-flight memory range.
-     *       Ensure enough memory budget to avoid overwriting.
-     * @return Raw mapped memory ptr, offset (element wise) in buffer.
-     */
-    Pair<T*, uint32_t> Allocate(uint32_t count)
-    {
-        CHECK_MSG(count <= Capacity(), "GPU upload ring allocation overflow: requested {} elements, capacity {}", count, Capacity());
-        T* begin = mRing;
-        if (static_cast<size_t>(mEnd - begin) < count) // Wrap
-            begin = mRing = mBegin;
-        uint32_t offset = static_cast<uint32_t>(begin - mBegin);
-        mPrevRing = begin, mRing = begin + count;
-        return {begin, offset};
-    }
-    void Reset() { mRing = mBegin; }
-    [[nodiscard]] uint32_t Used() const { return mRing - mPrevRing; }
-    [[nodiscard]] uint32_t Capacity() const { return static_cast<uint32_t>(mEnd - mBegin); }
-};
 /**
  * @brief Owns all GPU-resident scene data (geometry, textures, instance/material/light
  *        tables, acceleration structures) behind an asynchronous upload work queue.
@@ -273,82 +185,14 @@ struct UploadGPURingBuffer
  *
  * @note A background drain (@ref Poll) has exclusive access to the GPUScene; it must not
  *       be consumed by the renderer until @ref Poll no longer reports InProgress.
+ *
+ * @note The upload / residency / acceleration-structure machinery lives in @ref GPUSceneImpl,
+ *       reached through @ref mImpl. Only the committed-snapshot tables and
+ *       the LUT / env / primitive / TLAS handles backing the hot inline read getters remain
+ *       direct members here.
  */
 class GPUScene
 {
-    RHIDevice* mDevice{nullptr};
-    Allocator* mAllocator{GLOBAL_ALLOC};
-    AllocatorStack* mFrameScratch{nullptr};
-    /* Geometry */
-    RHIDeviceScopedHandle<RHIBuffer> mPrimitiveBuffer;
-    char* mPrimitiveMapped{nullptr};
-    bool mDirectGeometryUpload{false};
-    // VMA-backed byte suballocator over mPrimitiveBuffer (upload & free at will).
-    RHIDeviceScopedHandle<RHIVirtualAllocator> mPrimitiveAlloc;
-    // For @ref meshletGlobalIndex
-    uint32_t mMeshletGlobalCounter{0};
-    UploadGPURingBuffer<GSInstance> mInstanceBuffer;
-    UploadGPURingBuffer<GSMaterial> mMaterialBuffer;
-    UploadGPURingBuffer<GSLight> mLightBuffer;
-    UploadGPURingBuffer<Alias> mLightAliasTableBuffer;
-    /* Textures */
-    BindlessPool mTexture2DPool;
-    BindlessPool mTexture3DPool;
-    /**
-     * @brief Per-bindless-slot residency backing @ref TextureHandle (one table per pool,
-     *        since the 2D/3D pools have independent slot spaces).
-     * @note `generation` is bumped on free so stale handles fail @ref Query; `pinned`
-     *       marks GPUScene-owned singletons (LUTs / defaults / env map) that @ref Collect
-     *       must never reclaim.
-     */
-    struct TextureSlot
-    {
-        uint32_t generation{0};
-        bool live{false};
-        bool pinned{false};
-    };
-    Vector<TextureSlot> mTexture2DSlots;
-    Vector<TextureSlot> mTexture3DSlots;
-    [[nodiscard]] Vector<TextureSlot>& TextureSlots(bool is3D) { return is3D ? mTexture3DSlots : mTexture2DSlots; }
-    [[nodiscard]] Vector<TextureSlot> const& TextureSlots(bool is3D) const { return is3D ? mTexture3DSlots : mTexture2DSlots; }
-    [[nodiscard]] BindlessPool& TexturePool(bool is3D) { return is3D ? mTexture3DPool : mTexture2DPool; }
-    // Frees a live texture slot (pool binding + owned resource) and bumps its generation.
-    void FreeTextureSlot(bool is3D, uint32_t slot);
-    // Precomputed LUTs (stored in texture2D pool)
-    TextureHandle mLUTGGXEIndex;
-    TextureHandle mLUTGGXEavgIndex;
-    TextureHandle mLUTGGXEIORavgIndex;
-    TextureHandle mLUTGGXEIORInvavgIndex;
-    // Precomputed LUTs (stored in texture3D pool)
-    TextureHandle mLUTGGXEIORIndex;
-    TextureHandle mLUTGGXEIORInvIndex;
-    TextureHandle mLUTSheenLTCIndex;
-    // Display transform 3D LUTs (stored in texture3D pool)
-    TextureHandle mLUTViewSdrIndex, mLUTViewHdrIndex;
-    // Shared default resources (stored in texture2D pool).
-    TextureHandle mFoundationDefaultTexture2DIndex;
-    TextureHandle mFoundationDefaultTexture2DFloatIndex;
-    RHIDeviceScopedHandle<RHIBuffer> mFoundationDefaultBufferFloat;
-    // Environment map (stored in texture2D pool)
-    TextureHandle mEnvMapIndex;
-    TextureHandle mEnvMapMarginalCDFIndex;
-    TextureHandle mEnvMapConditionalCDFIndex;
-    [[nodiscard]] BindlessPool& SelectTexturePool(RHITextureDimension viewDimension);
-    [[nodiscard]] BindlessPool const& SelectTexturePool(RHITextureDimension viewDimension) const;
-    /* AS */
-    // BLAS
-    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
-    Vector<RHIDeviceScopedHandle<RHIBuffer>> mBLASBuffers;
-    Vector<uint32_t> mFreeBLASSlots;
-    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mCurveBLASes;
-    Vector<RHIDeviceScopedHandle<RHIBuffer>> mCurveBLASBuffers;
-    Vector<uint32_t> mFreeCurveBLASSlots;
-    RHIDeviceScopedHandle<RHIBuffer> mCurveAABBBuffer;
-    char* mCurveAABBMapped{nullptr};
-    // VMA-backed byte suballocator over mCurveAABBBuffer.
-    RHIDeviceScopedHandle<RHIVirtualAllocator> mCurveAABBAlloc;
-    uint32_t AcquireMeshBLASSlot();
-    uint32_t AcquireCurveBLASSlot();
 public:
     /**
      * @brief Outcome of an @ref Upload / @ref Query / @ref Poll call.
@@ -369,137 +213,6 @@ public:
         Cancelled,
     };
 
-private:
-    enum class ResourceState : uint8_t { Queued, Uploading, Ready, Failed };
-
-    /* Geometry residency (handle-owned). Slots are recycled with a bumped generation. */
-    struct GeometryResidency
-    {
-        uint32_t generation{0};
-        uint32_t type{kGSInstanceTypeMesh};
-        uint32_t blasSlot{UINT32_MAX};
-        uint32_t resourceOffset{0}; // Header byte offset in primitive buffer.
-        GSMesh mesh{};
-        GSCurveSet curve{};
-        ResourceState state{ResourceState::Queued};
-        bool live{false};
-    };
-    Vector<GeometryResidency> mGeometry;
-    Vector<uint32_t> mFreeGeometrySlots;
-
-    // Committed table snapshots (filled via BeginTables/EndTables). These are the
-    // authoritative CPU-side scene used by BuildTLAS, picking, and Collect(); they do
-    // not depend on ring memory that may be overwritten by a later commit.
-    Vector<GSInstance> mCommittedInstances;
-    Vector<GSLight> mCommittedLights;
-    Vector<GSMaterial> mCommittedMaterials;
-    // TLAS instanceID -> committed instance index, rebuilt each BuildTLAS. When some
-    // referenced geometry is not yet Ready those instances are skipped, so the TLAS id
-    // is no longer identical to the committed index and picking must go through this map.
-    Vector<uint32_t> mPickMap;
-
-    [[nodiscard]] GeometryResidency* ResolveGeometry(GeometryHandle handle);
-    [[nodiscard]] GeometryResidency const* ResolveGeometry(GeometryHandle handle) const;
-    uint32_t AcquireGeometrySlot();
-    void FreeGeometry(uint32_t slot);
-    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
-                   ImmediateSubmitDesc const& firstSubmitDesc = {});
-    void BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices,
-                        ImmediateSubmitDesc const& firstSubmitDesc = {});
-
-    /* --- Private upload work queue (owned staging / decode / transfer / BLAS) --- */
-    /**
-     * @brief A geometry resource reserved by @ref Upload and finalized by @ref Join / @ref Poll.
-     * @note Final primitive/AABB memory is allocated up front; staging, blob decode,
-     *       transfer and BLAS build run later when the queue is drained.
-     */
-    struct PendingGeometryUpload
-    {
-        GeometryHandle handle{};
-        FBlobDeserializer blobs{Span<const unsigned char>{}};
-        const FSerializedMesh* mesh{nullptr};
-        const FSerializedCurve* curve{nullptr};
-        size_t footprint{0}; // staging bytes (primitive [+ curve AABB]); 0/1 when direct-mapped.
-    };
-    struct PendingTextureUpload
-    {
-        uint32_t index{UINT32_MAX};
-        FBlobDeserializer blobs{Span<const unsigned char>{}};
-        const FSerializedTexture* source{nullptr};
-    };
-    /** @brief A plain device-local buffer copy; the payload is owned so the caller's source can go. */
-    struct PendingBufferUpload
-    {
-        RHIBuffer* dst{nullptr};
-        uint32_t dstOffset{0};
-        Vector<unsigned char> data;
-    };
-    Vector<PendingGeometryUpload> mPendingGeometry;
-    Vector<PendingTextureUpload> mPendingTextures;
-    Vector<PendingBufferUpload> mPendingBuffers;
-    /// Optional background drain. While in flight the owning GPUScene must not be
-    /// installed/consumed by the renderer (the worker has exclusive access to it).
-    Thread mUploadThread;
-    Atomic<bool> mUploadsDone{true};
-    Atomic<bool> mUploadFailed{false};
-
-    /** @brief Reserves final resident memory and computes the shader header (no staging yet). */
-    Result ReserveMesh(FSerializedMesh const& src, GSMesh& outHeader, uint32_t& outOffset);
-    Result ReserveCurve(FSerializedCurve const& src, GSCurveSet& outHeader, uint32_t& outOffset);
-    /**
-     * @brief Stages a reserved resource into the upload context: writes the shader header
-     *        inline and emits blob-decode jobs for its payloads.
-     * @return Bytes staged, or 0 when the staging lane is full (caller flushes and retries).
-     */
-    size_t StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src, GSMesh const& header,
-                     uint32_t offset, Vector<GPUSceneBlobWrite>& outWrites);
-    size_t StageCurve(ImmediateUpload* ctx, FSerializedCurve const& src, GSCurveSet const& header,
-                      uint32_t offset, Vector<GPUSceneBlobWrite>& outWrites);
-    /** @brief Stages one texture subresource (emits a blob-decode job); 0 when the lane is full. */
-    size_t StageTextureSubresource(ImmediateUpload* ctx, FSerializedTexture const& source, RHITexture* texture,
-                                   uint32_t layer, uint32_t mip, Vector<GPUSceneBlobWrite>& outWrites);
-    /**
-     * @brief Drains the pending upload queues: best-fit staging packing, threaded blob
-     *        decode, transfer submission, BLAS build, residency patching, Ready marking.
-     */
-    void ProcessPendingUploads();
-    /** @brief Launches @ref ProcessPendingUploads on a background worker (lazily kicked by @ref Poll). */
-    void StartUploads();
-    void FlushDirectGeometryUpload();
-
-    /* --- Table ring allocation --- */
-    Pair<GSInstance*, uint32_t> AllocateInstance(uint32_t count);
-    Pair<GSMaterial*, uint32_t> AllocateMaterial(uint32_t count);
-    Pair<GSLight*, uint32_t> AllocateLight(uint32_t count);
-    Pair<Alias*, uint32_t> AllocateLightAliasTable(uint32_t count);
-    struct OpenTables
-    {
-        bool open{false};
-        uint32_t firstAliasTable{0};
-        Alias* aliasPtr{nullptr};
-        GSInstance* instancePtr{nullptr}; // Ring destination for the translated instances.
-        uint32_t instanceCount{0};
-    } mOpenTables;
-    // Caller-facing InstanceDesc scratch handed out by BeginScene; persists until EndScene.
-    Vector<InstanceDesc> mInstanceScratch;
-    // TLAS
-    uint32_t mTLASInstanceStride{0}; // In bytes, read only once
-    uint32_t mLastTLASInstancesCount{0};
-    RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;
-    RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
-    UploadGPURingBuffer<char> mTLASInstances;
-    uint32_t CountLiveInstances() const;
-    uint32_t CountTLASInstances() const;
-    bool EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate);
-    // Samplers
-    RHIDeviceScopedHandle<RHIBuffer> mSobolMatricesBuffer;
-    
-    // Light BLAS
-    RHIDeviceScopedHandle<RHIBuffer> mLightGeometryBuffer;
-    RHIDeviceScopedHandle<RHIAccelerationStructure> mRectBLAS;
-    RHIDeviceScopedHandle<RHIAccelerationStructure> mDiskBLAS;
-    RHIDeviceScopedHandle<RHIBuffer> mLightBLASBuffer;
-public:
     enum class LightSamplerType
     {
         Uniform,
@@ -640,7 +353,7 @@ public:
     };
     void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
     [[nodiscard]] String DbgGetBufferStatistics() const;
-    [[nodiscard]] uint32_t GetLightCapacity() const { return mLightBuffer.Capacity(); }
+    [[nodiscard]] uint32_t GetLightCapacity() const;
 
     enum class TLASBuildResult
     {
@@ -671,24 +384,45 @@ public:
     void Collect();
 
     /* --- Committed scene reads (snapshots; index == TLAS instanceID for instances) --- */
-    [[nodiscard]] GSInstance GetInstance(uint32_t index) const;
+    [[nodiscard]] GSInstance GetInstance(uint32_t index) const
+    {
+        CHECK_MSG(index < mCommittedInstances.size(), "GetInstance index {} out of range ({})", index,
+                  mCommittedInstances.size());
+        return mCommittedInstances[index];
+    }
     [[nodiscard]] uint32_t GetInstanceCount() const { return static_cast<uint32_t>(mCommittedInstances.size()); }
     /** @brief Maps a TLAS pick id (instanceID) to its committed instance index, or UINT32_MAX. */
-    [[nodiscard]] uint32_t ResolvePickedInstance(uint32_t pickID) const;
-    [[nodiscard]] GSLight GetLight(uint32_t index) const;
+    [[nodiscard]] uint32_t ResolvePickedInstance(uint32_t pickID) const
+    {
+        // pickID is a TLAS instanceID = index into the last build's written (ready) set.
+        if (pickID >= mPickMap.size())
+            return UINT32_MAX;
+        return mPickMap[pickID];
+    }
+    [[nodiscard]] GSLight GetLight(uint32_t index) const
+    {
+        CHECK_MSG(index < mCommittedLights.size(), "GetLight index {} out of range ({})", index,
+                  mCommittedLights.size());
+        return mCommittedLights[index];
+    }
     [[nodiscard]] uint32_t GetLightCount() const { return static_cast<uint32_t>(mCommittedLights.size()); }
-    [[nodiscard]] GSMaterial GetMaterial(uint32_t index) const;
+    [[nodiscard]] GSMaterial GetMaterial(uint32_t index) const
+    {
+        CHECK_MSG(index < mCommittedMaterials.size(), "GetMaterial index {} out of range ({})", index,
+                  mCommittedMaterials.size());
+        return mCommittedMaterials[index];
+    }
     [[nodiscard]] uint32_t GetMaterialCount() const { return static_cast<uint32_t>(mCommittedMaterials.size()); }
 
     /* Geometry */
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
-    [[nodiscard]] RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }
-    [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
-    [[nodiscard]] RHIBuffer* GetLightBuffer() const { return mLightBuffer.mBuffer.Get(); }
-    [[nodiscard]] RHIBuffer* GetLightAliasTableBuffer() const { return mLightAliasTableBuffer.mBuffer.Get(); }
+    [[nodiscard]] RHIBuffer* GetInstanceBuffer() const;
+    [[nodiscard]] RHIBuffer* GetMaterialBuffer() const;
+    [[nodiscard]] RHIBuffer* GetLightBuffer() const;
+    [[nodiscard]] RHIBuffer* GetLightAliasTableBuffer() const;
     /* Textures */
-    [[nodiscard]] BindlessPool* GetTexture2DPool() { return &mTexture2DPool; }
-    [[nodiscard]] BindlessPool* GetTexture3DPool() { return &mTexture3DPool; }
+    [[nodiscard]] BindlessPool* GetTexture2DPool();
+    [[nodiscard]] BindlessPool* GetTexture3DPool();
     [[nodiscard]] uint32_t GetGGXLutEIndex() const { return mLUTGGXEIndex.index; }
     [[nodiscard]] uint32_t GetGGXLutEavgIndex() const { return mLUTGGXEavgIndex.index; }
     [[nodiscard]] uint32_t GetGGXLutEIORIndex() const { return mLUTGGXEIORIndex.index; }
@@ -721,9 +455,50 @@ public:
         return mTLAS.IsValid() && mLastTLASInstancesCount > 0 ? mTLAS.Get() : nullptr;
     }
     /* Samplers */
-    [[nodiscard]] RHIBuffer* GetSobolMatricesBuffer() const;
+    [[nodiscard]] RHIBuffer* GetSobolMatricesBuffer() const { return mSobolMatricesBuffer.Get(); }
 
     void Reset();
+
+private:
+    friend struct GPUSceneImpl;
+
+    // Committed table snapshots (filled via BeginScene/EndScene). These are the
+    // authoritative CPU-side scene used by BuildTLAS, picking, and Collect(); they do
+    // not depend on ring memory that may be overwritten by a later commit.
+    Vector<GSInstance> mCommittedInstances;
+    Vector<GSLight> mCommittedLights;
+    Vector<GSMaterial> mCommittedMaterials;
+    // TLAS instanceID -> committed instance index, rebuilt each BuildTLAS. When some
+    // referenced geometry is not yet Ready those instances are skipped, so the TLAS id
+    // is no longer identical to the committed index and picking must go through this map.
+    Vector<uint32_t> mPickMap;
+
+    // Plain handles backing the hot inline getters above; created/managed by GPUSceneImpl.
+    RHIDeviceScopedHandle<RHIBuffer> mPrimitiveBuffer;
+    RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
+    uint32_t mLastTLASInstancesCount{0};
+    RHIDeviceScopedHandle<RHIBuffer> mSobolMatricesBuffer;
+    RHIDeviceScopedHandle<RHIBuffer> mFoundationDefaultBufferFloat;
+    // Precomputed LUTs (texture2D pool)
+    TextureHandle mLUTGGXEIndex;
+    TextureHandle mLUTGGXEavgIndex;
+    TextureHandle mLUTGGXEIORavgIndex;
+    TextureHandle mLUTGGXEIORInvavgIndex;
+    // Precomputed LUTs (texture3D pool)
+    TextureHandle mLUTGGXEIORIndex;
+    TextureHandle mLUTGGXEIORInvIndex;
+    TextureHandle mLUTSheenLTCIndex;
+    // Display transform 3D LUTs (texture3D pool)
+    TextureHandle mLUTViewSdrIndex, mLUTViewHdrIndex;
+    // Shared default resources (texture2D pool)
+    TextureHandle mFoundationDefaultTexture2DIndex;
+    TextureHandle mFoundationDefaultTexture2DFloatIndex;
+    // Environment map (texture2D pool)
+    TextureHandle mEnvMapIndex;
+    TextureHandle mEnvMapMarginalCDFIndex;
+    TextureHandle mEnvMapConditionalCDFIndex;
+
+    UniquePtr<GPUSceneImpl> mImpl;
 };
 
 ENUM_NAME_CONV_BEGIN(GPUScene::Result)
