@@ -57,7 +57,7 @@ struct UBO
     uint32_t firstLightAliasTable{0u};
     uint32_t numSceneLights{0u};
     float sceneLightWeightSum{0.0f};
-    uint32_t _lightPad0{0u};
+    uint32_t energyCompensation{1u};
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
     uint32_t ptMaxBouncesDiffuse{4u};
@@ -138,6 +138,7 @@ struct RendererConfig
     uint32_t ptSampler{kPTSamplerSobol};
     bool ptShaderExecutionReordering{true};
     bool forceTextureLOD0{false};
+    bool energyCompensation{true};
     bool enableHDR{false}; // Output color space: A2B10G10R10 vs R8G8B8A8
 };
 

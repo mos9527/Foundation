@@ -198,6 +198,7 @@ static void FRunning()
     GEditor.shaderGlobals.fbWidth = static_cast<float>(renderExtent.x);
     GEditor.shaderGlobals.fbHeight = static_cast<float>(renderExtent.y);
     GEditor.shaderGlobals.ptViewFlags = GEditor.rendererConfig.viewFlags;
+    GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
 
     // -- AutoPause: any "user operation" exits AutoPaused. We define a user operation
     //    as anything that resets the path-tracer accumulation, which covers camera

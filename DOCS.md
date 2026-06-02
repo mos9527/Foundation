@@ -229,6 +229,7 @@ Done:
       - Darkening *still* noticeable at medium roughness.
         - Cycles suffer from the same issue. Try out https://github.com/mos9527/Foundation-Resources/tree/master/white-furnace
         - The slides, curiously, does not demonstrate white furnace for glass compensation
+        - More bounces can somewhat remedy the issue
         - TODO Implement Heitz Random Walk ab initio?
           - https://mos9527.com/posts/foundation/pt-6-path-tracing-adventures/#random-walk-heitz-2016 
 - [x] Texture sampling rate via ray differentials for primary rays

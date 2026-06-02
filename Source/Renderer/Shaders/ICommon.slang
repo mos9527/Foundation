@@ -239,7 +239,7 @@ public struct UBO
     public uint32_t firstLightAliasTable;
     public uint32_t numSceneLights;
     public float sceneLightWeightSum;
-    public uint32_t _lightPad0;
+    public uint32_t energyCompensation;
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBouncesDiffuse;

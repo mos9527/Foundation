@@ -672,7 +672,7 @@ IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false, bool fo
     float subsurface = foldSubsurfaceToDiffuse ? 0.0f : surface.subsurface;
     return PrincipledMaterial(
         surface.baseColor, surface.metallic, surface.roughness,
-        surface.ior, surface.specularFactor, surface.transmission, true, wo,
+        surface.ior, surface.specularFactor, surface.transmission, globalParams.energyCompensation != 0u, wo,
         subsurface, surface.subsurfaceColor, surface.subsurfaceRadius, surface.subsurfaceScale,
         surface.anisotropyStrength, surface.specularColorFactor, globalParams.ggxLutEIndex, globalParams.ggxLutEavgIndex, globalParams.ggxLutEIORIndex, globalParams.ggxLutEIORavgIndex, globalParams.ggxLutEIORInvIndex, globalParams.ggxLutEIORInvavgIndex,
         surface.sheenWeight, surface.sheenRoughness, surface.sheenTint, globalParams.sheenLtcIndex,

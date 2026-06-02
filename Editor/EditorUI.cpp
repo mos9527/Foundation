@@ -1911,6 +1911,10 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
+            if (ImGui::Checkbox("Energy Compensation", &GEditor.rendererConfig.energyCompensation))
+            {
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
             ImGui::SeparatorText("Ray Bounce");
             ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesDiffuse), 0, 64);
             ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);
