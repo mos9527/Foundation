@@ -39,7 +39,7 @@ target_link_libraries(Example_MeshShaderHello PUBLIC Example_Common)
 add_dependencies(Example_MeshShaderHello Shader_MeshShaderHelloTask Shader_MeshShaderHelloMesh Shader_MeshShaderHelloFrag)
 
 add_executable(Example_MeshShaderHierarchicalLOD "MeshShaderHierarchicalLOD.cpp")
-target_link_libraries(Example_MeshShaderHierarchicalLOD PUBLIC Editor_Assets Example_Common)
+target_link_libraries(Example_MeshShaderHierarchicalLOD PUBLIC Foundation_GPUScene Example_Common)
 add_dependencies(Example_MeshShaderHierarchicalLOD Shader_MeshShaderHierarchicalLODMesh Shader_MeshShaderBasicFrag Examples_SampleFiles)
 
 add_executable(Example_CIEChromacity "CIEChromacity.cpp")
@@ -47,5 +47,7 @@ target_link_libraries(Example_CIEChromacity PUBLIC Example_Common)
 add_dependencies(Example_CIEChromacity Shader_CIEChromacity)
 
 add_executable(Example_GPUScene "GPUScene.cpp")
-target_link_libraries(Example_GPUScene PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
+target_link_libraries(Example_GPUScene PUBLIC Example_Common Foundation_Rasterizer Foundation_Pathtracer)
+# Borrows the header-only FArcballCamera (Editor/Camera.hpp), shared with the editor.
+target_include_directories(Example_GPUScene PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(Example_GPUScene Foundation_Shaders Editor_Data Examples_SampleFiles)

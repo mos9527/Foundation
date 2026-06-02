@@ -6,6 +6,8 @@
 
 #include <Math/Quantize.hpp>
 #include "Mesh.hpp"
+#include <cmath>
+#include <numeric>
 
 // -- quantize
 constexpr float EPS = 1e-6;

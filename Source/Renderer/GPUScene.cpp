@@ -845,7 +845,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     return res;
 }
 
-void GPUScene::FillGlobals(UBO& globals, bool hdr) const
+void GPUScene::BuildUBO(UBO& globals, bool hdr) const
 {
     globals.ggxLutEIndex = mLUTGGXEIndex.index;
     globals.ggxLutEavgIndex = mLUTGGXEavgIndex.index;

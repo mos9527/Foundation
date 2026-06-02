@@ -142,6 +142,38 @@ struct FBlobDeserializer
     }
 };
 
+// In-memory counterpart to FBlobSerializer. FBlobSerializer is the on-disk asset path
+// (MemoryMappedFile-backed, optional LZ4); this one appends trivially-copyable arrays to a
+// caller-owned byte vector and returns matching FBlobRefs, for code that serializes a
+// resource straight into memory and hands it to a consumer that wants a payload + blobs
+// (e.g. GPUScene::Upload in demos/tests). Blobs are stored verbatim (FBlobCodec::None), so
+// the payload reads back without a scratch allocator.
+struct MemoryBlobSerializer
+{
+    Vector<unsigned char>& payload;
+
+    explicit MemoryBlobSerializer(Vector<unsigned char>& payload)
+        : payload(payload)
+    {
+    }
+
+    FBlobRef AppendBytes(const void* data, size_t size, uint32_t count, uint32_t stride, uint64_t alignment = 16);
+
+    template <typename T>
+    FBlobRef AppendArray(Vector<T> const& values, uint64_t alignment = 16)
+    {
+        static_assert(std::is_trivially_copyable_v<T>);
+        CHECK_MSG(values.size() <= UINT32_MAX, "Blob count exceeds uint32_t");
+        return AppendBytes(values.data(), values.size() * sizeof(T),
+                           static_cast<uint32_t>(values.size()), sizeof(T), alignment);
+    }
+
+    [[nodiscard]] FBlobDeserializer Deserializer() const
+    {
+        return FBlobDeserializer(Span<const unsigned char>(payload.data(), payload.size()));
+    }
+};
+
 // Serialize
 template <typename T>
 void FSerialize(FWriter& w, const T& obj);

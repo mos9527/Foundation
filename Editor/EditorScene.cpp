@@ -4,7 +4,7 @@
 #include <numbers>
 
 #include "EditorState.hpp"
-#include "Scene/Mesh.hpp"
+#include <Renderer/Mesh.hpp>
 #include "Renderer/GPUScene.hpp"
 static constexpr const char* kTempScenePath = "Cache/Last.fscn";
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
@@ -158,7 +158,7 @@ bool ApplyViewLUTSelection()
         return false;
     }
 
-    GContext->gpuScene->FillGlobals(GEditor.shaderGlobals, GContext->enableHDR);
+    GContext->gpuScene->BuildUBO(GEditor.shaderGlobals, GContext->enableHDR);
     return true;
 }
 
@@ -709,7 +709,7 @@ static void FinalizeSceneUpload(FImportedScene& scene, GPUScene* gpu, SceneLoadS
     LOG(Editor, LogInfo, "Scene GPU upload complete in {:.2f} ms", stats.uploadMs);
 
     ApplySceneCamera(scene, GEditor.camera, GEditor.aperture, GEditor.shaderGlobals);
-    gpu->FillGlobals(GEditor.shaderGlobals, GContext->enableHDR);
+    gpu->BuildUBO(GEditor.shaderGlobals, GContext->enableHDR);
 
     // Fill instance/material/light tables (geometry handles are now Ready), then TLAS.
     CommitSceneToGPU(gpu, scene, GEditor.shaderGlobals, true);
@@ -905,7 +905,7 @@ void LoadEnvMap(StringView path)
             .azimuthOffset = GEditor.shaderGlobals.envAzimuthOffset,
         };
         GEditor.shaderGlobals.useEnvMap = 1u;
-        gpu->FillGlobals(GEditor.shaderGlobals, GContext->enableHDR);
+        gpu->BuildUBO(GEditor.shaderGlobals, GContext->enableHDR);
         GEditor.shaderGlobals.ptAccumulatedFrames = 0;
         LOG(Editor, LogInfo, "HDRI env map loaded successfully");
     }

@@ -172,15 +172,14 @@ struct GPUSceneDesc
  * @brief Owns all GPU-resident scene data (geometry, textures, instance/material/light
  *        tables, acceleration structures) behind an asynchronous upload work queue.
  *
- * @details Typical render-build flow:
+ * @details Typical render-build flow (after proper Renderer setup seen in Rasterizer.cpp/Pathtracer.cpp):
  *          1. `Upload(blobs, mesh/curve/texture, outHandle)` per resource — reserves
- *             memory immediately, returns @ref Result::InProgress.
+ *             memory immediately, returns @ref Result::InProgress. `UploadEnvMap` / `UploadViewLUTs` for environment + display LUTs.
  *          2. `Poll()` each frame (background drain) or `Join()` (blocking) until ready.
- *          3. `UploadEnvMap` / `UploadViewLUTs` for environment + display LUTs.
- *          4. `BeginScene` → fill the mapped instance/material/light spans → `EndScene`,
+ *          3. `BeginScene` → fill the mapped instance/material/light spans → `EndScene`,
  *             then write the returned @ref UpdateResult offsets into the renderer UBO.
- *          5. `BuildTLAS(cmd)`, then bind `GetTLAS` / `GetPrimitiveBuffer` /
- *             `GetInstanceBuffer` / the LUT indices into the render graph.
+ *          4. `BuildUBO(ubo*)` to update the UBO with the latest scene data.
+ *          5. [opt. ray-tracing only] `BuildTLAS(cmd)`
  *          Geometry is reclaimed explicitly via @ref Collect after destructive edits.
  *
  * @note A background drain (@ref Poll) has exclusive access to the GPUScene; it must not
@@ -297,7 +296,7 @@ public:
      * @note Leaves instance/material/light table offsets untouched (those come from
      *       @ref EndScene's @ref UpdateResult).
      */
-    void FillGlobals(UBO& globals, bool hdr) const;
+    void BuildUBO(UBO& globals, bool hdr) const;
 
     /**
      * @brief Ring-buffer offsets and element counts for instances/materials/lights.

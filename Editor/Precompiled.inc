@@ -1,6 +1,6 @@
 #pragma once
 #include "Context.hpp"
-#include "Scene/Mesh.hpp"
+#include <Renderer/Mesh.hpp>
 #include "Scene/Scene.hpp"
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp>

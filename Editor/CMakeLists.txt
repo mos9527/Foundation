@@ -1,9 +1,7 @@
 cmake_minimum_required(VERSION 3.26)
 
 FetchContent_MakeAvailable(stb)
-FetchContent_MakeAvailable(fast_obj)
 FetchContent_MakeAvailable(nativefiledialog-extended)
-FetchContent_MakeAvailable(meshoptimizer)
 FetchContent_MakeAvailable(cgltf)
 FetchContent_MakeAvailable(lz4)
 FetchContent_MakeAvailable(bc7enc)
@@ -22,20 +20,17 @@ add_custom_target(
 
 add_library(Editor_Assets STATIC)
 target_sources(Editor_Assets PUBLIC
-        Scene/Mesh.cpp Scene/Scene.cpp
+        Scene/Scene.cpp
 )
 target_link_libraries(
         Editor_Assets PUBLIC
         Foundation_GPUScene
         Foundation_Math
         Foundation_Core
-        meshoptimizer
 )
 target_include_directories(
         Editor_Assets PUBLIC
-        "${fast_obj_SOURCE_DIR}"
         "${cgltf_SOURCE_DIR}"
-        "${meshoptimizer_SOURCE_DIR}/demo"
         ..
 )
 add_library(Editor_Context)

@@ -14,7 +14,7 @@
 #include <RHICore/Device.hpp>
 #include <Renderer/Tables/ViewLUTs.hpp>
 #include <Renderer/GPUScene.hpp>
-#include "Mesh.hpp"
+#include <Renderer/Mesh.hpp>
 #include "Curve.hpp"
 
 namespace

@@ -6,7 +6,7 @@
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
 #include "EditorState.hpp"
-#include "Scene/Mesh.hpp"
+#include <Renderer/Mesh.hpp>
 
 static void DrawLightGizmos();
 

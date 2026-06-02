@@ -15,7 +15,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfi
     CHECK(gpu);
     CHECK(renderer->GetDevice()->GetCapabilities().raytracingPipeline);
     scene.gsGlobals->ptAccumulatedFrames = 0u;
-    gpu->FillGlobals(*scene.gsGlobals, cfg.enableHDR);
+    gpu->BuildUBO(*scene.gsGlobals, cfg.enableHDR);
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,

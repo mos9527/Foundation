@@ -189,6 +189,32 @@ FBlobRef FBlobSerializer::AppendBytes(const void* data, size_t size, uint32_t co
     return ref;
 }
 
+FBlobRef MemoryBlobSerializer::AppendBytes(const void* data, size_t size, uint32_t count, uint32_t stride,
+                                           uint64_t alignment)
+{
+    CHECK(alignment != 0);
+    FBlobRef ref{};
+    ref.count = count;
+    ref.stride = stride;
+    ref.codec = FBlobCodec::None;
+    ref.decodedSize = uint64_t(count) * stride;
+    ref.storedSize = size;
+    CHECK_MSG(ref.decodedSize == size, "Blob size mismatch: {} bytes for {} elements with stride {}", size, count,
+              stride);
+
+    uint64_t alignedOffset = AlignUpU64(payload.size(), alignment);
+    CHECK_MSG(alignedOffset <= SIZE_MAX, "Blob offset too large for this platform");
+    payload.resize(static_cast<size_t>(alignedOffset), 0u);
+    ref.offset = alignedOffset;
+    if (size == 0)
+        return ref;
+
+    CHECK(data != nullptr);
+    auto const* bytes = static_cast<unsigned char const*>(data);
+    payload.insert(payload.end(), bytes, bytes + size);
+    return ref;
+}
+
 FBlobDeserializer::FBlobDeserializer(Span<const unsigned char> payload)
     : payload(payload)
 {

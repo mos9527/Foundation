@@ -1,5 +1,5 @@
 #include <Renderer/GPUScene.hpp>
-#include <Editor/Scene/Mesh.hpp>
+#include <Renderer/Mesh.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 #include "Examples.hpp"
 using namespace RenderUtils;

@@ -22,29 +22,11 @@
 //   6. Per frame: drive the UBO from an FArcballCamera (WASD + mouse) and submit.
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp> // UBO + BuildRasterRenderGraph + Renderer{Scene,Config,Handles}
-#include <Editor/Scene/Mesh.hpp> // FImportedMesh / LoadObj
+#include <Renderer/Mesh.hpp>     // FImportedMesh / LoadObj
 #include <Editor/Camera.hpp>     // FArcballCamera
 #include "Examples.hpp"
 #include <algorithm>
 #include <cmath>
-
-// Appends a trivially-copyable array to `payload` as an uncompressed blob and returns a
-// matching FBlobRef. GPUScene reads these directly (FBlobCodec::None => verbatim copy).
-template <typename T>
-static FBlobRef AppendBlob(Vector<unsigned char>& payload, Vector<T> const& values)
-{
-    static_assert(std::is_trivially_copyable_v<T>);
-    FBlobRef ref{};
-    ref.offset = payload.size();
-    ref.storedSize = values.size() * sizeof(T);
-    ref.decodedSize = ref.storedSize;
-    ref.count = static_cast<uint32_t>(values.size());
-    ref.stride = sizeof(T);
-    ref.codec = FBlobCodec::None;
-    auto const* bytes = reinterpret_cast<unsigned char const*>(values.data());
-    payload.insert(payload.end(), bytes, bytes + ref.storedSize);
-    return ref;
-}
 
 int main(int argc, char** argv)
 {
@@ -71,20 +53,21 @@ int main(int argc, char** argv)
         CHECK_MSG(mesh.EnsureQuantized(), "Failed to quantize mesh");
 
         Vector<unsigned char> payload(GLOBAL_ALLOC);
+        MemoryBlobSerializer blobs(payload);
         FSerializedMesh serialized(GLOBAL_ALLOC);
-        serialized.vertices = AppendBlob(payload, mesh.verticesQuantized);
+        serialized.vertices = blobs.AppendArray(mesh.verticesQuantized);
         serialized.vertexCount = static_cast<uint32_t>(mesh.verticesQuantized.size());
         FSerializedMeshLOD& lod0 = serialized.lods.emplace_back();
-        lod0.indices = AppendBlob(payload, mesh.lods[0].indices);
+        lod0.indices = blobs.AppendArray(mesh.lods[0].indices);
         lod0.indexCount = static_cast<uint32_t>(mesh.lods[0].indices.size());
-        serialized.dagGroups = AppendBlob(payload, mesh.dag.groups);
-        serialized.dagMeshlets = AppendBlob(payload, mesh.dag.meshlets);
-        serialized.dagMeshletTri = AppendBlob(payload, mesh.dag.meshletTri);
-        serialized.dagMeshletVtx = AppendBlob(payload, mesh.dag.meshletVtx);
+        serialized.dagGroups = blobs.AppendArray(mesh.dag.groups);
+        serialized.dagMeshlets = blobs.AppendArray(mesh.dag.meshlets);
+        serialized.dagMeshletTri = blobs.AppendArray(mesh.dag.meshletTri);
+        serialized.dagMeshletVtx = blobs.AppendArray(mesh.dag.meshletVtx);
 
-        FBlobDeserializer blobs(Span<const unsigned char>(payload.data(), payload.size()));
+        FBlobDeserializer deserializer = blobs.Deserializer();
         GeometryHandle handle;
-        GPUScene::Result r = gpu->Upload(&blobs, serialized, handle);
+        GPUScene::Result r = gpu->Upload(&deserializer, serialized, handle);
         CHECK_MSG(r == GPUScene::Result::InProgress, "Mesh upload rejected ({})", r);
         gpu->Join(); // Drain synchronously: geometry bytes resident + BLAS built.
         CHECK_MSG(gpu->Query(handle) == GPUScene::Result::Ready, "Mesh did not become resident");
@@ -318,7 +301,7 @@ int main(int argc, char** argv)
     ubo.ptSamplesPerPixel = 1;
 
     // --- 4. Globals + TLAS ---------------------------------------------------------------
-    gpu->FillGlobals(ubo, /*hdr*/ false);
+    gpu->BuildUBO(ubo, /*hdr*/ false);
     ubo.ambientColor = float3(0.0f); // pitch-black surround: all light comes from the ceiling quad
     ubo.ambientPower = 1.0f;
     ubo.useEnvMap = 0u;

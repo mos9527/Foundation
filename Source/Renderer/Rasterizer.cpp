@@ -52,7 +52,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
     CHECK(renderer);
     CHECK(gpu);
     CHECK(renderer->GetDevice()->GetCapabilities().meshShaders);
-    gpu->FillGlobals(*scene.gsGlobals, cfg.enableHDR);
+    gpu->BuildUBO(*scene.gsGlobals, cfg.enableHDR);
     /* UBO for everyone */
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
