@@ -2359,7 +2359,7 @@ GPUScene::Result GPUSceneImpl::UploadDynamic(FBlobDeserializer* blobs, FSerializ
         scratchBytes = std::max<size_t>(scratchBytes, idxBytes);
     if (scratchBytes != 0)
     {
-        ScopedArena arena(mAllocator, scratchBytes);
+        ScopedArena arena(mAllocator, scratchBytes + 0x100 /* TODO Arbitrary padding, how is this unaccounted for? */);
         AllocatorStack st(arena.arena);
         blobs->ReadBytes(source.vertices, v0, vtxBytes, &st);
         st.Reset(arena.arena);

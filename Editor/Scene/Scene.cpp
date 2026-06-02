@@ -9,6 +9,7 @@
 #include <climits>
 #include <filesystem>
 #include <lz4.h>
+#include <numeric>
 #include <string_view>
 #include <type_traits>
 #include <RHICore/Device.hpp>
@@ -513,10 +514,24 @@ FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratch
             }
         }
     }
-    size_t numIndices = submesh->indices->count;
     auto& m0 = mesh.lods[0];
-    m0.indices.resize(numIndices);
-    cgltf_accessor_unpack_indices(submesh->indices, m0.indices.data(), sizeof(uint32_t), numIndices);
+    if (submesh->indices)
+    {
+        size_t numIndices = submesh->indices->count;
+        m0.indices.resize(numIndices);
+        cgltf_accessor_unpack_indices(submesh->indices, m0.indices.data(), sizeof(uint32_t), numIndices);
+    }
+    else
+    {
+        // glTF 2.0 allows omitting `indices`, in which case the primitive is drawn as
+        // drawArrays(count = vertexCount). Synthesize a trivial 0..N-1 index buffer so the
+        // rest of the pipeline (LOD blobs, meshlet builder, FSCN validation) stays uniform.
+        size_t numVertices = submesh->attributes[0].data->count;
+        CHECK_MSG(numVertices % 3 == 0,
+                  "Non-indexed glTF triangle primitive vertex count is not a multiple of 3");
+        m0.indices.resize(numVertices);
+        std::iota(m0.indices.begin(), m0.indices.end(), 0u);
+    }
 
     // CPU skin binding: read JOINTS_0 / WEIGHTS_0 (parallel to vertices) and remap the skin-local
     // joint indices to the skeleton's topological order. Only present when the mesh is skinned.
