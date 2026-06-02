@@ -49,6 +49,7 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 ### Scene
 - Extended glTF support & Blender data exchange via https://github.com/mos9527/Foundation-Blender-IO/tree/main
 - Custom binary scene format `FSCN` with excellent serialization/loading (memory-mapped) performance
+- Animation (Skinning, BlendShapes, Articulated rigid bodies)
 
 Examples
 ---
@@ -178,10 +179,12 @@ Editor
   - Blender OCIO Config used to generated LUTs for SDR/HDR ACES1.3/2.0/AgX/Standard (sRGB. v. PQ) transforms
     - See also https://docs.blender.org/manual/en/latest/render/color_management/
     - Obtains 1-to-1 matching output :)
-- [ ] Animation (Skinning, BlendShapes...why not)
+
 - [ ] Coroutines in place of...whatever this is.
 Good to have, not necessary.
 - [ ] Scene Graph, instead of AoS to represent instances.
+Done
+- [x] Animation (Skinning, BlendShapes, Articulated rigid bodies. Contribution by Claude)
 
 Path Tracer
 ---

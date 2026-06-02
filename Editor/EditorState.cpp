@@ -191,6 +191,12 @@ static void FRunning()
     GEditor.shaderGlobals.ptViewFlags = GEditor.rendererConfig.viewFlags;
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
 
+    // Skinned animation playback: evaluate poses and CPU-skin into the dynamic ring, then re-author
+    // the scene so dynamic instances encode the current ring slot (the graph's BLAS Update pass
+    // refits them). Paused/held poses skip this so the path tracer keeps accumulating.
+    if (UpdateAnimation(dt))
+        CommitSceneToGPU(true);
+
     // -- AutoPause: any "user operation" exits AutoPaused. We define a user operation
     //    as anything that resets the path-tracer accumulation, which covers camera
     //    movement (cameraUpdated) and any UI control change that sets

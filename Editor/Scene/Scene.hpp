@@ -1,5 +1,6 @@
 #pragma once
 #include <Renderer/Mesh.hpp>
+#include <Renderer/Animation.hpp>
 #include <Renderer/Curve.hpp>
 #include <Renderer/Serialization.hpp>
 #include <Renderer/Texture.hpp>
@@ -26,6 +27,9 @@ struct FInstance
     // Index into the serialized table tagged by @ref type. Mesh means @ref FSerializedMesh, Curve means @ref FSceneCurveDesc.
     uint32_t resourceIndex{0};
     uint32_t materialIndex{0};
+    // Index into the scene-node hierarchy (@ref FSceneTables::sceneNodeSkeleton) for rigid node
+    // animation; -1 when the instance is static (its baked @ref transform is authoritative).
+    int32_t node{-1};
 };
 struct FCamera
 {
@@ -122,6 +126,8 @@ struct FLight
     float height{1.0f};
     bool twoSided{false};
     bool normalize{true};
+    // Scene-node hierarchy index for rigid node animation; -1 when static.
+    int32_t node{-1};
 };
 
 enum class FSceneEnvironmentType : uint32_t
@@ -140,8 +146,21 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
     uint32_t environmentTexture{kInvalidTexture};
 };
+// A morph-target weight track: per-key weights (one set of `targetCount` per key) driving a mesh's
+// blend-shape weights. Referenced by @ref FSerializedMesh::morphTrack. Same time/value packing and
+// interpolation as @ref FAnimChannel (cubic keys store 3*targetCount values per key).
+struct FMorphTrack
+{
+    uint32_t targetCount{0};
+    FAnimInterp interp{FAnimInterp::Linear};
+    float duration{0.0f};
+    Vector<float> times;
+    Vector<float> values;
+    explicit FMorphTrack(Allocator* alloc = GLOBAL_ALLOC) : times(alloc), values(alloc) {}
+};
+
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 6;
+static constexpr uint32_t kSceneVersion = 9;
 struct FSceneTables
 {
     FSceneGlobals globals;
@@ -152,9 +171,16 @@ struct FSceneTables
     Vector<FSerializedMesh> meshes;
     Vector<FSerializedCurve> curves;
     Vector<FSerializedTexture> textures;
+    Vector<FSkeleton> skeletons;
+    Vector<FAnimationClip> clips;
+    Vector<FMorphTrack> morphTracks;
+    // Index into @ref skeletons of the scene-node hierarchy that drives rigid node animation
+    // (@ref FInstance::node / @ref FLight::node reference its joints), or -1 if the scene has none.
+    int32_t sceneNodeSkeleton{-1};
 
     explicit FSceneTables(Allocator* alloc = GLOBAL_ALLOC)
-        : cameras(alloc), lights(alloc), instances(alloc), materials(alloc), meshes(alloc), curves(alloc), textures(alloc)
+        : cameras(alloc), lights(alloc), instances(alloc), materials(alloc), meshes(alloc), curves(alloc),
+          textures(alloc), skeletons(alloc), clips(alloc), morphTracks(alloc)
     {
     }
 };
@@ -169,6 +195,11 @@ inline void FSerialize(FWriter& writer, FSerializedMesh const& mesh)
     FSerialize(writer, mesh.dagMeshlets);
     FSerialize(writer, mesh.dagMeshletTri);
     FSerialize(writer, mesh.dagMeshletVtx);
+    FSerialize(writer, mesh.skinBinding);
+    FSerialize(writer, mesh.skeleton);
+    FSerialize(writer, mesh.morphPositions);
+    FSerialize(writer, mesh.morphTargetCount);
+    FSerialize(writer, mesh.morphTrack);
 }
 
 template <>
@@ -181,6 +212,76 @@ inline void FDeserialize(FReader& reader, FSerializedMesh& mesh)
     FDeserialize(reader, mesh.dagMeshlets);
     FDeserialize(reader, mesh.dagMeshletTri);
     FDeserialize(reader, mesh.dagMeshletVtx);
+    FDeserialize(reader, mesh.skinBinding);
+    FDeserialize(reader, mesh.skeleton);
+    FDeserialize(reader, mesh.morphPositions);
+    FDeserialize(reader, mesh.morphTargetCount);
+    FDeserialize(reader, mesh.morphTrack);
+}
+
+// FJoint is trivially copyable, so a skeleton's joint array serializes in bulk.
+template <>
+inline void FSerialize(FWriter& writer, FSkeleton const& skel)
+{
+    FSerialize(writer, skel.joints);
+}
+template <>
+inline void FDeserialize(FReader& reader, FSkeleton& skel)
+{
+    FDeserialize(reader, skel.joints);
+}
+
+template <>
+inline void FSerialize(FWriter& writer, FAnimChannel const& channel)
+{
+    FSerialize(writer, channel.joint);
+    FSerialize(writer, channel.path);
+    FSerialize(writer, channel.interp);
+    FSerialize(writer, channel.times);
+    FSerialize(writer, channel.values);
+}
+template <>
+inline void FDeserialize(FReader& reader, FAnimChannel& channel)
+{
+    FDeserialize(reader, channel.joint);
+    FDeserialize(reader, channel.path);
+    FDeserialize(reader, channel.interp);
+    FDeserialize(reader, channel.times);
+    FDeserialize(reader, channel.values);
+}
+
+template <>
+inline void FSerialize(FWriter& writer, FAnimationClip const& clip)
+{
+    FSerialize(writer, clip.skeleton);
+    FSerialize(writer, clip.duration);
+    FSerialize(writer, clip.channels);
+}
+template <>
+inline void FDeserialize(FReader& reader, FAnimationClip& clip)
+{
+    FDeserialize(reader, clip.skeleton);
+    FDeserialize(reader, clip.duration);
+    FDeserialize(reader, clip.channels, clip.channels.get_allocator().mResource);
+}
+
+template <>
+inline void FSerialize(FWriter& writer, FMorphTrack const& track)
+{
+    FSerialize(writer, track.targetCount);
+    FSerialize(writer, track.interp);
+    FSerialize(writer, track.duration);
+    FSerialize(writer, track.times);
+    FSerialize(writer, track.values);
+}
+template <>
+inline void FDeserialize(FReader& reader, FMorphTrack& track)
+{
+    FDeserialize(reader, track.targetCount);
+    FDeserialize(reader, track.interp);
+    FDeserialize(reader, track.duration);
+    FDeserialize(reader, track.times);
+    FDeserialize(reader, track.values);
 }
 
 template <>
@@ -194,6 +295,10 @@ inline void FSerialize(FWriter& writer, FSceneTables const& tables)
     FSerialize(writer, tables.meshes);
     FSerialize(writer, tables.curves);
     FSerialize(writer, tables.textures);
+    FSerialize(writer, tables.skeletons);
+    FSerialize(writer, tables.clips);
+    FSerialize(writer, tables.morphTracks);
+    FSerialize(writer, tables.sceneNodeSkeleton);
 }
 
 template <>
@@ -207,6 +312,10 @@ inline void FDeserialize(FReader& reader, FSceneTables& tables)
     FDeserialize(reader, tables.meshes, tables.meshes.get_allocator().mResource);
     FDeserialize(reader, tables.curves);
     FDeserialize(reader, tables.textures, tables.textures.get_allocator().mResource);
+    FDeserialize(reader, tables.skeletons, tables.skeletons.get_allocator().mResource);
+    FDeserialize(reader, tables.clips, tables.clips.get_allocator().mResource);
+    FDeserialize(reader, tables.morphTracks, tables.morphTracks.get_allocator().mResource);
+    FDeserialize(reader, tables.sceneNodeSkeleton);
 }
 
 struct FSceneHeader

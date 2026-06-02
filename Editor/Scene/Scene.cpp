@@ -385,7 +385,46 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
         ValidateBlobArray<FMeshlet>(header, mesh.dagMeshlets, "mesh.dagMeshlets");
         ValidateBlobArray<uint8_t>(header, mesh.dagMeshletTri, "mesh.dagMeshletTri");
         ValidateBlobArray<uint32_t>(header, mesh.dagMeshletVtx, "mesh.dagMeshletVtx");
+        if (mesh.skinBinding.count != 0)
+        {
+            ValidateBlobArray<FSkinBinding>(header, mesh.skinBinding, "mesh.skinBinding");
+            CHECK_MSG(mesh.skinBinding.count == mesh.vertexCount, "FScene mesh skin binding count mismatch");
+            CHECK_MSG(mesh.skeleton >= 0 && static_cast<size_t>(mesh.skeleton) < tables.skeletons.size(),
+                      "FScene mesh skeleton index out of range");
+        }
+        if (mesh.morphTargetCount != 0)
+        {
+            ValidateBlobArray<float3>(header, mesh.morphPositions, "mesh.morphPositions");
+            CHECK_MSG(mesh.morphPositions.count == mesh.morphTargetCount * mesh.vertexCount,
+                      "FScene mesh morph delta count mismatch");
+        }
+        CHECK_MSG(mesh.morphTrack == -1 || static_cast<size_t>(mesh.morphTrack) < tables.morphTracks.size(),
+                  "FScene mesh morph track index out of range");
     }
+
+    for (auto const& clip : tables.clips)
+    {
+        CHECK_MSG(clip.skeleton >= 0 && static_cast<size_t>(clip.skeleton) < tables.skeletons.size(),
+                  "FScene clip skeleton index out of range");
+        uint32_t jointCount = tables.skeletons[clip.skeleton].Count();
+        for (auto const& channel : clip.channels)
+            CHECK_MSG(channel.joint < jointCount, "FScene clip channel joint index out of range");
+    }
+
+    CHECK_MSG(tables.sceneNodeSkeleton == -1 ||
+                  static_cast<size_t>(tables.sceneNodeSkeleton) < tables.skeletons.size(),
+              "FScene scene-node skeleton index out of range");
+    uint32_t const sceneNodeCount =
+        tables.sceneNodeSkeleton >= 0 ? tables.skeletons[tables.sceneNodeSkeleton].Count() : 0u;
+    auto validateNode = [&](int32_t node, const char* what)
+    {
+        CHECK_MSG(node == -1 || (tables.sceneNodeSkeleton >= 0 && static_cast<uint32_t>(node) < sceneNodeCount),
+                  "FScene {} node index out of range", what);
+    };
+    for (auto const& instance : tables.instances)
+        validateNode(instance.node, "instance");
+    for (auto const& light : tables.lights)
+        validateNode(light.node, "light");
 
     for (auto const& curve : tables.curves)
     {
@@ -424,7 +463,8 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
 }
 
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes
-FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratchAlloc)
+FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratchAlloc,
+                              const Vector<uint16_t>* jointRemap = nullptr, bool readMorph = false)
 {
     CHECK(submesh->type == cgltf_primitive_type_triangles);
     CHECK(scratchAlloc != nullptr);
@@ -477,6 +517,60 @@ FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratch
     auto& m0 = mesh.lods[0];
     m0.indices.resize(numIndices);
     cgltf_accessor_unpack_indices(submesh->indices, m0.indices.data(), sizeof(uint32_t), numIndices);
+
+    // CPU skin binding: read JOINTS_0 / WEIGHTS_0 (parallel to vertices) and remap the skin-local
+    // joint indices to the skeleton's topological order. Only present when the mesh is skinned.
+    const cgltf_accessor* jointsAcc = cgltf_find_accessor(submesh, cgltf_attribute_type_joints, 0);
+    const cgltf_accessor* weightsAcc = cgltf_find_accessor(submesh, cgltf_attribute_type_weights, 0);
+    if (jointsAcc && weightsAcc)
+    {
+        size_t numVertices = submesh->attributes[0].data->count;
+        mesh.skin.resize(numVertices);
+        for (size_t i = 0; i < numVertices; i++)
+        {
+            cgltf_uint j[4] = {0, 0, 0, 0};
+            float w[4] = {0, 0, 0, 0};
+            cgltf_accessor_read_uint(jointsAcc, i, j, 4);
+            cgltf_accessor_read_float(weightsAcc, i, w, 4);
+            FSkinBinding& bind = mesh.skin[i];
+            for (int k = 0; k < 4; k++)
+            {
+                uint32_t joint = j[k];
+                if (jointRemap && joint < jointRemap->size())
+                    joint = (*jointRemap)[joint];
+                bind.joints[k] = static_cast<uint16_t>(joint);
+                bind.weights[k] = w[k];
+            }
+        }
+    }
+
+    // Morph-target POSITION deltas (parallel to vertices), stored target-major. Only read when the
+    // mesh is morph-animated (so vertex order stays unoptimized and aligned with the deltas).
+    if (readMorph && submesh->targets_count > 0)
+    {
+        size_t numVertices = submesh->attributes[0].data->count;
+        uint32_t targetCount = static_cast<uint32_t>(submesh->targets_count);
+        mesh.morphTargetCount = targetCount;
+        mesh.morphPositions.assign(static_cast<size_t>(targetCount) * numVertices, float3(0.0f));
+        Vector<float> unpack(numVertices * 3, scratchAlloc);
+        for (uint32_t t = 0; t < targetCount; t++)
+        {
+            const cgltf_morph_target& target = submesh->targets[t];
+            const cgltf_accessor* posAcc = nullptr;
+            for (size_t a = 0; a < target.attributes_count; a++)
+                if (target.attributes[a].type == cgltf_attribute_type_position)
+                {
+                    posAcc = target.attributes[a].data;
+                    break;
+                }
+            if (!posAcc)
+                continue;
+            cgltf_accessor_unpack_floats(posAcc, unpack.data(), numVertices * 3);
+            float3* dst = mesh.morphPositions.data() + static_cast<size_t>(t) * numVertices;
+            for (size_t v = 0; v < numVertices; v++)
+                dst[v] = float3(unpack[v * 3 + 0], unpack[v * 3 + 1], unpack[v * 3 + 2]);
+        }
+    }
     return mesh;
 }
 
@@ -751,8 +845,178 @@ void AppendResourceBlobJobs(Vector<FBlobJob>& blobJobs, FResourceBlobJobs& resou
 }
 
 void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, FTexture&& texture);
-void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh);
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, int32_t skeleton,
+                       int32_t morphTrack);
 void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImportedCurve const& curve);
+
+// Builds a flat, topologically sorted @ref FSkeleton from a glTF skin. @p outRemap maps a
+// skin-local joint index (as stored in JOINTS_0) to its index in the sorted skeleton; rest TRS
+// come from each joint node's local transform and parents above the skin are treated as identity
+// (the skeleton evaluates in its own space). Inverse-bind matrices come from the skin accessor.
+FSkeleton BuildSkeletonFromSkin(cgltf_data* data, const cgltf_skin* skin, Vector<uint16_t>& outRemap,
+                                Allocator* alloc)
+{
+    FSkeleton skel(alloc);
+    size_t n = skin->joints_count;
+    outRemap.assign(n, 0);
+    if (n == 0)
+        return skel;
+
+    // Parent index within the joint set (-1 if the parent node isn't a joint of this skin).
+    Vector<int32_t> parentLocal(n, -1, alloc);
+    for (size_t k = 0; k < n; k++)
+    {
+        cgltf_node* parent = skin->joints[k]->parent;
+        if (parent)
+            for (size_t m = 0; m < n; m++)
+                if (skin->joints[m] == parent)
+                {
+                    parentLocal[k] = static_cast<int32_t>(m);
+                    break;
+                }
+    }
+    // Depth from a root; sorting by depth yields a parent-before-child order.
+    Vector<uint32_t> depth(n, 0, alloc);
+    for (size_t k = 0; k < n; k++)
+    {
+        uint32_t d = 0;
+        int32_t c = static_cast<int32_t>(k);
+        while (parentLocal[c] >= 0 && d <= n)
+        {
+            d++;
+            c = parentLocal[c];
+        }
+        depth[k] = d;
+    }
+    Vector<uint32_t> order(n, 0, alloc);
+    for (size_t k = 0; k < n; k++)
+        order[k] = static_cast<uint32_t>(k);
+    std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) { return depth[a] < depth[b]; });
+    for (uint32_t newIdx = 0; newIdx < n; newIdx++)
+        outRemap[order[newIdx]] = static_cast<uint16_t>(newIdx);
+
+    Vector<mat4> inverseBind(n, mat4(1.0f), alloc);
+    if (skin->inverse_bind_matrices)
+        cgltf_accessor_unpack_floats(skin->inverse_bind_matrices, reinterpret_cast<float*>(inverseBind.data()), n * 16);
+
+    skel.joints.resize(n);
+    for (uint32_t newIdx = 0; newIdx < n; newIdx++)
+    {
+        uint32_t oldIdx = order[newIdx];
+        FJoint& joint = skel.joints[newIdx];
+        joint.parent = parentLocal[oldIdx] >= 0 ? static_cast<int32_t>(outRemap[parentLocal[oldIdx]]) : -1;
+        mat4 local;
+        cgltf_node_transform_local(skin->joints[oldIdx], reinterpret_cast<float*>(&local));
+        decompose(local, joint.restScale, joint.restRotation, joint.restTranslation);
+        joint.inverseBind = inverseBind[oldIdx];
+    }
+    return skel;
+}
+
+FAnimInterp MapAnimInterp(cgltf_interpolation_type interp)
+{
+    switch (interp)
+    {
+    case cgltf_interpolation_type_step:
+        return FAnimInterp::Step;
+    case cgltf_interpolation_type_cubic_spline:
+        return FAnimInterp::CubicSpline;
+    default:
+        return FAnimInterp::Linear;
+    }
+}
+
+bool MapAnimPath(cgltf_animation_path_type path, FAnimPath& out)
+{
+    switch (path)
+    {
+    case cgltf_animation_path_type_translation:
+        out = FAnimPath::Translation;
+        return true;
+    case cgltf_animation_path_type_rotation:
+        out = FAnimPath::Rotation;
+        return true;
+    case cgltf_animation_path_type_scale:
+        out = FAnimPath::Scale;
+        return true;
+    default: // morph-target weights and invalid paths are not supported yet
+        return false;
+    }
+}
+
+// Reads one animation channel's keyframes into @p out for target joint @p joint. Returns false for
+// unsupported paths (e.g. morph weights) or missing accessors; grows @p duration to the last key.
+bool BuildAnimChannel(const cgltf_animation_channel* ch, uint32_t joint, FAnimChannel& out, float& duration)
+{
+    FAnimPath path;
+    if (!ch->target_node || !ch->sampler || !MapAnimPath(ch->target_path, path))
+        return false;
+    const cgltf_accessor* input = ch->sampler->input;
+    const cgltf_accessor* output = ch->sampler->output;
+    if (!input || !output)
+        return false;
+    out.joint = joint;
+    out.path = path;
+    out.interp = MapAnimInterp(ch->sampler->interpolation);
+    out.times.resize(input->count);
+    cgltf_accessor_unpack_floats(input, out.times.data(), input->count);
+    size_t outFloats = output->count * cgltf_num_components(output->type);
+    out.values.resize(outFloats);
+    cgltf_accessor_unpack_floats(output, out.values.data(), outFloats);
+    if (input->count > 0)
+        duration = std::max(duration, out.times[input->count - 1]);
+    return true;
+}
+
+// Builds a flat, topologically sorted @ref FSkeleton over *every* glTF node (rest-local TRS,
+// identity inverse-bind). This is the scene-node hierarchy that drives rigid node animation:
+// instances/lights reference its joints, and @ref ComputeGlobals turns animated node-local TRS into
+// world matrices (parents propagate to children). @p outNodeToJoint maps a glTF node index to its
+// joint index in the sorted skeleton.
+FSkeleton BuildSceneNodeSkeleton(cgltf_data* data, Vector<int32_t>& outNodeToJoint, Allocator* alloc)
+{
+    FSkeleton skel(alloc);
+    size_t n = data->nodes_count;
+    outNodeToJoint.assign(n, -1);
+    if (n == 0)
+        return skel;
+
+    Vector<int32_t> parentLocal(n, -1, alloc);
+    for (size_t k = 0; k < n; k++)
+        if (data->nodes[k].parent)
+            parentLocal[k] = static_cast<int32_t>(cgltf_node_index(data, data->nodes[k].parent));
+    Vector<uint32_t> depth(n, 0, alloc);
+    for (size_t k = 0; k < n; k++)
+    {
+        uint32_t d = 0;
+        int32_t c = static_cast<int32_t>(k);
+        while (parentLocal[c] >= 0 && d <= n)
+        {
+            d++;
+            c = parentLocal[c];
+        }
+        depth[k] = d;
+    }
+    Vector<uint32_t> order(n, 0, alloc);
+    for (size_t k = 0; k < n; k++)
+        order[k] = static_cast<uint32_t>(k);
+    std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) { return depth[a] < depth[b]; });
+    for (uint32_t newIdx = 0; newIdx < n; newIdx++)
+        outNodeToJoint[order[newIdx]] = static_cast<int32_t>(newIdx);
+
+    skel.joints.resize(n);
+    for (uint32_t newIdx = 0; newIdx < n; newIdx++)
+    {
+        uint32_t oldIdx = order[newIdx];
+        FJoint& joint = skel.joints[newIdx];
+        joint.parent = parentLocal[oldIdx] >= 0 ? outNodeToJoint[parentLocal[oldIdx]] : -1;
+        mat4 local;
+        cgltf_node_transform_local(&data->nodes[oldIdx], reinterpret_cast<float*>(&local));
+        decompose(local, joint.restScale, joint.restRotation, joint.restTranslation);
+        joint.inverseBind = mat4(1.0f); // rigid nodes don't skin
+    }
+    return skel;
+}
 
 void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc)
 {
@@ -968,6 +1232,111 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         scene.Set(environmentGlobals);
     }
 
+    /* Skeletons (one per glTF skin) + a glTF-mesh -> skin map for skinned-mesh import */
+    Vector<Vector<uint16_t>> skinRemap(scratchAlloc);
+    skinRemap.reserve(data->skins_count);
+    scene.mTables.skeletons.reserve(data->skins_count);
+    for (size_t s = 0; s < data->skins_count; s++)
+    {
+        Vector<uint16_t> remap(scratchAlloc);
+        scene.mTables.skeletons.push_back(BuildSkeletonFromSkin(data, &data->skins[s], remap, scratchAlloc));
+        skinRemap.push_back(std::move(remap));
+    }
+    Vector<int32_t> meshToSkin(data->meshes_count, -1, scratchAlloc);
+    for (size_t i = 0; i < data->nodes_count; i++)
+    {
+        const cgltf_node* node = &data->nodes[i];
+        if (node->mesh && node->skin)
+            meshToSkin[cgltf_mesh_index(data, node->mesh)] = static_cast<int32_t>(cgltf_skin_index(data, node->skin));
+    }
+
+    /* Scene-node hierarchy + rigid (non-skin) animation clips. Built before the instance loop so
+     * instances/lights can record their scene-node index. Skin joints are excluded here (they are
+     * driven by the skin clip path), so no node is animated twice. The hierarchy is only kept when
+     * at least one rigid clip exists. */
+    int32_t sceneNodeSkeleton = -1;
+    Vector<int32_t> nodeToSceneJoint(scratchAlloc);
+    if (data->animations_count > 0 && data->nodes_count > 0)
+    {
+        FSkeleton sceneNodes = BuildSceneNodeSkeleton(data, nodeToSceneJoint, scratchAlloc);
+        int32_t const candidateSkeleton = static_cast<int32_t>(scene.mTables.skeletons.size());
+        auto isSkinJoint = [&](cgltf_node* node)
+        {
+            for (size_t s = 0; s < data->skins_count; s++)
+                for (size_t l = 0; l < data->skins[s].joints_count; l++)
+                    if (data->skins[s].joints[l] == node)
+                        return true;
+            return false;
+        };
+        Vector<FAnimationClip> rigidClips(scratchAlloc);
+        for (size_t a = 0; a < data->animations_count; a++)
+        {
+            const cgltf_animation* anim = &data->animations[a];
+            FAnimationClip clip(scratchAlloc);
+            clip.skeleton = candidateSkeleton;
+            for (size_t c = 0; c < anim->channels_count; c++)
+            {
+                const cgltf_animation_channel* ch = &anim->channels[c];
+                if (!ch->target_node || isSkinJoint(ch->target_node))
+                    continue;
+                int32_t const joint = nodeToSceneJoint[cgltf_node_index(data, ch->target_node)];
+                if (joint < 0)
+                    continue;
+                FAnimChannel channel(scratchAlloc);
+                if (!BuildAnimChannel(ch, static_cast<uint32_t>(joint), channel, clip.duration))
+                    continue;
+                clip.channels.push_back(std::move(channel));
+            }
+            if (!clip.channels.empty())
+                rigidClips.push_back(std::move(clip));
+        }
+        if (!rigidClips.empty())
+        {
+            scene.mTables.skeletons.push_back(std::move(sceneNodes));
+            sceneNodeSkeleton = candidateSkeleton;
+            for (FAnimationClip& clip : rigidClips)
+                scene.mTables.clips.push_back(std::move(clip));
+        }
+    }
+    scene.mTables.sceneNodeSkeleton = sceneNodeSkeleton;
+    auto NodeJoint = [&](size_t nodeIndex) -> int32_t
+    { return sceneNodeSkeleton >= 0 ? nodeToSceneJoint[nodeIndex] : -1; };
+
+    /* Morph-target weight tracks: one per glTF mesh that an animation drives via a `weights` channel
+     * (first wins). Each mesh's submeshes link to it through FSerializedMesh::morphTrack. */
+    Vector<int32_t> meshToMorphTrack(data->meshes_count, -1, scratchAlloc);
+    for (size_t a = 0; a < data->animations_count; a++)
+    {
+        const cgltf_animation* anim = &data->animations[a];
+        for (size_t c = 0; c < anim->channels_count; c++)
+        {
+            const cgltf_animation_channel* ch = &anim->channels[c];
+            if (ch->target_path != cgltf_animation_path_type_weights || !ch->target_node ||
+                !ch->target_node->mesh || !ch->sampler)
+                continue;
+            size_t meshIdx = cgltf_mesh_index(data, ch->target_node->mesh);
+            if (meshToMorphTrack[meshIdx] >= 0)
+                continue; // first track wins for a given mesh
+            const cgltf_primitive* prim0 = ch->target_node->mesh->primitives_count ? &ch->target_node->mesh->primitives[0] : nullptr;
+            uint32_t targetCount = prim0 ? static_cast<uint32_t>(prim0->targets_count) : 0u;
+            const cgltf_accessor* input = ch->sampler->input;
+            const cgltf_accessor* output = ch->sampler->output;
+            if (targetCount == 0 || !input || !output)
+                continue;
+            FMorphTrack track(scratchAlloc);
+            track.targetCount = targetCount;
+            track.interp = MapAnimInterp(ch->sampler->interpolation);
+            track.times.resize(input->count);
+            cgltf_accessor_unpack_floats(input, track.times.data(), input->count);
+            track.values.resize(output->count * cgltf_num_components(output->type));
+            cgltf_accessor_unpack_floats(output, track.values.data(), track.values.size());
+            if (input->count > 0)
+                track.duration = track.times[input->count - 1];
+            meshToMorphTrack[meshIdx] = static_cast<int32_t>(scene.mTables.morphTracks.size());
+            scene.mTables.morphTracks.push_back(std::move(track));
+        }
+    }
+
     /* Meshes */
     size_t numSubmeshes = 0;
     for (size_t i = 0; i < data->meshes_count; i++)
@@ -990,6 +1359,9 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         for (size_t i = 0; i < data->meshes_count; i++)
         {
             auto& mesh = data->meshes[i];
+            int32_t skinIndex = meshToSkin[i];
+            int32_t morphTrack = meshToMorphTrack[i];
+            const Vector<uint16_t>* remap = skinIndex >= 0 ? &skinRemap[skinIndex] : nullptr;
             auto& [mmin, mmax] = submeshIndices.emplace_back(nextSubmesh, nextSubmesh);
             for (size_t p = 0; p < mesh.primitives_count; p++)
             {
@@ -997,16 +1369,24 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                 CHECK(sub->type == cgltf_primitive_type_triangles);
                 uint32_t meshIndex = nextSubmesh++;
                 futures.push_back(pool.Push(
-                    [&, meshIndex, sub]
+                    [&, meshIndex, sub, skinIndex, morphTrack, remap]
                     {
-                        FImportedMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc);
-                        LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
-                            submesh.vertices.size(), submesh.lods[0].indices.size());
-                        submesh.Optimize();
-                        submesh.ClusterizeDAG();
+                        FImportedMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc, remap, morphTrack >= 0);
+                        // Deforming meshes (skinned or morph-animated) take the dynamic vertex/index
+                        // path: skip vertex reordering (which would desync the per-vertex binding /
+                        // morph deltas) and the DAG/meshlet build.
+                        bool const dynamic = !submesh.skin.empty() || morphTrack >= 0;
+                        if (!dynamic)
+                        {
+                            LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
+                                submesh.vertices.size(), submesh.lods[0].indices.size());
+                            submesh.Optimize();
+                            submesh.ClusterizeDAG();
+                            LOG(Meshopt, LogInfo, "Optimized {}", meshIndex);
+                        }
                         submesh.Quantize();
-                        LOG(Meshopt, LogInfo, "Optimized {}", meshIndex);
-                        BuildMeshBlobJobs(scene.mTables.meshes[meshIndex], meshBlobJobs[meshIndex].jobs, submesh);
+                        BuildMeshBlobJobs(scene.mTables.meshes[meshIndex], meshBlobJobs[meshIndex].jobs, submesh,
+                                          submesh.skin.empty() ? -1 : skinIndex, morphTrack);
                     }));
             }
             mmax = nextSubmesh;
@@ -1091,6 +1471,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             FInstance instance{};
             getTransform(instance.transform);
             instance.type = FInstanceType::Mesh;
+            instance.node = NodeJoint(i);
             auto meshIndex = cgltf_mesh_index(data, node->mesh);
             auto [mmin, mmax] = submeshIndices[meshIndex];
             for (size_t j = mmin; j < mmax; j++)
@@ -1106,6 +1487,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             FInstance instance{};
             getTransform(instance.transform);
             instance.type = FInstanceType::Curve;
+            instance.node = NodeJoint(i);
             instance.resourceIndex = static_cast<uint32_t>(cgltf_curve_index(data, node->curve));
             instance.materialIndex = node->curve->material ? static_cast<uint32_t>(cgltf_material_index(data, node->curve->material) + 1u) : 0u;
             scene.Add(instance);
@@ -1131,6 +1513,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         {
             FLight light{};
             getTransform(light.transform);
+            light.node = NodeJoint(i);
             light.color = float3{node->light->color[0], node->light->color[1], node->light->color[2]};
             light.power = node->light->intensity / 683.0f;
             light.range = node->light->range;
@@ -1157,6 +1540,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         {
             FLight light{};
             getTransform(light.transform);
+            light.node = NodeJoint(i);
             float ws = std::max({std::abs(light.transform.scale.x), std::abs(light.transform.scale.y),
                                  std::abs(light.transform.scale.z)});
             light.transform.scale = float3{1, 1, 1};
@@ -1184,6 +1568,56 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             light.power = la->intensity;
             scene.Add(light);
         }
+    }
+
+    /* Animations: one clip per glTF animation, bound to a single skeleton (the first one a channel
+     * targets). Channels are resolved to that skeleton's topological joint indices; channels for
+     * other skeletons or unsupported paths (morph weights) are dropped. */
+    auto findJoint = [&](cgltf_node* node, int32_t& outSkin, uint32_t& outJoint) -> bool
+    {
+        for (size_t s = 0; s < data->skins_count; s++)
+        {
+            const cgltf_skin* skin = &data->skins[s];
+            for (size_t l = 0; l < skin->joints_count; l++)
+                if (skin->joints[l] == node)
+                {
+                    outSkin = static_cast<int32_t>(s);
+                    outJoint = skinRemap[s][l];
+                    return true;
+                }
+        }
+        return false;
+    };
+    for (size_t a = 0; a < data->animations_count; a++)
+    {
+        const cgltf_animation* anim = &data->animations[a];
+        int32_t clipSkin = -1;
+        for (size_t c = 0; c < anim->channels_count && clipSkin < 0; c++)
+        {
+            int32_t s;
+            uint32_t j;
+            if (anim->channels[c].target_node && findJoint(anim->channels[c].target_node, s, j))
+                clipSkin = s;
+        }
+        if (clipSkin < 0)
+            continue; // no skinned target (rigid articulation is a later step)
+
+        FAnimationClip clip(scratchAlloc);
+        clip.skeleton = clipSkin;
+        for (size_t c = 0; c < anim->channels_count; c++)
+        {
+            const cgltf_animation_channel* ch = &anim->channels[c];
+            int32_t s;
+            uint32_t j;
+            if (!ch->target_node || !findJoint(ch->target_node, s, j) || s != clipSkin)
+                continue;
+            FAnimChannel channel(scratchAlloc);
+            if (!BuildAnimChannel(ch, j, channel, clip.duration))
+                continue;
+            clip.channels.push_back(std::move(channel));
+        }
+        if (!clip.channels.empty())
+            scene.mTables.clips.push_back(std::move(clip));
     }
 }
 
@@ -1365,7 +1799,8 @@ void BuildCurveGeometry(FImportedCurve const& curve, Span<FSerializedCurveSegmen
               segments.size(), segmentCursor);
 }
 
-void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh)
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, int32_t skeleton,
+                       int32_t morphTrack)
 {
     CHECK_MSG(!mesh.verticesQuantized.empty(), "FScene mesh is not quantized");
     desc.vertices = {};
@@ -1375,8 +1810,25 @@ void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImpor
     desc.dagMeshlets = {};
     desc.dagMeshletTri = {};
     desc.dagMeshletVtx = {};
+    desc.skinBinding = {};
+    desc.skeleton = skeleton;
+    desc.morphPositions = {};
+    desc.morphTargetCount = mesh.morphTargetCount;
+    desc.morphTrack = morphTrack;
 
     AppendArrayBlobJob(blobJobs, mesh.verticesQuantized, FBlobCodec::LZ4, desc.vertices);
+    if (!mesh.skin.empty())
+    {
+        CHECK_MSG(mesh.skin.size() == mesh.verticesQuantized.size(), "Skin binding count mismatch");
+        AppendArrayBlobJob(blobJobs, mesh.skin, FBlobCodec::LZ4, desc.skinBinding);
+    }
+    if (!mesh.morphPositions.empty())
+    {
+        CHECK_MSG(mesh.morphPositions.size() ==
+                      static_cast<size_t>(mesh.morphTargetCount) * mesh.verticesQuantized.size(),
+                  "Morph delta count mismatch");
+        AppendArrayBlobJob(blobJobs, mesh.morphPositions, FBlobCodec::LZ4, desc.morphPositions);
+    }
 
     desc.lods.reserve(mesh.lods.size());
     for (auto const& lod : mesh.lods)
@@ -1479,6 +1931,25 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     desc.materialBudget = RingGPUSceneBudget(GetMaterials().size());
     desc.lightBudget = RingGPUSceneBudget(GetLights().size());
     desc.geometryBudget = CountGPUSceneBudget(GetMeshes().size() + GetCurves().size());
+
+    // CPU-skinned meshes take the dynamic (CPU-updateable) geometry path. Size the per-slot ring
+    // to the sum of their footprints (GSMesh header + quantized verts + LOD0 indices); 0 leaves the
+    // feature off when the scene has no skinned meshes.
+    size_t dynamicBytesPerSlot = 0;
+    for (auto const& mesh : GetMeshes())
+    {
+        if (mesh.skinBinding.count == 0 && mesh.morphTrack < 0)
+            continue;
+        size_t vtxBytes = static_cast<size_t>(mesh.vertices.decodedSize);
+        size_t idxBytes = mesh.lods.empty() ? 0u : static_cast<size_t>(mesh.lods[0].indices.decodedSize);
+        dynamicBytesPerSlot = AlignUp(dynamicBytesPerSlot, size_t(16));
+        dynamicBytesPerSlot += AlignUp(sizeof(GSMesh) + vtxBytes + idxBytes, size_t(16));
+    }
+    if (dynamicBytesPerSlot != 0)
+    {
+        desc.dynamicGeometryFrames = kGPUSceneRingFrameSlack;
+        desc.dynamicGeometryBudget = ByteGPUSceneBudget(dynamicBytesPerSlot, 0, size_t(16));
+    }
 
     size_t textureBindings = kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings +
         kGPUSceneTextureBindingSlack;

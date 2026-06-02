@@ -171,6 +171,9 @@ void LoadScene(StringView path);
 // Advances an in-flight async scene load; returns true while one is still streaming.
 // Must be pumped once per editor frame.
 bool PumpSceneLoad();
+// Evaluates skinned-mesh animation and CPU-skins into the dynamic geometry ring for this frame.
+// Returns true if any dynamic geometry was written (the caller must then re-commit the scene).
+bool UpdateAnimation(float dt);
 void LoadEnvMap(StringView path);
 bool ApplyViewLUTSelection();
 void HandleFile(const char* filePath);
@@ -178,6 +181,7 @@ void HandleFile(const char* filePath);
 void EditorDockSpaceAndMenuBar();
 void FHierarchyPanel();
 void FLightingPanel();
+void FAnimationPanel();
 void FRunningImGui();
 void ClearMaterialTexturePreviewCache();
 

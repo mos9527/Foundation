@@ -1736,6 +1736,7 @@ void FRunningImGui()
     ImGui::End();
     ImGui::PopStyleColor();
     FLightingPanel();
+    FAnimationPanel();
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Rendering"))
     {

@@ -5,7 +5,11 @@
 
 #include "EditorState.hpp"
 #include <Renderer/Mesh.hpp>
+#include <Renderer/Animation.hpp>
 #include "Renderer/GPUScene.hpp"
+#include <Math/Decompose.hpp>
+#include <imgui.h>
+#include <cmath>
 static constexpr const char* kTempScenePath = "Cache/Last.fscn";
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
 // Accounts for alignment, etc...
@@ -653,8 +657,12 @@ static void BeginSceneUpload(FImportedScene& scene, GPUScene* gpu, Vector<Geomet
     for (FSerializedMesh const& mesh : scene.GetMeshes())
     {
         GeometryHandle handle;
-        GPUScene::Result r = gpu->Upload(&blobs, mesh, handle);
-        CHECK_MSG(r == GPUScene::Result::InProgress, "Mesh upload rejected ({})", static_cast<int>(r));
+        // Deforming meshes (skinned or morph-animated) upload as dynamic (CPU-updateable) geometry
+        // (Ready synchronously); the rest stream in via the background worker (InProgress).
+        bool const dynamic = mesh.skinBinding.count != 0 || mesh.morphTrack >= 0;
+        GPUScene::Result r = dynamic ? gpu->UploadDynamic(&blobs, mesh, handle) : gpu->Upload(&blobs, mesh, handle);
+        CHECK_MSG(r == GPUScene::Result::InProgress || r == GPUScene::Result::Ready,
+                  "Mesh upload rejected ({})", static_cast<int>(r));
         meshGeometry.push_back(handle);
     }
     for (FSerializedCurve const& curve : scene.GetCurves())
@@ -719,9 +727,12 @@ static void PrepareSceneGlobals(FImportedScene& scene, GPUScene* gpu, AllocatorS
 }
 
 
+namespace { void ClearAnimationRuntime(); } // defined with the skinning runtime below
+
 static void InstallLoadedScene(String const& scenePayloadPath, GPUScene*& newGPUScene)
 {
     GContext->device->WaitIdle();
+    ClearAnimationRuntime(); // drop runtime referencing the scene/GPUScene we're about to replace
     DestroyEditorRenderer(GContext);
     DestroyGPUScene(GContext->gpuScene);
     GContext->gpuScene = newGPUScene;
@@ -784,6 +795,277 @@ static void FinishPendingSceneLoad()
     if (GContext->gpuScene)
         GContext->gpuScene->Join();
     DestroyPendingSceneLoad();
+}
+
+// --- Skinned animation playback ---------------------------------------------------------------
+// CPU skinning runtime for the installed scene. Skinned meshes were uploaded as dynamic geometry;
+// each frame we evaluate their skeleton pose from the scene's clips and linear-blend-skin the
+// rest-pose vertices into the dynamic ring (see Renderer/Animation.hpp). Rebuilt on every load.
+namespace
+{
+struct DynamicMeshRuntime
+{
+    GeometryHandle handle{};
+    Vector<FVertex> bind;         // dequantized rest-pose vertices
+    // Skin (optional)
+    int32_t skeleton{-1};
+    Vector<FSkinBinding> binding; // per-vertex joints/weights (parallel to bind)
+    // Morph (optional)
+    int32_t morphTrack{-1};
+    uint32_t morphTargetCount{0};
+    Vector<float3> morphDeltas;   // POSITION deltas, target-major (t*vtxCount + v)
+    Vector<uint32_t> indices;     // LOD0 topology, for recomputing normals after morphing
+    explicit DynamicMeshRuntime(Allocator* alloc) : bind(alloc), binding(alloc), morphDeltas(alloc), indices(alloc) {}
+};
+struct AnimationRuntime
+{
+    Vector<DynamicMeshRuntime> meshes{GLOBAL_ALLOC};
+    Vector<FPose> poses{GLOBAL_ALLOC}; // one per scene skeleton (reused each frame)
+    Vector<mat4> palette{GLOBAL_ALLOC}; // skinning-matrix scratch (sized to the largest skeleton)
+    Vector<FVertex> morphScratch{GLOBAL_ALLOC}; // morphed base verts before skinning
+    Vector<float> weightScratch{GLOBAL_ALLOC}; // sampled morph weights
+    // Rigid node animation: the scene-node skeleton index (-1 if none) and, per scene node, whether
+    // it is animated or descends from an animated node (only those instances/lights get overridden).
+    int32_t sceneNodeSkeleton{-1};
+    Vector<uint8_t> nodeAffected{GLOBAL_ALLOC};
+    float time{0.0f};
+    float duration{0.0f}; // longest clip/morph track (seconds), for the UI timeline
+    bool playing{true};
+    bool dirty{false}; // a scrub requested a one-shot pose apply even while paused
+    [[nodiscard]] bool HasRigid() const { return sceneNodeSkeleton >= 0; }
+    [[nodiscard]] bool HasData() const { return !meshes.empty() || HasRigid(); }
+};
+AnimationRuntime sAnimation;
+
+void ClearAnimationRuntime() { sAnimation = AnimationRuntime{}; }
+
+// Builds the skinning runtime from the freshly installed scene: dequantizes each skinned mesh's
+// rest pose, reads its per-vertex binding, and allocates per-skeleton pose scratch.
+void SetupAnimationRuntime()
+{
+    ClearAnimationRuntime();
+    if (!GEditor.HasScene())
+        return;
+    FImportedScene& scene = GEditor.Scene();
+    auto const& skeletons = scene.mTables.skeletons;
+
+    FBlobDeserializer blobs = scene.GetBlobDeserializer();
+    auto meshes = scene.GetMeshes();
+    uint32_t maxJoints = 0;
+    for (auto const& skel : skeletons)
+        maxJoints = std::max(maxJoints, skel.Count());
+    sAnimation.poses.resize(skeletons.size());
+    sAnimation.palette.resize(maxJoints);
+
+    // Rigid node animation: mark nodes that are animated or descend from an animated node, so the
+    // per-frame override only touches moving instances/lights (and a held pose lets PT converge).
+    sAnimation.sceneNodeSkeleton = scene.mTables.sceneNodeSkeleton;
+    if (sAnimation.sceneNodeSkeleton >= 0)
+    {
+        FSkeleton const& nodes = skeletons[sAnimation.sceneNodeSkeleton];
+        sAnimation.nodeAffected.assign(nodes.Count(), 0u);
+        for (FAnimationClip const& clip : scene.mTables.clips)
+            if (clip.skeleton == sAnimation.sceneNodeSkeleton)
+                for (FAnimChannel const& channel : clip.channels)
+                    if (channel.joint < nodes.Count())
+                        sAnimation.nodeAffected[channel.joint] = 1u;
+        // Topological storage (parent < child) lets one forward pass propagate to descendants.
+        for (uint32_t i = 0; i < nodes.Count(); ++i)
+        {
+            int32_t parent = nodes.joints[i].parent;
+            if (parent >= 0 && sAnimation.nodeAffected[static_cast<uint32_t>(parent)])
+                sAnimation.nodeAffected[i] = 1u;
+        }
+    }
+    for (size_t m = 0; m < meshes.size(); ++m)
+    {
+        FSerializedMesh const& mesh = meshes[m];
+        bool const skinned = mesh.skinBinding.count != 0 && mesh.skeleton >= 0;
+        bool const morphed = mesh.morphTrack >= 0 && mesh.morphTargetCount > 0;
+        if ((!skinned && !morphed) || m >= GEditor.meshGeometry.size())
+            continue;
+        DynamicMeshRuntime rt(GLOBAL_ALLOC);
+        rt.handle = GEditor.meshGeometry[m];
+        Vector<FQVertex> quantized = blobs.ReadArray<FQVertex>(mesh.vertices, GLOBAL_ALLOC);
+        rt.bind.resize(quantized.size());
+        for (size_t i = 0; i < quantized.size(); ++i)
+            rt.bind[i] = FQVertex::Unpack(quantized[i]);
+        if (skinned)
+        {
+            rt.skeleton = mesh.skeleton;
+            rt.binding = blobs.ReadArray<FSkinBinding>(mesh.skinBinding, GLOBAL_ALLOC);
+        }
+        if (morphed)
+        {
+            rt.morphTrack = mesh.morphTrack;
+            rt.morphTargetCount = mesh.morphTargetCount;
+            rt.morphDeltas = blobs.ReadArray<float3>(mesh.morphPositions, GLOBAL_ALLOC);
+            // Topology is needed to recompute normals from the morphed positions each frame.
+            if (!mesh.lods.empty())
+                rt.indices = blobs.ReadArray<uint32_t>(mesh.lods[0].indices, GLOBAL_ALLOC);
+        }
+        sAnimation.meshes.push_back(std::move(rt));
+    }
+
+    for (FAnimationClip const& clip : scene.mTables.clips)
+        sAnimation.duration = std::max(sAnimation.duration, clip.duration);
+    for (FMorphTrack const& track : scene.mTables.morphTracks)
+        sAnimation.duration = std::max(sAnimation.duration, track.duration);
+
+    LOG(Editor, LogInfo, "Animation runtime: {} deforming mesh(es), {} skeleton(s), {} clip(s), {} morph track(s)",
+        sAnimation.meshes.size(), skeletons.size(), scene.mTables.clips.size(), scene.mTables.morphTracks.size());
+}
+} // namespace
+
+// Evaluates the scene's clips, CPU-skins each skinned mesh into the dynamic ring, and returns true
+// if any dynamic geometry was written this frame (the caller then re-commits the scene so the
+// dynamic instances encode the current ring slot). No-op while paused or still streaming, so a held
+// pose lets the path tracer keep accumulating.
+bool UpdateAnimation(float dt)
+{
+    if (sPendingSceneLoad || !sAnimation.HasData())
+        return false;
+    GPUScene* gpu = GContext->gpuScene;
+    if (!gpu)
+        return false;
+    bool const doDynamic = !sAnimation.meshes.empty() && gpu->HasDynamicGeometry();
+    bool const doRigid = sAnimation.HasRigid();
+    if (!doDynamic && !doRigid)
+        return false;
+    // Paused and not scrubbed: skip so a held pose lets the path tracer keep converging.
+    if (!sAnimation.playing && !sAnimation.dirty)
+        return false;
+
+    FImportedScene& scene = GEditor.Scene();
+    auto const& skeletons = scene.mTables.skeletons;
+    auto const& clips = scene.mTables.clips;
+    if (sAnimation.playing)
+        sAnimation.time += dt;
+    sAnimation.dirty = false;
+
+    // Evaluate every skeleton's pose (skins + the scene-node hierarchy) into world matrices.
+    for (size_t s = 0; s < skeletons.size(); ++s)
+        ResetToRest(skeletons[s], sAnimation.poses[s]);
+    for (FAnimationClip const& clip : clips)
+    {
+        if (clip.skeleton < 0 || static_cast<size_t>(clip.skeleton) >= skeletons.size())
+            continue;
+        float t = clip.duration > 0.0f ? std::fmod(sAnimation.time, clip.duration) : 0.0f;
+        SampleClip(clip, t, sAnimation.poses[clip.skeleton]);
+    }
+    for (size_t s = 0; s < skeletons.size(); ++s)
+        ComputeGlobals(skeletons[s], sAnimation.poses[s]);
+
+    bool changed = false;
+
+    // Rigid node animation: write the animated nodes' world transforms onto their instances/lights.
+    if (doRigid)
+    {
+        FPose const& nodePose = sAnimation.poses[sAnimation.sceneNodeSkeleton];
+        auto const& affected = sAnimation.nodeAffected;
+        auto applyNode = [&](int32_t node, FTransform& dst)
+        {
+            if (node < 0 || static_cast<size_t>(node) >= affected.size() || !affected[node])
+                return;
+            decompose(nodePose.globals[node], dst.scale, dst.rotation, dst.transform);
+            changed = true;
+        };
+        for (FInstance& instance : scene.mTables.instances)
+            applyNode(instance.node, instance.transform);
+        for (FLight& light : scene.mTables.lights)
+            applyNode(light.node, light.transform);
+    }
+
+    // CPU deformation: morph (POSITION deltas) then skin, written into each mesh's dynamic ring slot.
+    if (doDynamic)
+    {
+        gpu->BeginDynamicGeometryUpdate();
+        for (DynamicMeshRuntime const& rt : sAnimation.meshes)
+        {
+            if (gpu->Query(rt.handle) != GPUScene::Result::Ready)
+                continue;
+            size_t n = rt.bind.size();
+            const FVertex* base = rt.bind.data();
+
+            // Morph: base' = base + Σ weightₜ · deltaₜ (POSITION only; normals keep the base frame).
+            if (rt.morphTrack >= 0 && rt.morphTargetCount > 0 &&
+                static_cast<size_t>(rt.morphTrack) < scene.mTables.morphTracks.size())
+            {
+                FMorphTrack const& track = scene.mTables.morphTracks[rt.morphTrack];
+                sAnimation.weightScratch.resize(rt.morphTargetCount);
+                float t = track.duration > 0.0f ? std::fmod(sAnimation.time, track.duration) : 0.0f;
+                SampleTrack(Span<const float>(track.times.data(), track.times.size()),
+                            Span<const float>(track.values.data(), track.values.size()), rt.morphTargetCount,
+                            track.interp, t, Span<float>(sAnimation.weightScratch.data(), rt.morphTargetCount));
+                sAnimation.morphScratch.resize(n);
+                for (size_t v = 0; v < n; ++v)
+                {
+                    FVertex mv = rt.bind[v];
+                    for (uint32_t tt = 0; tt < rt.morphTargetCount; ++tt)
+                        mv.position += sAnimation.weightScratch[tt] * rt.morphDeltas[static_cast<size_t>(tt) * n + v];
+                    sAnimation.morphScratch[v] = mv;
+                }
+                // POSITION-only deltas leave normals stale, so rebuild them from the morphed surface
+                // (skinning, applied next, then rotates these fresh normals correctly).
+                RecomputeNormals(Span<FVertex>(sAnimation.morphScratch.data(), n),
+                                 Span<const uint32_t>(rt.indices.data(), rt.indices.size()));
+                base = sAnimation.morphScratch.data();
+            }
+
+            Span<std::byte> dst = gpu->UpdateDynamicGeometry(rt.handle);
+            Span<FQVertex> out(reinterpret_cast<FQVertex*>(dst.data()), dst.size() / sizeof(FQVertex));
+            if (rt.skeleton >= 0)
+            {
+                FSkeleton const& skel = skeletons[rt.skeleton];
+                Span<mat4> palette(sAnimation.palette.data(), skel.Count());
+                ComputeSkinningMatrices(skel, sAnimation.poses[rt.skeleton], palette);
+                SkinVertices(Span<const FVertex>(base, n),
+                             Span<const FSkinBinding>(rt.binding.data(), rt.binding.size()),
+                             Span<const mat4>(palette.data(), palette.size()), out);
+            }
+            else
+            {
+                for (size_t v = 0; v < n && v < out.size(); ++v)
+                    out[v] = FQVertex::Pack(base[v]);
+            }
+            changed = true;
+        }
+        gpu->EndDynamicGeometryUpdate();
+    }
+    return changed;
+}
+
+// Minimal playback panel. Only shown when the installed scene has animation. Scrubbing while paused
+// requests a one-shot pose apply (UpdateAnimation honors `dirty`), so a held frame still updates.
+void FAnimationPanel()
+{
+    if (!sAnimation.HasData())
+        return;
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
+    if (ImGui::Begin("Animation"))
+    {
+        if (ImGui::Button(sAnimation.playing ? "Pause" : "Play"))
+            sAnimation.playing = !sAnimation.playing;
+        ImGui::SameLine();
+        if (ImGui::Button("Restart"))
+        {
+            sAnimation.time = 0.0f;
+            sAnimation.dirty = true;
+        }
+        if (sAnimation.duration > 0.0f)
+        {
+            float t = std::fmod(sAnimation.time, sAnimation.duration);
+            if (ImGui::SliderFloat("Time", &t, 0.0f, sAnimation.duration, "%.2f s"))
+            {
+                sAnimation.time = t;
+                sAnimation.dirty = true; // apply this pose now, even while paused
+            }
+        }
+        ImGui::TextDisabled("%zu deforming mesh(es)%s", sAnimation.meshes.size(),
+                            sAnimation.HasRigid() ? ", rigid nodes" : "");
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
 }
 
 // Pumped once per editor frame. The scene is already installed and rendering; this advances
@@ -860,12 +1142,14 @@ void LoadScene(StringView path)
         GEditor.textureIDMap = std::move(load->textureIDMap);
         InstallLoadedScene(load->scenePayloadPath, gpu); // nulls `gpu`; ownership moves to GContext
         CommitSceneToGPU(GContext->gpuScene, GEditor.Scene(), GEditor.shaderGlobals, true);
+        SetupAnimationRuntime(); // builds CPU skinning state from the installed scene
         sPendingSceneLoad = load;
     }
     catch (std::exception const& e)
     {
         sPendingSceneLoad = nullptr;
         DestroyGPUScene(gpu); // null after a successful install; otherwise joins + frees the new scene
+        ClearAnimationRuntime();
         if (load) Destruct(GLOBAL_ALLOC, load);
         LOG(Editor, LogError, "Failed to load scene: {} ({})", path, e.what());
     }
@@ -873,6 +1157,7 @@ void LoadScene(StringView path)
     {
         sPendingSceneLoad = nullptr;
         DestroyGPUScene(gpu);
+        ClearAnimationRuntime();
         if (load) Destruct(GLOBAL_ALLOC, load);
         LOG(Editor, LogError, "Failed to load scene: {}", path);
     }

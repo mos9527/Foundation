@@ -35,6 +35,19 @@ struct FQVertex
 static_assert(sizeof(FQVertex) == 16);
 #pragma pack(pop)
 
+/**
+ * @brief Per-vertex skin binding for CPU skinning (parallel to a mesh's vertices).
+ * @note CPU-only: the GPU only ever sees the deformed @ref FQVertex, so joints/weights never
+ *       leave the host and aren't part of the GPU vertex format. @ref joints index the bound
+ *       skeleton (see @ref Animation.hpp); @ref weights need not be pre-normalized.
+ */
+struct FSkinBinding
+{
+    uint16_t joints[4]{0, 0, 0, 0};
+    float weights[4]{1, 0, 0, 0};
+};
+static_assert(sizeof(FSkinBinding) == 24);
+
 struct FLODGroup // @ref clodGroup
 {
     // DAG level the group was generated at
@@ -90,6 +103,17 @@ struct FSerializedMesh
     FBlobRef dagMeshlets;
     FBlobRef dagMeshletTri;
     FBlobRef dagMeshletVtx;
+    // Optional CPU skinning data: per-vertex @ref FSkinBinding (count == vertexCount when present)
+    // plus the index of the bound skeleton in the scene's skeleton table (-1 = not skinned).
+    // Skinned meshes carry no DAG/meshlets (they take the dynamic vertex/index path).
+    FBlobRef skinBinding;
+    int32_t skeleton{-1};
+    // Optional morph-target POSITION deltas (target-major: target t, vertex v at t*vertexCount + v),
+    // the target count, and the index of the driving morph-weight track (-1 = not morph-animated).
+    // Morph-animated meshes also take the dynamic vertex/index path.
+    FBlobRef morphPositions;
+    uint32_t morphTargetCount{0};
+    int32_t morphTrack{-1};
 
     explicit FSerializedMesh(Allocator* alloc = GLOBAL_ALLOC)
         : lods(alloc)
@@ -101,6 +125,9 @@ struct FImportedMesh
 {
     Vector<FVertex> vertices; // Full precision, raw vertices. Used by importers.
     Vector<FQVertex> verticesQuantized; // Quantized vertex data for GPU upload.
+    Vector<FSkinBinding> skin; // Optional CPU skin binding, parallel to @ref vertices (empty if not skinned).
+    Vector<float3> morphPositions; // Optional morph POSITION deltas, target-major (t*vertexCount + v).
+    uint32_t morphTargetCount{0};
     struct LOD
     {
         Vector<uint32_t> indices; // Full precision triangle indices

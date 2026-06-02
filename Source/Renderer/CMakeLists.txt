@@ -8,6 +8,7 @@ FetchContent_MakeAvailable(meshoptimizer)
 
 add_subdirectory(Shaders)
 add_library(Foundation_GPUScene STATIC
+    Animation.cpp
     GPUScene.cpp
     Mesh.cpp
     Precompute.cpp
