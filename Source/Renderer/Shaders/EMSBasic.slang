@@ -4,8 +4,11 @@ uniform UBO globalParams;
 
 [[vk_binding(1,0)]] StructuredBuffer<GSInstance> instances;
 [[vk_binding(2,0)]] ByteAddressBuffer primitive;
-[[vk_binding(3,0)]] StructuredBuffer<uint> inMeshletCounter;
-[[vk_binding(4,0)]] StructuredBuffer<uint2> inMeshletIndices; // (x: Meshlet ID, y: Instance ID)
+// Bindings 3..5 are reserved for EPSGBuffer (materials/sampler/overdraw) so the same gbuffer
+// fragment is reused by both this meshlet path and the indirect-draw path (EVSIndirectDraw),
+// whose vertex shader only needs bindings 0..2. Meshlet-only buffers sit above that range.
+[[vk_binding(6,0)]] StructuredBuffer<uint> inMeshletCounter;
+[[vk_binding(7,0)]] StructuredBuffer<uint2> inMeshletIndices; // (x: Meshlet ID, y: Instance ID)
 
 struct MSGroup {
     GSInstance instance;

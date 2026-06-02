@@ -54,3 +54,7 @@ add_executable(Example_GPUSceneStreaming "GPUSceneStreaming.cpp")
 target_link_libraries(Example_GPUSceneStreaming PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
 add_dependencies(Example_GPUSceneStreaming Foundation_Shaders Editor_Data Examples_SampleFiles)
 
+add_executable(Example_GPUSceneDeform "GPUSceneDeform.cpp")
+target_link_libraries(Example_GPUSceneDeform PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
+add_dependencies(Example_GPUSceneDeform Foundation_Shaders Editor_Data Examples_SampleFiles)
+

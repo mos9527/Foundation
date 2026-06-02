@@ -212,6 +212,10 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     REQUEST_BASE_FEATURE(samplerAnisotropy)
     REQUEST_BASE_FEATURE(fragmentStoresAndAtomics)
     REQUEST_BASE_FEATURE(shaderInt16)
+    // GPU-driven multi-draw of dynamic (CPU-updateable) geometry in the raster gbuffer pass
+    // (DrawIndexedIndirectCount with drawCount > 1; per-draw instance id read via SV_DrawIndex,
+    // backed by shaderDrawParameters above).
+    REQUEST_BASE_FEATURE(multiDrawIndirect)
 
     #define REQUEST_FEATURE(STRUCT_TYPE, FEATURE_MEMBER) \
         if (supportedChain.get<STRUCT_TYPE>().FEATURE_MEMBER) { \

@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <Core/Allocator.hpp>
 #include <Core/AllocatorStack.hpp>
 #include <Core/Logging.hpp>
@@ -20,6 +21,10 @@ inline constexpr uint32_t kDiskLightSBTOffset = 4u;
 inline constexpr uint32_t kCurveSBTOffset = 5u;
 inline constexpr uint32_t kGSInstanceTypeMesh = 0u;
 inline constexpr uint32_t kGSInstanceTypeCurve = 1u;
+// GSInstance::type low byte is the geometry kind; bit 8 flags CPU-updateable dynamic geometry
+// so shaders read its primitive data from the dynamic ring instead of the immutable buffer.
+inline constexpr uint32_t kGSInstanceTypeMask = 0xFFu;
+inline constexpr uint32_t kGSInstanceFlagDynamic = 0x100u;
 
 /**
  * @brief Opaque, generation-tagged reference to GPUScene-owned geometry residency.
@@ -170,6 +175,13 @@ struct GPUSceneDesc
     uint32_t tlasInstanceBudget = static_cast<uint32_t>(1e4); // # of TLAS instances (ring)
     uint32_t tlasBudget = 16 * (1u << 20); // 16MB
     uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
+    // CPU-updateable dynamic geometry (deformation: skinning / sims / morphs). Quantized
+    // primitive bytes (header + verts + indices, no DAG/meshlets) live in a host-coherent ring
+    // sized `dynamicGeometryBudget` per frame slot, replicated across `dynamicGeometryFrames`
+    // slots. The BLAS is a single AllowUpdate AS refit in place each frame. Default 0 = feature
+    // off (no buffer allocated); examples / the editor opt in by sizing these explicitly.
+    uint32_t dynamicGeometryBudget = 0; // bytes per frame slot (0 = dynamic geometry disabled)
+    uint32_t dynamicGeometryFrames = 3; // ring slots (match kGPUSceneRingFrameSlack)
 };
 
 /**
@@ -250,6 +262,20 @@ public:
      */
     Result Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
     Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
+    /**
+     * @brief Uploads a mesh as CPU-updateable dynamic geometry (deformation workloads).
+     * @details Topology (indices) is fixed; only vertex positions change per frame. The source's
+     *          quantized verts + LOD0 indices are reserved in the host-coherent dynamic ring
+     *          (replicated across every frame slot) and a single @ref RHIAccelerationStructureBuildFlagsBits::AllowUpdate
+     *          BLAS is built once. Per frame the caller rewrites the current slot's verts via
+     *          @ref BeginGeometryUpdate / @ref EndGeometryUpdate and the graph's
+     *          "Dynamic BLAS Refit" pass (@ref RefitDynamicGeometry) refits the BLAS in place.
+     *          DAG/meshlet payloads are ignored (dynamic geo is drawn with a plain vertex/index
+     *          path, not the meshlet pipeline). Requires @ref GPUSceneDesc::dynamicGeometryBudget > 0.
+     * @note The source's rest-pose verts seed every slot; the handle is @ref Result::Ready once
+     *       its bytes are resident and the BLAS is built (synchronous, not via the upload worker).
+     */
+    Result UploadDynamic(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
     /**
      * @brief Queues a serialized texture upload, binding its bindless slot up front.
      * @param outTexture  [in,out] Pass a default (invalid) handle to allocate a new slot,
@@ -378,6 +404,46 @@ public:
      */
     [[nodiscard]] TLASBuildResult BuildTLAS(RHICommandList* cmd, bool update = false);
 
+    /* --- Dynamic (CPU-updateable) geometry: per-frame deformation ---
+     * Per-frame contract (mirrors a renderer Begin/End frame bracket):
+     *     BeginDynamicGeometryUpdate();              // once per frame, advances the ring slot
+     *     for each deforming geo: fill UpdateGeometry(handle);
+     *     EndDynamicGeometryUpdate();                // closes the window
+     *     ... BeginScene/EndScene, then the graph's "Dynamic BLAS Refit" pass ...
+     * @ref UpdateGeometry may only be called inside the open window; the window state also guards
+     * the per-frame getters. */
+    /** @brief True when at least one dynamic geometry is resident. */
+    [[nodiscard]] bool HasDynamicGeometry() const;
+    /**
+     * @brief Opens the per-frame dynamic-geometry update window and advances the ring to the next
+     *        frame slot. Call exactly once per rendered frame before any @ref UpdateGeometry.
+     * @details The slot the CPU writes (current) is distinct from the slot the GPU traced last
+     *          frame, mirroring the table rings' frames-in-flight invariant. Must be paired with
+     *          @ref EndDynamicGeometryUpdate.
+     */
+    void BeginDynamicGeometryUpdate();
+    /**
+     * @brief Returns the mapped vertex sub-span (quantized @ref FQVertex bytes) for @p handle in
+     *        the *current* frame slot and marks it dirty for this frame's BLAS refit. Lock-free:
+     *        each dynamic handle owns a disjoint region. Only valid inside the
+     *        @ref BeginDynamicGeometryUpdate / @ref EndDynamicGeometryUpdate window.
+     */
+    [[nodiscard]] Span<std::byte> UpdateDynamicGeometry(GeometryHandle handle);
+    /** @brief Closes the per-frame dynamic-geometry update window opened by @ref BeginDynamicGeometryUpdate. */
+    void EndDynamicGeometryUpdate();
+    /**
+     * @brief Refits (or periodically rebuilds) every dirty dynamic geometry's BLAS in place
+     *        against the current frame slot. Record in a render-graph pass that runs *before*
+     *        the "TLAS Update" pass, declaring an acceleration-structure write on the BLAS region.
+     */
+    void BuildBLAS(RHICommandList* cmd);
+    /** @brief Frames between forced full BLAS rebuilds for dynamic geo (0 = refit only). Default 64. */
+    void SetDynamicGeometryRebuildRate(uint32_t framesOrZero);
+    /** @brief Dynamic geos refitted in the last @ref RefitDynamicGeometry call. */
+    [[nodiscard]] uint32_t GetDynamicRefitCount() const;
+    /** @brief Of the last refit, how many were full rebuilds (the rest were in-place updates). */
+    [[nodiscard]] uint32_t GetDynamicRebuildCount() const;
+
     /**
      * @brief Garbage-collects geometry and textures no longer referenced by the committed
      *        scene tables.
@@ -424,6 +490,13 @@ public:
 
     /* Geometry */
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
+    /**
+     * @brief The host-coherent dynamic (CPU-updateable) primitive ring, bound as a second
+     *        primitive storage buffer; instances with @ref kGSInstanceFlagDynamic read from it.
+     * @return The dynamic ring, or the immutable primitive buffer as a fallback when the feature
+     *         is disabled (so the binding is always valid; no dynamic instance ever selects it).
+     */
+    [[nodiscard]] RHIBuffer* GetDynamicPrimitiveBuffer() const;
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const;
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const;
     [[nodiscard]] RHIBuffer* GetLightBuffer() const;

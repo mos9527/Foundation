@@ -86,17 +86,24 @@ public struct MIndex {
     public uint8_t v1;
     public uint8_t v2;
 }
+// GSInstance.type packs the geometry kind in the low byte and feature flags above it.
+public static const uint32_t kGSInstanceTypeMask = 0xFFu;
+public static const uint32_t kGSInstanceFlagDynamic = 0x100u; // CPU-updateable geometry: read positions from `dynamicPrimitives`
 public struct GSInstance
 {
     // TRS
     public float3 transform;
     public quat rotation;
     public float3 scale;
-    public uint32_t resourceOffset; // Mesh or curve set offset in Primitive buffer (bytes)
+    public uint32_t resourceOffset; // Mesh or curve set offset in the (static or dynamic) Primitive buffer (bytes)
     public uint32_t materialIndex; // In Material buffer (offset)
     public uint32_t resourceIndex; // Debug use
-    public uint32_t type; // 0=Mesh, 1=Curve
+    public uint32_t type; // [7:0] 0=Mesh, 1=Curve; bit 8 = dynamic (see kGSInstanceFlag*)
 };
+// Geometry kind (mesh/curve), ignoring feature flags.
+public uint32_t GSInstanceType(GSInstance i) { return i.type & kGSInstanceTypeMask; }
+// True when the instance's primitive data lives in the dynamic (CPU-updateable) ring buffer.
+public bool GSInstanceIsDynamic(GSInstance i) { return (i.type & kGSInstanceFlagDynamic) != 0u; }
 public struct GSCurveSet
 {
     public uint32_t pointOffset;
@@ -160,6 +167,15 @@ public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
     public uint32_t groupCountX;
     public uint32_t groupCountY;
     public uint32_t groupCountZ;
+};
+// Mirrors VkDrawIndexedIndirectCommand (used to GPU-drive the dynamic-geometry raster draw).
+public struct DrawIndexedIndirectCommand
+{
+    public uint32_t indexCount;
+    public uint32_t instanceCount;
+    public uint32_t firstIndex;
+    public int32_t vertexOffset;
+    public uint32_t firstInstance; // carries the absolute scene instance index (read via SV_InstanceID)
 };
 public struct MeshletTaskWork
 {

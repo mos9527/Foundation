@@ -24,6 +24,7 @@ struct Alias {
 RaytracingAccelerationStructure AS;
 StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitives;
+ByteAddressBuffer dynamicPrimitives; // CPU-updateable geometry ring (current frame slot); aliases `primitives` when the feature is off
 StructuredBuffer<GSMaterial> materials;
 StructuredBuffer<GSLight> lights;
 StructuredBuffer<Alias> lightAliasTable;
@@ -304,7 +305,10 @@ void ApplyPrimaryRayDifferential(inout HitState hit, GSInstance inst,
     hit.uvDY = uvDY;
 }
 
-HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst,
+// `prims` selects the static or dynamic primitive buffer (Slang specializes per buffer). The
+// caller branches on GSInstanceIsDynamic(inst); for dynamic geo `meshOffset` is already the
+// current frame slot's absolute header offset (resolved in EndScene).
+HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, float2 bary, GSInstance inst,
                      float3 rayOrigin, float3 rayDirection, float hitT,
                      RayDifferential differential)
 {
@@ -319,15 +323,15 @@ HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
     const float3 barycentrics = float3(1.0 - bary.x - bary.y, bary.x, bary.y);
 
     // Fetch triangle indices
-    GSMesh mesh = primitives.Load<GSMesh>(meshOffset);
-    uint i0 = primitives.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 0) * sizeof(uint32_t));
-    uint i1 = primitives.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 1) * sizeof(uint32_t));
-    uint i2 = primitives.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 2) * sizeof(uint32_t));
+    GSMesh mesh = prims.Load<GSMesh>(meshOffset);
+    uint i0 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 0) * sizeof(uint32_t));
+    uint i1 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 1) * sizeof(uint32_t));
+    uint i2 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 2) * sizeof(uint32_t));
 
     // Fetch and decode vertices
-    FQVertex vq0 = primitives.Load<FQVertex>(mesh.vtxOffset + i0 * sizeof(FQVertex));
-    FQVertex vq1 = primitives.Load<FQVertex>(mesh.vtxOffset + i1 * sizeof(FQVertex));
-    FQVertex vq2 = primitives.Load<FQVertex>(mesh.vtxOffset + i2 * sizeof(FQVertex));
+    FQVertex vq0 = prims.Load<FQVertex>(mesh.vtxOffset + i0 * sizeof(FQVertex));
+    FQVertex vq1 = prims.Load<FQVertex>(mesh.vtxOffset + i1 * sizeof(FQVertex));
+    FQVertex vq2 = prims.Load<FQVertex>(mesh.vtxOffset + i2 * sizeof(FQVertex));
     float3 p0, p1, p2;
     float3 n0, n1, n2;
     float3 t0, t1, t2;
@@ -357,6 +361,19 @@ HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
     return hit;
 }
 
+HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT)
+{
+    return GetHitState(prims, meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, InvalidRayDifferential());
+}
+
+// Buffer-selecting wrappers: dynamic geometry reads from `dynamicPrimitives`, everything else
+// from the immutable `primitives`. The branch picks one statically-specialized instantiation.
+HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT, RayDifferential differential)
+{
+    if (GSInstanceIsDynamic(inst))
+        return GetHitState(dynamicPrimitives, meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, differential);
+    return GetHitState(primitives, meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, differential);
+}
 HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT)
 {
     return GetHitState(meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, InvalidRayDifferential());

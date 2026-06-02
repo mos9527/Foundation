@@ -24,10 +24,21 @@ struct MeshletTaskWork
     uint32_t firstMeshlet;
     uint32_t numMeshlets;
 };
+// Mirrors VkDrawIndexedIndirectCommand. One per dynamic (CPU-updateable) geometry instance,
+// produced by ECSIndirectDraw and consumed by DrawIndexedIndirectCount.
+struct DrawIndexedIndirectCommand
+{
+    uint32_t indexCount;
+    uint32_t instanceCount;
+    uint32_t firstIndex;
+    int32_t vertexOffset;
+    uint32_t firstInstance;
+};
 #pragma pack(pop)
 constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
+constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
 
 void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cfg, RendererScene scene,
                             RHIExtent2D renderExtent, RendererHandles& outHandles)
@@ -47,6 +58,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
     if (hasTLAS)
         TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
+    auto DynamicPrimitiveBuffer = renderer->CreateResource("Dynamic Primitive Buffer", gpu->GetDynamicPrimitiveBuffer());
 
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
     auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
@@ -108,9 +120,18 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
     bool useRTShadows = (cfg.viewFlags & kEnableRasterRTShadows) && !kDebugViewUnlit && hasTLAS;
     uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~kEnableRasterRTShadows);
     uint32_t gbufferFlags = cfg.viewFlags | (cfg.forceTextureLOD0 ? kForceTextureLOD0 : 0u);
-    // Raytracing
+    // Raytracing. The raster path draws dynamic geometry through its own vertex/index MDI draw
+    // (no BLAS needed for shading), so the dynamic BLAS refit is only required when RT shadows
+    // trace the TLAS - which reads the dynamic BLASes.
     if (useRTShadows)
     {
+        // Refit CPU-updateable dynamic geometry BLASes against this frame's ring slot *before*
+        // the TLAS update reads them. Binding the TLAS as an AS-write makes the graph schedule
+        // this pass ahead of "TLAS Update" (shared producer edge) and emit the AS barrier.
+        renderer->CreatePass(
+            "BLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
+            { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
+            { if (gpu->HasDynamicGeometry()) gpu->BuildBLAS(cmd); });
         renderer->CreatePass(
             "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
@@ -387,6 +408,105 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
         AddCullPass(true), AddMainPass(true);
         if (cfg.cullFlags & kCullOcclusion)
             AddCullPass(false), AddMainPass(false);
+    }
+    /* Dynamic (CPU-updateable) geometry: drawn outside the meshlet pipeline (no DAG/meshlets)
+       via a GPU-driven indexed multi-draw into the same gbuffer, depth-tested against it. */
+    if (gpu->HasDynamicGeometry())
+    {
+        auto DynamicDrawCmds = renderer->CreateResource(
+            "Dynamic Draw Commands",
+            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                          .size = sizeof(DrawIndexedIndirectCommand) * kMaxDynamicDraws});
+        auto DynamicDrawCount = renderer->CreateResource(
+            "Dynamic Draw Count",
+            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
+        auto DynamicDrawInstanceIDs = renderer->CreateResource(
+            "Dynamic Draw Instance IDs",
+            RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * kMaxDynamicDraws});
+        renderer->CreatePass(
+            "Dynamic Draw Gen", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindBufferCopyDst(self, DynamicDrawCount);
+                r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                              PathsResolve("Data/Shaders/ECSIndirectDraw.spv"));
+                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
+                r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::ComputeShader,
+                                         "dynamicPrimitives");
+                r->BindBufferUnordered(self, DynamicDrawCmds, RHIPipelineStageBits::ComputeShader, "outDrawCmds");
+                r->BindBufferUnordered(self, DynamicDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
+                                       "outDrawInstanceIDs");
+                r->BindBufferUnordered(self, DynamicDrawCount, RHIPipelineStageBits::ComputeShader, "outDrawCount");
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                auto* count = r->DerefResource(DynamicDrawCount).Get<RHIBuffer*>();
+                cmd->FillBuffer(count, 0u);
+                r->CmdSetPipeline(self, cmd);
+                r->CmdDispatch(self, cmd, {scene.gsGlobals->numInstances, 1, 1});
+            });
+        renderer->CreatePass(
+            "Dynamic GBuffer", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Vertex, "main",
+                              PathsResolve("Data/Shaders/EVSIndirectDraw.spv"));
+                // Reuses the meshlet path's gbuffer fragment (bindings 3..5 sit right after this
+                // VS's 0..2, keeping set 0 contiguous).
+                r->BindShader(self, RHIShaderStageBits::Fragment, "main", PathsResolve("Data/Shaders/EPSGBuffer.spv"),
+                              AsBytes(AsSpan(gbufferFlags)));
+                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
+                r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
+                r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::AllGraphics,
+                                         "dynamicPrimitives");
+                r->BindBufferStorageRead(self, DynamicDrawInstanceIDs, RHIPipelineStageBits::AllGraphics,
+                                         "drawInstanceIDs");
+                r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
+                r->BindTextureRTV(self, GBufferRT0,
+                                  {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindTextureRTV(self, GBufferRT1,
+                                  {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindTextureRTV(self, GBufferRT2,
+                                  {.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindTextureRTV(self, PickIDBuffer,
+                                  {.format = RHIResourceFormat::R32Uint,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
+                                  {.format = RHIResourceFormat::R32Uint,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindTextureDSV(self, ZBuffer,
+                                  {.format = RHIResourceFormat::D32SignedFloat,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                r->BindBufferIndirectRead(self, DynamicDrawCmds);
+                r->BindBufferIndirectRead(self, DynamicDrawCount);
+                r->BindTextureSampler(self, TexSampler, "textureSampler");
+                r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                RHIExtent2D wh{w, h};
+                // LOAD the meshlet-produced gbuffer + depth; dynamic geo depth-tests against it.
+                r->CmdBeginGraphics(self, cmd, wh,
+                                    {{{RHIAttachmentLoadOp::Load},
+                                      {RHIAttachmentLoadOp::Load},
+                                      {RHIAttachmentLoadOp::Load},
+                                      {RHIAttachmentLoadOp::Load}}},
+                                    {RHIAttachmentLoadOp::Load});
+                r->CmdSetPipeline(self, cmd);
+                cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
+                r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
+                // The dynamic ring is bound as a UINT32 index buffer; the VS pulls vertices from
+                // it by SV_VertexID and reads the instance via SV_InstanceID (firstInstance).
+                cmd->BindIndexBuffer(gpu->GetDynamicPrimitiveBuffer(), 0, RHIResourceFormat::R32Uint);
+                auto* cmds = r->DerefResource(DynamicDrawCmds).Get<RHIBuffer*>();
+                auto* count = r->DerefResource(DynamicDrawCount).Get<RHIBuffer*>();
+                cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxDynamicDraws, sizeof(DrawIndexedIndirectCommand));
+                cmd->EndGraphics();
+            });
     }
     if (cfg.viewFlags & kViewOverdraw)
     {

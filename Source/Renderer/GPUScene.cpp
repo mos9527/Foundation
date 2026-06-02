@@ -189,6 +189,21 @@ struct GPUSceneImpl
     bool mDirectGeometryUpload{false};
     // VMA-backed byte suballocator over the facade's primitive buffer (upload & free at will).
     RHIDeviceScopedHandle<RHIVirtualAllocator> mPrimitiveAlloc;
+    // --- Dynamic (CPU-updateable) geometry ring. Host-coherent, persistently mapped, and
+    //     AS-build-readable, so the BLAS refit + (eventually) shading read positions straight
+    //     out of the current frame slot with no staging copy. Sized dynamicGeometryBudget per
+    //     slot, replicated across mDynamicFrameCount slots. The virtual allocator hands out
+    //     per-geo intra-slot regions (same offset in every slot). Null when the feature is off. ---
+    RHIDeviceScopedHandle<RHIBuffer> mDynamicPrimitiveBuffer;
+    char* mDynamicPrimitiveMapped{nullptr};
+    RHIDeviceScopedHandle<RHIVirtualAllocator> mDynamicPrimitiveAlloc;
+    uint32_t mDynamicFrameCount{0}; // ring slots (frames in flight)
+    uint32_t mDynamicFrameSlot{0};  // slot the CPU writes / the refit reads this frame
+    bool mDynamicUpdateOpen{false}; // inside a BeginDynamicGeometryUpdate / End window
+    uint32_t mDynamicRebuildCadence{64}; // frames between forced full rebuilds (0 = refit only)
+    uint32_t mLastRefitCount{0};    // dirty geos refitted in the last RefitDynamicGeometry call
+    uint32_t mLastRebuildCount{0};  // of those, how many were full rebuilds
+    Vector<uint32_t> mDynamicGeometrySlots; // live dynamic geometry residency slots (refit set)
     // For @ref meshletGlobalIndex
     uint32_t mMeshletGlobalCounter{0};
     UploadGPURingBuffer<GSInstance> mInstanceBuffer;
@@ -244,11 +259,24 @@ struct GPUSceneImpl
         uint32_t generation{0};
         uint32_t type{kGSInstanceTypeMesh};
         uint32_t blasSlot{UINT32_MAX};
-        uint32_t resourceOffset{0}; // Header byte offset in primitive buffer.
+        uint32_t resourceOffset{0}; // Header byte offset in primitive buffer (static); slot-0 base in the dynamic ring (dynamic).
         GSMesh mesh{};
         GSCurveSet curve{};
         ResourceState state{ResourceState::Queued};
         bool live{false};
+        // --- CPU-updateable dynamic geometry (see Upload). Dynamic geo bypasses the async
+        //     worker, the immutable primitive pool, compaction and DAG/meshlets entirely. ---
+        bool dynamic{false};
+        uint32_t dynamicFootprint{0}; // bytes per frame slot (GSMesh header + verts + indices)
+        uint32_t dynamicStride{0};    // per-slot stride (footprint aligned up); slot s base = resourceOffset + s*stride
+        uint32_t dynamicVtxBytes{0};  // FQVertex bytes (the part rewritten each frame)
+        uint32_t dynamicIdxBytes{0};  // LOD0 UINT32 index bytes (topology, written once per slot)
+        bool dirty{false};            // verts rewritten this frame -> needs BLAS refit
+        bool dynBuilt{false};         // the AllowUpdate BLAS has been GPU-built at least once
+        uint32_t framesSinceRebuild{0}; // periodic full-rebuild cadence (refit quality decay)
+        // The single AllowUpdate BLAS (in mBLASes[blasSlot]) plus its retained backing + scratch.
+        RHIDeviceScopedHandle<RHIBuffer> dynBLASBuffer;
+        RHIDeviceScopedHandle<RHIBuffer> dynScratchBuffer;
     };
     Vector<GeometryResidency> mGeometry;
     Vector<uint32_t> mFreeGeometrySlots;
@@ -383,6 +411,7 @@ struct GPUSceneImpl
     /* --- Methods backing the facade forwarders (heavy bodies live in GPUScene.cpp) --- */
     Result Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
     Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
+    Result UploadDynamic(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
     Result Upload(FBlobDeserializer* blobs, FSerializedTexture const& source, TextureHandle& outTexture,
                   const char* debugName = nullptr, bool pinned = false);
     Result Upload(FTexture const& source, TextureHandle& outTexture, const char* debugName = nullptr,
@@ -401,6 +430,25 @@ struct GPUSceneImpl
     [[nodiscard]] TLASBuildResult BuildTLAS(RHICommandList* cmd, bool update);
     void Collect();
     void Reset();
+
+    /* --- Dynamic (CPU-updateable) geometry --- */
+    // Slot-correct absolute byte base of geo @p g's region in ring slot @p slot. Each geo owns a
+    // contiguous (frames * stride) block from the ring allocator, so its slots are stride apart.
+    [[nodiscard]] uint32_t DynamicRegionBase(GeometryResidency const& g, uint32_t slot) const
+    {
+        return g.resourceOffset + slot * g.dynamicStride;
+    }
+    // Writes geo @p g's GSMesh header (slot-correct absolute sub-offsets) into ring slot @p slot.
+    void WriteDynamicHeader(GeometryResidency& g, uint32_t slot);
+    // Host-only: creates @p g's AllowUpdate BLAS + its backing/scratch buffers and acquires its
+    // BLAS slot. No GPU work - the actual build is recorded by the first RefitDynamicGeometry
+    // (so it folds into the render graph instead of stalling on a synchronous submit).
+    void AllocateDynamicBLAS(GeometryResidency& g);
+    [[nodiscard]] bool HasDynamicGeometry() const;
+    void BeginDynamicGeometryUpdate();
+    Span<std::byte> UpdateGeometry(GeometryHandle handle);
+    void EndDynamicGeometryUpdate();
+    void BuildBLAS(RHICommandList* cmd);
 };
 
 size_t GPUScene::CalculateMeshPrimitiveSize(FSerializedMesh const& src)
@@ -496,6 +544,7 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     mFreeCurveBLASSlots(allocator),
     mGeometry(allocator),
     mFreeGeometrySlots(allocator),
+    mDynamicGeometrySlots(allocator),
     mGeometryQueue(std::bit_ceil(static_cast<size_t>(desc.geometryBudget) + 1), allocator),
     mTextureQueue(std::bit_ceil(static_cast<size_t>(desc.texturesBudget) + 1), allocator),
     mBufferQueue(std::bit_ceil(static_cast<size_t>(kGPUSceneBufferQueueCapacity)), allocator),
@@ -544,6 +593,29 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
         mCurveAABBMapped = mCurveAABBBuffer->Map<char>();
         LOG(GPUScene, LogInfo, "Direct GPU Memory Access available ({} MiB budget used). Uploading via direct copy.",
             directGeometryBudget / (1u << 20));
+    }
+    // Dynamic (CPU-updateable) geometry ring: a single stable, host-coherent, persistently
+    // mapped, AS-build-readable buffer of (dynamicGeometryBudget * frames) bytes. Allocated once
+    // here so the device object never moves. The whole buffer is suballocated by the virtual
+    // allocator: each dynamic geo gets one (frames * stride) block whose per-frame slots are
+    // contiguous (stride == that geo's footprint; see UploadDynamic). Off (null) when budget == 0.
+    if (desc.dynamicGeometryBudget != 0)
+    {
+        CHECK_MSG(desc.dynamicGeometryFrames >= 1, "dynamicGeometryFrames must be >= 1");
+        mDynamicFrameCount = desc.dynamicGeometryFrames;
+        const size_t totalBytes = static_cast<size_t>(desc.dynamicGeometryBudget) * mDynamicFrameCount;
+        mDynamicPrimitiveBuffer = mDevice->CreateBuffer(
+            {.resource = {.heap = RHIDeviceHeapType::Upload,
+                          .hostAccess = RHIResourceHostAccess::WriteOnly,
+                          .coherent = true},
+             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
+                      RHIBufferUsageBits::AccelerationStructureBuildReadOnly | RHIBufferUsageBits::IndexBuffer,
+             .size = totalBytes});
+        mDynamicPrimitiveBuffer->DebugSetObjectName("Dynamic Primitive Ring");
+        mDynamicPrimitiveMapped = mDynamicPrimitiveBuffer->Map<char>();
+        mDynamicPrimitiveAlloc = mDevice->CreateVirtualAllocator(totalBytes);
+        LOG(GPUScene, LogInfo, "Dynamic geometry ring: {} MiB ({} MiB/frame x {} frames).",
+            totalBytes / (1u << 20), desc.dynamicGeometryBudget / (1u << 20), mDynamicFrameCount);
     }
     mTLASBuffer = mDevice->CreateBuffer(
     {
@@ -779,6 +851,16 @@ GPUSceneImpl::~GPUSceneImpl()
         mPrimitiveAlloc->Clear();
     if (mCurveAABBAlloc)
         mCurveAABBAlloc->Clear();
+    // Dynamic-geo BLAS backing buffers / scratch live in GeometryResidency; clearing the
+    // residency vector (or its element handles) releases them. Clear the ring allocator so the
+    // VMA virtual block is empty before it is destroyed.
+    for (auto& g : mGeometry)
+    {
+        g.dynBLASBuffer.Reset();
+        g.dynScratchBuffer.Reset();
+    }
+    if (mDynamicPrimitiveAlloc)
+        mDynamicPrimitiveAlloc->Clear();
 }
 
 Pair<GSInstance*, uint32_t> GPUSceneImpl::AllocateInstance(uint32_t count)
@@ -856,14 +938,17 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
         GeometryResidency const* g = ResolveGeometry(desc.geometry);
         CHECK_MSG(g, "EndScene instance references invalid geometry (index {}, generation {})",
                   desc.geometry.index, desc.geometry.generation);
+        // Dynamic geo's header lives in the ring; resolve to the *current frame slot's* absolute
+        // base so the BLAS refit and (Phase 4) shading read this frame's deformed data.
+        uint32_t const resourceOffset = g->dynamic ? DynamicRegionBase(*g, mDynamicFrameSlot) : g->resourceOffset;
         GSInstance inst{
             .transform = desc.transform,
             .rotation = desc.rotation,
             .scale = desc.scale,
-            .resourceOffset = g->resourceOffset,
+            .resourceOffset = resourceOffset,
             .materialIndex = desc.materialIndex,
             .resourceIndex = desc.geometry.index,
-            .type = g->type,
+            .type = g->type | (g->dynamic ? kGSInstanceFlagDynamic : 0u),
         };
         mOpenTables.instancePtr[i] = inst; // ring (GPU)
         owner.mCommittedInstances[i] = inst;     // committed snapshot
@@ -2123,6 +2208,289 @@ void GPUSceneImpl::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> 
         curves.size(), blasOffset / 1e6);
 }
 
+/* --- Dynamic (CPU-updateable) geometry --- */
+
+void GPUSceneImpl::WriteDynamicHeader(GeometryResidency& g, uint32_t slot)
+{
+    CHECK(mDynamicPrimitiveMapped != nullptr);
+    uint32_t const base = DynamicRegionBase(g, slot);
+    GSMesh h{};
+    h.vtxOffset = base + sizeof(GSMesh);
+    h.vtxCount = g.mesh.vtxCount;
+    h.idxOffset = h.vtxOffset + g.dynamicVtxBytes;
+    h.idxCount = g.mesh.idxCount;
+    // No DAG / meshlets for dynamic geometry: it is drawn through a plain vertex/index path,
+    // never the meshlet pipeline. All group/meshlet fields stay zero.
+    std::memcpy(mDynamicPrimitiveMapped + base, &h, sizeof(GSMesh));
+}
+
+void GPUSceneImpl::AllocateDynamicBLAS(GeometryResidency& g)
+{
+    CHECK(mDynamicPrimitiveBuffer);
+    // PreferFastBuild + AllowUpdate, NO compaction: the AS must stay refittable in place and its
+    // size stable across refits/rebuilds (compacted ASes are immutable). The size is independent
+    // of which ring slot the geometry is read from, so query against slot 0.
+    uint32_t const base = DynamicRegionBase(g, 0);
+    RHIAccelerationStructureGeometryInfo geo{
+        .type = RHIAccelerationGeometryType::Triangles,
+        .triangleData = {
+            .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
+            .vertexBuffer = mDynamicPrimitiveBuffer.Get(),
+            .vertexOffset = base + sizeof(GSMesh),
+            .vertexCount = g.mesh.vtxCount,
+            .vertexStride = sizeof(FQVertex),
+            .indexFormat = RHIResourceFormat::R32Uint,
+            .indexBuffer = mDynamicPrimitiveBuffer.Get(),
+            .indexOffset = base + sizeof(GSMesh) + g.dynamicVtxBytes,
+            .indexCount = g.mesh.idxCount,
+        }};
+    RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = g.mesh.idxCount / 3};
+    RHIAccelerationStructureBuildFlags const flags =
+        RHIAccelerationStructureBuildFlagsBits::PreferFastBuild | RHIAccelerationStructureBuildFlagsBits::AllowUpdate;
+    RHIAccelerationStructureBuildDesc desc{
+        .type = RHIAccelerationStructureType::BottomLevel,
+        .flags = flags,
+        .operation = RHIAccelerationStructureBuildOp::Build,
+        .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geo, 1},
+        .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}};
+    StackArena<4096> sizeInfoArena;
+    AllocatorStack sizeInfoScratch(sizeInfoArena);
+    auto size = mDevice->GetAccelerationStructureSizeInfo(desc, sizeInfoScratch.Ptr());
+    uint32_t const scratchSize = AlignUp(std::max(size.buildScratchSize, size.updateScratchSize), 256u);
+    g.dynBLASBuffer = mDevice->CreateBuffer(
+        {.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+         .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
+                  RHIBufferUsageBits::AccelerationStructureStorage,
+         .size = AlignUp(size.accelerationStructureSize, 256u)});
+    g.dynScratchBuffer = mDevice->CreateBuffer(
+        {.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+         .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
+         .size = scratchSize,
+         .alignment = 256});
+    if (g.blasSlot == UINT32_MAX)
+        g.blasSlot = AcquireMeshBLASSlot();
+    mBLASes[g.blasSlot] = mDevice->CreateAccelerationStructure({
+        .type = RHIAccelerationStructureType::BottomLevel,
+        .flags = flags,
+        .buffer = g.dynBLASBuffer.Get(),
+        .offset = 0,
+        .size = size.accelerationStructureSize});
+    // No GPU build here: the first RefitDynamicGeometry records it (operation=Build) inside the
+    // render graph, ordered before the TLAS update by the AS barrier. Until then dynBuilt is
+    // false so the geometry is skipped by BuildTLAS (it "streams in" a frame later, like uploads).
+    g.dynBuilt = false;
+    g.framesSinceRebuild = 0;
+}
+
+GPUScene::Result GPUSceneImpl::UploadDynamic(FBlobDeserializer* blobs, FSerializedMesh const& source,
+                                             GeometryHandle& outHandle)
+{
+    CHECK(blobs != nullptr);
+    if (!mDynamicPrimitiveBuffer)
+    {
+        LOG(GPUScene, LogError, "UploadDynamic called but GPUSceneDesc::dynamicGeometryBudget is 0 (feature disabled)");
+        return Result::InvalidInput;
+    }
+    if (source.lods.empty())
+        return Result::InvalidInput;
+    auto const& lod0 = source.lods[0];
+    uint32_t const vtxBytes = static_cast<uint32_t>(source.vertices.decodedSize);
+    uint32_t const idxBytes = static_cast<uint32_t>(lod0.indices.decodedSize);
+    if (vtxBytes == 0 || idxBytes == 0)
+        return Result::InvalidInput;
+    uint32_t const footprint = static_cast<uint32_t>(sizeof(GSMesh)) + vtxBytes + idxBytes;
+    // Per-slot stride is the geo's own footprint aligned to 16, so every slot's header (4B reads),
+    // verts and indices (idxOffset/4 must be integral for the raster index buffer) stay aligned.
+    uint32_t const stride = AlignUp(footprint, 16u);
+
+    GeometryHandle handle{};
+    GeometryResidency* gp = nullptr;
+    {
+        // Claim the residency slot + ring region under the residency lock (consistent with the
+        // immutable Upload paths and with the render thread's mGeometry reads). One contiguous
+        // (frames * stride) block holds this geo's per-frame slots.
+        std::lock_guard<Mutex> lock(mResidencyMutex);
+        uint64_t base = mDynamicPrimitiveAlloc->Allocate(static_cast<uint64_t>(stride) * mDynamicFrameCount, 16);
+        if (base == RHIVirtualAllocator::kInvalidOffset)
+        {
+            LOG(GPUScene, LogError, "Dynamic geometry ring overflow. Need {} bytes ({}/slot x {}), {} used of {}",
+                stride * mDynamicFrameCount, stride, mDynamicFrameCount, mDynamicPrimitiveAlloc->GetUsedBytes(),
+                mDynamicPrimitiveAlloc->GetCapacity());
+            return Result::OutOfMemory;
+        }
+        uint32_t slot = AcquireGeometrySlot();
+        if (slot == UINT32_MAX)
+        {
+            mDynamicPrimitiveAlloc->Free(base);
+            return Result::OutOfMemory;
+        }
+        GeometryResidency& g = mGeometry[slot];
+        uint32_t const generation = g.generation;
+        g = GeometryResidency{}; // releases any retained handles from a recycled slot
+        g.generation = generation;
+        g.type = kGSInstanceTypeMesh;
+        g.dynamic = true;
+        g.blasSlot = UINT32_MAX;
+        g.resourceOffset = static_cast<uint32_t>(base); // slot 0 base; slot s = base + s*stride
+        g.dynamicFootprint = footprint;
+        g.dynamicStride = stride;
+        g.dynamicVtxBytes = vtxBytes;
+        g.dynamicIdxBytes = idxBytes;
+        g.mesh = GSMesh{};
+        g.mesh.vtxCount = source.vertexCount;
+        g.mesh.idxCount = lod0.indexCount;
+        g.live = true;
+        g.state = ResourceState::Ready; // resident synchronously below
+        handle = {slot, generation};
+        gp = &g;
+        mDynamicGeometrySlots.push_back(slot);
+    }
+    GeometryResidency& g = *gp;
+
+    // Decode the rest pose into slot 0 (with scratch for compressed blobs), then replicate the
+    // whole region to every other slot and fix each slot's header offsets.
+    uint32_t const base0 = DynamicRegionBase(g, 0);
+    char* v0 = mDynamicPrimitiveMapped + base0 + sizeof(GSMesh);
+    char* i0 = v0 + vtxBytes;
+    size_t scratchBytes = 0;
+    if (source.vertices.codec != FBlobCodec::None)
+        scratchBytes = std::max<size_t>(scratchBytes, vtxBytes);
+    if (lod0.indices.codec != FBlobCodec::None)
+        scratchBytes = std::max<size_t>(scratchBytes, idxBytes);
+    if (scratchBytes != 0)
+    {
+        ScopedArena arena(mAllocator, scratchBytes);
+        AllocatorStack st(arena.arena);
+        blobs->ReadBytes(source.vertices, v0, vtxBytes, &st);
+        st.Reset(arena.arena);
+        blobs->ReadBytes(lod0.indices, i0, idxBytes, &st);
+    }
+    else
+    {
+        blobs->ReadBytes(source.vertices, v0, vtxBytes, nullptr);
+        blobs->ReadBytes(lod0.indices, i0, idxBytes, nullptr);
+    }
+    WriteDynamicHeader(g, 0);
+    for (uint32_t s = 1; s < mDynamicFrameCount; ++s)
+    {
+        std::memcpy(mDynamicPrimitiveMapped + DynamicRegionBase(g, s), mDynamicPrimitiveMapped + base0, footprint);
+        WriteDynamicHeader(g, s); // overwrite header with slot-correct absolute offsets
+    }
+    // Allocate the BLAS (host-only) and mark dirty: the first in-graph refit performs the initial
+    // GPU build (no synchronous stall). The geo becomes TLAS-visible once that build lands.
+    AllocateDynamicBLAS(g);
+    g.dirty = true;
+    outHandle = handle;
+    return Result::Ready;
+}
+
+bool GPUSceneImpl::HasDynamicGeometry() const { return !mDynamicGeometrySlots.empty(); }
+
+void GPUSceneImpl::BeginDynamicGeometryUpdate()
+{
+    CHECK_MSG(!mDynamicUpdateOpen, "BeginDynamicGeometryUpdate called while a window is already open");
+    mDynamicUpdateOpen = true;
+    if (mDynamicFrameCount != 0)
+        mDynamicFrameSlot = (mDynamicFrameSlot + 1u) % mDynamicFrameCount;
+}
+
+Span<std::byte> GPUSceneImpl::UpdateGeometry(GeometryHandle handle)
+{
+    CHECK_MSG(mDynamicUpdateOpen,
+              "UpdateGeometry must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+    GeometryResidency* g = ResolveGeometry(handle);
+    CHECK_MSG(g && g->dynamic, "UpdateGeometry on a non-dynamic or invalid geometry handle");
+    g->dirty = true; // rewriting this slot -> needs a BLAS refit
+    uint32_t const base = DynamicRegionBase(*g, mDynamicFrameSlot);
+    return Span<std::byte>(reinterpret_cast<std::byte*>(mDynamicPrimitiveMapped + base + sizeof(GSMesh)),
+                           g->dynamicVtxBytes);
+}
+
+void GPUSceneImpl::EndDynamicGeometryUpdate()
+{
+    CHECK_MSG(mDynamicUpdateOpen, "EndDynamicGeometryUpdate called without a matching BeginDynamicGeometryUpdate");
+    mDynamicUpdateOpen = false;
+}
+
+void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
+{
+    CHECK_MSG(!mDynamicUpdateOpen,
+              "BuildBLAS recorded while a dynamic update window is still open "
+              "(call EndDynamicGeometryUpdate before the refit pass)");
+    mLastRefitCount = 0;
+    mLastRebuildCount = 0;
+    if (mDynamicGeometrySlots.empty())
+        return;
+    // First build (initial, post-upload) and periodic full rebuilds (to recover refit quality
+    // decay under large deformation) use operation=Build; everything else refits in place
+    // (operation=Update). The single AS stays the same size (AllowUpdate, no compaction) so no
+    // realloc. Cadence 0 = refit only (after the initial build).
+    bool any = false;
+    for (uint32_t slot : mDynamicGeometrySlots)
+    {
+        GeometryResidency& g = mGeometry[slot];
+        if (!g.live || !g.dynamic || g.blasSlot == UINT32_MAX || !g.dirty)
+            continue;
+        bool const periodic = mDynamicRebuildCadence != 0 && (g.framesSinceRebuild >= mDynamicRebuildCadence);
+        bool const rebuild = !g.dynBuilt || periodic; // initial build or cadence -> full Build
+        if (rebuild)
+            g.framesSinceRebuild = 0;
+        else
+            ++g.framesSinceRebuild;
+        ++mLastRefitCount;
+        mLastRebuildCount += rebuild ? 1u : 0u;
+        uint32_t const base = DynamicRegionBase(g, mDynamicFrameSlot);
+        RHIAccelerationStructureGeometryInfo geo{
+            .type = RHIAccelerationGeometryType::Triangles,
+            .triangleData = {
+                .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
+                .vertexBuffer = mDynamicPrimitiveBuffer.Get(),
+                .vertexOffset = base + sizeof(GSMesh),
+                .vertexCount = g.mesh.vtxCount,
+                .vertexStride = sizeof(FQVertex),
+                .indexFormat = RHIResourceFormat::R32Uint,
+                .indexBuffer = mDynamicPrimitiveBuffer.Get(),
+                .indexOffset = base + sizeof(GSMesh) + g.dynamicVtxBytes,
+                .indexCount = g.mesh.idxCount,
+            }};
+        RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = g.mesh.idxCount / 3};
+        RHIAccelerationStructureBuildDesc desc{
+            .type = RHIAccelerationStructureType::BottomLevel,
+            .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastBuild |
+                     RHIAccelerationStructureBuildFlagsBits::AllowUpdate,
+            .operation = rebuild ? RHIAccelerationStructureBuildOp::Build : RHIAccelerationStructureBuildOp::Update,
+            .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geo, 1},
+            .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}};
+        desc.scratchBuffer = g.dynScratchBuffer.Get();
+        desc.scratchBufferOffset = 0;
+        desc.dstAS = mBLASes[g.blasSlot].Get();
+        if (!rebuild)
+            desc.srcAS = mBLASes[g.blasSlot].Get(); // in-place refit (srcAS == dstAS)
+        cmd->BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc>{&desc, 1});
+        g.dirty = false;
+        g.dynBuilt = true; // initial build done -> TLAS-visible; subsequent dirties refit in place
+        any = true;
+    }
+    if (!any)
+        return;
+    // Make the refit's BLAS writes visible to the subsequent TLAS build's BLAS reads (the graph
+    // schedules this pass before "TLAS Update" via the shared TLAS producer edge; this barrier
+    // covers the build->build read hazard). Cross-frame reuse of the single AS relies on the same
+    // frames-in-flight fencing as the (likewise single, in-place) TLAS.
+    cmd->BeginTransition();
+    for (uint32_t slot : mDynamicGeometrySlots)
+    {
+        GeometryResidency const& g = mGeometry[slot];
+        if (g.live && g.dynamic && g.blasSlot != UINT32_MAX)
+            cmd->SetAccelerationStructureTransition(mBLASes[g.blasSlot].Get(),
+                                                    {.srcAccess = RHIResourceAccessBits::AccelerationStructureWrite,
+                                                     .dstAccess = RHIResourceAccessBits::AccelerationStructureRead,
+                                                     .srcStage = RHIPipelineStageBits::AccelerationBuild,
+                                                     .dstStage = RHIPipelineStageBits::AccelerationBuild});
+    }
+    cmd->EndTransition();
+}
+
 uint32_t GPUSceneImpl::AcquireMeshBLASSlot()
 {
     if (!mFreeBLASSlots.empty())
@@ -2186,22 +2554,47 @@ void GPUSceneImpl::FreeGeometry(uint32_t slot)
     GeometryResidency& g = mGeometry[slot];
     if (!g.live)
         return;
-    mPrimitiveAlloc->Free(g.resourceOffset);
-    if (g.type == kGSInstanceTypeCurve)
+    if (g.dynamic)
     {
-        mCurveAABBAlloc->Free(g.curve.aabbOffset);
-        if (g.blasSlot < mCurveBLASes.size())
+        // Dynamic geo lives in the host-coherent ring + its own AllowUpdate BLAS (single slot in
+        // mBLASes) backed by per-geo buffers; release all three and drop it from the refit set.
+        if (mDynamicPrimitiveAlloc)
+            mDynamicPrimitiveAlloc->Free(g.resourceOffset);
+        if (g.blasSlot < mBLASes.size())
         {
-            mCurveBLASes[g.blasSlot].Reset();
-            mFreeCurveBLASSlots.push_back(g.blasSlot);
+            mBLASes[g.blasSlot].Reset();
+            mFreeBLASSlots.push_back(g.blasSlot);
+        }
+        g.dynBLASBuffer.Reset();
+        g.dynScratchBuffer.Reset();
+        for (size_t i = 0; i < mDynamicGeometrySlots.size(); ++i)
+            if (mDynamicGeometrySlots[i] == slot)
+            {
+                mDynamicGeometrySlots[i] = mDynamicGeometrySlots.back();
+                mDynamicGeometrySlots.pop_back();
+                break;
+            }
+    }
+    else
+    {
+        mPrimitiveAlloc->Free(g.resourceOffset);
+        if (g.type == kGSInstanceTypeCurve)
+        {
+            mCurveAABBAlloc->Free(g.curve.aabbOffset);
+            if (g.blasSlot < mCurveBLASes.size())
+            {
+                mCurveBLASes[g.blasSlot].Reset();
+                mFreeCurveBLASSlots.push_back(g.blasSlot);
+            }
+        }
+        else if (g.blasSlot < mBLASes.size())
+        {
+            mBLASes[g.blasSlot].Reset();
+            mFreeBLASSlots.push_back(g.blasSlot);
         }
     }
-    else if (g.blasSlot < mBLASes.size())
-    {
-        mBLASes[g.blasSlot].Reset();
-        mFreeBLASSlots.push_back(g.blasSlot);
-    }
     g.live = false;
+    g.dynamic = false;
     g.state = ResourceState::Queued;
     ++g.generation; // invalidate outstanding handles to this slot
     mFreeGeometrySlots.push_back(slot);
@@ -2356,6 +2749,10 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
             return false;
         GeometryResidency const& g = mGeometry[resourceIndex];
         if (!g.live || g.state != ResourceState::Ready)
+            return false;
+        // Dynamic geo's BLAS is GPU-built by the first in-graph refit; until then its AS contents
+        // are undefined, so skip it (it streams into the TLAS the frame after its initial build).
+        if (g.dynamic && !g.dynBuilt)
             return false;
         // state == Ready is published only after blasSlot is assigned, so the slot is valid.
         return g.blasSlot != UINT32_MAX;
@@ -2621,6 +3018,19 @@ void GPUSceneImpl::Reset()
     mCurveAABBAlloc->Clear();
     mMeshletGlobalCounter = 0;
     owner.mLastTLASInstancesCount = 0;
+    // Release dynamic-geo BLAS backing/scratch + return the ring to empty before clearing
+    // residency (clearing the vector destroys the element handles too, but the ring allocator
+    // must be explicitly emptied so its VMA block has no live suballocations).
+    for (auto& g : mGeometry)
+    {
+        g.dynBLASBuffer.Reset();
+        g.dynScratchBuffer.Reset();
+    }
+    if (mDynamicPrimitiveAlloc)
+        mDynamicPrimitiveAlloc->Clear();
+    mDynamicGeometrySlots.clear();
+    mDynamicFrameSlot = 0;
+    mDynamicUpdateOpen = false;
     mBLASes.clear();
     mBLASBuffers.clear();
     mFreeBLASSlots.clear();
@@ -2652,6 +3062,11 @@ GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedMesh cons
 GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle)
 {
     return mImpl->Upload(blobs, source, outHandle);
+}
+
+GPUScene::Result GPUScene::UploadDynamic(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle)
+{
+    return mImpl->UploadDynamic(blobs, source, outHandle);
 }
 
 GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedTexture const& source, TextureHandle& outTexture,
@@ -2689,6 +3104,21 @@ GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update) 
 void GPUScene::Collect() { mImpl->Collect(); }
 void GPUScene::Reset() { mImpl->Reset(); }
 
+bool GPUScene::HasDynamicGeometry() const { return mImpl->HasDynamicGeometry(); }
+void GPUScene::BeginDynamicGeometryUpdate() { mImpl->BeginDynamicGeometryUpdate(); }
+Span<std::byte> GPUScene::UpdateDynamicGeometry(GeometryHandle handle) { return mImpl->UpdateGeometry(handle); }
+void GPUScene::EndDynamicGeometryUpdate() { mImpl->EndDynamicGeometryUpdate(); }
+void GPUScene::BuildBLAS(RHICommandList* cmd) { mImpl->BuildBLAS(cmd); }
+void GPUScene::SetDynamicGeometryRebuildRate(uint32_t framesOrZero) { mImpl->mDynamicRebuildCadence = framesOrZero; }
+uint32_t GPUScene::GetDynamicRefitCount() const { return mImpl->mLastRefitCount; }
+uint32_t GPUScene::GetDynamicRebuildCount() const { return mImpl->mLastRebuildCount; }
+
+RHIBuffer* GPUScene::GetDynamicPrimitiveBuffer() const
+{
+    // Fall back to the immutable primitive buffer when dynamic geometry is disabled so the
+    // renderer's second-primitive-buffer binding is always valid (no instance selects it).
+    return mImpl->mDynamicPrimitiveBuffer ? mImpl->mDynamicPrimitiveBuffer.Get() : mPrimitiveBuffer.Get();
+}
 RHIBuffer* GPUScene::GetInstanceBuffer() const { return mImpl->mInstanceBuffer.mBuffer.Get(); }
 RHIBuffer* GPUScene::GetMaterialBuffer() const { return mImpl->mMaterialBuffer.mBuffer.Get(); }
 RHIBuffer* GPUScene::GetLightBuffer() const { return mImpl->mLightBuffer.mBuffer.Get(); }

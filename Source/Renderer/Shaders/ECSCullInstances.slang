@@ -18,7 +18,10 @@ void main(uint tid: SV_DispatchThreadID, uint gid: SV_GroupIndex) {
         return;
     uint iid = tid + globalParams.firstInstance;
     GSInstance inst = instances[iid];
-    if (inst.type != 0u) // Mesh
+    // Only static meshes go through the meshlet pipeline. Curves and dynamic (CPU-updateable)
+    // geometry are drawn elsewhere (dynamic geo via a dedicated vertex/index MDI draw), and carry
+    // no DAG/meshlets, so skip them here.
+    if (GSInstanceType(inst) != 0u || GSInstanceIsDynamic(inst))
         return;
     // TODO: Culling instance
     // Would require AABB update on the CPU side. Not implemented yet.
