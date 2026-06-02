@@ -33,7 +33,7 @@ static size_t GPUSceneTextureSubresourceFootprint(FTextureHeader const& metadata
 }
 
 // Pending-job counter helpers (a job batch is "done" when the counter reaches zero).
-static void GPUSceneCompleteJob(std::atomic<size_t>* counter)
+static void GPUSceneCompleteJob(Atomic<size_t>* counter)
 {
     if (!counter)
         return;
@@ -43,7 +43,7 @@ static void GPUSceneCompleteJob(std::atomic<size_t>* counter)
         counter->notify_all();
 }
 
-static void GPUSceneWaitJobs(std::atomic<size_t>* counter)
+static void GPUSceneWaitJobs(Atomic<size_t>* counter)
 {
     size_t pending = counter->load(std::memory_order_acquire);
     while (pending != 0)
@@ -105,11 +105,11 @@ struct GPUSceneBlobDecodeJob final : Foundation::Core::ThreadPoolJob
     FBlobDeserializer blobs{Span<const unsigned char>{}};
     Span<Arena> scratchArenas{};
     Span<AllocatorStack> scratchAllocators{};
-    std::atomic<size_t>* counter{nullptr};
+    Atomic<size_t>* counter{nullptr};
 
     GPUSceneBlobDecodeJob(GPUSceneBlobWrite const& write, FBlobDeserializer const& blobs,
                           Span<Arena> scratchArenas, Span<AllocatorStack> scratchAllocators,
-                          std::atomic<size_t>* counter) :
+                          Atomic<size_t>* counter) :
         write(write), blobs(blobs), scratchArenas(scratchArenas), scratchAllocators(scratchAllocators),
         counter(counter) {}
 
@@ -1208,7 +1208,7 @@ void GPUScene::ProcessPendingUploads()
 
     ImmediateUpload upload(mDevice, stagingBudget, RHIDeviceQueueType::Transfer, kUploadStagingBuffers);
     upload.Begin();
-    std::atomic<size_t> pendingJobs{0};
+    Atomic<size_t> pendingJobs{0};
     Vector<GPUSceneBlobWrite> writes(mAllocator);
     auto ScheduleWrites = [&](FBlobDeserializer const& blobs)
     {

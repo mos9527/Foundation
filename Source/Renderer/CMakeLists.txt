@@ -38,7 +38,7 @@ target_link_libraries(Foundation_Rasterizer PUBLIC
 target_include_directories(Foundation_Rasterizer PUBLIC ..)
 
 add_library(Foundation_Pathtracer STATIC
-    PathTrace.cpp
+        Pathtracer.cpp
 )
 target_link_libraries(Foundation_Pathtracer PUBLIC
     Foundation_GPUScene

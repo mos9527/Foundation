@@ -1,18 +1,17 @@
 #pragma once
+#include <Core/AllocatorStack.hpp>
+#include <Core/Atomic.hpp>
+#include <Core/Thread.hpp>
+#include <Core/Logging.hpp>
 #include <RenderCore/Bindless.hpp>
 #include <RenderCore/ImmediateContext.hpp>
-#include "Precompute.hpp"
 #include "Curve.hpp"
 #include "Mesh.hpp"
 #include "Texture.hpp"
-#include <atomic>
-#include <thread>
+#include "Precompute.hpp"
+
 using namespace Math;
-using Foundation::RenderCore::BindlessPool;
-using Foundation::RenderCore::ImmediateContext;
-using Foundation::RenderCore::ImmediateSubmitDesc;
-using Foundation::RenderCore::ImmediateUpload;
-namespace Foundation::Core { class AllocatorStack; }
+using namespace RenderCore;
 struct UBO;
 
 // Must match the procedural hit-group bindings in Render/Pathtracer.cpp.
@@ -440,9 +439,9 @@ private:
     Vector<PendingBufferUpload> mPendingBuffers;
     /// Optional background drain. While in flight the owning GPUScene must not be
     /// installed/consumed by the renderer (the worker has exclusive access to it).
-    std::thread mUploadThread;
-    std::atomic<bool> mUploadsDone{true};
-    std::atomic<bool> mUploadFailed{false};
+    Thread mUploadThread;
+    Atomic<bool> mUploadsDone{true};
+    Atomic<bool> mUploadFailed{false};
 
     /** @brief Reserves final resident memory and computes the shader header (no staging yet). */
     Result ReserveMesh(FSerializedMesh const& src, GSMesh& outHeader, uint32_t& outOffset);

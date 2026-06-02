@@ -742,7 +742,7 @@ void VulkanDevice::DebugSetObjectName(const char* name)
 
 void VulkanDeviceQueue::WaitIdle() const
 {
-    std::lock_guard<std::mutex> submitLock(mDevice.GetQueueSubmitMutex());
+    std::lock_guard<Mutex> submitLock(mDevice.GetQueueSubmitMutex());
     mQueue.waitIdle();
 }
 
@@ -816,7 +816,7 @@ void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* com
             info.setPNext(tinfo);
         submits.push_back(info);
     }
-    std::lock_guard<std::mutex> submitLock(mDevice.GetQueueSubmitMutex());
+    std::lock_guard<Mutex> submitLock(mDevice.GetQueueSubmitMutex());
     mQueue.submit(
         submits, completionFence ? static_cast<VulkanDeviceFence*>(completionFence)->GetVkFence() : vk::Fence(nullptr));
 }
@@ -842,7 +842,7 @@ void VulkanDeviceQueue::Present(PresentDesc const& desc) const
     };
     try
     {
-        std::lock_guard<std::mutex> submitLock(mDevice.GetQueueSubmitMutex());
+        std::lock_guard<Mutex> submitLock(mDevice.GetQueueSubmitMutex());
         auto res = mQueue.presentKHR(present_info);
         CHECK(res == vk::Result::eSuccess && "failed to present");
     }

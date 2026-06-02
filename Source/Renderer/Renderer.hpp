@@ -1,8 +1,6 @@
 #pragma once
-#include <Core/Container.hpp>
 #include <Math/Math.hpp>
 #include <RenderCore/RenderPass.hpp>
-#include "GPUScene.hpp"
 using namespace Foundation;
 using namespace Foundation::RenderCore;
 #pragma pack(push, 4)

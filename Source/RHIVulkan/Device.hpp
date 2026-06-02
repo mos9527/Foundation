@@ -139,13 +139,13 @@ namespace Foundation::RHI
         UniquePtr<VulkanDeviceQueues> mQueues{nullptr};
         // Serializes queue submit/present/wait-idle: VkQueue access must be externally
         // synchronized, and background uploads may submit while the renderer does.
-        mutable std::mutex mQueueSubmitMutex;
+        mutable Mutex mQueueSubmitMutex;
 
         vk::PhysicalDeviceProperties mPhysicalDeviceProperties{};
         RHIPipelineStateCacheKey mPipelineCacheKey{};
         RHIDeviceCapabilities mDeviceCaps{};
     public:
-        [[nodiscard]] std::mutex& GetQueueSubmitMutex() const { return mQueueSubmitMutex; }
+        [[nodiscard]] Mutex& GetQueueSubmitMutex() const { return mQueueSubmitMutex; }
         VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice,
                      SDL_Window* window = nullptr);
         ~VulkanDevice() override;
