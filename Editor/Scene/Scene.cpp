@@ -1478,6 +1478,7 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     desc.tlasInstanceBudget = RingGPUSceneBudget(tlasInstanceCount);
     desc.materialBudget = RingGPUSceneBudget(GetMaterials().size());
     desc.lightBudget = RingGPUSceneBudget(GetLights().size());
+    desc.geometryBudget = CountGPUSceneBudget(GetMeshes().size() + GetCurves().size());
 
     size_t textureBindings = kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings +
         kGPUSceneTextureBindingSlack;

@@ -8,8 +8,6 @@ EditorState GEditor;
 static RendererHandles sRenderReadback;
 static RHIBuffer*        sPickResultBuffer = nullptr;
 static RendererPicking   sPicking;
-static bool              sRendererRebuildRequested = false;
-static float             sIdleTimeSeconds = 0.0f;
 
 static RHIExtent2D ClampViewportExtent(RHIExtent2D extent)
 {
@@ -66,7 +64,6 @@ static void EndEditorRendererSetup(Renderer* renderer)
 static void SetupIdleRenderer(FContext* context)
 {
     auto* renderer = BeginEditorRendererSetup(context, 0u);
-    BuildIdleRenderGraph(renderer, &sIdleTimeSeconds);
     EndEditorRendererSetup(renderer);
 }
 
@@ -86,54 +83,49 @@ static void SetupSceneRenderer(FContext* context, RendererScene scene, RendererH
 
 static void FInitEnter()
 {
-    if (GContext->files.size() < 1)
+    // Loading a scene installs it immediately and switches to FERunningEnter (it renders
+    // while it streams in). If no file installs a scene, fall back to the no-scene branch.
+    for (size_t i = 0; i < GContext->files.size(); i++)
+        HandleFile(GContext->files[i]);
+    if (GEditor.state == FEInitEnter)
     {
-        LOG(Editor, LogInfo, "No scene path provided, starting with empty scene");
+        LOG(Editor, LogInfo, "No scene path provided, starting with empty editor");
         SetupIdleRenderer(GContext);
+        GEditor.state = FENoScene;
     }
-    else
-        for (size_t i = 0; i < GContext->files.size(); i++)
-            HandleFile(GContext->files[i]);
-    GEditor.state = FEInit;
 }
 
-static void FInit()
+// No scene installed yet: render the ImGui shell only. A drag-and-drop / file open installs
+// a scene and transitions to FERunningEnter.
+static void FNoScene()
 {
-    // Transition to FERunningEnter when scene data is available
-    if (GContext->gpuScene && GContext->gpuScene->GetInstanceCount() != 0)
-        GEditor.state = FERunningEnter;
-    else
+    auto* renderer = GContext->renderer;
+    if (!renderer)
     {
-        auto* renderer = GContext->renderer;
-        if (!renderer)
-        {
-            SetupIdleRenderer(GContext);
-            renderer = GContext->renderer;
-        }
-        renderer->BeginExecute();
-        sIdleTimeSeconds = SDL_GetTicks() / 1000.0f;
-        ImGui_ImplFoundation_NewFrame();
-        ImGui::NewFrame();
-        if (GEditor.showImGui)
-        {
-            EditorDockSpaceAndMenuBar();
-            FHierarchyPanel();
-            FLightingPanel();
-        }
-        float dt = ImGui::GetIO().DeltaTime;
-        GEditor.camera.aspect = GContext->swapchain->GetAspectRatio();
-        GEditor.camera.UpdateMovement(dt);
-        GEditor.camera.Update({});
-        renderer->ExecuteFrame();
-        renderer->EndExecute();
+        SetupIdleRenderer(GContext);
+        renderer = GContext->renderer;
     }
+    renderer->BeginExecute();
+    ImGui_ImplFoundation_NewFrame();
+    ImGui::NewFrame();
+    if (GEditor.showImGui)
+    {
+        EditorDockSpaceAndMenuBar();
+        FHierarchyPanel();
+        FLightingPanel();
+    }
+    float dt = ImGui::GetIO().DeltaTime;
+    GEditor.camera.aspect = GContext->swapchain->GetAspectRatio();
+    GEditor.camera.UpdateMovement(dt);
+    GEditor.camera.Update({});
+    renderer->ExecuteFrame();
+    renderer->EndExecute();
 }
 
 static void FRunningEnter()
 {
     sPickResultBuffer = nullptr;
     sPicking.pendingPixel = {-1, -1};
-    sRendererRebuildRequested = false;
     // The old renderer owns views into the current swapchain; release them before recreating the swapchain.
     DestroyEditorRenderer(GContext);
     UpdateSwapchain(GContext);
@@ -154,7 +146,6 @@ static void FRunningEnter()
     RendererScene scene{
         .gsGlobals = &GEditor.shaderGlobals,
         .picking = &sPicking,
-        .rendererRebuildRequested = &sRendererRebuildRequested
     };
     SetupSceneRenderer(GContext, scene, sRenderReadback);
     sPickResultBuffer = GContext->renderer->DerefResource(sRenderReadback.pickBuffer).Get<RHIBuffer*>();
@@ -207,7 +198,7 @@ static void FRunning()
     //    ptAccumulatedFrames since the last frame is the canonical signal.
     static uint32_t sPrevPTAccumulatedFrames = 0u;
     bool ptAccumWasReset = GEditor.shaderGlobals.ptAccumulatedFrames < sPrevPTAccumulatedFrames;
-    bool userOperation = GEditor.cameraUpdated || ptAccumWasReset || sRendererRebuildRequested;
+    bool userOperation = GEditor.cameraUpdated || ptAccumWasReset;
     if (userOperation && GEditor.renderTask.renderAutoPaused)
     {
         GEditor.renderTask.renderAutoPaused = false;
@@ -217,13 +208,6 @@ static void FRunning()
         GEditor.shaderGlobals.ptAccumulatedFrames = 0, GEditor.cameraUpdated = false;
     renderer->ExecuteFrame();
     renderer->EndExecute();
-    if (sRendererRebuildRequested)
-    {
-        GEditor.state = FERunningEnter;
-        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-        sPrevPTAccumulatedFrames = 0u;
-        return;
-    }
     // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
     // Readback buffer is coherent+persistently mapped — just read it directly.
     if (sPicking.pendingPixel.x >= 0 && sPickResultBuffer)
@@ -308,7 +292,7 @@ bool EditorProcessEvent(SDL_Event* event)
     {
         switch (GEditor.state)
         {
-        case FEInit:
+        case FENoScene:
             SetupIdleRenderer(GContext);
             break;
         case FERunning:
@@ -390,8 +374,8 @@ bool EditorOnFrame(FContext* context)
     case FEInitEnter:
         FInitEnter();
         break;
-    case FEInit:
-        FInit();
+    case FENoScene:
+        FNoScene();
         break;
     case FERunningEnter:
         FRunningEnter();

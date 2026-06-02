@@ -9,13 +9,20 @@
 #include <Core/Allocator.hpp>
 #include <Core/AllocatorStack.hpp>
 #include <Core/Atomic.hpp>
+#include <Core/AtomicQueue.hpp>
 #include <Core/Paths.hpp>
+#include <Core/Thread.hpp>
 #include <Core/ThreadPool.hpp>
+#include <bit>
+#include <condition_variable>
 
 // Per-resource staging footprint slack, mirrored from the previous Editor scheduler.
 static constexpr size_t kUploadBudgetSlack = 1ull * (1ull << 20);
 static constexpr size_t kUploadStagingBudgetSlack = 32ull * (1ull << 20);
 static constexpr size_t kUploadStagingBuffers = 3u;
+// Plain device-local buffer copies are rare (Sobol, default buffers, occasional refreshes);
+// a small fixed-capacity submission queue is plenty.
+static constexpr size_t kGPUSceneBufferQueueCapacity = 256u;
 
 static size_t GPUSceneTextureSubresourceFootprint(FTextureHeader const& metadata, uint32_t layer, uint32_t mip)
 {
@@ -203,6 +210,7 @@ struct GPUSceneImpl
         uint32_t generation{0};
         bool live{false};
         bool pinned{false};
+        bool resident{false}; // image contents uploaded + transitioned to ShaderReadOnly (guarded by mResidencyMutex)
     };
     Vector<TextureSlot> mTexture2DSlots;
     Vector<TextureSlot> mTexture3DSlots;
@@ -279,16 +287,37 @@ struct GPUSceneImpl
     {
         RHIBuffer* dst{nullptr};
         uint32_t dstOffset{0};
-        Vector<unsigned char> data;
+        // Default member init keeps the struct default-constructible (the MPMCQueue default-
+        // constructs its slots); real uploads move in a payload built on the scene allocator.
+        Vector<unsigned char> data{GLOBAL_ALLOC};
     };
-    Vector<PendingGeometryUpload> mPendingGeometry;
-    Vector<PendingTextureUpload> mPendingTextures;
-    Vector<PendingBufferUpload> mPendingBuffers;
-    /// Optional background drain. While in flight the owning GPUScene must not be
-    /// installed/consumed by the renderer (the worker has exclusive access to it).
+    /* --- Async upload worker (multi-producer, single-consumer) ---
+     * Producers (any thread) enqueue work via @ref Upload onto the lock-free queues; a single
+     * persistent worker drains them, uploads on the transfer/compute queues, and publishes
+     * residency while the renderer consumes the scene concurrently. @ref mResidencyMutex
+     * guards the residency views the render thread reads each frame (geometry
+     * @ref ResourceState / BLAS slots, texture residency); the BLAS/residency vectors are
+     * reserved to budget up front so they never reallocate under those concurrent reads. */
+    MPMCQueue<PendingGeometryUpload> mGeometryQueue;
+    MPMCQueue<PendingTextureUpload> mTextureQueue;
+    MPMCQueue<PendingBufferUpload> mBufferQueue;
     Thread mUploadThread;
-    Atomic<bool> mUploadsDone{true};
+    Mutex mWorkMutex;               // backs the worker wake / drained CVs and the flags below
+    CondVar mWorkCV;                // wakes the worker on new work or stop
+    CondVar mDoneCV;                // wakes Join() once outstanding work hits zero
+    bool mHasWork{false};
+    bool mStop{false};
+    bool mWorkerStarted{false};
+    Atomic<size_t> mOutstanding{0}; // enqueued-but-not-yet-resident items (drives Poll/Join)
     Atomic<bool> mUploadFailed{false};
+    mutable Mutex mResidencyMutex;
+
+    /** @brief Drains all currently-queued uploads into one batch and processes it (returns false if nothing was queued). */
+    bool DrainUploadBatch();
+    /** @brief Persistent worker entry point: drains batches, sleeping while the queues are empty. */
+    void UploadWorker();
+    /** @brief Enqueues one item, bumping the outstanding count and waking the worker. */
+    template <typename T> void EnqueueUpload(MPMCQueue<T>& queue, T&& item);
 
     /** @brief Reserves final resident memory and computes the shader header (no staging yet). */
     Result ReserveMesh(FSerializedMesh const& src, GSMesh& outHeader, uint32_t& outOffset);
@@ -309,9 +338,12 @@ struct GPUSceneImpl
      * @brief Drains the pending upload queues: best-fit staging packing, threaded blob
      *        decode, transfer submission, BLAS build, residency patching, Ready marking.
      */
-    void ProcessPendingUploads();
-    /** @brief Launches @ref ProcessPendingUploads on a background worker (lazily kicked by @ref Poll). */
-    void StartUploads();
+    /**
+     * @brief Drains one batch of queued uploads: best-fit staging packing, threaded blob
+     *        decode, transfer submission, BLAS build, residency patching, Ready marking.
+     */
+    void ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vector<PendingTextureUpload>& textures,
+                        Vector<PendingBufferUpload>& buffers);
     void FlushDirectGeometryUpload();
 
     /* --- Table ring allocation --- */
@@ -335,7 +367,8 @@ struct GPUSceneImpl
     UploadGPURingBuffer<char> mTLASInstances;
     uint32_t CountLiveInstances() const;
     uint32_t CountTLASInstances() const;
-    bool EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate);
+    // Validates the TLAS fits the pre-allocated buffers (never grows them); aborts if exceeded.
+    void EnsureTLASCapacity(uint32_t totalInstances);
 
     // Light BLAS
     RHIDeviceScopedHandle<RHIBuffer> mLightGeometryBuffer;
@@ -463,15 +496,25 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     mFreeCurveBLASSlots(allocator),
     mGeometry(allocator),
     mFreeGeometrySlots(allocator),
-    mPendingGeometry(allocator),
-    mPendingTextures(allocator),
-    mPendingBuffers(allocator),
+    mGeometryQueue(std::bit_ceil(static_cast<size_t>(desc.geometryBudget) + 1), allocator),
+    mTextureQueue(std::bit_ceil(static_cast<size_t>(desc.texturesBudget) + 1), allocator),
+    mBufferQueue(std::bit_ceil(static_cast<size_t>(kGPUSceneBufferQueueCapacity)), allocator),
     mInstanceScratch(allocator),
     mTLASInstanceStride(mDevice->WriteAccelerationStructureInstanceData({}, nullptr)),
     mTLASInstances(device, desc.tlasInstanceBudget * mTLASInstanceStride)
 {
     CHECK(mDevice != nullptr);
     CHECK(mAllocator != nullptr);
+    // Reserve the containers the render thread reads concurrently with the upload worker so
+    // they never reallocate during the scene's lifetime (stable storage for lock-free element
+    // reads). Capacities are sized to the construction budget; uploads beyond it are rejected.
+    mGeometry.reserve(desc.geometryBudget);
+    mBLASes.reserve(desc.geometryBudget);
+    mBLASBuffers.reserve(desc.geometryBudget);
+    mCurveBLASes.reserve(desc.geometryBudget);
+    mCurveBLASBuffers.reserve(desc.geometryBudget);
+    mTexture2DSlots.reserve(desc.texturesBudget);
+    mTexture3DSlots.reserve(kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack);
     mPrimitiveAlloc = mDevice->CreateVirtualAllocator(desc.primitiveBudget);
     mCurveAABBAlloc = mDevice->CreateVirtualAllocator(desc.curveAABBBudget);
     auto caps = mDevice->GetCapabilities();
@@ -722,6 +765,12 @@ GPUScene::~GPUScene() = default;
 
 GPUSceneImpl::~GPUSceneImpl()
 {
+    // Stop the persistent upload worker (it loops until mStop) before tearing anything down.
+    {
+        std::lock_guard<Mutex> lock(mWorkMutex);
+        mStop = true;
+    }
+    mWorkCV.notify_all();
     if (mUploadThread.joinable())
         mUploadThread.join();
     // Release every outstanding suballocation before the VMA virtual blocks are destroyed;
@@ -1221,51 +1270,67 @@ size_t GPUSceneImpl::StageTextureSubresource(ImmediateUpload* ctx, FSerializedTe
 GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle)
 {
     CHECK(blobs != nullptr);
-    GSMesh header{};
-    uint32_t offset = 0;
-    Result r = ReserveMesh(source, header, offset);
-    if (r != Result::InProgress)
-        return r;
-    uint32_t slot = AcquireGeometrySlot();
-    GeometryResidency& g = mGeometry[slot];
-    uint32_t generation = g.generation;
-    g = GeometryResidency{};
-    g.generation = generation;
-    g.type = kGSInstanceTypeMesh;
-    g.blasSlot = UINT32_MAX;
-    g.resourceOffset = offset;
-    g.mesh = header;
-    g.state = ResourceState::Queued;
-    g.live = true;
-    outHandle = {slot, generation};
-    mPendingGeometry.push_back({.handle = outHandle, .blobs = *blobs, .mesh = &source, .curve = nullptr,
-                                .footprint = mDirectGeometryUpload ? 1 : GPUScene::CalculateMeshPrimitiveSize(source)});
+    PendingGeometryUpload pending;
+    {
+        // Reserve final memory + claim the residency slot under the residency lock: this both
+        // serializes concurrent producers and keeps the renderer's mGeometry reads consistent.
+        std::lock_guard<Mutex> lock(mResidencyMutex);
+        GSMesh header{};
+        uint32_t offset = 0;
+        Result r = ReserveMesh(source, header, offset);
+        if (r != Result::InProgress)
+            return r;
+        uint32_t slot = AcquireGeometrySlot();
+        if (slot == UINT32_MAX)
+            return Result::OutOfMemory;
+        GeometryResidency& g = mGeometry[slot];
+        uint32_t generation = g.generation;
+        g = GeometryResidency{};
+        g.generation = generation;
+        g.type = kGSInstanceTypeMesh;
+        g.blasSlot = UINT32_MAX;
+        g.resourceOffset = offset;
+        g.mesh = header;
+        g.state = ResourceState::Queued;
+        g.live = true;
+        outHandle = {slot, generation};
+        pending = {.handle = outHandle, .blobs = *blobs, .mesh = &source, .curve = nullptr,
+                   .footprint = mDirectGeometryUpload ? 1 : GPUScene::CalculateMeshPrimitiveSize(source)};
+    }
+    EnqueueUpload(mGeometryQueue, std::move(pending));
     return Result::InProgress;
 }
 
 GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle)
 {
     CHECK(blobs != nullptr);
-    GSCurveSet header{};
-    uint32_t offset = 0;
-    Result r = ReserveCurve(source, header, offset);
-    if (r != Result::InProgress)
-        return r;
-    uint32_t slot = AcquireGeometrySlot();
-    GeometryResidency& g = mGeometry[slot];
-    uint32_t generation = g.generation;
-    g = GeometryResidency{};
-    g.generation = generation;
-    g.type = kGSInstanceTypeCurve;
-    g.blasSlot = UINT32_MAX;
-    g.resourceOffset = offset;
-    g.curve = header;
-    g.state = ResourceState::Queued;
-    g.live = true;
-    outHandle = {slot, generation};
-    const size_t footprint = GPUScene::CalculateCurvePrimitiveSize(source) + GPUScene::CalculateCurveAABBSize(source);
-    mPendingGeometry.push_back({.handle = outHandle, .blobs = *blobs, .mesh = nullptr, .curve = &source,
-                                .footprint = mDirectGeometryUpload ? 1 : footprint});
+    PendingGeometryUpload pending;
+    {
+        std::lock_guard<Mutex> lock(mResidencyMutex);
+        GSCurveSet header{};
+        uint32_t offset = 0;
+        Result r = ReserveCurve(source, header, offset);
+        if (r != Result::InProgress)
+            return r;
+        uint32_t slot = AcquireGeometrySlot();
+        if (slot == UINT32_MAX)
+            return Result::OutOfMemory;
+        GeometryResidency& g = mGeometry[slot];
+        uint32_t generation = g.generation;
+        g = GeometryResidency{};
+        g.generation = generation;
+        g.type = kGSInstanceTypeCurve;
+        g.blasSlot = UINT32_MAX;
+        g.resourceOffset = offset;
+        g.curve = header;
+        g.state = ResourceState::Queued;
+        g.live = true;
+        outHandle = {slot, generation};
+        const size_t footprint = GPUScene::CalculateCurvePrimitiveSize(source) + GPUScene::CalculateCurveAABBSize(source);
+        pending = {.handle = outHandle, .blobs = *blobs, .mesh = nullptr, .curve = &source,
+                   .footprint = mDirectGeometryUpload ? 1 : footprint};
+    }
+    EnqueueUpload(mGeometryQueue, std::move(pending));
     return Result::InProgress;
 }
 
@@ -1292,29 +1357,39 @@ GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedTextu
             0, metadata.GetNumMips(),
             0, texture->mDesc.arrayLayers)
     });
-    BindlessPool& pool = TexturePool(is3D);
-    Vector<TextureSlot>& slots = TextureSlots(is3D);
-    if (!outTextureIndex.IsValid())
+    PendingTextureUpload pending;
     {
-        uint32_t slot = pool.Allocate(std::move(texture), std::move(view));
-        if (slot >= slots.size())
-            slots.resize(slot + 1);
-        slots[slot].live = true;
-        slots[slot].pinned = pinned;
-        outTextureIndex = {slot, slots[slot].generation, is3D};
+        // Claim/refresh the slot under the residency lock: serializes producers and keeps the
+        // renderer's texture-slot reads (Query) consistent. Slots are reserved to budget, so
+        // the resize never reallocates under those concurrent reads.
+        std::lock_guard<Mutex> lock(mResidencyMutex);
+        BindlessPool& pool = TexturePool(is3D);
+        Vector<TextureSlot>& slots = TextureSlots(is3D);
+        if (!outTextureIndex.IsValid())
+        {
+            uint32_t slot = pool.Allocate(std::move(texture), std::move(view));
+            if (slot >= slots.size())
+                slots.resize(slot + 1);
+            slots[slot].live = true;
+            slots[slot].pinned = pinned;
+            slots[slot].resident = false;
+            outTextureIndex = {slot, slots[slot].generation, is3D};
+        }
+        else
+        {
+            // In-place refresh (env map / view LUT reload) keeps the same slot + generation.
+            CHECK_MSG(outTextureIndex.is3D == is3D && outTextureIndex.index < slots.size() &&
+                          slots[outTextureIndex.index].live &&
+                          slots[outTextureIndex.index].generation == outTextureIndex.generation,
+                      "Upload in-place update on a stale texture handle (slot {}, generation {})",
+                      outTextureIndex.index, outTextureIndex.generation);
+            slots[outTextureIndex.index].pinned = pinned;
+            slots[outTextureIndex.index].resident = false; // re-upload: not Ready until the drain completes
+            pool.Update(outTextureIndex.index, std::move(texture), std::move(view));
+        }
+        pending = {.index = outTextureIndex.index, .blobs = *blobs, .source = &source};
     }
-    else
-    {
-        // In-place refresh (env map / view LUT reload) keeps the same slot + generation.
-        CHECK_MSG(outTextureIndex.is3D == is3D && outTextureIndex.index < slots.size() &&
-                      slots[outTextureIndex.index].live &&
-                      slots[outTextureIndex.index].generation == outTextureIndex.generation,
-                  "Upload in-place update on a stale texture handle (slot {}, generation {})",
-                  outTextureIndex.index, outTextureIndex.generation);
-        slots[outTextureIndex.index].pinned = pinned;
-        pool.Update(outTextureIndex.index, std::move(texture), std::move(view));
-    }
-    mPendingTextures.push_back({.index = outTextureIndex.index, .blobs = *blobs, .source = &source});
+    EnqueueUpload(mTextureQueue, std::move(pending));
     return Result::InProgress;
 }
 
@@ -1340,7 +1415,7 @@ GPUScene::Result GPUSceneImpl::Upload(RHIBuffer* dst, Span<const unsigned char> 
         return Result::InvalidInput;
     PendingBufferUpload pending{dst, dstOffset, Vector<unsigned char>(mAllocator)};
     pending.data.assign(data.begin(), data.end());
-    mPendingBuffers.push_back(std::move(pending));
+    EnqueueUpload(mBufferQueue, std::move(pending));
     return Result::InProgress;
 }
 
@@ -1363,70 +1438,147 @@ GPUScene::Result GPUSceneImpl::Query(TextureHandle texture) const
     if (!texture.IsValid() || texture.index >= slots.size() || !slots[texture.index].live ||
         slots[texture.index].generation != texture.generation)
         return Result::InvalidHandle;
-    for (auto const& p : mPendingTextures)
-        if (p.index == texture.index &&
-            IsTexture3DView(static_cast<FTextureHeader const&>(*p.source).GetViewDimension()) == texture.is3D)
-            return Result::InProgress;
-    return Result::Ready;
+    // The background drain flips `resident` once the image is uploaded + transitioned, so this
+    // is safe to call every frame while Poll() streams (the renderer falls back to defaults
+    // until then).
+    std::lock_guard<Mutex> lock(mResidencyMutex);
+    return slots[texture.index].resident ? Result::Ready : Result::InProgress;
+}
+
+template <typename T>
+void GPUSceneImpl::EnqueueUpload(MPMCQueue<T>& queue, T&& item)
+{
+    mOutstanding.fetch_add(1, std::memory_order_release);
+    // The queues are sized to budget, so Push only transiently fails under extreme bursts;
+    // yield-and-retry rather than dropping work.
+    while (!queue.Push(std::move(item)))
+        std::this_thread::yield();
+    {
+        std::lock_guard<Mutex> lock(mWorkMutex);
+        mHasWork = true;
+    }
+    mWorkCV.notify_one();
+}
+
+bool GPUSceneImpl::DrainUploadBatch()
+{
+    // Pull everything currently queued into one batch so geometry/texture/buffer uploads keep
+    // their batched transfer + BLAS submissions (processing items one-by-one would be far less
+    // efficient). Work enqueued mid-drain is picked up by the next call.
+    Vector<PendingGeometryUpload> geometry(mAllocator);
+    Vector<PendingTextureUpload> textures(mAllocator);
+    Vector<PendingBufferUpload> buffers(mAllocator);
+    PendingGeometryUpload g;
+    while (mGeometryQueue.Pop(g))
+        geometry.push_back(std::move(g));
+    PendingTextureUpload t;
+    while (mTextureQueue.Pop(t))
+        textures.push_back(std::move(t));
+    PendingBufferUpload b;
+    while (mBufferQueue.Pop(b))
+        buffers.push_back(std::move(b));
+
+    size_t const count = geometry.size() + textures.size() + buffers.size();
+    if (count == 0)
+        return false;
+
+    try
+    {
+        ProcessUploads(geometry, textures, buffers);
+    }
+    catch (std::exception const& e)
+    {
+        mUploadFailed.store(true, std::memory_order_release);
+        LOG(GPUScene, LogError, "Background upload failed: {}", e.what());
+    }
+    catch (...)
+    {
+        mUploadFailed.store(true, std::memory_order_release);
+        LOG(GPUScene, LogError, "Background upload failed");
+    }
+
+    mOutstanding.fetch_sub(count, std::memory_order_release);
+    {
+        std::lock_guard<Mutex> lock(mWorkMutex);
+    }
+    mDoneCV.notify_all();
+    return true;
+}
+
+void GPUSceneImpl::UploadWorker()
+{
+    while (true)
+    {
+        while (DrainUploadBatch())
+        {
+        }
+        std::unique_lock<Mutex> lock(mWorkMutex);
+        if (mStop)
+            return;
+        // Re-check under the lock: a producer may have enqueued between the empty drain above
+        // and acquiring the lock (it sets mHasWork under the same lock), so we can't miss it.
+        if (mHasWork)
+        {
+            mHasWork = false;
+            continue;
+        }
+        mWorkCV.wait(lock, [this] { return mHasWork || mStop; });
+        mHasWork = false;
+        if (mStop)
+            return;
+    }
 }
 
 void GPUSceneImpl::Join()
 {
-    if (mUploadThread.joinable())
+    // Started: wait for the persistent worker to make everything resident. Not started yet
+    // (e.g. constructor default uploads): drain synchronously on the calling thread.
+    bool started;
     {
-        mUploadThread.join();
+        std::lock_guard<Mutex> lock(mWorkMutex);
+        started = mWorkerStarted;
+    }
+    if (started)
+    {
+        std::unique_lock<Mutex> lock(mWorkMutex);
+        mDoneCV.wait(lock, [this] {
+            return mOutstanding.load(std::memory_order_acquire) == 0 ||
+                   mUploadFailed.load(std::memory_order_acquire);
+        });
         return;
     }
-    if (mPendingGeometry.empty() && mPendingTextures.empty() && mPendingBuffers.empty())
-        return;
-    ProcessPendingUploads();
-}
-
-void GPUSceneImpl::StartUploads()
-{
-    CHECK_MSG(!mUploadThread.joinable(), "StartUploads called while a drain is already in flight");
-    if (mPendingGeometry.empty() && mPendingTextures.empty() && mPendingBuffers.empty())
-        return;
-    mUploadFailed.store(false, std::memory_order_release);
-    mUploadsDone.store(false, std::memory_order_release);
-    mUploadThread = Thread([this]
+    while (DrainUploadBatch())
     {
-        try
-        {
-            ProcessPendingUploads();
-        }
-        catch (std::exception const& e)
-        {
-            mUploadFailed.store(true, std::memory_order_release);
-            LOG(GPUScene, LogError, "Background upload failed: {}", e.what());
-        }
-        catch (...)
-        {
-            mUploadFailed.store(true, std::memory_order_release);
-            LOG(GPUScene, LogError, "Background upload failed");
-        }
-        mUploadsDone.store(true, std::memory_order_release);
-    });
+    }
 }
 
 GPUScene::Result GPUSceneImpl::Poll()
 {
-    if (!mUploadThread.joinable())
+    if (mUploadFailed.load(std::memory_order_acquire))
+        return Result::SubmitFailed;
+    if (mOutstanding.load(std::memory_order_acquire) == 0)
+        return Result::Ready;
+    // Lazily spin up the persistent worker the first time we're polled with outstanding work.
     {
-        // Lazily kick the background drain the first time we're polled with queued work.
-        if (mPendingGeometry.empty() && mPendingTextures.empty() && mPendingBuffers.empty())
-            return Result::Ready;
-        StartUploads();
-        return Result::InProgress;
+        std::lock_guard<Mutex> lock(mWorkMutex);
+        if (!mWorkerStarted)
+        {
+            mWorkerStarted = true;
+            mUploadThread = Thread([this] { UploadWorker(); });
+        }
     }
-    if (!mUploadsDone.load(std::memory_order_acquire))
-        return Result::InProgress;
-    mUploadThread.join(); // reap the finished worker
-    return mUploadFailed.load(std::memory_order_acquire) ? Result::SubmitFailed : Result::Ready;
+    return Result::InProgress;
 }
 
-void GPUSceneImpl::ProcessPendingUploads()
+void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry,
+                                  Vector<PendingTextureUpload>& textures,
+                                  Vector<PendingBufferUpload>& buffers)
 {
+    // Alias the batch vectors to the queue names so the (substantial) drain body reads
+    // naturally; they hold just this batch's work, pulled off the lock-free queues.
+    auto& mPendingGeometry = geometry;
+    auto& mPendingTextures = textures;
+    auto& mPendingBuffers = buffers;
     const bool direct = mDirectGeometryUpload;
     const bool hadTextures = !mPendingTextures.empty();
 
@@ -1545,7 +1697,6 @@ void GPUSceneImpl::ProcessPendingUploads()
             PendingGeometryUpload& p = mPendingGeometry[idx];
             GeometryResidency* g = ResolveGeometry(p.handle);
             CHECK_MSG(g, "Pending geometry references a freed slot");
-            g->state = ResourceState::Uploading;
             auto Stage = [&] {
                 return p.mesh ? StageMesh(&upload, *p.mesh, g->mesh, g->resourceOffset, writes)
                               : StageCurve(&upload, *p.curve, g->curve, g->resourceOffset, writes);
@@ -1598,6 +1749,21 @@ void GPUSceneImpl::ProcessPendingUploads()
         ImmediateSubmitDesc firstSubmit{.timelineWaits = {&wait, 1}, .waitStages = {&waitStage, 1}};
         constexpr size_t kBLASBuildBatch = 32u;
         bool usedFirst = false;
+        // Each BuildBLAS batch waits on the geometry transfer (first batch) and host-waits its
+        // own compute work, so a batch's meshes are fully GPU-resident once it returns. Publish
+        // residency per batch under mResidencyMutex so the renderer streams instances into the
+        // TLAS as batches land instead of all at the end.
+        auto Publish = [&](Span<const GeometryHandle> handles, Span<const uint32_t> slots)
+        {
+            std::lock_guard<Mutex> lock(mResidencyMutex);
+            for (size_t j = 0; j < handles.size(); ++j)
+            {
+                GeometryResidency* g = ResolveGeometry(handles[j]);
+                CHECK(g);
+                g->blasSlot = slots[j];
+                g->state = ResourceState::Ready;
+            }
+        };
         Vector<uint32_t> meshSlots(meshHeaders.size(), mAllocator);
         for (size_t i = 0; i < meshHeaders.size(); i += kBLASBuildBatch)
         {
@@ -1605,6 +1771,8 @@ void GPUSceneImpl::ProcessPendingUploads()
             BuildBLAS(&blasCtx, Span<const GSMesh>(meshHeaders.data() + i, bs), Span<uint32_t>(meshSlots.data() + i, bs),
                       usedFirst ? ImmediateSubmitDesc{} : firstSubmit);
             usedFirst = true;
+            Publish(Span<const GeometryHandle>(meshHandles.data() + i, bs),
+                    Span<const uint32_t>(meshSlots.data() + i, bs));
         }
         Vector<uint32_t> curveSlots(curveHeaders.size(), mAllocator);
         for (size_t i = 0; i < curveHeaders.size(); i += kBLASBuildBatch)
@@ -1613,15 +1781,10 @@ void GPUSceneImpl::ProcessPendingUploads()
             BuildCurveBLAS(&blasCtx, Span<const GSCurveSet>(curveHeaders.data() + i, bs),
                            Span<uint32_t>(curveSlots.data() + i, bs), usedFirst ? ImmediateSubmitDesc{} : firstSubmit);
             usedFirst = true;
+            Publish(Span<const GeometryHandle>(curveHandles.data() + i, bs),
+                    Span<const uint32_t>(curveSlots.data() + i, bs));
         }
-        for (size_t i = 0; i < meshHandles.size(); ++i)
-            ResolveGeometry(meshHandles[i])->blasSlot = meshSlots[i];
-        for (size_t i = 0; i < curveHandles.size(); ++i)
-            ResolveGeometry(curveHandles[i])->blasSlot = curveSlots[i];
     }
-    for (auto const& p : mPendingGeometry)
-        if (GeometryResidency* g = ResolveGeometry(p.handle))
-            g->state = ResourceState::Ready;
     mPendingGeometry.clear();
 
     // --- Textures: stage subresources, transition, transfer, mark Ready. ---
@@ -1678,6 +1841,13 @@ void GPUSceneImpl::ProcessPendingUploads()
         RHIDeviceQueue::TimelinePair texSignal{uploadTimeline.Get(), kTextureReady};
         upload.End(ImmediateSubmitDesc{.timelineSignals = {&texSignal, 1}});
     }
+    // Remember which slots this drain transitioned so they can be published as resident once
+    // the transfer completes below (the render thread gates material textures on this).
+    Vector<std::pair<uint32_t, bool>> uploadedTextures(mAllocator);
+    uploadedTextures.reserve(mPendingTextures.size());
+    for (auto const& pt : mPendingTextures)
+        uploadedTextures.emplace_back(
+            pt.index, IsTexture3DView(static_cast<FTextureHeader const&>(*pt.source).GetViewDimension()));
     mPendingTextures.clear();
     mPendingBuffers.clear();
 
@@ -1686,6 +1856,17 @@ void GPUSceneImpl::ProcessPendingUploads()
     // highest signaled value covers everything.
     RHIDeviceQueue::TimelinePair finalWait{uploadTimeline.Get(), hadTextures ? kTextureReady : kGeometryReady};
     mDevice->WaitForTimelineSemaphores(Span<const RHIDeviceQueue::TimelinePair>(&finalWait, 1), -1);
+
+    if (!uploadedTextures.empty())
+    {
+        std::lock_guard<Mutex> lock(mResidencyMutex);
+        for (auto const& [index, is3D] : uploadedTextures)
+        {
+            Vector<TextureSlot>& slots = TextureSlots(is3D);
+            if (index < slots.size())
+                slots[index].resident = true;
+        }
+    }
 
     pool.Join();
 }
@@ -1991,6 +2172,10 @@ uint32_t GPUSceneImpl::AcquireGeometrySlot()
         mFreeGeometrySlots.pop_back();
         return slot;
     }
+    // The render thread reads mGeometry concurrently with the upload worker, so the vector
+    // must never reallocate (it is reserved to geometryBudget). Refuse rather than grow.
+    if (mGeometry.size() == mGeometry.capacity())
+        return UINT32_MAX;
     mGeometry.emplace_back();
     return static_cast<uint32_t>(mGeometry.size()) - 1;
 }
@@ -2036,15 +2221,14 @@ void GPUSceneImpl::FreeTextureSlot(bool is3D, uint32_t slot)
 
 void GPUSceneImpl::Collect()
 {
-    // Mark geometry referenced by the committed instance table; free the rest. Pending
-    // uploads keep their geometry live (handles are referenced by mPendingGeometry).
+    // Collect runs against a quiescent scene: drain any outstanding uploads first so no
+    // in-flight work still references geometry/textures we might otherwise free.
+    Join();
+    // Mark geometry referenced by the committed instance table; free the rest.
     Vector<uint8_t> referenced(mGeometry.size(), 0u, mAllocator);
     for (GSInstance const& inst : owner.mCommittedInstances)
         if (inst.resourceIndex < referenced.size())
             referenced[inst.resourceIndex] = 1u;
-    for (auto const& p : mPendingGeometry)
-        if (p.handle.index < referenced.size())
-            referenced[p.handle.index] = 1u;
 
     uint32_t freed = 0;
     for (uint32_t slot = 0; slot < mGeometry.size(); ++slot)
@@ -2082,10 +2266,6 @@ void GPUSceneImpl::Collect()
         MarkTexture(m.clearcoatTexture);
         MarkTexture(m.clearcoatRoughnessTexture);
     }
-    for (auto const& p : mPendingTextures)
-        if (!IsTexture3DView(static_cast<FTextureHeader const&>(*p.source).GetViewDimension()))
-            MarkTexture(p.index);
-
     uint32_t freedTex = 0;
     for (uint32_t slot = 0; slot < mTexture2DSlots.size(); ++slot)
     {
@@ -2120,10 +2300,10 @@ uint32_t GPUSceneImpl::CountTLASInstances() const
     return numInstances + numAreaLights;
 }
 
-bool GPUSceneImpl::EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate)
+void GPUSceneImpl::EnsureTLASCapacity(uint32_t totalInstances)
 {
     if (totalInstances == 0)
-        return true;
+        return;
     CHECK_MSG(totalInstances <= UINT32_MAX / mTLASInstanceStride,
               "TLAS instance byte count overflow: {} instances with stride {}",
               totalInstances, mTLASInstanceStride);
@@ -2152,51 +2332,24 @@ bool GPUSceneImpl::EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreat
     auto size = device->GetAccelerationStructureSizeInfo(desc, sizeInfoScratch.Ptr());
     size_t requiredTLASSize = static_cast<size_t>(AlignUp(size.accelerationStructureSize, 256u));
     size_t requiredScratchSize = static_cast<size_t>(AlignUp(std::max(size.buildScratchSize, size.updateScratchSize), 256u));
-    bool hasCapacity = requiredTLASSize <= mTLASBuffer->mDesc.size &&
-        requiredScratchSize <= mScratchBufferTLAS->mDesc.size;
-    if (hasCapacity)
-        return true;
-    if (!allowRecreate)
-        return false;
-
-    requiredTLASSize = static_cast<size_t>(AlignUp(std::max(requiredTLASSize, size_t(mTLASBuffer->mDesc.size) * 2u), size_t(256)));
-    requiredScratchSize = static_cast<size_t>(AlignUp(std::max(requiredScratchSize, size_t(mScratchBufferTLAS->mDesc.size) * 2u), size_t(256)));
-    CHECK_MSG(requiredTLASSize <= UINT32_MAX && requiredScratchSize <= UINT32_MAX,
-              "TLAS resize exceeds RHI uint32 size range: TLAS {} scratch {}",
-              requiredTLASSize, requiredScratchSize);
-
-    auto newTLASBuffer = device->CreateBuffer({
-        .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
-        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
-            RHIBufferUsageBits::AccelerationStructureStorage,
-        .size = static_cast<uint32_t>(requiredTLASSize)
-    });
-    auto newScratchBuffer = device->CreateBuffer({
-        .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
-        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
-        .size = static_cast<uint32_t>(requiredScratchSize),
-        .alignment = 256
-    });
-    auto newTLAS = device->CreateAccelerationStructure({
-        .type = RHIAccelerationStructureType::TopLevel,
-        .flags = desc.flags,
-        .buffer = newTLASBuffer.Get(),
-        .size = static_cast<uint32_t>(requiredTLASSize)
-    });
-    owner.mTLAS.Reset();
-    mTLASBuffer.Reset();
-    mScratchBufferTLAS.Reset();
-    mTLASBuffer = std::move(newTLASBuffer);
-    mScratchBufferTLAS = std::move(newScratchBuffer);
-    owner.mTLAS = std::move(newTLAS);
-    LOG(GPUScene, LogInfo, "Resized TLAS buffers: TLAS {:.1f} MB, scratch {:.1f} MB",
-        requiredTLASSize / static_cast<float>(1 << 20u),
-        requiredScratchSize / static_cast<float>(1 << 20u));
-    return true;
+    // The TLAS lives in the buffers pre-allocated at construction (tlasBudget / tlasScratchBudget).
+    // We deliberately never grow them: the AS device object stays stable (so the render graph's
+    // captured handle never goes stale and no renderer rebuild is ever needed). Exceeding the
+    // budget is a hard configuration error - raise tlasBudget instead.
+    CHECK_MSG(requiredTLASSize <= mTLASBuffer->mDesc.size && requiredScratchSize <= mScratchBufferTLAS->mDesc.size,
+              "TLAS for {} instances needs {:.1f} MB (scratch {:.1f} MB) but the pre-allocated budget is "
+              "{:.1f} MB (scratch {:.1f} MB). Increase GPUSceneDesc::tlasBudget / tlasScratchBudget.",
+              totalInstances, requiredTLASSize / 1e6, requiredScratchSize / 1e6,
+              mTLASBuffer->mDesc.size / 1e6, mScratchBufferTLAS->mDesc.size / 1e6);
 }
 
 GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool update)
 {
+    // The background drain publishes geometry residency (state/blasSlot) and texture residency
+    // under mResidencyMutex. Hold it across the residency reads + instance writes below so a
+    // concurrent drain can't flip a slot mid-build. The BLAS vectors are reserved up front, so
+    // resident slot indices stay valid for the element reads here (we never read .size()).
+    std::lock_guard<Mutex> residencyLock(mResidencyMutex);
     auto GeometryReady = [&](uint32_t resourceIndex) -> bool
     {
         if (resourceIndex >= mGeometry.size())
@@ -2204,14 +2357,14 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         GeometryResidency const& g = mGeometry[resourceIndex];
         if (!g.live || g.state != ResourceState::Ready)
             return false;
-        return g.type == kGSInstanceTypeCurve ? g.blasSlot < mCurveBLASes.size() : g.blasSlot < mBLASes.size();
+        // state == Ready is published only after blasSlot is assigned, so the slot is valid.
+        return g.blasSlot != UINT32_MAX;
     };
 
     // Reserve capacity for the full instance set so streaming residency in (a growing
     // ready-instance count over frames) doesn't churn TLAS buffers.
     uint32_t capacityInstances = CountTLASInstances();
-    if (capacityInstances != 0 && !EnsureTLASCapacity(capacityInstances, !update))
-        return TLASBuildResult::NeedsRendererRebuild;
+    EnsureTLASCapacity(capacityInstances);
 
     // Only instances whose geometry is Ready can be written this build; the rest are
     // skipped and will appear once their upload + BLAS completes (nonfatal).
@@ -2224,12 +2377,6 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         if (GeometryReady(inst.resourceIndex))
             ++readyInstances;
     uint32_t totalInstances = readyInstances + areaLights;
-    if (totalInstances == 0)
-    {
-        owner.mLastTLASInstancesCount = 0;
-        owner.mPickMap.clear();
-        return TLASBuildResult::Empty;
-    }
     if (totalInstances != owner.mLastTLASInstancesCount)
     {
         update = false;
@@ -2288,28 +2435,35 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         return res;
     };
 
-    auto [pInstances, instancesOffset] = mTLASInstances.Allocate(mTLASInstanceStride * totalInstances);
-    // Ready instances are written in committed order; the TLAS instanceID is their
-    // compacted write position, mapped back to the committed index via mPickMap.
+    // An all-empty scene still builds a valid 0-instance TLAS so the always-present ray passes
+    // can bind a traceable AS while geometry streams in; instances/lights are written only when
+    // some are resident. Ready instances are written in committed order; the TLAS instanceID is
+    // their compacted write position, mapped back to the committed index via mPickMap.
     owner.mPickMap.clear();
-    for (uint32_t i = 0; i < owner.mCommittedInstances.size(); ++i)
+    uint32_t instancesOffset = 0;
+    if (totalInstances > 0)
     {
-        GSInstance const& inst = owner.mCommittedInstances[i];
-        if (!GeometryReady(inst.resourceIndex))
-            continue;
-        GeometryResidency const* g = &mGeometry[inst.resourceIndex];
-        auto data = ConvertInstance(inst, static_cast<uint32_t>(owner.mPickMap.size()));
-        data.blas = (g->type == kGSInstanceTypeCurve) ? mCurveBLASes[g->blasSlot].Get() : mBLASes[g->blasSlot].Get();
-        pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);
-        owner.mPickMap.push_back(i);
-    }
-    for (uint32_t i = 0; i < owner.mCommittedLights.size(); ++i)
-    {
-        GSLight const& light = owner.mCommittedLights[i];
-        if (light.type == 3 || light.type == 4)
+        auto [pInstances, offset] = mTLASInstances.Allocate(mTLASInstanceStride * totalInstances);
+        instancesOffset = offset;
+        for (uint32_t i = 0; i < owner.mCommittedInstances.size(); ++i)
         {
-            auto data = ConvertLight(&light, i);
+            GSInstance const& inst = owner.mCommittedInstances[i];
+            if (!GeometryReady(inst.resourceIndex))
+                continue;
+            GeometryResidency const* g = &mGeometry[inst.resourceIndex];
+            auto data = ConvertInstance(inst, static_cast<uint32_t>(owner.mPickMap.size()));
+            data.blas = (g->type == kGSInstanceTypeCurve) ? mCurveBLASes[g->blasSlot].Get() : mBLASes[g->blasSlot].Get();
             pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);
+            owner.mPickMap.push_back(i);
+        }
+        for (uint32_t i = 0; i < owner.mCommittedLights.size(); ++i)
+        {
+            GSLight const& light = owner.mCommittedLights[i];
+            if (light.type == 3 || light.type == 4)
+            {
+                auto data = ConvertLight(&light, i);
+                pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);
+            }
         }
     }
     RHIAccelerationStructureGeometryInstanceData instance{
@@ -2441,8 +2595,28 @@ RHITexture* GPUScene::GetFoundationDefaultTexture2DFloat() const
 
 void GPUSceneImpl::Reset()
 {
+    // Stop the upload worker and discard any queued / in-flight work before tearing down.
+    {
+        std::lock_guard<Mutex> lock(mWorkMutex);
+        mStop = true;
+    }
+    mWorkCV.notify_all();
     if (mUploadThread.joinable())
         mUploadThread.join();
+    PendingGeometryUpload g;
+    while (mGeometryQueue.Pop(g)) {}
+    PendingTextureUpload t;
+    while (mTextureQueue.Pop(t)) {}
+    PendingBufferUpload b;
+    while (mBufferQueue.Pop(b)) {}
+    mOutstanding.store(0, std::memory_order_release);
+    mUploadFailed.store(false, std::memory_order_release);
+    {
+        std::lock_guard<Mutex> lock(mWorkMutex);
+        mStop = false;
+        mHasWork = false;
+        mWorkerStarted = false;
+    }
     mPrimitiveAlloc->Clear();
     mCurveAABBAlloc->Clear();
     mMeshletGlobalCounter = 0;
@@ -2455,9 +2629,6 @@ void GPUSceneImpl::Reset()
     mFreeCurveBLASSlots.clear();
     mGeometry.clear();
     mFreeGeometrySlots.clear();
-    mPendingGeometry.clear();
-    mPendingTextures.clear();
-    mPendingBuffers.clear();
     owner.mCommittedInstances.clear();
     owner.mCommittedLights.clear();
     owner.mCommittedMaterials.clear();

@@ -36,11 +36,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfi
         renderer->CreatePass(
             "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-            {
-                auto result = gpu->BuildTLAS(cmd, true);
-                if (result == GPUScene::TLASBuildResult::NeedsRendererRebuild && scene.rendererRebuildRequested)
-                    *scene.rendererRebuildRequested = true;
-            });
+            { (void)gpu->BuildTLAS(cmd, true); });
     }
     /* Instance and Primitive buffers */
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
@@ -189,8 +185,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfi
             r->CmdSetPipeline(self, cmd);
             r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
             r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());
-            bool canTrace = (!renderPaused || !*renderPaused) &&
-                (!scene.rendererRebuildRequested || !*scene.rendererRebuildRequested);
+            bool canTrace = (!renderPaused || !*renderPaused);
             if (canTrace)
             {
                 uint32_t tileSide = PTDispatchTileSide(*scene.gsGlobals);

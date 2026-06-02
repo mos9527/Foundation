@@ -153,7 +153,6 @@ struct RendererScene
     // the renderer only carries view/render config and picking state.
     UBO* gsGlobals;
     RendererPicking* picking;
-    bool* rendererRebuildRequested{nullptr};
 };
 
 struct RendererHandles
@@ -165,7 +164,6 @@ struct RendererHandles
 
 };
 
-extern void BuildIdleRenderGraph(Renderer* renderer, float const* timeSeconds);
 extern void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cfg, RendererScene scene,
                                    RHIExtent2D renderExtent, RendererHandles& outHandles);
 extern void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cfg, RendererScene scene,

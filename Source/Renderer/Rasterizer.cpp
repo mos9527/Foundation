@@ -28,23 +28,6 @@ struct MeshletTaskWork
 constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
-void BuildIdleRenderGraph(Renderer* renderer, float const* timeSeconds)
-{
-    CHECK(renderer);
-    createPSFullscreenPass(
-        renderer, "Idle",
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                          PathsResolve("Data/Shaders/EPSIdle.spv"));
-            r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float2));
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0,
-                                  float2{*timeSeconds, (float)r->GetSwapchainExtent().x / r->GetSwapchainExtent().y });
-        });
-}
 
 void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cfg, RendererScene scene,
                             RHIExtent2D renderExtent, RendererHandles& outHandles)
@@ -131,11 +114,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
         renderer->CreatePass(
             "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-            {
-                auto result = gpu->BuildTLAS(cmd, true);
-                if (result == GPUScene::TLASBuildResult::NeedsRendererRebuild && scene.rendererRebuildRequested)
-                    *scene.rendererRebuildRequested = true;
-            });
+            { (void)gpu->BuildTLAS(cmd, true); });
     }
     renderer->CreatePass(
         "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
@@ -487,8 +466,6 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
-            if (useRTShadows && scene.rendererRebuildRequested && *scene.rendererRebuildRequested)
-                return;
             r->CmdSetPipeline(self, cmd);
             r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
             r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());

@@ -378,12 +378,19 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamp
     dst.selectionWeight = std::max(0.0f, weight);
 }
 
-static void FillGSMaterial(GSMaterial& dst, FMaterial const& src, Vector<TextureHandle> const& textureIDMap)
+static void FillGSMaterial(GSMaterial& dst, FMaterial const& src, Vector<TextureHandle> const& textureIDMap,
+                           GPUScene* gpu)
 {
-    auto RemapTextureIndex = [&textureIDMap](uint32_t index) -> uint32_t {
+    // While the scene streams in, textures that aren't resident yet remap to UINT32_MAX (the
+    // same "no texture" sentinel unset slots use), so shaders sample defaults until the real
+    // image lands. Re-committing each frame (PumpSceneLoad) swaps in textures as they pop in.
+    auto RemapTextureIndex = [&](uint32_t index) -> uint32_t {
         if (index == UINT32_MAX || index >= textureIDMap.size())
             return UINT32_MAX;
-        return textureIDMap[index].index;
+        TextureHandle const handle = textureIDMap[index];
+        if (!handle.IsValid() || gpu->Query(handle) != GPUScene::Result::Ready)
+            return UINT32_MAX;
+        return handle.index;
     };
     dst.baseColorFactor = src.baseColorFactor;
     // emissiveFactor.w is the editor's emissive intensity; bake it into the GPU RGB.
@@ -462,7 +469,7 @@ static GPUScene::UpdateResult BuildSceneTables(GPUScene* gpu, FImportedScene& sc
         };
     }
     for (size_t i = 0; i < materials.size(); ++i)
-        FillGSMaterial(tables.materials[i], materials[i], GEditor.textureIDMap);
+        FillGSMaterial(tables.materials[i], materials[i], GEditor.textureIDMap, gpu);
     for (size_t i = 0; i < lights.size(); ++i)
         FLightToGSLight(lights[i], tables.lights[i], gpu->mLightSamplerType);
     return gpu->EndScene(tables);
@@ -626,9 +633,9 @@ static void InitializeSceneLoad(FImportedScene& scene, SceneLoadStats& stats, GP
 }
 
 // Submits every scene geometry/texture to GPUScene's work queue. The queue drains on a
-// background thread (kicked by the first Poll() in PumpSceneLoad); the GPUScene is not
-// yet installed, so the worker owns it exclusively (no shared state with the rendering
-// thread). Finalized by FinalizeSceneUpload once Poll() reports Ready.
+// background thread (kicked by the first Poll() in PumpSceneLoad) while the editor renders
+// the (already installed) scene: instances stream into the TLAS as their geometry becomes
+// resident, and materials fall back to default textures until theirs land.
 static void BeginSceneUpload(FImportedScene& scene, GPUScene* gpu, Vector<GeometryHandle>& meshGeometry,
                              Vector<GeometryHandle>& curveGeometry, Vector<TextureHandle>& textureIDMap)
 {
@@ -672,13 +679,14 @@ static void BeginSceneUpload(FImportedScene& scene, GPUScene* gpu, Vector<Geomet
         textureIDMap[textureIndex] = handle;
     }
     // The queued geometry/textures drain lazily on the first Poll() (PumpSceneLoad),
-    // on a background thread, while the editor keeps rendering the current/idle scene.
+    // on a background thread, while the editor renders the freshly installed scene.
 }
 
-// Runs once the background drain completes: env map / view LUTs, scene globals, table
-// commit, and the initial TLAS build. All on the calling (main) thread.
-static void FinalizeSceneUpload(FImportedScene& scene, GPUScene* gpu, SceneLoadStats& stats,
-                                AllocatorStack& sceneAlloc)
+// Applies the scene's globals + camera and uploads the environment map + view LUTs. These
+// are small and synchronous (UploadEnvMap / UploadViewLUTs Join internally), so they run
+// BEFORE the heavy geometry/textures are queued: that keeps the synchronous drain limited
+// to env + LUTs and leaves the bulk of the scene to stream in on the background worker.
+static void PrepareSceneGlobals(FImportedScene& scene, GPUScene* gpu, AllocatorStack& sceneAlloc)
 {
     ApplySceneGlobals(scene);
     auto const& environment = scene.GetSceneGlobals();
@@ -706,20 +714,8 @@ static void FinalizeSceneUpload(FImportedScene& scene, GPUScene* gpu, SceneLoadS
         gpu->UploadViewLUTs(sdr, hdr);
     }
 
-    LOG(Editor, LogInfo, "Scene GPU upload complete in {:.2f} ms", stats.uploadMs);
-
     ApplySceneCamera(scene, GEditor.camera, GEditor.aperture, GEditor.shaderGlobals);
     gpu->BuildUBO(GEditor.shaderGlobals, GContext->enableHDR);
-
-    // Fill instance/material/light tables (geometry handles are now Ready), then TLAS.
-    CommitSceneToGPU(gpu, scene, GEditor.shaderGlobals, true);
-    ImmediateContext ctx(RHIDeviceQueueType::Compute, GContext->device.Get());
-    auto* cmd = ctx.Get();
-    cmd->Begin();
-    auto tlasResult = gpu->BuildTLAS(cmd, false);
-    cmd->End();
-    if (tlasResult == GPUScene::TLASBuildResult::Built)
-        ctx.Submit(), ctx.WaitIdle();
 }
 
 
@@ -738,9 +734,10 @@ static void InstallLoadedScene(String const& scenePayloadPath, GPUScene*& newGPU
     GEditor.state = FERunningEnter;
 }
 
-// In-flight async scene load. The FSCN scratch arena, mapped file, and parsed scene must
-// outlive the background GPUScene drain (which holds pointers into the scene's serialized
-// data + payload), so they live here until FinalizeSceneUpload + install completes.
+// In-flight streaming scene load. The scene is installed up front (so it renders while it
+// loads), but the FSCN scratch arena, mapped file, and parsed scene must outlive the
+// background GPUScene drain (which holds pointers into the serialized data + payload), so
+// they live here until Poll() reports Ready.
 struct PendingSceneLoad
 {
     String scenePayloadPath;
@@ -748,11 +745,10 @@ struct PendingSceneLoad
     Optional<AllocatorStack> alloc;
     Optional<MemoryMappedFile> file;
     Optional<FImportedScene> scene;
-    GPUScene* gpu{nullptr};
     SceneLoadStats stats;
     std::chrono::steady_clock::time_point loadStart;
-    String envMapPath; // optional HDRI to load once the scene is installed
-    // Scene->geometry/texture bindings, moved into GEditor only at install time.
+    String envMapPath; // optional HDRI to load once the scene finishes streaming
+    // Scene->geometry/texture bindings (also published into GEditor at install).
     Vector<GeometryHandle> meshGeometry{GLOBAL_ALLOC};
     Vector<GeometryHandle> curveGeometry{GLOBAL_ALLOC};
     Vector<TextureHandle> textureIDMap{GLOBAL_ALLOC};
@@ -767,8 +763,9 @@ static void DestroyPendingSceneLoad()
     sPendingSceneLoad = nullptr;
 }
 
-// Routes a matching HDRI to load after the in-flight scene finishes installing. Falls
-// back to loading immediately if no scene load is pending (e.g. it failed to start).
+// Routes a matching HDRI to load after the in-flight scene finishes streaming (its
+// UploadEnvMap would otherwise Join the background drain). Falls back to loading
+// immediately if no scene load is pending (e.g. it failed to start).
 static void DeferEnvMapForPendingLoad(String const& envMapPath)
 {
     if (sPendingSceneLoad)
@@ -777,64 +774,52 @@ static void DeferEnvMapForPendingLoad(String const& envMapPath)
         LoadEnvMap(envMapPath);
 }
 
+// Joins the background drain (which holds pointers into the load's mapped file) and frees
+// the load's backing memory. Safe to call once Poll() has reported Ready/failed, or to
+// force-complete a still-streaming load before starting another.
 static void FinishPendingSceneLoad()
 {
     if (!sPendingSceneLoad)
         return;
-    PendingSceneLoad& load = *sPendingSceneLoad;
-    String envMapPath = load.envMapPath;
-    bool installed = false;
-    try
-    {
-        load.stats.uploadMs = MillisecondsSince(load.loadStart);
-        // Publish the new scene's geometry/texture bindings now that it's about to become
-        // the current scene (BuildSceneTables reads these from GEditor).
-        GEditor.meshGeometry = std::move(load.meshGeometry);
-        GEditor.curveGeometry = std::move(load.curveGeometry);
-        GEditor.textureIDMap = std::move(load.textureIDMap);
-        FinalizeSceneUpload(*load.scene, load.gpu, load.stats, *load.alloc);
-        InstallLoadedScene(load.scenePayloadPath, load.gpu);
-        installed = true;
-        double const loadMs = MillisecondsSince(load.loadStart);
-        LOG(Editor, LogInfo, "Scene load complete in {:.2f} ms, {} meshes, {} instances, {} curves, {} materials",
-            loadMs, load.stats.sceneMeshCount, load.stats.sceneInstanceCount, load.stats.sceneCurveCount,
-            load.stats.sceneMaterialCount);
-    }
-    catch (std::exception const& e)
-    {
-        DestroyGPUScene(load.gpu);
-        LOG(Editor, LogError, "Failed to finalize scene load ({})", e.what());
-    }
-    catch (...)
-    {
-        DestroyGPUScene(load.gpu);
-        LOG(Editor, LogError, "Failed to finalize scene load");
-    }
+    if (GContext->gpuScene)
+        GContext->gpuScene->Join();
     DestroyPendingSceneLoad();
-    if (installed && !envMapPath.empty())
-        LoadEnvMap(envMapPath);
 }
 
-// Polled once per editor frame: finalizes + installs the scene once its background
-// upload drain completes. Returns true while a load is still pending.
+// Pumped once per editor frame. The scene is already installed and rendering; this advances
+// the background drain, re-committing each frame so geometry/textures pop into the live
+// scene as they become resident. Returns true while the scene is still streaming.
 bool PumpSceneLoad()
 {
     if (!sPendingSceneLoad)
         return false;
-    if (sPendingSceneLoad->gpu)
+    CHECK(GContext->gpuScene);
+    GPUScene::Result r = GContext->gpuScene->Poll();
+    if (r == GPUScene::Result::InProgress)
     {
-        GPUScene::Result r = sPendingSceneLoad->gpu->Poll();
-        if (r == GPUScene::Result::InProgress)
-            return true; // still streaming; keep rendering the current/idle scene
-        if (r != GPUScene::Result::Ready)
-        {
-            LOG(Editor, LogError, "Scene upload failed ({}); aborting load", static_cast<int>(r));
-            DestroyGPUScene(sPendingSceneLoad->gpu);
-            DestroyPendingSceneLoad();
-            return false;
-        }
+        // Re-commit so newly resident textures replace their defaults; geometry streams into
+        // the TLAS automatically (the per-frame TLAS pass only writes Ready instances).
+        CommitSceneToGPU(GContext->gpuScene, GEditor.Scene(), GEditor.shaderGlobals, true);
+        return true;
     }
-    FinishPendingSceneLoad();
+
+    String envMapPath = sPendingSceneLoad->envMapPath;
+    if (r == GPUScene::Result::Ready)
+    {
+        CommitSceneToGPU(GContext->gpuScene, GEditor.Scene(), GEditor.shaderGlobals, true);
+        double const loadMs = MillisecondsSince(sPendingSceneLoad->loadStart);
+        LOG(Editor, LogInfo, "Scene streamed in {:.2f} ms, {} meshes, {} instances, {} curves, {} materials",
+            loadMs, sPendingSceneLoad->stats.sceneMeshCount, sPendingSceneLoad->stats.sceneInstanceCount,
+            sPendingSceneLoad->stats.sceneCurveCount, sPendingSceneLoad->stats.sceneMaterialCount);
+    }
+    else
+    {
+        LOG(Editor, LogError, "Scene stream failed ({}); the partially loaded scene stays installed",
+            static_cast<int>(r));
+    }
+    DestroyPendingSceneLoad(); // Poll() already joined the worker, so the backing memory is free to release
+    if (r == GPUScene::Result::Ready && !envMapPath.empty())
+        LoadEnvMap(envMapPath);
     return false;
 }
 
@@ -842,7 +827,7 @@ void LoadScene(StringView path)
 {
     LOG(Editor, LogInfo, "Loading scene: {}", path);
 
-    // A previous async load must complete before starting another (it owns GEditor maps
+    // A previous streaming load must complete before starting another (it owns GEditor maps
     // + the GPUScene about to be replaced).
     if (sPendingSceneLoad)
         FinishPendingSceneLoad();
@@ -863,15 +848,24 @@ void LoadScene(StringView path)
         LoadFSCN(*load->scene);
 
         InitializeSceneLoad(*load->scene, load->stats, gpu);
-        load->gpu = gpu;
+        // Globals/camera + env map + view LUTs first (small, synchronous); then queue the
+        // heavy geometry/textures for the background drain.
+        PrepareSceneGlobals(*load->scene, gpu, *load->alloc);
         BeginSceneUpload(*load->scene, gpu, load->meshGeometry, load->curveGeometry, load->textureIDMap);
-        // Hand off to PumpSceneLoad; the worker drains while the editor keeps rendering.
+
+        // Publish the handle maps and install the scene immediately so it renders while the
+        // queued uploads stream in (PumpSceneLoad drives the drain + re-commits).
+        GEditor.meshGeometry = std::move(load->meshGeometry);
+        GEditor.curveGeometry = std::move(load->curveGeometry);
+        GEditor.textureIDMap = std::move(load->textureIDMap);
+        InstallLoadedScene(load->scenePayloadPath, gpu); // nulls `gpu`; ownership moves to GContext
+        CommitSceneToGPU(GContext->gpuScene, GEditor.Scene(), GEditor.shaderGlobals, true);
         sPendingSceneLoad = load;
     }
     catch (std::exception const& e)
     {
         sPendingSceneLoad = nullptr;
-        DestroyGPUScene(gpu); // joins any background drain that may hold pointers into `load`
+        DestroyGPUScene(gpu); // null after a successful install; otherwise joins + frees the new scene
         if (load) Destruct(GLOBAL_ALLOC, load);
         LOG(Editor, LogError, "Failed to load scene: {} ({})", path, e.what());
     }

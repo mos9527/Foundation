@@ -24,9 +24,12 @@
 #include <Renderer/Renderer.hpp> // UBO + BuildRasterRenderGraph + Renderer{Scene,Config,Handles}
 #include <Editor/Scene/Mesh.hpp> // FImportedMesh / LoadObj
 #include <Editor/Camera.hpp>     // FArcballCamera
+#include <RenderUtils/CSDebugText.hpp> // createCSDebugTextPassBackBuffer (on-screen HUD)
 #include "Examples.hpp"
 #include <algorithm>
 #include <cmath>
+
+using namespace RenderUtils;
 
 int main(int argc, char** argv)
 {
@@ -325,6 +328,12 @@ int main(int argc, char** argv)
     RendererScene scene{.gsGlobals = &ubo, .picking = &picking};
     RendererHandles handles{};
     RHIExtent2D renderExtent{};
+    // On-screen HUD: the CSDebugText pass draws over the scene's backbuffer. The array is
+    // persistent and the pass captures a view of it, re-reading the current text every frame.
+    CSDebugTextData hud[3]{};
+    hud[0].x = 16; hud[0].y = 16; hud[0].SetText("Material Gallery (Cornell Box)");
+    hud[1].x = 16; hud[1].y = 40; hud[1].SetText("TAB renderer   SPACE pause/converge   WASD + drag camera");
+    hud[2].x = 16; hud[2].y = 64;
     // Builds the active mode's graph on the current (fresh, setup-ready) renderer for `extent`.
     auto BuildGraph = [&](RHIExtent2D extent)
     {
@@ -333,6 +342,7 @@ int main(int argc, char** argv)
             BuildPathTracerRenderGraph(renderer.get(), &*gpu, cfg, scene, extent, handles, &renderPaused);
         else
             BuildRasterRenderGraph(renderer.get(), &*gpu, cfg, scene, extent, handles);
+        createCSDebugTextPassBackBuffer(renderer.get(), "Debug Text", hud); // overlay last
         renderer->EndSetup();
         renderExtent = extent;
     };
@@ -423,15 +433,16 @@ int main(int argc, char** argv)
         ubo.fbHeight = static_cast<float>(renderExtent.y);
         ubo.ptViewFlags = cfg.viewFlags;
 
+        // Refresh the HUD readout before submitting (the overlay pass reads it this frame).
+        hud[2].SetText(fmt::format("{}   {:.0f} FPS{}", mode == Mode::PathTracer ? "Path Tracer" : "Raster",
+                                   fps.Update(), cameraPaused ? "   [PAUSED]" : ""));
+
         Examples_NewFrame(renderer.get());
         // Advance path-tracer accumulation after the frame is submitted.
         if (mode == Mode::PathTracer)
             ubo.ptAccumulatedFrames += PTSamplesPerDispatch(ubo);
         if (!cameraPaused || cameraMoved)
             ubo.ptAccumulatedFrames = 0;
-        const char* modeName = mode == Mode::PathTracer ? "Path Tracer" : "Raster";
-        SDL_SetWindowTitle(window, fmt::format("Material Gallery (Cornell Box) | {} | {:.0f} FPS | TAB: mode | SPACE: pause/converge | {}",
-                                               modeName, fps.Update(), FArcballCamera::kControlsText).c_str());
     }
 
     device->WaitIdle();

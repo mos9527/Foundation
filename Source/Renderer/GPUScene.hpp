@@ -163,6 +163,10 @@ struct GPUSceneDesc
     uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
     uint32_t lightBudget = static_cast<uint32_t>(1e4); // # of lights (ring)
     uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
+    // Max distinct geometries (meshes + curves). The residency/BLAS vectors the renderer
+    // reads are reserved to this so background uploads never reallocate them; uploads beyond
+    // it are rejected rather than risking a concurrent reallocation.
+    uint32_t geometryBudget = static_cast<uint32_t>(1e4);
     uint32_t tlasInstanceBudget = static_cast<uint32_t>(1e4); // # of TLAS instances (ring)
     uint32_t tlasBudget = 16 * (1u << 20); // 16MB
     uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
@@ -182,8 +186,11 @@ struct GPUSceneDesc
  *          5. [opt. ray-tracing only] `BuildTLAS(cmd)`
  *          Geometry is reclaimed explicitly via @ref Collect after destructive edits.
  *
- * @note A background drain (@ref Poll) has exclusive access to the GPUScene; it must not
- *       be consumed by the renderer until @ref Poll no longer reports InProgress.
+ * @note Uploads run on a persistent background worker fed by a lock-free multi-producer
+ *       queue: @ref Upload may be called from any thread at any time (including while a
+ *       drain is in flight), and the owning GPUScene MAY be rendered concurrently while
+ *       @ref Poll reports InProgress — geometry/textures stream into the live scene as they
+ *       become @ref Result::Ready. Per-resource readiness is observable via @ref Query.
  *
  * @note The upload / residency / acceleration-structure machinery lives in @ref GPUSceneImpl,
  *       reached through @ref mImpl. Only the committed-snapshot tables and
@@ -267,12 +274,14 @@ public:
      */
     void Join();
     /**
-     * @brief Non-blocking drain: kicks a background worker on the first call with queued
-     *        work, then reports progress.
-     * @return @ref Result::InProgress while draining, @ref Result::Ready when complete (or
-     *         when nothing is queued), or an error Result on failure.
-     * @note Only one drain may be in flight. The owning GPUScene must not be consumed by
-     *       the renderer until this returns something other than InProgress.
+     * @brief Non-blocking drain: kicks a background worker on the first call with queued work,
+     *        then reports progress while streaming residency in.
+     * @details The worker uploads geometry/textures and publishes residency incrementally; the
+     *          owning GPUScene MAY be rendered concurrently while this returns InProgress.
+     *          Instances stream into the TLAS as their geometry becomes @ref Result::Ready, and
+     *          @ref Query reports per-texture residency so materials can fall back to defaults.
+     * @return @ref Result::InProgress while draining, @ref Result::Ready when complete (or when
+     *         nothing is queued), or an error Result on failure.
      */
     [[nodiscard]] Result Poll();
 
@@ -357,15 +366,15 @@ public:
     enum class TLASBuildResult
     {
         Built,
-        Empty,
-        NeedsRendererRebuild
+        Empty
     };
     /**
      * @brief Builds (update=false) or refits (update=true) the TLAS from the committed
      *        instance table; instances whose geometry isn't yet @ref Result::Ready are skipped.
-     * @note A full build grows the TLAS buffers as needed; an update returns
-     *       @ref TLASBuildResult::NeedsRendererRebuild instead of growing, since the render
-     *       graph still references the old TLAS.
+     * @note The TLAS lives in buffers pre-allocated to @ref GPUSceneDesc::tlasBudget and is
+     *       never reallocated: the AS device object stays stable, so the render graph's captured
+     *       handle never goes stale and no renderer rebuild is needed. A committed instance set
+     *       whose TLAS would exceed the budget is a hard error (raise tlasBudget).
      */
     [[nodiscard]] TLASBuildResult BuildTLAS(RHICommandList* cmd, bool update = false);
 
@@ -451,7 +460,11 @@ public:
     /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const
     {
-        return mTLAS.IsValid() && mLastTLASInstancesCount > 0 ? mTLAS.Get() : nullptr;
+        // Returns the allocated TLAS whenever the scene has one, independent of how many
+        // instances are currently resident. This lets ray passes be built into the render
+        // graph up front; BuildTLAS keeps it valid (an empty 0-instance TLAS) while geometry
+        // streams in, so instances appear without a renderer rebuild.
+        return mTLAS.IsValid() ? mTLAS.Get() : nullptr;
     }
     /* Samplers */
     [[nodiscard]] RHIBuffer* GetSobolMatricesBuffer() const { return mSobolMatricesBuffer.Get(); }
