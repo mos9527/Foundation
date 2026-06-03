@@ -1,4 +1,5 @@
 ﻿#include <Core/Paths.hpp>
+#include <Core/JobGraph.hpp>
 #include <filesystem>
 #include <limits>
 #include <numbers>
@@ -964,17 +965,24 @@ void SetupAnimationRuntime()
 }
 } // namespace
 
-// --- Animation update, split into schedulable stages ---------------------------------------------
-// The pose evaluation (per-skeleton, independent) is scheduled in BeginAnimationUpdate so the main
-// thread can do its own per-frame bookkeeping (camera/UBO globals) while it runs. EndAnimationUpdate
-// waits for the poses, then schedules the rigid-instance + dynamic-mesh deformation and waits for the
-// dynamic-ring write to finish before the caller commits the scene. The dynamic-geometry window and
-// scene commit still happen on this same frame, so the GPUScene slot/commit/TLAS ordering is intact.
+// --- Animation update, expressed as a per-frame JobGraph -----------------------------------------
+// BeginAnimationUpdate builds a small dependency graph (pose -> rigid/lights, pose -> begin-dynamic
+// -> deform -> end-dynamic, all joined by a "done" barrier) and submits it, so the main thread can
+// do its own per-frame bookkeeping (camera/UBO globals) while the pose pass runs on the pool.
+// EndAnimationUpdate waits on the done barrier - pumping the graph's main-thread nodes (the dynamic
+// ring window open/close, the lights apply) on the calling thread - before the caller commits the
+// scene. The dynamic-geometry window and scene commit still happen on this same frame, so the
+// GPUScene slot/commit/TLAS ordering is intact.
 
-// In-flight per-skeleton pose evaluation kicked by BeginAnimationUpdate (ready when not scheduled).
-static Future<void> sPoseFuture;
+// This frame's animation graph, alive between Begin/EndAnimationUpdate (null when inactive).
+static UniquePtr<JobGraph> sAnimGraph;
+// The graph's terminal join node; EndAnimationUpdate waits on it.
+static JobHandle sAnimDone;
 // True when this frame actually evaluates animation (drives whether EndAnimationUpdate does work).
 static bool sAnimFrameActive = false;
+// Whether this frame's animation changes anything the scene commit must pick up (rigid transforms
+// and/or dynamic geometry). Resolved synchronously at build time.
+static bool sAnimChanged = false;
 
 // Writes one animated node's world transform onto a target, if that node is animated. Reads the
 // (already-evaluated) scene-node pose read-only; each call writes a disjoint target, so this is safe
@@ -1042,14 +1050,16 @@ static void DeformMesh(FImportedScene* scene, GPUScene* gpu, DynamicMeshRuntime 
     }
 }
 
-// Schedules this frame's per-skeleton pose evaluation (non-blocking) and advances the clock. The
-// returned work is awaited in EndAnimationUpdate; the caller may run independent CPU work meanwhile.
-// No-op (leaves the frame inactive) while paused/held or still streaming, so a held pose lets the
-// path tracer keep accumulating.
+// Builds and submits this frame's animation JobGraph (non-blocking) and advances the clock. The
+// pose pass runs on the pool while the caller does independent CPU work; EndAnimationUpdate then
+// waits on the graph. No-op (leaves the frame inactive) while paused/held or still streaming, so a
+// held pose lets the path tracer keep accumulating.
 void BeginAnimationUpdate(float dt)
 {
     sAnimFrameActive = false;
-    sPoseFuture = ThreadPool::MakeReadyFuture();
+    sAnimChanged = false;
+    sAnimDone = JobHandle{};
+    sAnimGraph.reset(); // drop the previous frame's graph (drains it if a caller skipped End)
     if (sPendingSceneLoad || !sAnimation.HasData())
         return;
     GPUScene* gpu = GContext->gpuScene;
@@ -1069,14 +1079,22 @@ void BeginAnimationUpdate(float dt)
     sAnimation.dirty = false;
     sAnimFrameActive = true;
 
-    // Evaluate every skeleton's pose into world matrices. Each skeleton writes its own FPose and
-    // samples only its pre-bucketed clips, so the skeletons are independent and run in parallel.
     FImportedScene* scene = &GEditor.Scene();
     auto const& skeletons = scene->mTables.skeletons;
-    if (!skeletons.empty())
-    {
-        ExecutionPolicy const policy = sAnimateParallel ? ExecutionPolicy::Par : ExecutionPolicy::Seq;
-        sPoseFuture = GContext->jobs->ParallelForAsync(policy, skeletons.size(),
+    ExecutionPolicy const policy = sAnimateParallel ? ExecutionPolicy::Par : ExecutionPolicy::Seq;
+
+    Allocator* allocator = GContext->editorFrameScratch.get();
+    sAnimGraph = ConstructUnique<JobGraph>(allocator, *GContext->jobs, allocator);
+    JobGraph& graph = *sAnimGraph;
+    JobHandle const done = graph.AddBarrier("Animation Done");
+    sAnimDone = done;
+
+    // Pose: evaluate every skeleton's pose into world matrices. Each skeleton writes its own FPose
+    // and samples only its pre-bucketed clips, so the skeletons are independent and run in parallel.
+    // With no skeletons it degenerates to a no-op source the rest of the graph can hang off of.
+    JobHandle const pose = skeletons.empty()
+        ? graph.AddBarrier("Anim Pose")
+        : graph.AddParallelFor("Anim Pose", policy, skeletons.size(),
             [scene](size_t s)
             {
                 ZoneScopedN("Anim Pose");
@@ -1090,58 +1108,62 @@ void BeginAnimationUpdate(float dt)
                 }
                 ComputeGlobals(skels[s], sAnimation.poses[s]);
             });
+
+    // Rigid node animation: write animated nodes' world transforms onto their instances/lights. The
+    // instance pass (potentially large) fans out across the pool; lights are few and run as a
+    // main-thread node, concurrently (disjoint writes) with the instance jobs.
+    if (doRigid)
+    {
+        auto& instances = scene->mTables.instances;
+        JobHandle const rigid = graph.AddParallelFor("Anim Rigid", policy, instances.begin(), instances.end(),
+            [](FInstance& instance) { ApplyAnimatedNode(instance.node, instance.transform); });
+        JobHandle const lights = graph.AddMain("Anim Lights",
+            [scene]
+            {
+                for (FLight& light : scene->mTables.lights)
+                    ApplyAnimatedNode(light.node, light.transform);
+            });
+        graph.DependsOn(rigid, pose);
+        graph.DependsOn(lights, pose);
+        graph.DependsOn(done, rigid, lights);
+        sAnimChanged |= sAnimation.rigidDrivesTransforms;
     }
+
+    // CPU deformation into the dynamic ring. The window opens on a main-thread node (advances the
+    // slot), the per-mesh skinning fans out across the pool, then the window closes on a main-thread
+    // node once the skinning completes - strictly ordered begin -> deform -> end by dependencies.
+    if (doDynamic)
+    {
+        JobHandle const beginDynamic =
+            graph.AddMain("Begin Dynamic Geometry", [gpu] { gpu->BeginDynamicGeometryUpdate(); });
+        JobHandle const deform =
+            graph.AddParallelFor("Anim Deform", policy, sAnimation.meshes.begin(), sAnimation.meshes.end(),
+                [scene, gpu](DynamicMeshRuntime const& rt, size_t worker) { DeformMesh(scene, gpu, rt, worker); });
+        JobHandle const endDynamic =
+            graph.AddMain("End Dynamic Geometry", [gpu] { gpu->EndDynamicGeometryUpdate(); });
+        graph.DependsOn(beginDynamic, pose);
+        graph.DependsOn(deform, beginDynamic);
+        graph.DependsOn(endDynamic, deform);
+        graph.DependsOn(done, endDynamic);
+        sAnimChanged = true;
+    }
+
+    graph.Submit();
 }
 
-// Waits for the scheduled poses, then applies rigid-node transforms and CPU-skins each dynamic mesh
-// into this frame's ring slot. Returns true if any dynamic geometry / instance transform changed
-// (the caller then re-commits the scene so dynamic instances encode the current ring slot).
+// Waits on this frame's animation graph (running its main-thread nodes - the dynamic ring window
+// open/close and the lights apply - on the calling thread). Returns true if any dynamic geometry /
+// instance transform changed (the caller then re-commits the scene so dynamic instances encode the
+// current ring slot).
 bool EndAnimationUpdate()
 {
     if (!sAnimFrameActive)
         return false;
     ZoneScoped;
-    sPoseFuture.wait(); // poses must be complete before rigid apply / skinning read them
-
-    GPUScene* gpu = GContext->gpuScene;
-    FImportedScene* scene = &GEditor.Scene();
-    bool const doDynamic = !sAnimation.meshes.empty() && gpu->HasDynamicGeometry();
-    bool const doRigid = sAnimation.HasRigid();
-    ExecutionPolicy const policy = sAnimateParallel ? ExecutionPolicy::Par : ExecutionPolicy::Seq;
-    bool changed = false;
-
-    // Rigid node animation: write animated nodes' world transforms onto their instances/lights. The
-    // instance pass (potentially large) is scheduled across the pool; lights are few and stay on the
-    // main thread, running concurrently (disjoint writes) while the instance jobs are in flight.
-    Future<void> rigidFut = ThreadPool::MakeReadyFuture();
-    if (doRigid)
-    {
-        auto& instances = scene->mTables.instances;
-        rigidFut = GContext->jobs->ParallelForAsync(policy, instances.begin(), instances.end(),
-            [](FInstance& instance) { ApplyAnimatedNode(instance.node, instance.transform); });
-        for (FLight& light : scene->mTables.lights)
-            ApplyAnimatedNode(light.node, light.transform);
-        changed = sAnimation.rigidDrivesTransforms;
-    }
-
-    // CPU deformation into the dynamic ring. The window opens on the main thread (advances the slot),
-    // the per-mesh skinning is scheduled across the pool, then the window closes once it completes.
-    Future<void> deformFut = ThreadPool::MakeReadyFuture();
-    if (doDynamic)
-    {
-        gpu->BeginDynamicGeometryUpdate();
-        deformFut = GContext->jobs->ParallelForAsync(policy, sAnimation.meshes.begin(), sAnimation.meshes.end(),
-            [scene, gpu](DynamicMeshRuntime const& rt, size_t worker) { DeformMesh(scene, gpu, rt, worker); });
-    }
-
-    rigidFut.wait();
-    if (doDynamic)
-    {
-        deformFut.wait();
-        gpu->EndDynamicGeometryUpdate();
-        changed = true;
-    }
-    return changed;
+    CHECK(sAnimGraph);
+    sAnimGraph->Wait(sAnimDone);
+    sAnimGraph.reset();
+    return sAnimChanged;
 }
 
 // Minimal playback panel. Only shown when the installed scene has animation. Scrubbing while paused

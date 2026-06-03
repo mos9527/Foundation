@@ -27,6 +27,10 @@ add_dependencies(Example_BindlessSimple Shader_BindlessSimple)
 add_executable(Example_DebugText "DebugText.cpp")
 target_link_libraries(Example_DebugText PUBLIC Example_Common)
 
+# Core-only self-test for the JobGraph scheduler (no RHI/render deps).
+add_executable(Example_JobGraph "JobGraph.cpp")
+target_link_libraries(Example_JobGraph PUBLIC Foundation_Core)
+
 add_executable(Example_ImGui "ImGui.cpp")
 target_link_libraries(Example_ImGui PUBLIC Example_Common ThirdParty_ImGui)
 
