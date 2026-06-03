@@ -3,6 +3,8 @@ public static const uint kMeshWorkGroupSize = 64;
 public static const uint kMeshIndirectPerDrawMeshlets = 65536;
 public static const uint kMaterialShaderBlockPrincipled = 0;
 public static const uint kMaterialShaderBlockHair = 1;
+public static const uint kCameraProjectionPerspective = 0;
+public static const uint kCameraProjectionPanoramic = 1;
 // Definitions From C++ sources
 public struct FVertex {
     public float3 position;
@@ -224,6 +226,7 @@ public struct UBO
     public uint32_t apertureBlades;
     public float apertureRotation;
     public float apertureRatio;
+    public uint32_t cameraProjection;
     public float fbWidth;
     public float fbHeight;
     public uint32_t hizLevels;

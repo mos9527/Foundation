@@ -23,6 +23,7 @@ struct UBO
     uint32_t apertureBlades{0u};
     float apertureRotation{0.0f};
     float apertureRatio{1.0f};
+    uint32_t cameraProjection{0u};
     // -- Framebuffers
     float fbWidth;
     float fbHeight;
@@ -120,6 +121,9 @@ static constexpr uint32_t kPTSamplerSobol = 1u;
 static constexpr uint32_t kPTCompileOptionSamplerSobol = 1u << 1;
 static constexpr uint32_t kPTCompileOptionSamplerPCG = 1u << 2;
 static constexpr uint32_t kPTCompileOptionForceTextureLOD0 = 1u << 3;
+
+static constexpr uint32_t kCameraProjectionPerspective = 0u;
+static constexpr uint32_t kCameraProjectionPanoramic = 1u;
 
 inline uint32_t PTPackCompileOptions(uint32_t sampler, bool forceTextureLOD0)
 {

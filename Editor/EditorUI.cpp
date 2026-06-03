@@ -1528,34 +1528,48 @@ void FRunningImGui()
         ImGui::Separator();
         GEditor.cameraUpdated |= ImGui::SliderFloat3("Cam Center", &GEditor.camera.center.x, -50.0f, 50.0f);
         GEditor.cameraUpdated |= ImGui::SliderFloat("Cam Radius", &GEditor.camera.radius, 0.0f, 100.0f);
-        GEditor.cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GEditor.camera.fovY);
+        const char* projectionItems[] = {"Perspective", "Panoramic (Equirectangular)"};
+        int cameraProjection = static_cast<int>(GEditor.shaderGlobals.cameraProjection);
+        if (ImGui::Combo("Projection", &cameraProjection, projectionItems, IM_ARRAYSIZE(projectionItems)))
+        {
+            GEditor.shaderGlobals.cameraProjection = static_cast<uint32_t>(cameraProjection);
+            GEditor.cameraUpdated = true;
+        }
+        bool perspectiveCamera = GEditor.shaderGlobals.cameraProjection == kCameraProjectionPerspective;
+        if (perspectiveCamera)
+            GEditor.cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GEditor.camera.fovY);
+        else
+            ImGui::TextDisabled("Renders a 360x180 equirectangular view.");
         ImGui::SliderFloat("Exposure (EV)", &GEditor.shaderGlobals.camEV, -16.0f, 16.0f);
         ImGui::Separator();
         ImGui::SliderFloat("WASD Speed", &GEditor.camera.moveSpeed, 0.1f, 50.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
-        GEditor.cameraUpdated |= ImGui::Checkbox("Enable DOF", &GEditor.aperture.dofEnabled);
-        if (GEditor.aperture.dofEnabled)
+        if (perspectiveCamera)
         {
-            GEditor.cameraUpdated |=
-                ImGui::SliderFloat("F-Stop", &GEditor.aperture.fStop, 0.1f, 128.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
-            GEditor.cameraUpdated |= ImGui::SliderFloat("Sensor Height", &GEditor.aperture.sensorHeightMm, 1.0f, 100.0f,
-                                                        "%.2f mm", ImGuiSliderFlags_Logarithmic);
-            GEditor.cameraUpdated |= ImGui::SliderFloat("Focal Distance", &GEditor.shaderGlobals.focalDistance, 0.1f, 1000.0f, "%.3f",
-                                                ImGuiSliderFlags_Logarithmic);
-            int apertureBlades = static_cast<int>(GEditor.shaderGlobals.apertureBlades);
-            if (ImGui::SliderInt("Blades", &apertureBlades, 0, 16))
+            GEditor.cameraUpdated |= ImGui::Checkbox("Enable DOF", &GEditor.aperture.dofEnabled);
+            if (GEditor.aperture.dofEnabled)
             {
-                GEditor.shaderGlobals.apertureBlades = static_cast<uint32_t>(apertureBlades);
-                GEditor.cameraUpdated = true;
+                GEditor.cameraUpdated |=
+                    ImGui::SliderFloat("F-Stop", &GEditor.aperture.fStop, 0.1f, 128.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+                GEditor.cameraUpdated |= ImGui::SliderFloat("Sensor Height", &GEditor.aperture.sensorHeightMm, 1.0f, 100.0f,
+                                                            "%.2f mm", ImGuiSliderFlags_Logarithmic);
+                GEditor.cameraUpdated |= ImGui::SliderFloat("Focal Distance", &GEditor.shaderGlobals.focalDistance, 0.1f, 1000.0f, "%.3f",
+                                                    ImGuiSliderFlags_Logarithmic);
+                int apertureBlades = static_cast<int>(GEditor.shaderGlobals.apertureBlades);
+                if (ImGui::SliderInt("Blades", &apertureBlades, 0, 16))
+                {
+                    GEditor.shaderGlobals.apertureBlades = static_cast<uint32_t>(apertureBlades);
+                    GEditor.cameraUpdated = true;
+                }
+                GEditor.cameraUpdated |= ImGui::SliderAngle("Rotation", &GEditor.shaderGlobals.apertureRotation, -180.0f, 180.0f,
+                                                            "%.1f deg");
+                GEditor.cameraUpdated |=
+                    ImGui::SliderFloat("Ratio", &GEditor.shaderGlobals.apertureRatio, 0.01f, 16.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+                float apertureRadiusMm =
+                    ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm, GEditor.camera.fovY);
+                ImGui::Text("Aperture Radius: %.3f mm", apertureRadiusMm);
+                DrawAperturePreview(GEditor.shaderGlobals.apertureBlades, GEditor.shaderGlobals.apertureRotation,
+                                    GEditor.shaderGlobals.apertureRatio);
             }
-            GEditor.cameraUpdated |= ImGui::SliderAngle("Rotation", &GEditor.shaderGlobals.apertureRotation, -180.0f, 180.0f,
-                                                        "%.1f deg");
-            GEditor.cameraUpdated |=
-                ImGui::SliderFloat("Ratio", &GEditor.shaderGlobals.apertureRatio, 0.01f, 16.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-            float apertureRadiusMm =
-                ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm, GEditor.camera.fovY);
-            ImGui::Text("Aperture Radius: %.3f mm", apertureRadiusMm);
-            DrawAperturePreview(GEditor.shaderGlobals.apertureBlades, GEditor.shaderGlobals.apertureRotation,
-                                GEditor.shaderGlobals.apertureRatio);
         }
     }
     ImGui::End();

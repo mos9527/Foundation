@@ -871,9 +871,33 @@ void AddRadiance(inout float3 L, float3 v, bool direct = false)
     L += v;
 }
 
+bool IsPanoramicCamera()
+{
+    return globalParams.cameraProjection == kCameraProjectionPanoramic;
+}
+
+float3 GeneratePanoramicRayDirection(float2 pixelSample)
+{
+    float2 uv = pixelSample / float2(globalParams.fbWidth, globalParams.fbHeight);
+    float phi = (frac(uv.x) - 0.5f) * 2.0f * Pi;
+    float theta = saturate(uv.y) * Pi;
+
+    float sinTheta = sin(theta);
+    float3 forward = normalize(globalParams.camDirection.xyz);
+    float3 right = normalize(mul(globalParams.inverseView, float4(1.0f, 0.0f, 0.0f, 0.0f)).xyz);
+    float3 up = normalize(mul(globalParams.inverseView, float4(0.0f, 1.0f, 0.0f, 0.0f)).xyz);
+    return normalize(
+        sinTheta * (cos(phi) * forward + sin(phi) * right) +
+        cos(theta) * up
+    );
+}
+
 // Primary ray with jitter
 float3 GeneratePrimaryRayDirection(float2 pixelSample)
 {
+    if (IsPanoramicCamera())
+        return GeneratePanoramicRayDirection(pixelSample);
+
     float2 uv = pixelSample / float2(globalParams.fbWidth, globalParams.fbHeight);
     float4 ndcPosition = float4(uv, 1.0f, 1.0f);
     ndcPosition.y = 1 - ndcPosition.y;
@@ -910,7 +934,7 @@ RayDesc MakeCameraRay(float3 direction, float2 lensSample)
     // Simple Physical Lens
     // https://www.pbr-book.org/4ed/Cameras_and_Film/Projective_Camera_Models#fragment-Computepointonplaneoffocus-0
     // https://github.com/nvpro-samples/vk_gltf_renderer/blob/master/shaders/gltf_pathtrace.slang#L922
-    if (globalParams.aperture > EPS)
+    if (!IsPanoramicCamera() && globalParams.aperture > EPS)
     {
         float3 focalPoint = globalParams.focalDistance * ray.Direction;
         float3 T = mul(globalParams.inverseViewProj, float4(1, 0, 0, 0)).xyz;
@@ -928,7 +952,7 @@ CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng)
     float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2D());
     float2 pixelSample = float2(pixel) + jitter + 0.5f;
     float2 lensSample = float2(0.0f);
-    if (globalParams.aperture > EPS)
+    if (!IsPanoramicCamera() && globalParams.aperture > EPS)
         lensSample = SampleAnamorphicLens(rng.sample2D()) * globalParams.aperture;
 
     CameraRay cameraRay;
