@@ -1670,7 +1670,7 @@ void Renderer::ExecuteFrame()
         {
             ZoneScopedN("Schedule Records");
             auto* queryPool = mDesc.profilePasses ? mSwaps[mCurrentSync].dbgQueryPool.Get() : nullptr;
-            struct RecordJob : public ThreadPoolJob
+            struct RecordJob : public Job
             {
                 Renderer* r;
                 ExecuteBarrierList* barriers;

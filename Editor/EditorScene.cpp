@@ -821,13 +821,17 @@ struct AnimationRuntime
 {
     Vector<DynamicMeshRuntime> meshes{GLOBAL_ALLOC};
     Vector<FPose> poses{GLOBAL_ALLOC}; // one per scene skeleton (reused each frame)
-    Vector<mat4> palette{GLOBAL_ALLOC}; // skinning-matrix scratch (sized to the largest skeleton)
-    Vector<FVertex> morphScratch{GLOBAL_ALLOC}; // morphed base verts before skinning
-    Vector<float> weightScratch{GLOBAL_ALLOC}; // sampled morph weights
+    // Per-worker scratch (outer index == ParallelFor workerId) so meshes skin in parallel without
+    // sharing buffers. Inner vectors are pre-sized to the largest mesh/skeleton to avoid per-frame
+    // reallocation; each invocation uses only the prefix it needs.
+    Vector<Vector<mat4>> skins{GLOBAL_ALLOC};      // skinning matrices
+    Vector<Vector<FVertex>> morphs{GLOBAL_ALLOC}; // morphed base verts before skinning
+    Vector<Vector<float>> morphWeights{GLOBAL_ALLOC};  // sampled morph weights
     // Rigid node animation: the scene-node skeleton index (-1 if none) and, per scene node, whether
     // it is animated or descends from an animated node (only those instances/lights get overridden).
     int32_t sceneNodeSkeleton{-1};
     Vector<uint8_t> nodeAffected{GLOBAL_ALLOC};
+    bool rigidDrivesTransforms{false}; // some instance/light references an animated node (static fact)
     float time{0.0f};
     float duration{0.0f}; // longest clip/morph track (seconds), for the UI timeline
     bool playing{true};
@@ -836,6 +840,8 @@ struct AnimationRuntime
     [[nodiscard]] bool HasData() const { return !meshes.empty() || HasRigid(); }
 };
 AnimationRuntime sAnimation;
+// Debug toggle: force serial CPU deformation. Persists across scene loads (not part of sAnimation).
+bool sAnimateParallel = true;
 
 void ClearAnimationRuntime() { sAnimation = AnimationRuntime{}; }
 
@@ -855,7 +861,6 @@ void SetupAnimationRuntime()
     for (auto const& skel : skeletons)
         maxJoints = std::max(maxJoints, skel.Count());
     sAnimation.poses.resize(skeletons.size());
-    sAnimation.palette.resize(maxJoints);
 
     // Rigid node animation: mark nodes that are animated or descend from an animated node, so the
     // per-frame override only touches moving instances/lights (and a held pose lets PT converge).
@@ -876,6 +881,17 @@ void SetupAnimationRuntime()
             if (parent >= 0 && sAnimation.nodeAffected[static_cast<uint32_t>(parent)])
                 sAnimation.nodeAffected[i] = 1u;
         }
+        // Whether rigid animation actually moves any committed transform is static, so resolve it once
+        // here (rather than racing on a shared flag while applying transforms in parallel each frame).
+        auto isAffected = [&](int32_t node)
+        { return node >= 0 && static_cast<size_t>(node) < sAnimation.nodeAffected.size() && sAnimation.nodeAffected[node]; };
+        for (FInstance const& instance : scene.mTables.instances)
+            if ((sAnimation.rigidDrivesTransforms = isAffected(instance.node)))
+                break;
+        if (!sAnimation.rigidDrivesTransforms)
+            for (FLight const& light : scene.mTables.lights)
+                if ((sAnimation.rigidDrivesTransforms = isAffected(light.node)))
+                    break;
     }
     for (size_t m = 0; m < meshes.size(); ++m)
     {
@@ -905,6 +921,24 @@ void SetupAnimationRuntime()
                 rt.indices = blobs.ReadArray<uint32_t>(mesh.lods[0].indices, GLOBAL_ALLOC);
         }
         sAnimation.meshes.push_back(std::move(rt));
+    }
+
+    // Per-worker scratch, pre-sized to the largest mesh/skeleton so skinning jobs never reallocate.
+    uint32_t maxVerts = 0, maxTargets = 0;
+    for (DynamicMeshRuntime const& rt : sAnimation.meshes)
+    {
+        maxVerts = std::max(maxVerts, static_cast<uint32_t>(rt.bind.size()));
+        maxTargets = std::max(maxTargets, rt.morphTargetCount);
+    }
+    size_t const lanes = GContext->jobs->GetParallelForConcurrency();
+    sAnimation.skins.resize(lanes, Vector<mat4>{GLOBAL_ALLOC});
+    sAnimation.morphs.resize(lanes, Vector<FVertex>{GLOBAL_ALLOC});
+    sAnimation.morphWeights.resize(lanes, Vector<float>{GLOBAL_ALLOC});
+    for (size_t l = 0; l < lanes; ++l)
+    {
+        sAnimation.skins[l].assign(maxJoints, mat4(1.0f));
+        sAnimation.morphs[l].resize(maxVerts);
+        sAnimation.morphWeights[l].resize(maxTargets);
     }
 
     for (FAnimationClip const& clip : scene.mTables.clips)
@@ -957,8 +991,11 @@ bool UpdateAnimation(float dt)
         ComputeGlobals(skeletons[s], sAnimation.poses[s]);
 
     bool changed = false;
+    ExecutionPolicy const policy = sAnimateParallel ? ExecutionPolicy::Par : ExecutionPolicy::Seq;
 
     // Rigid node animation: write the animated nodes' world transforms onto their instances/lights.
+    // Each item writes only its own transform and reads the (already-computed) pose read-only, so the
+    // instance pass — the potentially large one — runs in parallel; lights are few and stay serial.
     if (doRigid)
     {
         FPose const& nodePose = sAnimation.poses[sAnimation.sceneNodeSkeleton];
@@ -968,69 +1005,72 @@ bool UpdateAnimation(float dt)
             if (node < 0 || static_cast<size_t>(node) >= affected.size() || !affected[node])
                 return;
             decompose(nodePose.globals[node], dst.scale, dst.rotation, dst.transform);
-            changed = true;
         };
-        for (FInstance& instance : scene.mTables.instances)
-            applyNode(instance.node, instance.transform);
+        auto& instances = scene.mTables.instances;
+        GContext->jobs->ParallelFor(policy, instances.begin(), instances.end(),
+                                    [&](FInstance& instance) { applyNode(instance.node, instance.transform); });
         for (FLight& light : scene.mTables.lights)
             applyNode(light.node, light.transform);
+        changed = sAnimation.rigidDrivesTransforms;
     }
 
     // CPU deformation: morph (POSITION deltas) then skin, written into each mesh's dynamic ring slot.
+    // Meshes are skinned in parallel across the job pool; each worker uses its own scratch lane, and
+    // each mesh's ring region + output is disjoint, so the work is race-free.
     if (doDynamic)
     {
         gpu->BeginDynamicGeometryUpdate();
-        for (DynamicMeshRuntime const& rt : sAnimation.meshes)
-        {
-            if (gpu->Query(rt.handle) != GPUScene::Result::Ready)
-                continue;
-            size_t n = rt.bind.size();
-            const FVertex* base = rt.bind.data();
-
-            // Morph: base' = base + Σ weightₜ · deltaₜ (POSITION only; normals keep the base frame).
-            if (rt.morphTrack >= 0 && rt.morphTargetCount > 0 &&
-                static_cast<size_t>(rt.morphTrack) < scene.mTables.morphTracks.size())
+        GContext->jobs->ParallelFor(policy, sAnimation.meshes.begin(), sAnimation.meshes.end(),
+            [&](DynamicMeshRuntime const& rt, size_t worker)
             {
-                FMorphTrack const& track = scene.mTables.morphTracks[rt.morphTrack];
-                sAnimation.weightScratch.resize(rt.morphTargetCount);
-                float t = track.duration > 0.0f ? std::fmod(sAnimation.time, track.duration) : 0.0f;
-                SampleTrack(Span<const float>(track.times.data(), track.times.size()),
-                            Span<const float>(track.values.data(), track.values.size()), rt.morphTargetCount,
-                            track.interp, t, Span<float>(sAnimation.weightScratch.data(), rt.morphTargetCount));
-                sAnimation.morphScratch.resize(n);
-                for (size_t v = 0; v < n; ++v)
+                if (gpu->Query(rt.handle) != GPUScene::Result::Ready)
+                    return;
+                size_t n = rt.bind.size();
+                const FVertex* base = rt.bind.data();
+
+                // Morph: base' = base + Σ weightₜ · deltaₜ (POSITION only), then rebuild normals from the
+                // morphed surface (skinning, applied next, rotates those fresh normals correctly).
+                if (rt.morphTrack >= 0 && rt.morphTargetCount > 0 &&
+                    static_cast<size_t>(rt.morphTrack) < scene.mTables.morphTracks.size())
                 {
-                    FVertex mv = rt.bind[v];
-                    for (uint32_t tt = 0; tt < rt.morphTargetCount; ++tt)
-                        mv.position += sAnimation.weightScratch[tt] * rt.morphDeltas[static_cast<size_t>(tt) * n + v];
-                    sAnimation.morphScratch[v] = mv;
+                    FMorphTrack const& track = scene.mTables.morphTracks[rt.morphTrack];
+                    Vector<float>& weights = sAnimation.morphWeights[worker];
+                    Vector<FVertex>& morphed = sAnimation.morphs[worker];
+                    float t = track.duration > 0.0f ? std::fmod(sAnimation.time, track.duration) : 0.0f;
+                    SampleTrack(Span<const float>(track.times.data(), track.times.size()),
+                                Span<const float>(track.values.data(), track.values.size()), rt.morphTargetCount,
+                                track.interp, t, Span<float>(weights.data(), rt.morphTargetCount));
+                    for (size_t v = 0; v < n; ++v)
+                    {
+                        FVertex mv = rt.bind[v];
+                        for (uint32_t tt = 0; tt < rt.morphTargetCount; ++tt)
+                            mv.position += weights[tt] * rt.morphDeltas[static_cast<size_t>(tt) * n + v];
+                        morphed[v] = mv;
+                    }
+                    RecomputeNormals(Span<FVertex>(morphed.data(), n),
+                                     Span<const uint32_t>(rt.indices.data(), rt.indices.size()));
+                    base = morphed.data();
                 }
-                // POSITION-only deltas leave normals stale, so rebuild them from the morphed surface
-                // (skinning, applied next, then rotates these fresh normals correctly).
-                RecomputeNormals(Span<FVertex>(sAnimation.morphScratch.data(), n),
-                                 Span<const uint32_t>(rt.indices.data(), rt.indices.size()));
-                base = sAnimation.morphScratch.data();
-            }
 
-            Span<std::byte> dst = gpu->UpdateDynamicGeometry(rt.handle);
-            Span<FQVertex> out(reinterpret_cast<FQVertex*>(dst.data()), dst.size() / sizeof(FQVertex));
-            if (rt.skeleton >= 0)
-            {
-                FSkeleton const& skel = skeletons[rt.skeleton];
-                Span<mat4> palette(sAnimation.palette.data(), skel.Count());
-                ComputeSkinningMatrices(skel, sAnimation.poses[rt.skeleton], palette);
-                SkinVertices(Span<const FVertex>(base, n),
-                             Span<const FSkinBinding>(rt.binding.data(), rt.binding.size()),
-                             Span<const mat4>(palette.data(), palette.size()), out);
-            }
-            else
-            {
-                for (size_t v = 0; v < n && v < out.size(); ++v)
-                    out[v] = FQVertex::Pack(base[v]);
-            }
-            changed = true;
-        }
+                Span<std::byte> dst = gpu->UpdateDynamicGeometry(rt.handle);
+                Span<FQVertex> out(reinterpret_cast<FQVertex*>(dst.data()), dst.size() / sizeof(FQVertex));
+                if (rt.skeleton >= 0)
+                {
+                    FSkeleton const& skel = skeletons[rt.skeleton];
+                    Span<mat4> palette(sAnimation.skins[worker].data(), skel.Count());
+                    ComputeSkinningMatrices(skel, sAnimation.poses[rt.skeleton], palette);
+                    SkinVertices(Span<const FVertex>(base, n),
+                                 Span<const FSkinBinding>(rt.binding.data(), rt.binding.size()),
+                                 Span<const mat4>(palette.data(), palette.size()), out);
+                }
+                else
+                {
+                    for (size_t v = 0; v < n && v < out.size(); ++v)
+                        out[v] = FQVertex::Pack(base[v]);
+                }
+            });
         gpu->EndDynamicGeometryUpdate();
+        changed = true;
     }
     return changed;
 }
@@ -1063,6 +1103,8 @@ void FAnimationPanel()
         }
         ImGui::TextDisabled("%zu deforming mesh(es)%s", sAnimation.meshes.size(),
                             sAnimation.HasRigid() ? ", rigid nodes" : "");
+        // Debug: run CPU skinning / rigid apply serially (ExecutionPolicy::Seq) to isolate threading.
+        ImGui::Checkbox("Parallel deformation", &sAnimateParallel);
     }
     ImGui::End();
     ImGui::PopStyleColor();

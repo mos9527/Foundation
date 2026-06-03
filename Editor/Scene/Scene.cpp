@@ -16,6 +16,7 @@
 #include <Renderer/Tables/ViewLUTs.hpp>
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Mesh.hpp>
+#include <Renderer/Animation.hpp>
 #include "Curve.hpp"
 
 namespace
@@ -533,7 +534,17 @@ FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratch
         std::iota(m0.indices.begin(), m0.indices.end(), 0u);
     }
 
-    // CPU skin binding: read JOINTS_0 / WEIGHTS_0 (parallel to vertices) and remap the skin-local
+    // glTF 2.0 marks NORMAL as optional: when absent, the spec says clients should compute flat
+    // normals. We instead synthesize smooth, area-weighted per-vertex normals from the indexed
+    // triangle list so the rest of the pipeline (TBN packing, meshlet shading) sees a valid frame.
+    // Tangents (if any) are kept; they get re-projected onto the new normal during FQVertex::PackTBN.
+    if (cgltf_find_accessor(submesh, cgltf_attribute_type_normal, 0) == nullptr)
+    {
+        RecomputeNormals(Span<FVertex>(mesh.vertices.data(), mesh.vertices.size()),
+                         Span<const uint32_t>(m0.indices.data(), m0.indices.size()));
+    }
+
+
     // joint indices to the skeleton's topological order. Only present when the mesh is skinned.
     const cgltf_accessor* jointsAcc = cgltf_find_accessor(submesh, cgltf_attribute_type_joints, 0);
     const cgltf_accessor* weightsAcc = cgltf_find_accessor(submesh, cgltf_attribute_type_weights, 0);
@@ -699,7 +710,7 @@ size_t GetSceneWorkerCount()
 size_t GetSceneTaskQueueSize(size_t taskCount)
 {
     CHECK(taskCount > 0);
-    return ThreadPool::getTaskSize(taskCount);
+    return ThreadPool::CalcTaskSize(taskCount);
 }
 
 struct FBlobJob

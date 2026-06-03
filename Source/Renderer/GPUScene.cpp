@@ -474,7 +474,7 @@ size_t GPUScene::CalculateCurveAABBSize(FSerializedCurve const& src)
 }
 
 // Threaded decode of one blob payload into its mapped staging/direct destination.
-struct GPUSceneBlobDecodeJob final : Foundation::Core::ThreadPoolJob
+struct GPUSceneBlobDecodeJob final : Foundation::Core::Job
 {
     GPUSceneBlobWrite write{};
     FBlobDeserializer blobs{Span<const unsigned char>{}};
@@ -1732,7 +1732,7 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry,
     const size_t taskUpper = mPendingGeometry.size() * 7u + textureSubresCount;
     const size_t workerCount = std::min<size_t>(std::max<size_t>(1u, std::thread::hardware_concurrency()),
                                                 std::max<size_t>(1u, taskUpper));
-    ThreadPool pool(workerCount, ThreadPool::getTaskSize(std::max<size_t>(taskUpper, 1u) + 2u), mAllocator,
+    ThreadPool pool(workerCount, ThreadPool::CalcTaskSize(std::max<size_t>(taskUpper, 1u) + 2u), mAllocator,
                     "GPUSceneUpload");
     const size_t laneBudget = std::max<size_t>(maxBlob + kUploadBudgetSlack, alignof(std::max_align_t));
     ScopedArena scratchArena(mAllocator, laneBudget * workerCount);

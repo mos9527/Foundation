@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/AllocatorStack.hpp>
+#include <Core/ThreadPool.hpp>
 #include <RenderCore/Renderer.hpp>
 #include <SDL3/SDL.h>
 
@@ -37,6 +38,9 @@ struct FContext
 
     GPUScene* gpuScene{};
     Renderer* renderer{};
+
+    // Persistent worker pool for main-thread fork-join work (e.g. CPU skinning via ParallelFor).
+    UniquePtr<ThreadPool> jobs;
 
     SDL_Event event;
 

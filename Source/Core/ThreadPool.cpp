@@ -11,6 +11,22 @@ namespace Foundation::Core
         for (size_t i = 0; i < numThreads; ++i)
             mThreads.emplace_back(&ThreadPool::ThreadPoolWorker, this, i);
     }
+    void ThreadPool::CoInvoke(Job& job, size_t count, JobPriority priority)
+    {
+        if (mShutdown)
+            throw std::runtime_error("ThreadPool shutting down");
+        if (PriorityIndex(priority) >= kJobPriorityCount)
+            throw std::runtime_error("Invalid job priority");
+        for (size_t i = 0; i < count; ++i)
+        {
+            // Non-owning reference: the null-allocator deleter neither destroys nor frees the job.
+            UniquePtr<Job> ref(&job, StlDeleter<Job>{nullptr});
+            if (!mJobs[PriorityIndex(priority)].Push(std::move(ref)))
+                throw std::runtime_error("Jobs full");
+            mTotal.fetch_add(1, std::memory_order_relaxed);
+            mTotal.notify_one();
+        }
+    }
     void ThreadPool::Shutdown()
     {
         mShutdown = true;
@@ -45,7 +61,7 @@ namespace Foundation::Core
             // We'd busy wait for at most actual `m_total` cycles per thread
             // before letting the OS primitive take over
             total++;
-            UniquePtr<ThreadPoolJob> job;
+            UniquePtr<Job> job;
             for (size_t priority = kJobPriorityCount; priority-- > 0;)
             {
                 if (mJobs[priority].Pop(job))

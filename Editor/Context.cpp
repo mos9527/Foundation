@@ -211,6 +211,12 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::Dev
 {
     auto* context = Construct<FContext>(allocator);
     context->allocator = allocator;
+    // Persistent job pool: leave one core for the main/render thread. Queue is sized to comfortably
+    // hold a full ParallelFor fan-out (one non-owning ref per worker) plus headroom for other jobs.
+    unsigned const hw = std::thread::hardware_concurrency();
+    size_t const workers = hw > 1u ? static_cast<size_t>(hw - 1u) : 1u;
+    size_t const maxTasks = ThreadPool::CalcTaskSize(std::max<size_t>(workers * 4u, 64u));
+    context->jobs = ConstructUnique<ThreadPool>(allocator, workers, maxTasks, allocator, "Job");
     context->editorFrameArena = ConstructUnique<ScopedArena>(allocator, allocator, kEditorFrameScratchSize);
     context->editorFrameScratch = ConstructUnique<AllocatorStack>(
         allocator, static_cast<Arena>(*context->editorFrameArena));
@@ -237,6 +243,11 @@ void DestroyContext(FContext* context)
     if (!context)
         return;
     context->device->WaitIdle();
+    if (context->jobs)
+    {
+        context->jobs->Join(); // drain any in-flight jobs before tearing scene/render state down
+        context->jobs.reset();
+    }
     SavePipelineCache(*context);
     SDL_DestroyWindow(context->window);
     Destruct(context->allocator, context->renderer);
