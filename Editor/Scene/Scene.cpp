@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cgltf.h>
 #include <climits>
+#include <cstring>
 #include <filesystem>
 #include <lz4.h>
 #include <numeric>
@@ -1494,18 +1495,84 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         };
         if (node->mesh)
         {
-            FInstance instance{};
-            getTransform(instance.transform);
-            instance.type = FInstanceType::Mesh;
-            instance.node = NodeJoint(i);
+            // Per EXT_mesh_gpu_instancing, the extension carries N parallel attribute accessors
+            // (TRANSLATION/ROTATION/SCALE, optionally custom _* like _ID) that expand a single
+            // node-mesh into N atomic instances. Each instance's local TRS is post-multiplied
+            // onto the node's world matrix. We expand to flat FInstance entries (one per
+            // submesh per instance) so downstream GPUScene treats them like any other instance.
+            mat4 worldMat;
+            cgltf_node_transform_world(node, reinterpret_cast<float*>(&worldMat));
+
             auto meshIndex = cgltf_mesh_index(data, node->mesh);
             auto [mmin, mmax] = submeshIndices[meshIndex];
-            for (size_t j = mmin; j < mmax; j++)
+
+            size_t instCount = 1;
+            const cgltf_accessor* tAcc = nullptr;
+            const cgltf_accessor* rAcc = nullptr;
+            const cgltf_accessor* sAcc = nullptr;
+            if (node->has_mesh_gpu_instancing && node->mesh_gpu_instancing.attributes_count > 0)
             {
-                auto* sub = node->mesh->primitives + j - mmin;
-                instance.resourceIndex = static_cast<uint32_t>(j);
-                instance.materialIndex = sub->material ? cgltf_material_index(data, sub->material) + 1u : 0u;
-                scene.Add(instance);
+                const cgltf_mesh_gpu_instancing& gi = node->mesh_gpu_instancing;
+                instCount = gi.attributes[0].data->count;
+                for (size_t k = 0; k < gi.attributes_count; ++k)
+                {
+                    const cgltf_attribute& attr = gi.attributes[k];
+                    if (attr.name == nullptr) continue;
+                    if (std::strcmp(attr.name, "TRANSLATION") == 0) tAcc = attr.data;
+                    else if (std::strcmp(attr.name, "ROTATION") == 0) rAcc = attr.data;
+                    else if (std::strcmp(attr.name, "SCALE") == 0) sAcc = attr.data;
+                    // Other custom attributes (e.g. "_ID") are ignored for now.
+                }
+            }
+
+            FInstance instance{};
+            instance.type = FInstanceType::Mesh;
+            instance.node = NodeJoint(i);
+
+            for (size_t inst = 0; inst < instCount; ++inst)
+            {
+                FTransform xform{};
+                if (instCount == 1 && tAcc == nullptr && rAcc == nullptr && sAcc == nullptr)
+                {
+                    // Fast path: no instancing, reuse node world directly.
+                    decompose(worldMat, xform.scale, xform.rotation, xform.transform);
+                }
+                else
+                {
+                    float3 t{0.0f, 0.0f, 0.0f};
+                    quat   r{1.0f, 0.0f, 0.0f, 0.0f}; // (w, x, y, z) identity
+                    float3 s{1.0f, 1.0f, 1.0f};
+                    if (tAcc)
+                    {
+                        float v[3] = {0, 0, 0};
+                        cgltf_accessor_read_float(tAcc, inst, v, 3);
+                        t = float3{v[0], v[1], v[2]};
+                    }
+                    if (rAcc)
+                    {
+                        float v[4] = {0, 0, 0, 1};
+                        cgltf_accessor_read_float(rAcc, inst, v, 4);
+                        // glTF stores quaternions as (x, y, z, w); glm::quat ctor is (w, x, y, z).
+                        r = quat{v[3], v[0], v[1], v[2]};
+                    }
+                    if (sAcc)
+                    {
+                        float v[3] = {1, 1, 1};
+                        cgltf_accessor_read_float(sAcc, inst, v, 3);
+                        s = float3{v[0], v[1], v[2]};
+                    }
+                    mat4 instLocal = translate(mat4(1.0f), t) * mat4_cast(r) * scale(mat4(1.0f), s);
+                    mat4 instWorld = worldMat * instLocal;
+                    decompose(instWorld, xform.scale, xform.rotation, xform.transform);
+                }
+                instance.transform = xform;
+                for (size_t j = mmin; j < mmax; j++)
+                {
+                    auto* sub = node->mesh->primitives + j - mmin;
+                    instance.resourceIndex = static_cast<uint32_t>(j);
+                    instance.materialIndex = sub->material ? cgltf_material_index(data, sub->material) + 1u : 0u;
+                    scene.Add(instance);
+                }
             }
         }
         if (node->curve)
