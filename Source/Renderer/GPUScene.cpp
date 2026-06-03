@@ -446,7 +446,7 @@ struct GPUSceneImpl
     void AllocateDynamicBLAS(GeometryResidency& g);
     [[nodiscard]] bool HasDynamicGeometry() const;
     void BeginDynamicGeometryUpdate();
-    Span<std::byte> UpdateGeometry(GeometryHandle handle);
+    Span<std::byte> UpdateDynamicGeometry(GeometryHandle handle);
     void EndDynamicGeometryUpdate();
     void BuildBLAS(RHICommandList* cmd);
 };
@@ -601,8 +601,10 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     // contiguous (stride == that geo's footprint; see UploadDynamic). Off (null) when budget == 0.
     if (desc.dynamicGeometryBudget != 0)
     {
-        CHECK_MSG(desc.dynamicGeometryFrames >= 1, "dynamicGeometryFrames must be >= 1");
-        mDynamicFrameCount = desc.dynamicGeometryFrames;
+        CHECK_MSG(desc.framesInFlight >= 1, "framesInFlight must be >= 1");
+        // N+1 slots: up to framesInFlight slots are read by in-flight GPU frames while the CPU
+        // writes one more for the frame being prepared (it writes ahead of that frame's fence).
+        mDynamicFrameCount = desc.framesInFlight + 1u;
         const size_t totalBytes = static_cast<size_t>(desc.dynamicGeometryBudget) * mDynamicFrameCount;
         mDynamicPrimitiveBuffer = mDevice->CreateBuffer(
             {.resource = {.heap = RHIDeviceHeapType::Upload,
@@ -614,8 +616,8 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
         mDynamicPrimitiveBuffer->DebugSetObjectName("Dynamic Primitive Ring");
         mDynamicPrimitiveMapped = mDynamicPrimitiveBuffer->Map<char>();
         mDynamicPrimitiveAlloc = mDevice->CreateVirtualAllocator(totalBytes);
-        LOG(GPUScene, LogInfo, "Dynamic geometry ring: {} MiB ({} MiB/frame x {} frames).",
-            totalBytes / (1u << 20), desc.dynamicGeometryBudget / (1u << 20), mDynamicFrameCount);
+        LOG(GPUScene, LogInfo, "Dynamic geometry ring: {} MiB ({} MiB/frame x {} slots, {} frames in flight).",
+            totalBytes / (1u << 20), desc.dynamicGeometryBudget / (1u << 20), mDynamicFrameCount, desc.framesInFlight);
     }
     mTLASBuffer = mDevice->CreateBuffer(
     {
@@ -2394,12 +2396,12 @@ void GPUSceneImpl::BeginDynamicGeometryUpdate()
         mDynamicFrameSlot = (mDynamicFrameSlot + 1u) % mDynamicFrameCount;
 }
 
-Span<std::byte> GPUSceneImpl::UpdateGeometry(GeometryHandle handle)
+Span<std::byte> GPUSceneImpl::UpdateDynamicGeometry(GeometryHandle handle)
 {
     CHECK_MSG(mDynamicUpdateOpen,
-              "UpdateGeometry must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+              "UpdateDynamicGeometry must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
     GeometryResidency* g = ResolveGeometry(handle);
-    CHECK_MSG(g && g->dynamic, "UpdateGeometry on a non-dynamic or invalid geometry handle");
+    CHECK_MSG(g && g->dynamic, "UpdateDynamicGeometry on a non-dynamic or invalid geometry handle");
     g->dirty = true; // rewriting this slot -> needs a BLAS refit
     uint32_t const base = DynamicRegionBase(*g, mDynamicFrameSlot);
     return Span<std::byte>(reinterpret_cast<std::byte*>(mDynamicPrimitiveMapped + base + sizeof(GSMesh)),
@@ -3106,7 +3108,7 @@ void GPUScene::Reset() { mImpl->Reset(); }
 
 bool GPUScene::HasDynamicGeometry() const { return mImpl->HasDynamicGeometry(); }
 void GPUScene::BeginDynamicGeometryUpdate() { mImpl->BeginDynamicGeometryUpdate(); }
-Span<std::byte> GPUScene::UpdateDynamicGeometry(GeometryHandle handle) { return mImpl->UpdateGeometry(handle); }
+Span<std::byte> GPUScene::UpdateDynamicGeometry(GeometryHandle handle) { return mImpl->UpdateDynamicGeometry(handle); }
 void GPUScene::EndDynamicGeometryUpdate() { mImpl->EndDynamicGeometryUpdate(); }
 void GPUScene::BuildBLAS(RHICommandList* cmd) { mImpl->BuildBLAS(cmd); }
 void GPUScene::SetDynamicGeometryRebuildRate(uint32_t framesOrZero) { mImpl->mDynamicRebuildCadence = framesOrZero; }

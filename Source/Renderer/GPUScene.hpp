@@ -177,11 +177,16 @@ struct GPUSceneDesc
     uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
     // CPU-updateable dynamic geometry (deformation: skinning / sims / morphs). Quantized
     // primitive bytes (header + verts + indices, no DAG/meshlets) live in a host-coherent ring
-    // sized `dynamicGeometryBudget` per frame slot, replicated across `dynamicGeometryFrames`
-    // slots. The BLAS is a single AllowUpdate AS refit in place each frame. Default 0 = feature
-    // off (no buffer allocated); examples / the editor opt in by sizing these explicitly.
+    // sized `dynamicGeometryBudget` per frame slot, replicated across `framesInFlight + 1` slots.
+    // The BLAS is a single AllowUpdate AS refit in place each frame. Default 0 = feature off (no
+    // buffer allocated); examples / the editor opt in by sizing these explicitly.
     uint32_t dynamicGeometryBudget = 0; // bytes per frame slot (0 = dynamic geometry disabled)
-    uint32_t dynamicGeometryFrames = 3; // ring slots (match kGPUSceneRingFrameSlack)
+    // The renderer's max frames in flight (its swapchain image count, @ref Renderer::GetFrameSwaps()).
+    // The dynamic ring is sized to framesInFlight + 1 slots and advanced once per frame: the CPU
+    // writes the next frame's slot before that frame's GPU fence, so one slot beyond the in-flight
+    // count keeps the write target clear of every slot the in-flight GPU frames are still reading
+    // (N+1 buffering for a non-blocking producer, mirroring the renderer's per-frame resources).
+    uint32_t framesInFlight = 2;
 };
 
 /**
@@ -407,16 +412,16 @@ public:
     /* --- Dynamic (CPU-updateable) geometry: per-frame deformation ---
      * Per-frame contract (mirrors a renderer Begin/End frame bracket):
      *     BeginDynamicGeometryUpdate();              // once per frame, advances the ring slot
-     *     for each deforming geo: fill UpdateGeometry(handle);
+     *     for each deforming geo: fill UpdateDynamicGeometry(handle);
      *     EndDynamicGeometryUpdate();                // closes the window
      *     ... BeginScene/EndScene, then the graph's "Dynamic BLAS Refit" pass ...
-     * @ref UpdateGeometry may only be called inside the open window; the window state also guards
-     * the per-frame getters. */
+     * @ref UpdateDynamicGeometry may only be called inside the open window; the window state also
+     * guards the per-frame getters. */
     /** @brief True when at least one dynamic geometry is resident. */
     [[nodiscard]] bool HasDynamicGeometry() const;
     /**
      * @brief Opens the per-frame dynamic-geometry update window and advances the ring to the next
-     *        frame slot. Call exactly once per rendered frame before any @ref UpdateGeometry.
+     *        frame slot. Call exactly once per rendered frame before any @ref UpdateDynamicGeometry.
      * @details The slot the CPU writes (current) is distinct from the slot the GPU traced last
      *          frame, mirroring the table rings' frames-in-flight invariant. Must be paired with
      *          @ref EndDynamicGeometryUpdate.

@@ -1962,7 +1962,7 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     }
     if (dynamicBytesPerSlot != 0)
     {
-        desc.dynamicGeometryFrames = kGPUSceneRingFrameSlack;
+        desc.framesInFlight = kGPUSceneRingFrameSlack; // ring sized to framesInFlight + 1 internally
         desc.dynamicGeometryBudget = ByteGPUSceneBudget(dynamicBytesPerSlot, 0, size_t(16));
     }
 

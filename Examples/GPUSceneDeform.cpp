@@ -138,8 +138,8 @@ int main(int argc, char** argv)
     desc.tlasInstanceBudget = 64u;
     desc.materialBudget = 16u;
     desc.lightBudget = 8u;
-    desc.dynamicGeometryBudget = 16u * (1u << 20); // 16 MiB / slot
-    desc.dynamicGeometryFrames = 3u;
+    desc.dynamicGeometryBudget = 16u * (1u << 20);          // 16 MiB / frame slot
+    desc.framesInFlight = renderer->GetFrameSwaps();         // ring sized to frames-in-flight (+1 internally)
     Optional<GPUScene> gpu;
     gpu.emplace(device.Get(), GLOBAL_ALLOC, desc);
 
