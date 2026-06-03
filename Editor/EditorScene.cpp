@@ -837,6 +837,9 @@ struct AnimationRuntime
     int32_t sceneNodeSkeleton{-1};
     Vector<uint8_t> nodeAffected{GLOBAL_ALLOC};
     bool rigidDrivesTransforms{false}; // some instance/light references an animated node (static fact)
+    // Node of the first scene camera when it is animated (the editor view follows it), else -1. Only
+    // the first camera matters: that's the one ApplySceneCamera feeds to the view.
+    int32_t cameraNode{-1};
     float time{0.0f};
     float duration{0.0f}; // longest clip/morph track (seconds), for the UI timeline
     bool playing{true};
@@ -897,6 +900,11 @@ void SetupAnimationRuntime()
             for (FLight const& light : scene.mTables.lights)
                 if ((sAnimation.rigidDrivesTransforms = isAffected(light.node)))
                     break;
+        // The editor view follows the first scene camera, so only that one needs tracking. Camera
+        // motion drives the view (path-tracer reset), not a GPUScene commit, so it stays out of
+        // rigidDrivesTransforms.
+        if (!scene.mTables.cameras.empty() && isAffected(scene.mTables.cameras.front().node))
+            sAnimation.cameraNode = scene.mTables.cameras.front().node;
     }
     for (size_t m = 0; m < meshes.size(); ++m)
     {
@@ -1123,9 +1131,18 @@ void BeginAnimationUpdate(float dt)
                 for (FLight& light : scene->mTables.lights)
                     ApplyAnimatedNode(light.node, light.transform);
             });
+        // Cameras are few and updated like lights; the editor view consumes the result (see
+        // ApplyAnimatedCameraToView). No GPUScene commit is needed, so this doesn't touch sAnimChanged.
+        JobHandle const cameras = graph.AddMain("Anim Cameras",
+            [scene]
+            {
+                for (FCamera& camera : scene->mTables.cameras)
+                    ApplyAnimatedNode(camera.node, camera.transform);
+            });
         graph.DependsOn(rigid, pose);
         graph.DependsOn(lights, pose);
-        graph.DependsOn(done, rigid, lights);
+        graph.DependsOn(cameras, pose);
+        graph.DependsOn(done, rigid, lights, cameras);
         sAnimChanged |= sAnimation.rigidDrivesTransforms;
     }
 
@@ -1164,6 +1181,34 @@ bool EndAnimationUpdate()
     sAnimGraph->Wait(sAnimDone);
     sAnimGraph.reset();
     return sAnimChanged;
+}
+
+// True when the editor view should be driven by an animated scene camera this frame: the first scene
+// camera is animated and the clip is advancing (playing) or being scrubbed. Query this before
+// BeginAnimationUpdate consumes the scrub `dirty` flag.
+bool AnimatedCameraDrivesView()
+{
+    return sAnimation.cameraNode >= 0 && (sAnimation.playing || sAnimation.dirty);
+}
+
+// Drives the editor arcball from the animated scene camera's current transform (maintained each
+// active frame by the "Anim Cameras" pass, mirroring lights). This consumes the transform produced by
+// the previous frame's EndAnimationUpdate - one frame of latency that keeps the pose pass overlapped
+// with the camera/UBO setup and is imperceptible on a smoothly playing camera. Mirrors the
+// transform->arcball mapping in ApplySceneCamera. Returns true if it moved the view (so the caller
+// resets path-tracer accumulation).
+bool ApplyAnimatedCameraToView()
+{
+    if (sAnimation.cameraNode < 0 || !GEditor.HasScene())
+        return false;
+    auto cameras = GEditor.Scene().GetCameras();
+    if (cameras.empty())
+        return false;
+    FTransform const& xf = cameras.front().transform;
+    vec3 dir = xf.rotation * vec3(0, 0, 1);
+    GEditor.camera.center = xf.transform - dir * GEditor.camera.radius;
+    GEditor.camera.rot = xf.rotation;
+    return true;
 }
 
 // Minimal playback panel. Only shown when the installed scene has animation. Scrubbing while paused

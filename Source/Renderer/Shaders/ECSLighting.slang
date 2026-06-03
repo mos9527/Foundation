@@ -95,9 +95,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
                                              1.0f, 0.0f, float3(1.0f), globalParams.ggxLutEIndex, globalParams.ggxLutEavgIndex, globalParams.ggxLutEIORIndex, globalParams.ggxLutEIORavgIndex, globalParams.ggxLutEIORInvIndex, globalParams.ggxLutEIORInvavgIndex,
                                              0.0f, 0.0f, float3(1.0f), globalParams.sheenLtcIndex);
 
-        // TODO: Area lights.
-        uint32_t numLights = min(globalParams.numSceneLights, 4u);
-        for (uint li = 0; li < numLights; li++) {
+        // TODO: Area lights. That's probably going to be ReSTIR DI if we'd want soft shadows from those...
+        for (uint li = 0; li < globalParams.numSceneLights; li++) {
             GSLight gl = lights[globalParams.firstLight + li];
             float3 lightColor = gl.color * gl.power;
             if (!any(lightColor > 0.0f)) continue;
@@ -131,7 +130,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
             float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
             float vis = 1.0f;
             if ((flags & kEnableRasterRTShadows) != 0) {
-                if (gl.type == 1 || gl.type == 2) {
+                if (gl.type <= 2 /* Anything not area lights */) {
                     float3 shadowNormalFF = dot(l, n) < 0.0f ? -n : n;
                     float3 shadowOrigin = OffsetRay(p, n);
                     vis = shadow(shadowOrigin, l, lightDist) ? 0.0f : 1.0f;

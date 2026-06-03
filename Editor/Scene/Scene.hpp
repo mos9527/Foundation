@@ -42,6 +42,9 @@ struct FCamera
     uint32_t apertureBlades{0u};
     float apertureRotation{0.0f};
     float apertureRatio{1.0f};
+    // Scene-node hierarchy index for rigid node animation; -1 when the camera is static
+    // (its baked @ref transform is authoritative).
+    int32_t node{-1};
 };
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#metallic-roughness-material
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#additional-textures
@@ -160,7 +163,7 @@ struct FMorphTrack
 };
 
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 9;
+static constexpr uint32_t kSceneVersion = 10;
 struct FSceneTables
 {
     FSceneGlobals globals;

@@ -168,12 +168,17 @@ static void FRunning()
     }
     // Global param update
     float dt = ImGui::GetIO().DeltaTime;
+    // Decide before BeginAnimationUpdate, which clears the scrub flag this query reads.
+    bool const followAnimatedCamera = AnimatedCameraDrivesView();
     // Kick the per-skeleton pose evaluation now so it overlaps the camera/UBO globals update below.
     // EndAnimationUpdate (further down) waits for it before skinning + committing the scene.
     BeginAnimationUpdate(dt);
     RHIExtent2D renderExtent = ClampViewportExtent(GEditor.viewport.renderExtent);
     GEditor.camera.aspect = static_cast<float>(renderExtent.x) / static_cast<float>(renderExtent.y);
     GEditor.cameraUpdated |= GEditor.camera.UpdateMovement(dt);
+    // An animated scene camera overrides user navigation while it's playing/scrubbing.
+    if (followAnimatedCamera)
+        GEditor.cameraUpdated |= ApplyAnimatedCameraToView();
     GEditor.camera.Update({});
     GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
     GEditor.shaderGlobals.view = GEditor.camera.view;

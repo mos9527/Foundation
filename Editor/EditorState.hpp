@@ -178,6 +178,11 @@ bool PumpSceneLoad();
 // once per frame, with independent main-thread work in between.
 void BeginAnimationUpdate(float dt);
 bool EndAnimationUpdate();
+// Camera animation: while an animated scene camera is active, the editor view follows it. Query
+// AnimatedCameraDrivesView before BeginAnimationUpdate (it reads the scrub flag Begin then clears),
+// then call ApplyAnimatedCameraToView after movement input to override the arcball for this frame.
+bool AnimatedCameraDrivesView();
+bool ApplyAnimatedCameraToView();
 void LoadEnvMap(StringView path);
 bool ApplyViewLUTSelection();
 void HandleFile(const char* filePath);

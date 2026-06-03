@@ -428,6 +428,8 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
         validateNode(instance.node, "instance");
     for (auto const& light : tables.lights)
         validateNode(light.node, "light");
+    for (auto const& camera : tables.cameras)
+        validateNode(camera.node, "camera");
 
     for (auto const& curve : tables.curves)
     {
@@ -1589,6 +1591,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         {
             FCamera camera{};
             getTransform(camera.transform);
+            camera.node = NodeJoint(i);
             camera.fovY = node->camera->data.perspective.yfov;
             if (node->camera->has_lens)
             {
