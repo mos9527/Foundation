@@ -168,6 +168,9 @@ static void FRunning()
     }
     // Global param update
     float dt = ImGui::GetIO().DeltaTime;
+    // Kick the per-skeleton pose evaluation now so it overlaps the camera/UBO globals update below.
+    // EndAnimationUpdate (further down) waits for it before skinning + committing the scene.
+    BeginAnimationUpdate(dt);
     RHIExtent2D renderExtent = ClampViewportExtent(GEditor.viewport.renderExtent);
     GEditor.camera.aspect = static_cast<float>(renderExtent.x) / static_cast<float>(renderExtent.y);
     GEditor.cameraUpdated |= GEditor.camera.UpdateMovement(dt);
@@ -191,10 +194,11 @@ static void FRunning()
     GEditor.shaderGlobals.ptViewFlags = GEditor.rendererConfig.viewFlags;
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
 
-    // Skinned animation playback: evaluate poses and CPU-skin into the dynamic ring, then re-author
-    // the scene so dynamic instances encode the current ring slot (the graph's BLAS Update pass
-    // refits them). Paused/held poses skip this so the path tracer keeps accumulating.
-    if (UpdateAnimation(dt))
+    // Skinned animation playback: wait for the scheduled poses, apply rigid transforms + CPU-skin
+    // into the dynamic ring, then re-author the scene so dynamic instances encode the current ring
+    // slot (the graph's BLAS Update pass refits them). Paused/held poses skip this so the path
+    // tracer keeps accumulating.
+    if (EndAnimationUpdate())
         CommitSceneToGPU(true);
 
     // -- AutoPause: any "user operation" exits AutoPaused. We define a user operation

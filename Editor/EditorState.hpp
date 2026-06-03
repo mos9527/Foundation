@@ -171,9 +171,13 @@ void LoadScene(StringView path);
 // Advances an in-flight async scene load; returns true while one is still streaming.
 // Must be pumped once per editor frame.
 bool PumpSceneLoad();
-// Evaluates skinned-mesh animation and CPU-skins into the dynamic geometry ring for this frame.
-// Returns true if any dynamic geometry was written (the caller must then re-commit the scene).
-bool UpdateAnimation(float dt);
+// Animation update, split so the per-skeleton pose evaluation can overlap the caller's per-frame
+// CPU work. BeginAnimationUpdate schedules pose evaluation (non-blocking) and advances the clock;
+// EndAnimationUpdate waits for it, applies rigid transforms + CPU-skins into the dynamic ring, and
+// returns true if anything changed (the caller must then re-commit the scene). Call them in order,
+// once per frame, with independent main-thread work in between.
+void BeginAnimationUpdate(float dt);
+bool EndAnimationUpdate();
 void LoadEnvMap(StringView path);
 bool ApplyViewLUTSelection();
 void HandleFile(const char* filePath);

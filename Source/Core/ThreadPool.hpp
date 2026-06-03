@@ -112,6 +112,51 @@ namespace Foundation::Core
     };
 
     /**
+     * @brief Heap-resident shared state for a non-blocking @ref ThreadPool::ParallelForAsync.
+     * @details Unlike the stack-resident @ref ParallelForJob (whose lifetime is bounded by the
+     *          blocking call), an async parallel-for must outlive the scheduling call: the caller
+     *          returns immediately with a @ref Future and does not participate. The functor, the
+     *          shared cursor, the fork-join latch and the @ref Promise all live here; the last
+     *          worker to drain satisfies the promise and frees the state.
+     */
+    template <typename Fn>
+    struct ParallelForAsyncState
+    {
+        Fn fn;
+        size_t total{0};
+        Atomic<size_t> cursor{0};
+        Atomic<size_t> remaining{0}; // pushed worker jobs still running (fork-join latch)
+        Promise<void> promise;
+        Allocator* alloc{nullptr};
+        ParallelForAsyncState(Fn&& f, size_t t, Allocator* a) : fn(std::move(f)), total(t), alloc(a) {}
+    };
+
+    /**
+     * @brief One worker of a @ref ParallelForAsyncState: drains the shared cursor and, when it is
+     *        the last running worker, satisfies the promise and frees the shared state.
+     * @note Each instance is owned by the pool queue (destroyed after a single @ref Execute). Only
+     *       the shared state is reference-counted via @ref ParallelForAsyncState::remaining.
+     */
+    template <typename Fn>
+    struct ParallelForAsyncJob final : Job
+    {
+        ParallelForAsyncState<Fn>* state{nullptr};
+        explicit ParallelForAsyncJob(ParallelForAsyncState<Fn>* s) : state(s) {}
+        void Execute(size_t workerId) noexcept override
+        {
+            for (size_t i; (i = state->cursor.fetch_add(1, std::memory_order_relaxed)) < state->total;)
+                ParallelForInvoke(state->fn, i, workerId);
+            // The worker that observes the latch reach zero is the last one touching `state`.
+            if (state->remaining.fetch_sub(1, std::memory_order_acq_rel) == 1)
+            {
+                Allocator* alloc = state->alloc;
+                state->promise.set_value();
+                Destruct(alloc, state);
+            }
+        }
+    };
+
+    /**
      * @brief Backing job queue type for @ref ThreadPool
      */
     using JobQueue = MPMCQueue<UniquePtr<Job>>;
@@ -325,6 +370,99 @@ namespace Foundation::Core
         void ParallelFor(It first, It last, Fn&& fn)
         {
             ParallelFor(ExecutionPolicy::Par, first, last, std::forward<Fn>(fn));
+        }
+
+        /** @brief Returns an already-satisfied `Future<void>` (for trivial/inline async paths). */
+        [[nodiscard]] static Future<void> MakeReadyFuture()
+        {
+            Promise<void> p;
+            p.set_value();
+            return p.get_future();
+        }
+
+        /**
+         * @brief Non-blocking parallel-for over [0, @p count): schedules the work across the pool's
+         *        workers and returns immediately with a @ref Future<void> that becomes ready once
+         *        every index has been processed. The calling thread does NOT participate.
+         * @details Unlike @ref ParallelFor (which blocks and lets the caller help), this lets the
+         *          caller schedule deformation/skinning work and continue with independent CPU work,
+         *          then wait on the returned future only at the real dependency boundary. The functor
+         *          is moved into a heap-resident @ref ParallelForAsyncState shared by the pushed
+         *          worker jobs; the last worker to finish satisfies the promise and frees the state.
+         *          @p fn must be safe to invoke concurrently (same contract as @ref ParallelFor); key
+         *          any scratch by @p workerId, which is in [0, @ref GetWorkerCount). With
+         *          @ref ExecutionPolicy::Seq, an empty range, or a worker-less pool the work runs
+         *          inline on the calling thread and the returned future is already ready.
+         */
+        template <typename Fn>
+        [[nodiscard]] Future<void> ParallelForAsync(ExecutionPolicy policy, size_t count, Fn&& fn)
+        {
+            size_t const workers = mThreads.size();
+            if (count == 0)
+                return MakeReadyFuture();
+            if (policy == ExecutionPolicy::Seq || workers == 0)
+            {
+                for (size_t i = 0; i < count; ++i)
+                    ParallelForInvoke(fn, i, size_t{0}); // inline: caller is worker 0
+                return MakeReadyFuture();
+            }
+            using State = ParallelForAsyncState<std::remove_reference_t<Fn>>;
+            State* state = Construct<State>(mAllocator, std::forward<Fn>(fn), count, mAllocator);
+            size_t const helpers = std::min(workers, count);
+            // Arm the latch and grab the future BEFORE pushing: a pushed worker may run (and free
+            // the state) before this call returns.
+            state->remaining.store(helpers, std::memory_order_relaxed);
+            Future<void> fut = state->promise.get_future();
+            size_t pushed = 0;
+            try
+            {
+                for (; pushed < helpers; ++pushed)
+                    PushImpl<ParallelForAsyncJob<std::remove_reference_t<Fn>>>(JobPriority::Normal, state);
+            }
+            catch (...)
+            {
+                // Some worker jobs failed to enqueue: retire their latch slots so the remaining
+                // (successfully pushed) workers can still satisfy the promise. If none were pushed
+                // or they have all already finished, finish the promise here.
+                size_t const missing = helpers - pushed;
+                if (missing != 0 && state->remaining.fetch_sub(missing, std::memory_order_acq_rel) == missing)
+                {
+                    Allocator* alloc = state->alloc;
+                    state->promise.set_value();
+                    Destruct(alloc, state);
+                }
+                throw;
+            }
+            return fut;
+        }
+        /** @brief Index async parallel-for defaulting to @ref ExecutionPolicy::Par. */
+        template <typename Fn>
+        [[nodiscard]] Future<void> ParallelForAsync(size_t count, Fn&& fn)
+        {
+            return ParallelForAsync(ExecutionPolicy::Par, count, std::forward<Fn>(fn));
+        }
+        /**
+         * @brief Iterator-range overload of @ref ParallelForAsync (random-access iterators only).
+         * @details Owns both @p first and @p fn in the scheduled functor (the caller's stack frame
+         *          may unwind before the work runs), then forwards to the index form.
+         */
+        template <typename It, typename Fn>
+            requires std::random_access_iterator<It>
+        [[nodiscard]] Future<void> ParallelForAsync(ExecutionPolicy policy, It first, It last, Fn&& fn)
+        {
+            auto const count = last - first;
+            if (count <= 0)
+                return MakeReadyFuture();
+            return ParallelForAsync(policy, static_cast<size_t>(count),
+                [first, fn = std::forward<Fn>(fn)](size_t i, size_t worker) mutable
+                { ParallelForInvoke(fn, first[static_cast<std::iter_difference_t<It>>(i)], worker); });
+        }
+        /** @brief Iterator-range async parallel-for defaulting to @ref ExecutionPolicy::Par. */
+        template <typename It, typename Fn>
+            requires std::random_access_iterator<It>
+        [[nodiscard]] Future<void> ParallelForAsync(It first, It last, Fn&& fn)
+        {
+            return ParallelForAsync(ExecutionPolicy::Par, first, last, std::forward<Fn>(fn));
         }
 
         /**
