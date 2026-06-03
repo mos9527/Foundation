@@ -9,6 +9,7 @@
 #include "Renderer/GPUScene.hpp"
 #include <Math/Decompose.hpp>
 #include <imgui.h>
+#include <tracy/Tracy.hpp>
 #include <cmath>
 static constexpr const char* kTempScenePath = "Cache/Last.fscn";
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
@@ -969,6 +970,7 @@ bool UpdateAnimation(float dt)
     // Paused and not scrubbed: skip so a held pose lets the path tracer keep converging.
     if (!sAnimation.playing && !sAnimation.dirty)
         return false;
+    ZoneScoped;
 
     FImportedScene& scene = GEditor.Scene();
     auto const& skeletons = scene.mTables.skeletons;
@@ -978,17 +980,20 @@ bool UpdateAnimation(float dt)
     sAnimation.dirty = false;
 
     // Evaluate every skeleton's pose (skins + the scene-node hierarchy) into world matrices.
-    for (size_t s = 0; s < skeletons.size(); ++s)
-        ResetToRest(skeletons[s], sAnimation.poses[s]);
-    for (FAnimationClip const& clip : clips)
     {
-        if (clip.skeleton < 0 || static_cast<size_t>(clip.skeleton) >= skeletons.size())
-            continue;
-        float t = clip.duration > 0.0f ? std::fmod(sAnimation.time, clip.duration) : 0.0f;
-        SampleClip(clip, t, sAnimation.poses[clip.skeleton]);
+        ZoneScopedN("Anim Pose");
+        for (size_t s = 0; s < skeletons.size(); ++s)
+            ResetToRest(skeletons[s], sAnimation.poses[s]);
+        for (FAnimationClip const& clip : clips)
+        {
+            if (clip.skeleton < 0 || static_cast<size_t>(clip.skeleton) >= skeletons.size())
+                continue;
+            float t = clip.duration > 0.0f ? std::fmod(sAnimation.time, clip.duration) : 0.0f;
+            SampleClip(clip, t, sAnimation.poses[clip.skeleton]);
+        }
+        for (size_t s = 0; s < skeletons.size(); ++s)
+            ComputeGlobals(skeletons[s], sAnimation.poses[s]);
     }
-    for (size_t s = 0; s < skeletons.size(); ++s)
-        ComputeGlobals(skeletons[s], sAnimation.poses[s]);
 
     bool changed = false;
     ExecutionPolicy const policy = sAnimateParallel ? ExecutionPolicy::Par : ExecutionPolicy::Seq;
@@ -998,6 +1003,7 @@ bool UpdateAnimation(float dt)
     // instance pass — the potentially large one — runs in parallel; lights are few and stay serial.
     if (doRigid)
     {
+        ZoneScopedN("Anim Rigid");
         FPose const& nodePose = sAnimation.poses[sAnimation.sceneNodeSkeleton];
         auto const& affected = sAnimation.nodeAffected;
         auto applyNode = [&](int32_t node, FTransform& dst)
@@ -1019,10 +1025,12 @@ bool UpdateAnimation(float dt)
     // each mesh's ring region + output is disjoint, so the work is race-free.
     if (doDynamic)
     {
+        ZoneScopedN("Anim Deform");
         gpu->BeginDynamicGeometryUpdate();
         GContext->jobs->ParallelFor(policy, sAnimation.meshes.begin(), sAnimation.meshes.end(),
             [&](DynamicMeshRuntime const& rt, size_t worker)
             {
+                ZoneScopedN("Skin Mesh");
                 if (gpu->Query(rt.handle) != GPUScene::Result::Ready)
                     return;
                 size_t n = rt.bind.size();
