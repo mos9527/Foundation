@@ -473,7 +473,12 @@ void Renderer::CullPasses(PassHandle epilogue) const
             j++;
         Ranges::sort(exec.begin() + i, exec.begin() + j, [&](PassHandle a, PassHandle b)
         {
-            return mSetup->trackedPasses[a].handle < mSetup->trackedPasses[b].handle;
+            // Graphics passes go first
+            auto const& pa = mSetup->trackedPasses[a];
+            auto const& pb = mSetup->trackedPasses[b];
+            if (pa.queue != pb.queue)
+                return pa.queue == RHIDeviceQueueType::Graphics;
+            return pa.handle < pb.handle;
         });
     }
     auto& groups = mSetup->executionGroups;

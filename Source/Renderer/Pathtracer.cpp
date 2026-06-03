@@ -33,17 +33,14 @@ void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfi
     if (hasTLAS)
     {
         TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
-        // Refit CPU-updateable dynamic geometry BLASes against this frame's ring slot *before*
-        // the TLAS update reads them. Binding the TLAS as an AS-write makes the graph schedule
-        // this pass ahead of "TLAS Update" (shared producer edge) and emit the AS barrier.
         renderer->CreatePass(
-            "BLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
+            "TLAS/BLAS Update", RHIDeviceQueueType::Compute, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-            { if (gpu->HasDynamicGeometry()) gpu->BuildBLAS(cmd); });
-        renderer->CreatePass(
-            "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
-            { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-            { (void)gpu->BuildTLAS(cmd, true); });
+            {
+                if (gpu->HasDynamicGeometry())
+                    gpu->BuildBLAS(cmd);
+                (void)gpu->BuildTLAS(cmd, true);
+            });
     }
     /* Instance and Primitive buffers */
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
