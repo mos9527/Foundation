@@ -90,16 +90,10 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                       .size = sizeof(PostprocessUBO)});
     renderer->CreatePass(
         "Postprocess UBO Update", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindBufferCopyDst(self, PostprocessGlobals);
-            r->BindBufferCopyDst(self, sPickResultBuffer);
-        },
+        [=](PassHandle self, Renderer* r) { r->BindBufferCopyDst(self, PostprocessGlobals); },
         [=](PassHandle, Renderer* r, RHICommandList* cmd)
         {
             auto* ubo = r->DerefResource(PostprocessGlobals).Get<RHIBuffer*>();
-            auto* pickResult = r->DerefResource(sPickResultBuffer).Get<RHIBuffer*>();
-            cmd->FillBuffer(pickResult, ~0u);
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(GEditor.postprocessGlobals)));
         });
 
@@ -116,6 +110,14 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                                    .coherent = true},
                       .usage = RHIBufferUsageBits::StorageBuffer,
                       .size = sizeof(uint32_t)});
+    renderer->CreatePass(
+        "Pick Result Init", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r) { r->BindBufferCopyDst(self, sPickResultBuffer); },
+        [=](PassHandle, Renderer* r, RHICommandList* cmd)
+        {
+            auto* pickResult = r->DerefResource(sPickResultBuffer).Get<RHIBuffer*>();
+            cmd->FillBuffer(pickResult, ~0u);
+        });
     outputs.postprocess = PostprocessBuffer;
     auto LUTSampler = renderer->CreateSampler({.addressMode = {
                                                    .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,

@@ -380,8 +380,6 @@ void BuildRasterRenderGraph(Renderer* renderer, UBO* globals, GPUScene* gpu,
                 });
             if (early && cfg.cullFlags & kCullOcclusion)
             {
-                // Don't bother going Async for now - this is used immediately after and there's no other work
-                // to overlap with.
                 // TODO: Single pass currently present higher register pressure than expected (72 VGPRs?)
                 //       Figure out where I messed up.                
                 if (true)

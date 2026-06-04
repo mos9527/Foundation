@@ -142,257 +142,257 @@ int main(int argc, char** argv)
     desc.lightBudget = 8u;
     desc.dynamicGeometryBudget = 16u * (1u << 20);          // 16 MiB / frame slot
     desc.framesInFlight = renderer->GetFrameSwaps();         // ring sized to frames-in-flight (+1 internally)
-    GPUScene gpu(device.Get(), GLOBAL_ALLOC, desc);
-
-    // --- Upload the static floor (immutable path) -------------------------------------------
-    GeometryHandle floor;
-    Vector<unsigned char> floorPayload(GLOBAL_ALLOC);
-    FSerializedMesh floorSerialized(GLOBAL_ALLOC);
     {
-        FImportedMesh plane = MakePlane(GLOBAL_ALLOC);
-        plane.Optimize();
-        plane.ClusterizeDAG();
-        CHECK_MSG(plane.EnsureQuantized(), "Failed to quantize floor");
-        MemoryBlobSerializer blobs(floorPayload);
-        floorSerialized.vertices = blobs.AppendArray(plane.verticesQuantized);
-        floorSerialized.vertexCount = static_cast<uint32_t>(plane.verticesQuantized.size());
-        FSerializedMeshLOD& lod0 = floorSerialized.lods.emplace_back();
-        lod0.indices = blobs.AppendArray(plane.lods[0].indices);
-        lod0.indexCount = static_cast<uint32_t>(plane.lods[0].indices.size());
-        floorSerialized.dagGroups = blobs.AppendArray(plane.dag.groups);
-        floorSerialized.dagMeshlets = blobs.AppendArray(plane.dag.meshlets);
-        floorSerialized.dagMeshletTri = blobs.AppendArray(plane.dag.meshletTri);
-        floorSerialized.dagMeshletVtx = blobs.AppendArray(plane.dag.meshletVtx);
-        FBlobDeserializer des = blobs.Deserializer();
-        CHECK_MSG(gpu.Upload(&des, floorSerialized, floor) == GPUScene::Result::InProgress, "floor upload rejected");
-        gpu.Join();
-    }
+        GPUScene gpu(device.Get(), GLOBAL_ALLOC, desc);
 
-    // --- Upload the deforming grid as DYNAMIC geometry (rest pose seeds all slots) -----------
-    GeometryHandle gridHandle;
-    Vector<unsigned char> gridPayload(GLOBAL_ALLOC);
-    FSerializedMesh gridSerialized(GLOBAL_ALLOC);
-    {
-        Vector<FQVertex> rest(GLOBAL_ALLOC);
-        rest.reserve(gridVtxCount);
-        for (GridVertex const& g : gridVertices)
-            rest.push_back(EvalGridVertex(g, 0.0f));
-        MemoryBlobSerializer blobs(gridPayload);
-        gridSerialized.vertices = blobs.AppendArray(rest);
-        gridSerialized.vertexCount = gridVtxCount;
-        FSerializedMeshLOD& lod0 = gridSerialized.lods.emplace_back();
-        lod0.indices = blobs.AppendArray(gridIndices);
-        lod0.indexCount = gridIdxCount;
-        // No DAG/meshlets: dynamic geo is drawn via the dedicated vertex/index path.
-        FBlobDeserializer des = blobs.Deserializer();
-        GPUScene::Result r = gpu.UploadDynamic(&des, gridSerialized, gridHandle);
-        CHECK_MSG(r == GPUScene::Result::Ready, "dynamic grid upload failed ({})", r);
-    }
-
-    // --- Materials -------------------------------------------------------------------------
-    Vector<GSMaterial> palette(GLOBAL_ALLOC);
-    const uint32_t matFloor = static_cast<uint32_t>(palette.size());
-    { GSMaterial m = BaseMat(); m.baseColorFactor = float4(0.1f, 0.6f, 0.62f, 1.0f); m.roughnessFactor = 0.9f; palette.push_back(m); }
-    const uint32_t matGrid = static_cast<uint32_t>(palette.size());
-    { GSMaterial m = BaseMat(); m.baseColorFactor = float4(0.25f, 0.55f, 0.9f, 1.0f); m.roughnessFactor = 0.3f; m.metallicFactor = 0.4f; palette.push_back(m); }
-
-    UBO ubo{};
-    ubo.ptDispatchTileSide = 1;
-    ubo.ptSamplesPerPixel = 1;
-
-    auto AuthorFrame = [&]
-    {
-        auto tables = gpu.BeginScene(2u, static_cast<uint32_t>(palette.size()), 1u);
-        tables.instances[0] = InstanceDesc{.geometry = floor, .transform = float3(0.0f, -0.4f, 0.0f),
-                                           .rotation = angleAxis(0.0f, float3(0, 1, 0)),
-                                           .scale = float3(8.0f, 1.0f, 8.0f), .materialIndex = matFloor};
-        tables.instances[1] = InstanceDesc{.geometry = gridHandle, .transform = float3(0.0f),
-                                           .rotation = angleAxis(0.0f, float3(0, 1, 0)),
-                                           .scale = float3(1.0f), .materialIndex = matGrid};
-        for (size_t i = 0; i < palette.size(); ++i)
-            tables.materials[i] = palette[i];
-        GSLight& key = tables.lights[0];
-        key = GSLight{};
-        key.type = 4u; // Rect area light
-        key.color = float3(1.0f, 0.97f, 0.92f);
-        key.power = 14.0f;
-        key.position = float3(0.0f, 5.0f, 0.0f);
-        key.dpdu = float3(2.0f, 0.0f, 0.0f);
-        key.dpdv = float3(0.0f, 0.0f, 2.0f);
-        key.direction = float3(0.0f, -1.0f, 0.0f);
-        key.selectionWeight = key.power;
-        auto result = gpu.EndScene(tables);
-        ubo.firstInstance = result.firstInstance;
-        ubo.numInstances = result.numInstances;
-        ubo.firstMaterial = result.firstMaterial;
-        ubo.numMaterials = result.numMaterials;
-        ubo.firstLight = result.firstLight;
-        ubo.firstLightAliasTable = result.firstLightAliasTable;
-        ubo.numSceneLights = result.numLights;
-        ubo.sceneLightWeightSum = result.sceneLightWeightSum;
-    };
-    AuthorFrame();
-    gpu.BuildUBO(ubo);
-    ubo.ambientColor = float3(0.02f, 0.025f, 0.035f);
-    ubo.ambientPower = 1.0f;
-    ubo.useEnvMap = 0u;
-    TextureHandle viewLUTSdrHandle{};
-    TextureHandle viewLUTHdrHandle{};
-    {
-        ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
-        auto* cmd = ctx.Get();
-        cmd->Begin();
-        auto r = gpu.BuildTLAS(cmd, /*update*/ false);
-        cmd->End();
-        if (r == GPUScene::TLASBuildResult::Built)
-            ctx.Submit(), ctx.WaitIdle();
-    }
-
-    enum class Mode { Raster, PathTracer };
-    Mode mode = Mode::PathTracer;
-    bool renderPaused = false;
-    RendererConfig cfg{};
-    PostprocessUBO postprocessGlobals{};
-    RendererOutputs handles{};
-    RHIExtent2D renderExtent{};
-
-    CSDebugTextData hud[4]{};
-    hud[0].x = 16; hud[0].y = 16; hud[0].SetText("GPUScene dynamic geometry (BLAS refit)");
-    hud[1].x = 16; hud[1].y = 40; hud[1].SetText("TAB renderer R refit/periodic B rebuild-every-fram F pause WASD+drag");
-    hud[2].x = 16; hud[2].y = 64;
-    hud[3].x = 16; hud[3].y = 88;
-
-    auto BuildGraph = [&](RHIExtent2D extent)
-    {
-        cfg.renderExtent = extent;
-        cfg.ptRenderPaused = &renderPaused;
-        renderer->BeginSetup();
-        if (mode == Mode::PathTracer)
-            BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
-        else
-            BuildRasterRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
-        Examples_InsertBasicTonemapPasses(
-            renderer.get(), gpu, handles, cfg, &postprocessGlobals, viewLUTSdrHandle, viewLUTHdrHandle);
-        createCSDebugTextPassBackBuffer(renderer.get(), "Debug Text", hud);
-        renderer->EndSetup();
-        renderExtent = extent;
-    };
-    auto RecreateRenderer = [&] { renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, rendererDesc, device, swapchain, GLOBAL_ALLOC); };
-    BuildGraph(renderer->GetSwapchainExtent());
-
-    FArcballCamera camera{.center = {0.0f, 0.2f, 0.0f}, .radius = 5.0f,
-                          .rot = normalize(angleAxis(radians(-28.0f), float3(1, 0, 0))),
-                          .zNear = 0.01f, .fovY = radians(50.0f)};
-    ExampleFpsCounter fps;
-    SDL_Event event{};
-    uint64_t lastTicks = SDL_GetTicksNS();
-    bool paused = false;
-    bool rebuildEveryFrame = false;
-    uint32_t cadence = 64u; // periodic rebuild cadence (0 = refit only)
-    float animTime = 0.0f;
-
-    while (!Examples_ShouldClose(window, renderer.get(), swapchain, &event))
-    {
-        uint64_t now = SDL_GetTicksNS();
-        float dt = static_cast<float>(now - lastTicks) / 1e9f;
-        lastTicks = now;
-
-        RHIExtent2D currentExtent = renderer->GetSwapchainExtent();
-        if (currentExtent.x == 0u || currentExtent.y == 0u)
-            continue;
-        if (currentExtent.x != renderExtent.x || currentExtent.y != renderExtent.y)
+        // --- Upload the static floor (immutable path) -------------------------------------------
+        GeometryHandle floor;
+        Vector<unsigned char> floorPayload(GLOBAL_ALLOC);
+        FSerializedMesh floorSerialized(GLOBAL_ALLOC);
         {
-            device->WaitIdle();
-            RecreateRenderer();
-            BuildGraph(currentExtent);
+            FImportedMesh plane = MakePlane(GLOBAL_ALLOC);
+            plane.Optimize();
+            plane.ClusterizeDAG();
+            CHECK_MSG(plane.EnsureQuantized(), "Failed to quantize floor");
+            MemoryBlobSerializer blobs(floorPayload);
+            floorSerialized.vertices = blobs.AppendArray(plane.verticesQuantized);
+            floorSerialized.vertexCount = static_cast<uint32_t>(plane.verticesQuantized.size());
+            FSerializedMeshLOD& lod0 = floorSerialized.lods.emplace_back();
+            lod0.indices = blobs.AppendArray(plane.lods[0].indices);
+            lod0.indexCount = static_cast<uint32_t>(plane.lods[0].indices.size());
+            floorSerialized.dagGroups = blobs.AppendArray(plane.dag.groups);
+            floorSerialized.dagMeshlets = blobs.AppendArray(plane.dag.meshlets);
+            floorSerialized.dagMeshletTri = blobs.AppendArray(plane.dag.meshletTri);
+            floorSerialized.dagMeshletVtx = blobs.AppendArray(plane.dag.meshletVtx);
+            FBlobDeserializer des = blobs.Deserializer();
+            CHECK_MSG(gpu.Upload(&des, floorSerialized, floor) == GPUScene::Result::InProgress, "floor upload rejected");
+            gpu.Join();
         }
 
-        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
+        // --- Upload the deforming grid as DYNAMIC geometry (rest pose seeds all slots) -----------
+        GeometryHandle gridHandle;
+        Vector<unsigned char> gridPayload(GLOBAL_ALLOC);
+        FSerializedMesh gridSerialized(GLOBAL_ALLOC);
         {
-            if (event.key.key == SDLK_TAB)
+            Vector<FQVertex> rest(GLOBAL_ALLOC);
+            rest.reserve(gridVtxCount);
+            for (GridVertex const& g : gridVertices)
+                rest.push_back(EvalGridVertex(g, 0.0f));
+            MemoryBlobSerializer blobs(gridPayload);
+            gridSerialized.vertices = blobs.AppendArray(rest);
+            gridSerialized.vertexCount = gridVtxCount;
+            FSerializedMeshLOD& lod0 = gridSerialized.lods.emplace_back();
+            lod0.indices = blobs.AppendArray(gridIndices);
+            lod0.indexCount = gridIdxCount;
+            // No DAG/meshlets: dynamic geo is drawn via the dedicated vertex/index path.
+            FBlobDeserializer des = blobs.Deserializer();
+            GPUScene::Result r = gpu.UploadDynamic(&des, gridSerialized, gridHandle);
+            CHECK_MSG(r == GPUScene::Result::Ready, "dynamic grid upload failed ({})", r);
+        }
+
+        // --- Materials -------------------------------------------------------------------------
+        Vector<GSMaterial> palette(GLOBAL_ALLOC);
+        const uint32_t matFloor = static_cast<uint32_t>(palette.size());
+        { GSMaterial m = BaseMat(); m.baseColorFactor = float4(0.1f, 0.6f, 0.62f, 1.0f); m.roughnessFactor = 0.9f; palette.push_back(m); }
+        const uint32_t matGrid = static_cast<uint32_t>(palette.size());
+        { GSMaterial m = BaseMat(); m.baseColorFactor = float4(0.25f, 0.55f, 0.9f, 1.0f); m.roughnessFactor = 0.3f; m.metallicFactor = 0.4f; palette.push_back(m); }
+
+        UBO ubo{};
+        ubo.ptDispatchTileSide = 1;
+        ubo.ptSamplesPerPixel = 1;
+
+        auto AuthorFrame = [&]
+        {
+            auto tables = gpu.BeginScene(2u, static_cast<uint32_t>(palette.size()), 1u);
+            tables.instances[0] = InstanceDesc{.geometry = floor, .transform = float3(0.0f, -0.4f, 0.0f),
+                                               .rotation = angleAxis(0.0f, float3(0, 1, 0)),
+                                               .scale = float3(8.0f, 1.0f, 8.0f), .materialIndex = matFloor};
+            tables.instances[1] = InstanceDesc{.geometry = gridHandle, .transform = float3(0.0f),
+                                               .rotation = angleAxis(0.0f, float3(0, 1, 0)),
+                                               .scale = float3(1.0f), .materialIndex = matGrid};
+            for (size_t i = 0; i < palette.size(); ++i)
+                tables.materials[i] = palette[i];
+            GSLight& key = tables.lights[0];
+            key = GSLight{};
+            key.type = 4u; // Rect area light
+            key.color = float3(1.0f, 0.97f, 0.92f);
+            key.power = 14.0f;
+            key.position = float3(0.0f, 5.0f, 0.0f);
+            key.dpdu = float3(2.0f, 0.0f, 0.0f);
+            key.dpdv = float3(0.0f, 0.0f, 2.0f);
+            key.direction = float3(0.0f, -1.0f, 0.0f);
+            key.selectionWeight = key.power;
+            auto result = gpu.EndScene(tables);
+            ubo.firstInstance = result.firstInstance;
+            ubo.numInstances = result.numInstances;
+            ubo.firstMaterial = result.firstMaterial;
+            ubo.numMaterials = result.numMaterials;
+            ubo.firstLight = result.firstLight;
+            ubo.firstLightAliasTable = result.firstLightAliasTable;
+            ubo.numSceneLights = result.numLights;
+            ubo.sceneLightWeightSum = result.sceneLightWeightSum;
+        };
+        AuthorFrame();
+        gpu.BuildUBO(ubo);
+        ubo.ambientColor = float3(0.02f, 0.025f, 0.035f);
+        ubo.ambientPower = 1.0f;
+        ubo.useEnvMap = 0u;
+        TextureHandle viewLUTSdrHandle{};
+        TextureHandle viewLUTHdrHandle{};
+        {
+            ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
+            auto* cmd = ctx.Get();
+            cmd->Begin();
+            auto r = gpu.BuildTLAS(cmd, /*update*/ false);
+            cmd->End();
+            if (r == GPUScene::TLASBuildResult::Built)
+                ctx.Submit(), ctx.WaitIdle();
+        }
+
+        enum class Mode { Raster, PathTracer };
+        Mode mode = Mode::PathTracer;
+        bool renderPaused = false;
+        RendererConfig cfg{};
+        PostprocessUBO postprocessGlobals{};
+        RendererOutputs handles{};
+        RHIExtent2D renderExtent{};
+
+        CSDebugTextData hud[4]{};
+        hud[0].x = 16; hud[0].y = 16; hud[0].SetText("GPUScene dynamic geometry (BLAS refit)");
+        hud[1].x = 16; hud[1].y = 40; hud[1].SetText("TAB renderer R refit/periodic B rebuild-every-fram F pause WASD+drag");
+        hud[2].x = 16; hud[2].y = 64;
+        hud[3].x = 16; hud[3].y = 88;
+
+        auto BuildGraph = [&](RHIExtent2D extent)
+        {
+            cfg.renderExtent = extent;
+            cfg.ptRenderPaused = &renderPaused;
+            renderer->BeginSetup();
+            if (mode == Mode::PathTracer)
+                BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
+            else
+                BuildRasterRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
+            Examples_InsertBasicTonemapPasses(
+                renderer.get(), gpu, handles, cfg, &postprocessGlobals, viewLUTSdrHandle, viewLUTHdrHandle);
+            createCSDebugTextPassBackBuffer(renderer.get(), "Debug Text", hud);
+            renderer->EndSetup();
+            renderExtent = extent;
+        };
+        auto RecreateRenderer = [&] { renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, rendererDesc, device, swapchain, GLOBAL_ALLOC); };
+        BuildGraph(renderer->GetSwapchainExtent());
+
+        FArcballCamera camera{.center = {0.0f, 0.2f, 0.0f}, .radius = 5.0f,
+                              .rot = normalize(angleAxis(radians(-28.0f), float3(1, 0, 0))),
+                              .zNear = 0.01f, .fovY = radians(50.0f)};
+        ExampleFpsCounter fps;
+        SDL_Event event{};
+        uint64_t lastTicks = SDL_GetTicksNS();
+        bool paused = false;
+        bool rebuildEveryFrame = false;
+        uint32_t cadence = 64u; // periodic rebuild cadence (0 = refit only)
+        float animTime = 0.0f;
+
+        while (!Examples_ShouldClose(window, renderer.get(), swapchain, &event))
+        {
+            uint64_t now = SDL_GetTicksNS();
+            float dt = static_cast<float>(now - lastTicks) / 1e9f;
+            lastTicks = now;
+
+            RHIExtent2D currentExtent = renderer->GetSwapchainExtent();
+            if (currentExtent.x == 0u || currentExtent.y == 0u)
+                continue;
+            if (currentExtent.x != renderExtent.x || currentExtent.y != renderExtent.y)
             {
-                mode = mode == Mode::Raster ? Mode::PathTracer : Mode::Raster;
                 device->WaitIdle();
                 RecreateRenderer();
-                BuildGraph(renderExtent);
-                ubo.ptAccumulatedFrames = 0u;
+                BuildGraph(currentExtent);
             }
-            else if (event.key.key == SDLK_F)
-                paused = !paused;
-            else if (event.key.key == SDLK_R)
+
+            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
             {
-                cadence = cadence == 0u ? 64u : 0u;
-                rebuildEveryFrame = false;
+                if (event.key.key == SDLK_TAB)
+                {
+                    mode = mode == Mode::Raster ? Mode::PathTracer : Mode::Raster;
+                    device->WaitIdle();
+                    RecreateRenderer();
+                    BuildGraph(renderExtent);
+                    ubo.ptAccumulatedFrames = 0u;
+                }
+                else if (event.key.key == SDLK_F)
+                    paused = !paused;
+                else if (event.key.key == SDLK_R)
+                {
+                    cadence = cadence == 0u ? 64u : 0u;
+                    rebuildEveryFrame = false;
+                }
+                else if (event.key.key == SDLK_B)
+                    rebuildEveryFrame = !rebuildEveryFrame;
             }
-            else if (event.key.key == SDLK_B)
-                rebuildEveryFrame = !rebuildEveryFrame;
-        }
-        if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
-        {
-            bool pressed = event.type == SDL_EVENT_KEY_DOWN;
-            switch (event.key.key)
+            if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
             {
-            case SDLK_W: camera.keyW = pressed; break;
-            case SDLK_A: camera.keyA = pressed; break;
-            case SDLK_S: camera.keyS = pressed; break;
-            case SDLK_D: camera.keyD = pressed; break;
-            case SDLK_LSHIFT: case SDLK_RSHIFT: camera.keyShift = pressed; break;
-            default: break;
+                bool pressed = event.type == SDL_EVENT_KEY_DOWN;
+                switch (event.key.key)
+                {
+                case SDLK_W: camera.keyW = pressed; break;
+                case SDLK_A: camera.keyA = pressed; break;
+                case SDLK_S: camera.keyS = pressed; break;
+                case SDLK_D: camera.keyD = pressed; break;
+                case SDLK_LSHIFT: case SDLK_RSHIFT: camera.keyShift = pressed; break;
+                default: break;
+                }
             }
+
+            if (!paused)
+                animTime += dt;
+            camera.aspect = static_cast<float>(renderExtent.x) / static_cast<float>(renderExtent.y);
+            bool cameraMoved = camera.UpdateMovement(dt);
+            cameraMoved |= camera.Update(event);
+
+            // --- Per-frame dynamic geometry update: open the window (advances the ring slot),
+            //     rewrite this slot's quantized vertices (marks dirty), close the window. The graph's
+            //     refit pass picks it up before the TLAS update.
+            gpu.SetDynamicGeometryRebuildRate(rebuildEveryFrame ? 1u : cadence);
+            gpu.BeginDynamicGeometryUpdate();
+            Span<std::byte> verts = gpu.UpdateDynamicGeometry(gridHandle);
+            auto* dst = reinterpret_cast<FQVertex*>(verts.data());
+            for (uint32_t i = 0; i < gridVtxCount; ++i)
+                dst[i] = EvalGridVertex(gridVertices[i], animTime);
+            gpu.EndDynamicGeometryUpdate();
+
+            AuthorFrame();
+
+            ubo.frameNumber = renderer->GetFrame();
+            ubo.view = camera.view;
+            ubo.proj = camera.proj;
+            ubo.inverseView = inverse(camera.view);
+            ubo.inverseViewProj = inverse(camera.proj * camera.view);
+            ubo.zNear = camera.zNear;
+            ubo.projPlanes = planeSymmetric(camera.proj);
+            ubo.camPosition = float4(camera.position, 0.0f);
+            ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
+            ubo.fbWidth = static_cast<float>(renderExtent.x);
+            ubo.fbHeight = static_cast<float>(renderExtent.y);
+            ubo.ptViewFlags = cfg.viewFlags;
+            postprocessGlobals.camEV = ubo.camEV;
+            postprocessGlobals.postShowOutline = 0u;
+            postprocessGlobals.ptAccumulatedFrames = ubo.ptAccumulatedFrames;
+            postprocessGlobals.ptDispatchTileSide = ubo.ptDispatchTileSide;
+            postprocessGlobals.fbWidth = ubo.fbWidth;
+            postprocessGlobals.fbHeight = ubo.fbHeight;
+
+            const char* refitMode = rebuildEveryFrame ? "rebuild/frame" : (cadence == 0u ? "refit-only" : "periodic(64)");
+            hud[2].SetText(fmt::format("refit {}  rebuild {}  mode {}", gpu.GetDynamicRefitCount(),
+                                       gpu.GetDynamicRebuildCount(), refitMode));
+            hud[3].SetText(fmt::format("{}   {:.0f} FPS{}", mode == Mode::PathTracer ? "Path Tracer" : "Raster",
+                                       fps.Update(), paused ? "   [PAUSED]" : ""));
+
+            Examples_NewFrame(renderer.get());
+            if (mode == Mode::PathTracer)
+                ubo.ptAccumulatedFrames += PTSamplesPerDispatch(ubo);
+            if (cameraMoved || !paused)
+                ubo.ptAccumulatedFrames = 0;
         }
-
-        if (!paused)
-            animTime += dt;
-        camera.aspect = static_cast<float>(renderExtent.x) / static_cast<float>(renderExtent.y);
-        bool cameraMoved = camera.UpdateMovement(dt);
-        cameraMoved |= camera.Update(event);
-
-        // --- Per-frame dynamic geometry update: open the window (advances the ring slot),
-        //     rewrite this slot's quantized vertices (marks dirty), close the window. The graph's
-        //     refit pass picks it up before the TLAS update.
-        gpu.SetDynamicGeometryRebuildRate(rebuildEveryFrame ? 1u : cadence);
-        gpu.BeginDynamicGeometryUpdate();
-        Span<std::byte> verts = gpu.UpdateDynamicGeometry(gridHandle);
-        auto* dst = reinterpret_cast<FQVertex*>(verts.data());
-        for (uint32_t i = 0; i < gridVtxCount; ++i)
-            dst[i] = EvalGridVertex(gridVertices[i], animTime);
-        gpu.EndDynamicGeometryUpdate();
-
-        AuthorFrame();
-
-        ubo.frameNumber = renderer->GetFrame();
-        ubo.view = camera.view;
-        ubo.proj = camera.proj;
-        ubo.inverseView = inverse(camera.view);
-        ubo.inverseViewProj = inverse(camera.proj * camera.view);
-        ubo.zNear = camera.zNear;
-        ubo.projPlanes = planeSymmetric(camera.proj);
-        ubo.camPosition = float4(camera.position, 0.0f);
-        ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
-        ubo.fbWidth = static_cast<float>(renderExtent.x);
-        ubo.fbHeight = static_cast<float>(renderExtent.y);
-        ubo.ptViewFlags = cfg.viewFlags;
-        postprocessGlobals.camEV = ubo.camEV;
-        postprocessGlobals.postShowOutline = 0u;
-        postprocessGlobals.ptAccumulatedFrames = ubo.ptAccumulatedFrames;
-        postprocessGlobals.ptDispatchTileSide = ubo.ptDispatchTileSide;
-        postprocessGlobals.fbWidth = ubo.fbWidth;
-        postprocessGlobals.fbHeight = ubo.fbHeight;
-
-        const char* refitMode = rebuildEveryFrame ? "rebuild/frame" : (cadence == 0u ? "refit-only" : "periodic(64)");
-        hud[2].SetText(fmt::format("refit {}  rebuild {}  mode {}", gpu.GetDynamicRefitCount(),
-                                   gpu.GetDynamicRebuildCount(), refitMode));
-        hud[3].SetText(fmt::format("{}   {:.0f} FPS{}", mode == Mode::PathTracer ? "Path Tracer" : "Raster",
-                                   fps.Update(), paused ? "   [PAUSED]" : ""));
-
-        Examples_NewFrame(renderer.get());
-        if (mode == Mode::PathTracer)
-            ubo.ptAccumulatedFrames += PTSamplesPerDispatch(ubo);
-        if (cameraMoved || !paused)
-            ubo.ptAccumulatedFrames = 0;
     }
-
-    device->WaitIdle();
     Examples_DestroyVulkan(window, renderer.release(), app, device, swapchain);
     return 0;
 }
