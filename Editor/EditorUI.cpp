@@ -2153,7 +2153,7 @@ static void DrawDirectionalOverlay(FLight const& light, mat4 const& vp, ImDrawLi
 
     // Arrowhead: 3 lines from tip back
     float3 u, v;
-    buildOrthonormalBasis(dir, u, v);
+    BuildOrthonormalBasis(dir, u, v);
     vec3 tip = pos + dir * len;
     for (int i = 0; i < 3; i++)
     {
@@ -2209,7 +2209,7 @@ static void DrawSpotOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl,
     float outerR = coneLen * tanf(light.spotOuterConeAngle);
 
     float3 u, v;
-    buildOrthonormalBasis(dir, u, v);
+    BuildOrthonormalBasis(dir, u, v);
     vec3 tip = pos + dir * coneLen;
 
     // Base circle at cone end
@@ -2237,7 +2237,7 @@ static void DrawDiskOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl,
     vec3 dir = normalize(light.transform.rotation * vec3(0, 0, -1));
 
     float3 u, v;
-    buildOrthonormalBasis(dir, u, v);
+    BuildOrthonormalBasis(dir, u, v);
 
     // Disk circle
     DrawWireCircle(dl, pos, u, v, vec2(light.width, light.height), vp, ds, col, 1.5f);
@@ -2252,7 +2252,7 @@ static void DrawRectOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl,
     vec3 dir = normalize(light.transform.rotation * vec3(0, 0, -1));
 
     float3 u, v;
-    buildOrthonormalBasis(dir, u, v);
+    BuildOrthonormalBasis(dir, u, v);
 
     // Rectangle corners (half-extents)
     vec3 corners[4] = {

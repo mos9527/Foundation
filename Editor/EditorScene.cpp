@@ -346,7 +346,7 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamp
     {
         float3 n = dst.direction;
         float3 u, v;
-        buildOrthonormalBasis(n, u, v);
+        BuildOrthonormalBasis(n, u, v);
         if (src.type == FLightType::Disk)
         {
             dst.dpdu = u; // Unit tangent; radius is separate

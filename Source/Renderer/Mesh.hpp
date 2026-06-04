@@ -188,8 +188,17 @@ struct FImportedMesh
 };
 
 /* -- Math Exports -- */
-void buildOrthonormalBasis(float3 n, float3& b1, float3& b2);
-float2 packUnitOctahedralSnorm(float3 v);
-float3 unpackUnitOctahedralSnorm(float2 v);
-float packUnitCircleSnorm(float2 v);
-float2 unpackUnitCircleSnorm(float v);
+void BuildOrthonormalBasis(float3 n, float3& b1, float3& b2);
+float2 PackUnitOctahedralSnorm(float3 v);
+float3 UnpackUnitOctahedralSnorm(float2 v);
+float PackUnitCircleSnorm(float2 v);
+float2 UnpackUnitCircleSnorm(float v);
+
+/**
+ * @brief Recomputes smooth per-vertex normals from positions over an indexed triangle list.
+ * @details Area-weighted face-normal accumulation, then normalize. Needed after POSITION-only morph
+ *          deformation (which moves vertices without supplying normals); run it on the morphed
+ *          vertices before packing/skinning so shading matches the deformed surface. Tangents are
+ *          left as-is (re-projected onto the new normal frame by @ref FQVertex::PackTBN).
+ */
+void RecomputeNormals(Span<FVertex> verts, Span<const uint32_t> indices);

@@ -152,12 +152,3 @@ void ComputeSkinningMatrices(FSkeleton const& skel, FPose const& pose, Span<mat4
  */
 void SkinVertices(Span<const FVertex> bind, Span<const FSkinBinding> binding, Span<const mat4> palette,
                   Span<FQVertex> out);
-
-/**
- * @brief Recomputes smooth per-vertex normals from positions over an indexed triangle list.
- * @details Area-weighted face-normal accumulation, then normalize. Needed after POSITION-only morph
- *          deformation (which moves vertices without supplying normals); run it on the morphed
- *          vertices before packing/skinning so shading matches the deformed surface. Tangents are
- *          left as-is (re-projected onto the new normal frame by @ref FQVertex::PackTBN).
- */
-void RecomputeNormals(Span<FVertex> verts, Span<const uint32_t> indices);

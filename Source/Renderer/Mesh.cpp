@@ -10,7 +10,7 @@
 constexpr float EPS = 1e-6;
 // Building an Orthonormal Basis from a 3D Unit Vector Without Normalization - Frisvad, 2012
 // https://backend.orbit.dtu.dk/ws/portalfiles/portal/126824972/onb_frisvad_jgt2012_v2.pdf
-void buildOrthonormalBasis(float3 n, float3& b1, float3& b2)
+void BuildOrthonormalBasis(float3 n, float3& b1, float3& b2)
 {
     if (n.z < -0.9999999)
     {
@@ -25,29 +25,51 @@ void buildOrthonormalBasis(float3 n, float3& b1, float3& b2)
 }
 // Original formulation from: https://jcgt.org/published/0003/02/01/paper.pdf
 // R3, L2 to L1 projection on unit sphere
-float2 packUnitOctahedralSnorm(float3 v)
+float2 PackUnitOctahedralSnorm(float3 v)
 {
     v /= float3(fabsf(v.x) + fabsf(v.y) + fabsf(v.z));
     return v.z >= EPS ? v.xy() : (float2(1.0f) - abs(float2(v.yx()))) * sign(float2(v.xy() + EPS));
 }
 // Original formulation from: https://jcgt.org/published/0003/02/01/paper.pdf
 // R3, L1 to L2 projection on unit sphere
-float3 unpackUnitOctahedralSnorm(float2 v)
+float3 UnpackUnitOctahedralSnorm(float2 v)
 {
     float3 nor = float3(v.xy(), 1.0f - fabsf(v.x) - fabsf(v.y));
     float2 xy = nor.z >= EPS ? v.xy() : (float2(1.0f) - abs(float2(v.yx()))) * sign(float2(v.xy() + EPS));
     return normalize(float3(xy.x, xy.y, nor.z));
 }
 // R2, L2 to L1 projection on unit circle
-float packUnitCircleSnorm(float2 v){
+float PackUnitCircleSnorm(float2 v){
     v /= fabsf(v.x) + fabsf(v.y);
     return v.y >= EPS ? (v.x + 1.0f) * 0.5f : -(v.x + 1.0f) * 0.5f;
 }
 // R2, L1 to L2 projection on unit circle
-float2 unpackUnitCircleSnorm(float v){
+float2 UnpackUnitCircleSnorm(float v){
     float x = fabsf(v) * 2.0f - 1.0f;
     float y = 1.0f - fabsf(x);
     return normalize(v >= 0.0f ? float2(x, y) : float2(x, -y));
+}
+
+void RecomputeNormals(Span<FVertex> verts, Span<const uint32_t> indices)
+{
+    for (FVertex& v : verts)
+        v.normal = float3(0.0f);
+    for (size_t i = 0; i + 2 < indices.size(); i += 3)
+    {
+        uint32_t a = indices[i], b = indices[i + 1], c = indices[i + 2];
+        if (a >= verts.size() || b >= verts.size() || c >= verts.size())
+            continue;
+        // Area-weighted face normal (unnormalized cross) accumulated onto each vertex.
+        float3 fn = cross(verts[b].position - verts[a].position, verts[c].position - verts[a].position);
+        verts[a].normal += fn;
+        verts[b].normal += fn;
+        verts[c].normal += fn;
+    }
+    for (FVertex& v : verts)
+    {
+        float len = length(v.normal);
+        v.normal = len > 1e-12f ? v.normal / len : float3(0.0f, 1.0f, 0.0f);
+    }
 }
 // Compact TBN frame packing
 // Tangent is derived from orthonormal basis around normal with a rotation angle
@@ -57,10 +79,10 @@ float2 unpackUnitCircleSnorm(float v){
 uint32_t FQVertex::PackTBN(const float3& normal, const float3& tangent, float bitangentSign)
 {
     float3 b1, b2;
-    buildOrthonormalBasis(normal, b1, b2);
+    BuildOrthonormalBasis(normal, b1, b2);
     float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
-    float octAngle = packUnitCircleSnorm(float2(cosAngle, sinAngle));
-    float2 oct = packUnitOctahedralSnorm(normal);
+    float octAngle = PackUnitCircleSnorm(float2(cosAngle, sinAngle));
+    float2 oct = PackUnitOctahedralSnorm(normal);
     uint32_t nX = quantizeSnormShifted(oct.x, 12), nY = quantizeSnormShifted(oct.y, 12);
     uint32_t tA = quantizeSnormShifted(octAngle, 7);
     uint32_t bS = bitangentSign >= 0.0f ? 1 : 0;
@@ -78,11 +100,11 @@ void FQVertex::UnpackTBN(uint32_t packed, float3& outNormal, float3& outTangent,
     uint32_t tA = bitfieldExtract(packed, 24, 7);
     uint32_t bS = bitfieldExtract(packed, 31, 1);
     float2 normalOct = float2(dequantizeSnormShifted(nX, 12), dequantizeSnormShifted(nY, 12));
-    outNormal = unpackUnitOctahedralSnorm(normalOct);
+    outNormal = UnpackUnitOctahedralSnorm(normalOct);
     float octAngle = dequantizeSnormShifted(tA, 7);
-    float2 octXY = unpackUnitCircleSnorm(octAngle);
+    float2 octXY = UnpackUnitCircleSnorm(octAngle);
     float3 b1, b2;
-    buildOrthonormalBasis(outNormal, b1, b2);
+    BuildOrthonormalBasis(outNormal, b1, b2);
     outTangent = octXY.x * b1 + octXY.y * b2;
     outBitangentSign = bS == 1 ? 1.0f : -1.0f;
 }

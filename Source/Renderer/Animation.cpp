@@ -222,25 +222,3 @@ void SkinVertices(Span<const FVertex> bind, Span<const FSkinBinding> binding, Sp
         out[v] = FQVertex::Pack(d);
     }
 }
-
-void RecomputeNormals(Span<FVertex> verts, Span<const uint32_t> indices)
-{
-    for (FVertex& v : verts)
-        v.normal = float3(0.0f);
-    for (size_t i = 0; i + 2 < indices.size(); i += 3)
-    {
-        uint32_t a = indices[i], b = indices[i + 1], c = indices[i + 2];
-        if (a >= verts.size() || b >= verts.size() || c >= verts.size())
-            continue;
-        // Area-weighted face normal (unnormalized cross) accumulated onto each vertex.
-        float3 fn = cross(verts[b].position - verts[a].position, verts[c].position - verts[a].position);
-        verts[a].normal += fn;
-        verts[b].normal += fn;
-        verts[c].normal += fn;
-    }
-    for (FVertex& v : verts)
-    {
-        float len = length(v.normal);
-        v.normal = len > 1e-12f ? v.normal / len : float3(0.0f, 1.0f, 0.0f);
-    }
-}
