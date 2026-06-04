@@ -4,7 +4,7 @@
 #include <algorithm>
 #include "GPUScene.hpp"
 #include "Renderer.hpp"
-void BuildPathTracerRenderGraph(Renderer* renderer, UBO* globals, GPUScene* gpu,
+void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
                                 RendererConfig const& cfg, RendererOutputs& out)
 {
     CHECK(renderer);
@@ -19,7 +19,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, UBO* globals, GPUScene* gpu,
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
-                      .size = sizeof(UBO)});
+                      .size = sizeof(RendererUBO)});
     renderer->CreatePass(
         "UBO Update", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r) { r->BindBufferCopyDst(self, GlobalUBO); },

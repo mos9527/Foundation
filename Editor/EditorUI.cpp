@@ -234,7 +234,7 @@ static bool OpenViewLUTDialog(String& outPath)
     return true;
 }
 
-static int PTSPPOptionIndex(UBO const& ubo)
+static int PTSPPOptionIndex(RendererUBO const& ubo)
 {
     uint32_t samplesPerPixel = PTSamplesPerDispatch(ubo);
     uint32_t dispatchTileSide = PTDispatchTileSide(ubo);

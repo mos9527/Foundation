@@ -131,7 +131,7 @@ struct EditorState
     TextureHandle   viewLUTSdrHandle{};
     TextureHandle   viewLUTHdrHandle{};
 
-    UBO             shaderGlobals;
+    RendererUBO             shaderGlobals;
     PostprocessUBO  postprocessGlobals;
     FArcballCamera  camera{
         .center = float3{0, 0, 0},

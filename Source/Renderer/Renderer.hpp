@@ -4,7 +4,7 @@
 using namespace Foundation;
 using namespace Foundation::RenderCore;
 #pragma pack(push, 4)
-struct UBO
+struct RendererUBO
 {
     uint32_t frameNumber;
     uint32_t firstInstance;
@@ -70,23 +70,23 @@ struct UBO
 };
 #pragma pack(pop)
 
-inline uint32_t PTDispatchTileSide(UBO const& ubo)
+inline uint32_t PTDispatchTileSide(RendererUBO const& ubo)
 {
     return ubo.ptDispatchTileSide > 0u ? ubo.ptDispatchTileSide : 1u;
 }
 
-inline uint32_t PTTileSampleCount(UBO const& ubo)
+inline uint32_t PTTileSampleCount(RendererUBO const& ubo)
 {
     uint32_t tileSide = PTDispatchTileSide(ubo);
     return tileSide * tileSide;
 }
 
-inline uint32_t PTSamplesPerDispatch(UBO const& ubo)
+inline uint32_t PTSamplesPerDispatch(RendererUBO const& ubo)
 {
     return ubo.ptSamplesPerPixel > 0u ? ubo.ptSamplesPerPixel : 1u;
 }
 
-inline uint32_t PTCompletedPixelSamples(UBO const& ubo)
+inline uint32_t PTCompletedPixelSamples(RendererUBO const& ubo)
 {
     return ubo.ptAccumulatedFrames / PTTileSampleCount(ubo);
 }
@@ -170,7 +170,7 @@ struct PostprocessUBO
     uint32_t outlineInstanceId{~0u};
 };
 
-extern void BuildRasterRenderGraph(Renderer* renderer, UBO* globals, GPUScene* gpu,
+extern void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
                                    RendererConfig const& cfg, RendererOutputs& out);
-extern void BuildPathTracerRenderGraph(Renderer* renderer, UBO* globals, GPUScene* gpu,
+extern void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
                                        RendererConfig const& cfg, RendererOutputs& out);

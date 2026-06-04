@@ -965,7 +965,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     return res;
 }
 
-void GPUScene::BuildUBO(UBO& globals) const
+void GPUScene::BuildUBO(RendererUBO& globals) const
 {
     globals.ggxLutEIndex = mLUTGGXEIndex.index;
     globals.ggxLutEavgIndex = mLUTGGXEavgIndex.index;

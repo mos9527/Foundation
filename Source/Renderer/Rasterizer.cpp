@@ -39,7 +39,7 @@ constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
 
-void BuildRasterRenderGraph(Renderer* renderer, UBO* globals, GPUScene* gpu,
+void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
                             RendererConfig const& cfg, RendererOutputs& out)
 {
     CHECK(renderer);
@@ -54,7 +54,7 @@ void BuildRasterRenderGraph(Renderer* renderer, UBO* globals, GPUScene* gpu,
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
-                      .size = sizeof(UBO)});
+                      .size = sizeof(RendererUBO)});
     /* Instance and Primitive buffers */
     bool hasTLAS = gpu->GetTLAS() != nullptr;
     ResourceHandle TLAS = kInvalidHandle;

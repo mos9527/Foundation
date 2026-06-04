@@ -12,7 +12,7 @@
 
 using namespace Math;
 using namespace RenderCore;
-struct UBO;
+struct RendererUBO;
 struct GPUSceneImpl;
 
 // Must match the procedural hit-group bindings in Render/Pathtracer.cpp.
@@ -329,7 +329,7 @@ public:
      * @note Leaves instance/material/light table offsets untouched (those come from
      *       @ref EndScene's @ref UpdateResult).
      */
-    void BuildUBO(UBO& globals) const;
+    void BuildUBO(RendererUBO& globals) const;
 
     /**
      * @brief Ring-buffer offsets and element counts for instances/materials/lights.

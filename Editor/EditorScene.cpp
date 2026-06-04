@@ -23,7 +23,7 @@ static constexpr size_t kStagingBudgetSlack = 32ull * (1ull << 20);
 // (geometry handles + texture remap live in EditorState), then commits them.
 static GPUScene::UpdateResult BuildSceneTables(GPUScene* gpu, FImportedScene& scene);
 
-static GPUScene::UpdateResult CommitSceneToGPU(GPUScene* gpu, FImportedScene& scene, UBO& globals,
+static GPUScene::UpdateResult CommitSceneToGPU(GPUScene* gpu, FImportedScene& scene, RendererUBO& globals,
                                                bool resetAccumulation)
 {
     CHECK(gpu);
@@ -509,7 +509,7 @@ void DeleteSelectedInstance()
 }
 
 static void ApplySceneCamera(FImportedScene const& scene, FArcballCamera& cameraState,
-                             CameraApertureState& apertureState, UBO& globals)
+                             CameraApertureState& apertureState, RendererUBO& globals)
 {
     auto cameras = scene.GetCameras();
     if (cameras.empty())

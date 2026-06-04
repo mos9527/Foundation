@@ -133,7 +133,7 @@ int main(int argc, char** argv)
     constexpr float boxW = 4.0f; // interior width  (x in [-2, 2])
     constexpr float boxH = 3.0f; // interior height (y in [ 0, 3])
     constexpr float boxD = 4.0f; // interior depth  (z in [-2, 2])
-    UBO ubo{};
+    RendererUBO ubo{};
 
     // -- Material palette. All principled (shaderBlockID 0); each hero leans on a different
     //    part of the BSDF so the same path tracer renders glass, metal, wax and lacquer.

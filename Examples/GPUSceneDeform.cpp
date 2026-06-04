@@ -197,7 +197,7 @@ int main(int argc, char** argv)
         const uint32_t matGrid = static_cast<uint32_t>(palette.size());
         { GSMaterial m = BaseMat(); m.baseColorFactor = float4(0.25f, 0.55f, 0.9f, 1.0f); m.roughnessFactor = 0.3f; m.metallicFactor = 0.4f; palette.push_back(m); }
 
-        UBO ubo{};
+        RendererUBO ubo{};
         ubo.ptDispatchTileSide = 1;
         ubo.ptSamplesPerPixel = 1;
 

@@ -219,7 +219,7 @@ int main(int argc, char** argv)
     }
     const size_t kFloorAsset = 0; // assets[0] is the floor; assets[1..] are blobs
 
-    UBO ubo{};
+    RendererUBO ubo{};
     ubo.ptDispatchTileSide = 1;
     ubo.ptSamplesPerPixel = 1;
 

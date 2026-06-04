@@ -67,7 +67,7 @@ int main(int argc, char** argv)
     auto uboHandle = renderer->CreateResource(
         "UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
-                      .size = sizeof(UBO)});
+                      .size = sizeof(RendererUBO)});
     auto zbufferHandle = renderer->CreateResource("ZBuffer",
                                                   RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil,
                                                                  .extent = {4096, 4096, 1},
