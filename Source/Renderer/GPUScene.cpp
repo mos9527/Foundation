@@ -5,12 +5,10 @@
 #include "Tables/GGX_IOR.hpp"
 #include "Tables/LTCSheen.hpp"
 #include "Tables/Sobol.hpp"
-#include "Tables/ViewLUTs.hpp"
 #include <Core/Allocator.hpp>
 #include <Core/AllocatorStack.hpp>
 #include <Core/Atomic.hpp>
 #include <Core/AtomicQueue.hpp>
-#include <Core/Paths.hpp>
 #include <Core/Thread.hpp>
 #include <Core/ThreadPool.hpp>
 #include <bit>
@@ -55,14 +53,6 @@ static void GPUSceneWaitJobs(Atomic<size_t>* counter)
     }
 }
 
-static FTexture LoadLUT(Allocator* allocator, StringView path)
-{
-    FTexture tex(allocator);
-    String resolvedPath = PathsResolve(path);
-    LoadDDS(tex, resolvedPath);
-    return tex;
-}
-
 static FTexture MakeLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height = 1,
                           uint32_t depth = 1, RHITextureDimension dimension = RHITextureDimension::E2D)
 {
@@ -74,7 +64,7 @@ static FTexture MakeLUT(const float* data, RHIResourceFormat format, uint32_t wi
 }
 
 static constexpr size_t kMinDirectGeometryUploadHeapSize = 512ull * (1ull << 20);
-static constexpr uint32_t kGPUScenePersistentTexture3DBindings = 2u; // default SDR/HDR view LUTs.
+static constexpr uint32_t kGPUScenePersistentTexture3DBindings = 3u; // GGX IOR/Inv IOR + sheen LTC LUTs.
 static constexpr uint32_t kGPUSceneTextureBindingSlack = 8u;
 static constexpr size_t kGPUSceneByteBudgetSlack = 64u << 10u;
 
@@ -421,7 +411,6 @@ struct GPUSceneImpl
     [[nodiscard]] Result Query(TextureHandle texture) const;
     void Join();
     [[nodiscard]] Result Poll();
-    Result UploadViewLUTs(FTexture const& sdr, FTexture const& hdr);
     Result UploadEnvMap(FTexture const& source);
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
     UpdateResult EndScene(GPUSceneTables& tables);
@@ -799,17 +788,13 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
         foundationDefaultTexture2DFloat.Initialize(RHIResourceFormat::R32SignedFloat, RHITextureDimension::E2D, 1, 1);
         foundationDefaultTexture2DFloat.bytes.resize(sizeof(float));
         *reinterpret_cast<float*>(foundationDefaultTexture2DFloat.bytes.data()) = 1.0f;
-        auto defaultViewLutSdr =
-            LoadLUT(mAllocator, kViewLUTsSdr[kDefaultViewLUTSdr].path);
-        auto defaultViewLutHdr =
-            LoadLUT(mAllocator, kViewLUTsHdr[kDefaultViewLUTHdr].path);
         const size_t foundationDefaultBufferFloatSize = sizeof(float);
         owner.mFoundationDefaultBufferFloat = mDevice->CreateBuffer({
             .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
             .size = foundationDefaultBufferFloatSize
         });
-        // Textures (incl. view LUTs) go through the unified upload queue.
+        // Textures go through the unified upload queue.
         // Pinned: GPUScene-owned singletons that Collect must never reclaim.
         Upload(lutE, owner.mLUTGGXEIndex, nullptr, true);
         Upload(lutEavg, owner.mLUTGGXEavgIndex, nullptr, true);
@@ -821,7 +806,6 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
         Upload(foundationDefaultTexture2D, owner.mFoundationDefaultTexture2DIndex, "_FoundationDefaultTexture2D", true);
         Upload(foundationDefaultTexture2DFloat, owner.mFoundationDefaultTexture2DFloatIndex,
                "_FoundationDefaultTexture2DFloat", true);
-        UploadViewLUTs(defaultViewLutSdr, defaultViewLutHdr);
 
         // Plain device-local buffers ride the same upload queue.
         const float foundationDefaultBufferFloat = 1.0f;
@@ -981,7 +965,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     return res;
 }
 
-void GPUScene::BuildUBO(UBO& globals, bool hdr) const
+void GPUScene::BuildUBO(UBO& globals) const
 {
     globals.ggxLutEIndex = mLUTGGXEIndex.index;
     globals.ggxLutEavgIndex = mLUTGGXEavgIndex.index;
@@ -990,7 +974,6 @@ void GPUScene::BuildUBO(UBO& globals, bool hdr) const
     globals.ggxLutEIORInvIndex = mLUTGGXEIORInvIndex.index;
     globals.ggxLutEIORInvavgIndex = mLUTGGXEIORInvavgIndex.index;
     globals.sheenLtcIndex = mLUTSheenLTCIndex.index;
-    globals.viewLutIndex = (hdr ? mLUTViewHdrIndex : mLUTViewSdrIndex).index;
     globals.envMapTextureIndex = GetEnvMapIndexOrDefault();
     globals.envMapMarginalCDFIndex = GetEnvMapMarginalCDFIndexOrDefault();
     globals.envMapConditionalCDFIndex = GetEnvMapConditionalCDFIndexOrDefault();
@@ -1282,7 +1265,7 @@ static uint32_t GetTextureUploadAlignment(FTextureHeader const& metadata)
 
 // Views an in-memory FTexture as an FSerializedTexture whose subresource blobs point
 // directly into `source.bytes` (codec=None), so the same async upload queue can carry
-// CPU-resident textures (built-in LUTs, env map, view LUTs) as well as scene textures.
+// CPU-resident textures (built-in LUTs, env map) as well as scene textures.
 static FSerializedTexture MakeInMemoryTextureAdaptor(FTexture const& source, Allocator* alloc)
 {
     FSerializedTexture adaptor(alloc);
@@ -1429,8 +1412,8 @@ GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedTextu
         return Result::InvalidInput;
     // Create the destination texture + view up front and bind the bindless slot now so
     // the handle is usable as a Query key while contents/layout become Ready during
-    // Join(). A valid `outTextureIndex` updates that slot in place (env map / view LUT
-    // reload); otherwise a new slot is allocated.
+    // Join(). A valid `outTextureIndex` updates that slot in place; otherwise a new slot
+    // is allocated.
     FTextureHeader const& metadata = static_cast<FTextureHeader const&>(source);
     bool const is3D = IsTexture3DView(metadata.GetViewDimension());
     auto texture = mDevice->CreateTexture(metadata.GetDesc());
@@ -1464,7 +1447,7 @@ GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedTextu
         }
         else
         {
-            // In-place refresh (env map / view LUT reload) keeps the same slot + generation.
+            // In-place refresh keeps the same slot + generation.
             CHECK_MSG(outTextureIndex.is3D == is3D && outTextureIndex.index < slots.size() &&
                           slots[outTextureIndex.index].live &&
                           slots[outTextureIndex.index].generation == outTextureIndex.generation,
@@ -2954,27 +2937,6 @@ GPUScene::Result GPUSceneImpl::UploadEnvMap(FTexture const& source)
     return Result::Ready;
 }
 
-static void CheckViewLUT(FTexture const& source, StringView name)
-{
-    CHECK_MSG(source.IsValid(), "{} view LUT is invalid", name);
-    CHECK_MSG(source.GetDimension() == RHITextureDimension::E3D,
-              "{} view LUT must be a 3D texture, got {}", name, static_cast<uint32_t>(source.GetDimension()));
-    const RHIResourceFormat format = source.GetFormat();
-    CHECK_MSG(format == RHIResourceFormat::A2B10G10R10Unorm ||
-                  format == RHIResourceFormat::R16G16B16A16SignedFloat ||
-                  format == RHIResourceFormat::R32G32B32A32SignedFloat,
-              "{} view LUT must be RGB10A2, RGBA16F, or RGBA32F, got {}", name, format);
-}
-
-GPUScene::Result GPUSceneImpl::UploadViewLUTs(FTexture const& sdr, FTexture const& hdr)
-{
-    CheckViewLUT(sdr, "SDR");
-    CheckViewLUT(hdr, "HDR");
-    if (Result r = Upload(sdr, owner.mLUTViewSdrIndex, "View LUT SDR", true); r != Result::Ready)
-        return r;
-    return Upload(hdr, owner.mLUTViewHdrIndex, "View LUT HDR", true);
-}
-
 static RHITexture* ResolvePoolTexture(BindlessPool& pool, uint32_t index)
 {
     if (index == UINT32_MAX)
@@ -3091,7 +3053,6 @@ GPUScene::Result GPUScene::Query(GeometryHandle handle) const { return mImpl->Qu
 GPUScene::Result GPUScene::Query(TextureHandle texture) const { return mImpl->Query(texture); }
 void GPUScene::Join() { mImpl->Join(); }
 GPUScene::Result GPUScene::Poll() { return mImpl->Poll(); }
-GPUScene::Result GPUScene::UploadViewLUTs(FTexture const& sdr, FTexture const& hdr) { return mImpl->UploadViewLUTs(sdr, hdr); }
 GPUScene::Result GPUScene::UploadEnvMap(FTexture const& source) { return mImpl->UploadEnvMap(source); }
 
 GPUScene::GPUSceneTables GPUScene::BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount)
@@ -3127,4 +3088,6 @@ RHIBuffer* GPUScene::GetLightBuffer() const { return mImpl->mLightBuffer.mBuffer
 RHIBuffer* GPUScene::GetLightAliasTableBuffer() const { return mImpl->mLightAliasTableBuffer.mBuffer.Get(); }
 BindlessPool* GPUScene::GetTexture2DPool() { return &mImpl->mTexture2DPool; }
 BindlessPool* GPUScene::GetTexture3DPool() { return &mImpl->mTexture3DPool; }
+BindlessPool const* GPUScene::GetTexture2DPool() const { return &mImpl->mTexture2DPool; }
+BindlessPool const* GPUScene::GetTexture3DPool() const { return &mImpl->mTexture3DPool; }
 uint32_t GPUScene::GetLightCapacity() const { return mImpl->mLightBuffer.Capacity(); }

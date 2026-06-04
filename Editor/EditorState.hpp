@@ -1,7 +1,8 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
-#include <Renderer/Tables/ViewLUTs.hpp>
+#include <Renderer/GPUScene.hpp>
+#include <Renderer/Postprocess.hpp>
 #include "Camera.hpp"
 #include "Editor.hpp"
 #include "Scene/Scene.hpp"
@@ -123,12 +124,15 @@ struct EditorState
     EditorViewportState viewport;
     RendererConfig  rendererConfig;
     ERendererMode   rendererMode = ERendererMode::PathTracer;
-    int             viewLUTSdrIndex = kDefaultViewLUTSdr;
-    int             viewLUTHdrIndex = kDefaultViewLUTHdr;
+    int             viewLUTSdrIndex = Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::SDR);
+    int             viewLUTHdrIndex = Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::HDR);
     String          viewLUTSdrExternalPath;
     String          viewLUTHdrExternalPath;
+    TextureHandle   viewLUTSdrHandle{};
+    TextureHandle   viewLUTHdrHandle{};
 
     UBO             shaderGlobals;
+    PostprocessUBO  postprocessGlobals;
     FArcballCamera  camera{
         .center = float3{0, 0, 0},
         .radius = 1.0f,
@@ -194,5 +198,5 @@ void FAnimationPanel();
 void FRunningImGui();
 void ClearMaterialTexturePreviewCache();
 
-void DoRenderReadback(RendererHandles const& handles);
-void FRendering(RendererHandles const& handles);
+void DoRenderReadback(RendererOutputs const& outputs);
+void FRendering(RendererOutputs const& outputs);

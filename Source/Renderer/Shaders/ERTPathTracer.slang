@@ -33,7 +33,7 @@ StructuredBuffer<uint> sobolMatrices;
 // -- Path radiance accumulation buffers
 RWTexture2D<float4> diffuse;   // Diffuse lobe radiance
 RWTexture2D<float4> specular;  // Specular lobe radiance (incl. transmission)
-RWTexture2D<uint32_t> pickIDBuffer; // Instance ID map, ~0u = no object (written on primary hit only)
+RWTexture2D<uint32_t> instanceIDBuffer; // Instance ID map, ~0u = no object (written on primary hit only)
 
 // SER coherence hint layout:
 //   [7:6] hit class (miss, analytic light, triangle, curve)
@@ -107,7 +107,7 @@ void ClearPTTile()
 
             diffuse[clearPix] = float4(0);
             specular[clearPix] = float4(0);
-            pickIDBuffer[clearPix] = ~0u;
+            instanceIDBuffer[clearPix] = ~0u;
         }
     }
 }
@@ -1392,9 +1392,9 @@ void AddSurfaceEmissive(
                           bounce, firstBounceCategory, AOVCategory::Diffuse, bounce == 0);
 }
 
-void WritePrimaryPickID(uint2 pix, uint32_t pickID)
+void WritePrimaryInstanceID(uint2 pix, uint32_t instanceID)
 {
-    pickIDBuffer[pix] = pickID;
+    instanceIDBuffer[pix] = instanceID;
 }
 
 void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float frameCount)
@@ -1568,7 +1568,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             {
                 diffuse[pix] = float4(0.0f);
                 specular[pix] = float4(0.0f);
-                WritePrimaryPickID(pix, ~0u);
+                WritePrimaryInstanceID(pix, ~0u);
                 return;
             }
             ray.Origin = hitPoint + ray.Direction * EPS_TMin;
@@ -1582,7 +1582,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             {
                 diffuse[pix] = float4(0.0f);
                 specular[pix] = float4(0.0f);
-                WritePrimaryPickID(pix, ~0u);
+                WritePrimaryInstanceID(pix, ~0u);
                 return;
             }
             AddEnvironmentMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
@@ -1599,13 +1599,13 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         {
             diffuse[pix] = float4(VisualizeTextureLOD(surface), 1.0f);
             specular[pix] = float4(0.0f);
-            WritePrimaryPickID(pix, hit.raw.instance);
+            WritePrimaryInstanceID(pix, hit.raw.instance);
             return;
         }
 
         if (bounce == 0 && !pickingWritten)
         {
-            WritePrimaryPickID(pix, hit.raw.instance);
+            WritePrimaryInstanceID(pix, hit.raw.instance);
             pickingWritten = true;
         }
         // Local frame setup
@@ -1711,7 +1711,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         }
     }
     if (!pickingWritten)
-        WritePrimaryPickID(pix, ~0u);
+        WritePrimaryInstanceID(pix, ~0u);
 
     AccumulatePathRadiance(pix, radiance, frameCount);
 }

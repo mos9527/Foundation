@@ -25,11 +25,13 @@
 #include <Editor/Scene/Mesh.hpp> // FImportedMesh / LoadObj
 #include <Editor/Camera.hpp>     // FArcballCamera
 #include <RenderUtils/CSDebugText.hpp> // createCSDebugTextPassBackBuffer (on-screen HUD)
+#include <Core/Paths.hpp>
 #include "Examples.hpp"
 #include <algorithm>
 #include <cmath>
 
 using namespace RenderUtils;
+using Foundation::Core::PathsResolve;
 
 int main(int argc, char** argv)
 {
@@ -41,10 +43,8 @@ int main(int argc, char** argv)
     // live renderer. Adopt the instance Examples_InitVulkan created.
     UniquePtr<Renderer> renderer(renderer0, StlDeleter<Renderer>{GLOBAL_ALLOC});
 
-    // GPUScene owns all GPU-resident scene data. Keep it in an Optional so we can tear it
-    // down (joining its upload worker, releasing RHI handles) while the device is alive.
-    Optional<GPUScene> gpu;
-    gpu.emplace(device.Get(), GLOBAL_ALLOC, GPUSceneDesc{});
+    // GPUScene owns all GPU-resident scene data and lives for the full example scope.
+    GPUScene gpu(device.Get(), GLOBAL_ALLOC, GPUSceneDesc{});
 
     // Runs a CPU mesh through the same pipeline the editor uses (optimize -> DAG clusterize ->
     // quantize), serializes it into a throwaway blob payload, and uploads it synchronously.
@@ -70,10 +70,10 @@ int main(int argc, char** argv)
 
         FBlobDeserializer deserializer = blobs.Deserializer();
         GeometryHandle handle;
-        GPUScene::Result r = gpu->Upload(&deserializer, serialized, handle);
+        GPUScene::Result r = gpu.Upload(&deserializer, serialized, handle);
         CHECK_MSG(r == GPUScene::Result::InProgress, "Mesh upload rejected ({})", r);
-        gpu->Join(); // Drain synchronously: geometry bytes resident + BLAS built.
-        CHECK_MSG(gpu->Query(handle) == GPUScene::Result::Ready, "Mesh did not become resident");
+        gpu.Join(); // Drain synchronously: geometry bytes resident + BLAS built.
+        CHECK_MSG(gpu.Query(handle) == GPUScene::Result::Ready, "Mesh did not become resident");
         return handle;
     };
 
@@ -221,7 +221,7 @@ int main(int argc, char** argv)
     // front (so the initial TLAS build has instances) and then every frame from the main loop.
     auto AuthorFrame = [&](float t)
     {
-        auto tables = gpu->BeginScene(instanceCount, static_cast<uint32_t>(palette.size()), lightCount);
+        auto tables = gpu.BeginScene(instanceCount, static_cast<uint32_t>(palette.size()), lightCount);
 
         uint32_t idx = 0u;
         auto AddWall = [&](quat rot, float3 scale, float3 pos, uint32_t mat)
@@ -289,7 +289,7 @@ int main(int argc, char** argv)
         key.twoSided = 0u;
         key.selectionWeight = key.power; // only one light, so any positive weight works
 
-        auto result = gpu->EndScene(tables);
+        auto result = gpu.EndScene(tables);
         ubo.firstInstance = result.firstInstance;
         ubo.numInstances = result.numInstances;
         ubo.firstMaterial = result.firstMaterial;
@@ -304,15 +304,17 @@ int main(int argc, char** argv)
     ubo.ptSamplesPerPixel = 1;
 
     // --- 4. Globals + TLAS ---------------------------------------------------------------
-    gpu->BuildUBO(ubo, /*hdr*/ false);
+    gpu.BuildUBO(ubo);
     ubo.ambientColor = float3(0.0f); // pitch-black surround: all light comes from the ceiling quad
     ubo.ambientPower = 1.0f;
     ubo.useEnvMap = 0u;
+    TextureHandle viewLUTSdrHandle{};
+    TextureHandle viewLUTHdrHandle{};
     {
         ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
         auto* cmd = ctx.Get();
         cmd->Begin();
-        auto tlasResult = gpu->BuildTLAS(cmd, /*update*/ false);
+        auto tlasResult = gpu.BuildTLAS(cmd, /*update*/ false);
         cmd->End();
         if (tlasResult == GPUScene::TLASBuildResult::Built)
             ctx.Submit(), ctx.WaitIdle();
@@ -323,10 +325,9 @@ int main(int argc, char** argv)
     enum class Mode { Raster, PathTracer };
     Mode mode = Mode::PathTracer;
     bool renderPaused = false; // path tracer accumulation gate (never paused here)
-    RendererPicking picking{};
     RendererConfig cfg{};
-    RendererScene scene{.gsGlobals = &ubo, .picking = &picking};
-    RendererHandles handles{};
+    PostprocessUBO postprocessGlobals{};
+    RendererOutputs handles{};
     RHIExtent2D renderExtent{};
     // On-screen HUD: the CSDebugText pass draws over the scene's backbuffer. The array is
     // persistent and the pass captures a view of it, re-reading the current text every frame.
@@ -337,11 +338,15 @@ int main(int argc, char** argv)
     // Builds the active mode's graph on the current (fresh, setup-ready) renderer for `extent`.
     auto BuildGraph = [&](RHIExtent2D extent)
     {
+        cfg.renderExtent = extent;
+        cfg.ptRenderPaused = &renderPaused;
         renderer->BeginSetup();
         if (mode == Mode::PathTracer)
-            BuildPathTracerRenderGraph(renderer.get(), &*gpu, cfg, scene, extent, handles, &renderPaused);
+            BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
         else
-            BuildRasterRenderGraph(renderer.get(), &*gpu, cfg, scene, extent, handles);
+            BuildRasterRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
+        Examples_InsertBasicTonemapPasses(
+            renderer.get(), gpu, handles, cfg, &postprocessGlobals, viewLUTSdrHandle, viewLUTHdrHandle);
         createCSDebugTextPassBackBuffer(renderer.get(), "Debug Text", hud); // overlay last
         renderer->EndSetup();
         renderExtent = extent;
@@ -432,6 +437,12 @@ int main(int argc, char** argv)
         ubo.fbWidth = static_cast<float>(renderExtent.x);
         ubo.fbHeight = static_cast<float>(renderExtent.y);
         ubo.ptViewFlags = cfg.viewFlags;
+        postprocessGlobals.camEV = ubo.camEV;
+        postprocessGlobals.postShowOutline = 0u;
+        postprocessGlobals.ptAccumulatedFrames = ubo.ptAccumulatedFrames;
+        postprocessGlobals.ptDispatchTileSide = ubo.ptDispatchTileSide;
+        postprocessGlobals.fbWidth = ubo.fbWidth;
+        postprocessGlobals.fbHeight = ubo.fbHeight;
 
         // Refresh the HUD readout before submitting (the overlay pass reads it this frame).
         hud[2].SetText(fmt::format("{}   {:.0f} FPS{}", mode == Mode::PathTracer ? "Path Tracer" : "Raster",
@@ -446,7 +457,6 @@ int main(int argc, char** argv)
     }
 
     device->WaitIdle();
-    gpu.reset(); // Release GPUScene resources while the device is still alive.
     // Hand the renderer back as a raw pointer; Examples_DestroyVulkan owns the teardown.
     Examples_DestroyVulkan(window, renderer.release(), app, device, swapchain);
     return 0;

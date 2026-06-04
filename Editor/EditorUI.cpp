@@ -5,6 +5,7 @@
 #include <Math/Decompose.hpp>
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
+#include <Renderer/Postprocess.hpp>
 #include "EditorState.hpp"
 #include <Renderer/Mesh.hpp>
 
@@ -1758,9 +1759,11 @@ void FRunningImGui()
         ImGui::SeparatorText("Display");
         bool viewLUTChanged = false;
         auto viewLUTCombo = [](const char* label, int& index, String& externalPath,
-                               const ViewLUTEntry* entries, int count)
+                               Postprocess::ViewLUTDomain domain)
         {
-            const int externalIndex = count;
+            Span<Postprocess::ViewLUTEntry const> entries = Postprocess::EnumerateViewLUTEntries(domain);
+            int const count = static_cast<int>(entries.size());
+            const int externalIndex = Postprocess::GetExternalViewLUTIndex(domain);
             if (index < 0 || index > externalIndex || (index == externalIndex && externalPath.empty()))
                 index = std::clamp(index, 0, count - 1);
 
@@ -1800,9 +1803,9 @@ void FRunningImGui()
             return selected;
         };
         viewLUTChanged |= viewLUTCombo("SDR LUT", GEditor.viewLUTSdrIndex, GEditor.viewLUTSdrExternalPath,
-                                       kViewLUTsSdr, kViewLUTSdrCount);
+                                       Postprocess::ViewLUTDomain::SDR);
         viewLUTChanged |= viewLUTCombo("HDR LUT", GEditor.viewLUTHdrIndex, GEditor.viewLUTHdrExternalPath,
-                                       kViewLUTsHdr, kViewLUTHdrCount);
+                                       Postprocess::ViewLUTDomain::HDR);
         if (viewLUTChanged)
             ApplyViewLUTSelection();
         if (GContext->windowHDR.propertiesAvailable)
@@ -2021,7 +2024,7 @@ void FRunningImGui()
     ImGui::PopStyleColor();
 }
 
-void FRendering(RendererHandles const& handles)
+void FRendering(RendererOutputs const& outputs)
 {
     auto* renderer = GContext->renderer;
     renderer->BeginExecute();
@@ -2077,6 +2080,14 @@ void FRendering(RendererHandles const& handles)
         ImGui::PopStyleVar(2);
     }
     GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
+    GEditor.postprocessGlobals.camEV = GEditor.shaderGlobals.camEV;
+    GEditor.postprocessGlobals.postShowOutline = GEditor.showImGui ? 1u : 0u;
+    GEditor.postprocessGlobals.ptAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
+    GEditor.postprocessGlobals.ptDispatchTileSide = GEditor.shaderGlobals.ptDispatchTileSide;
+    GEditor.postprocessGlobals.fbWidth = GEditor.shaderGlobals.fbWidth;
+    GEditor.postprocessGlobals.fbHeight = GEditor.shaderGlobals.fbHeight;
+    GEditor.postprocessGlobals.viewLutIndex =
+        Postprocess::ResolvePostprocessViewLutIndex(GEditor.viewLUTSdrHandle, GEditor.viewLUTHdrHandle, GContext->enableHDR);
     renderer->ExecuteFrame();
     renderer->EndExecute();
     GEditor.shaderGlobals.ptAccumulatedFrames += PTSamplesPerDispatch(GEditor.shaderGlobals);
@@ -2087,7 +2098,7 @@ void FRendering(RendererHandles const& handles)
         GEditor.shaderGlobals.ptSamplesPerPixel = GEditor.renderTask.previousSpp;
         GEditor.shaderGlobals.ptDispatchTileSide = GEditor.renderTask.previousSppTile;
         if (!cancelRendering)
-            DoRenderReadback(handles);
+            DoRenderReadback(outputs);
         GEditor.state = FERunning;
     }
 }

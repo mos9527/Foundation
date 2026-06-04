@@ -1299,6 +1299,34 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
     mFrameSwapped = mCurrentSwap = mCurrentSync = 0;
 }
 
+void Renderer::WaitForPreviousFrame()
+{
+    CHECK_MSG(mState != State::Execute,
+              "Renderer bad state ({}). WaitForPreviousFrame() must not be called between BeginExecute() and "
+              "EndExecute().",
+              mState);
+    ZoneScopedN("Wait for Previous Frame");
+    // No frame has been submitted yet - nothing to wait on.
+    if (mFrameSwapped == 0)
+        return;
+    if (!mSetup)
+        return;
+    // mCurrentSync points at the *next* frame's sync slot (advanced at the end of EndExecute()).
+    // The most recently submitted frame uses the previous slot.
+    const uint32_t prevSync = (mCurrentSync + mFrameSwaps - 1) % mFrameSwaps;
+    if (prevSync >= mSwaps.size())
+        return;
+    Vector<RHIDeviceFence*> wait(mAllocator);
+    wait.reserve(2);
+    if (mSetup->executionAnyGraphics && mSwaps[prevSync].graphicsFence.IsValid())
+        wait.push_back(mSwaps[prevSync].graphicsFence.Get());
+    if (mSetup->executionAnyCompute && mSwaps[prevSync].computeFence.IsValid())
+        wait.push_back(mSwaps[prevSync].computeFence.Get());
+    if (wait.empty())
+        return;
+    mDevice->WaitForFences(wait, true, -1);
+}
+
 void Renderer::BeginExecute()
 {
     CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", mState);

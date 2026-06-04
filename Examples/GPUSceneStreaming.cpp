@@ -27,11 +27,13 @@
 #include <Editor/Scene/Mesh.hpp> // FImportedMesh / FSerializedMesh / MemoryBlobSerializer
 #include <Editor/Camera.hpp>     // FArcballCamera
 #include <RenderUtils/CSDebugText.hpp> // createCSDebugTextPassBackBuffer (on-screen HUD)
+#include <Core/Paths.hpp>
 #include "Examples.hpp"
 #include <algorithm>
 #include <cmath>
 
 using namespace RenderUtils;
+using Foundation::Core::PathsResolve;
 
 namespace
 {
@@ -155,8 +157,7 @@ int main(int argc, char** argv)
     desc.lightBudget = 16u;
     // desc.tlasBudget stays at its 16 MB default - the pre-allocation we rely on.
 
-    Optional<GPUScene> gpu;
-    gpu.emplace(device.Get(), GLOBAL_ALLOC, desc);
+    GPUScene gpu(device.Get(), GLOBAL_ALLOC, desc);
 
     // Serializes a CPU mesh into `a` (in place, so its addresses are stable) and enqueues the
     // upload. Crucially this does NOT Join: it returns as soon as the work is queued, and the
@@ -180,7 +181,7 @@ int main(int argc, char** argv)
         a.serialized.dagMeshletVtx = blobs.AppendArray(mesh.dag.meshletVtx);
 
         FBlobDeserializer des = blobs.Deserializer();
-        GPUScene::Result r = gpu->Upload(&des, a.serialized, a.handle);
+        GPUScene::Result r = gpu.Upload(&des, a.serialized, a.handle);
         CHECK_MSG(r == GPUScene::Result::InProgress, "Mesh upload rejected ({})", r);
     };
 
@@ -239,7 +240,7 @@ int main(int argc, char** argv)
     {
         uint32_t blobs = static_cast<uint32_t>(assets.size()) - 1u; // minus the floor
         uint32_t instanceCount = 1u + blobs;
-        auto tables = gpu->BeginScene(instanceCount, static_cast<uint32_t>(palette.size()), 1u);
+        auto tables = gpu.BeginScene(instanceCount, static_cast<uint32_t>(palette.size()), 1u);
 
         tables.instances[0] = InstanceDesc{.geometry = assets[kFloorAsset].handle,
                                            .transform = float3(0.0f),
@@ -271,7 +272,7 @@ int main(int argc, char** argv)
         key.twoSided = 0u;
         key.selectionWeight = key.power;
 
-        auto result = gpu->EndScene(tables);
+        auto result = gpu.EndScene(tables);
         ubo.firstInstance = result.firstInstance;
         ubo.numInstances = result.numInstances;
         ubo.firstMaterial = result.firstMaterial;
@@ -283,17 +284,19 @@ int main(int argc, char** argv)
     };
     AuthorFrame(0.0f); // seed the tables (floor only) so the initial TLAS build is well-formed
 
-    gpu->BuildUBO(ubo, /*hdr*/ false);
+    gpu.BuildUBO(ubo);
     ubo.ambientColor = float3(0.02f, 0.025f, 0.035f); // faint sky fill so empty areas aren't pure black
     ubo.ambientPower = 1.0f;
     ubo.useEnvMap = 0u;
+    TextureHandle viewLUTSdrHandle{};
+    TextureHandle viewLUTHdrHandle{};
     // One-time TLAS build sizes the AS inside its pre-allocated 16 MB buffer (the only sync, and
     // it's before the loop). From here the graph's per-frame TLAS Update keeps it current.
     {
         ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
         auto* cmd = ctx.Get();
         cmd->Begin();
-        auto tlasResult = gpu->BuildTLAS(cmd, /*update*/ false);
+        auto tlasResult = gpu.BuildTLAS(cmd, /*update*/ false);
         cmd->End();
         if (tlasResult == GPUScene::TLASBuildResult::Built)
             ctx.Submit(), ctx.WaitIdle();
@@ -302,10 +305,9 @@ int main(int argc, char** argv)
     enum class Mode { Raster, PathTracer };
     Mode mode = Mode::PathTracer;
     bool renderPaused = false;
-    RendererPicking picking{};
     RendererConfig cfg{};
-    RendererScene scene{.gsGlobals = &ubo, .picking = &picking};
-    RendererHandles handles{};
+    PostprocessUBO postprocessGlobals{};
+    RendererOutputs handles{};
     RHIExtent2D renderExtent{};
 
     // On-screen HUD: the CSDebugText pass draws on top of the scene's backbuffer. The array is
@@ -319,11 +321,15 @@ int main(int argc, char** argv)
 
     auto BuildGraph = [&](RHIExtent2D extent)
     {
+        cfg.renderExtent = extent;
+        cfg.ptRenderPaused = &renderPaused;
         renderer->BeginSetup();
         if (mode == Mode::PathTracer)
-            BuildPathTracerRenderGraph(renderer.get(), &*gpu, cfg, scene, extent, handles, &renderPaused);
+            BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
         else
-            BuildRasterRenderGraph(renderer.get(), &*gpu, cfg, scene, extent, handles);
+            BuildRasterRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
+        Examples_InsertBasicTonemapPasses(
+            renderer.get(), gpu, handles, cfg, &postprocessGlobals, viewLUTSdrHandle, viewLUTHdrHandle);
         createCSDebugTextPassBackBuffer(renderer.get(), "Debug Text", hud); // overlay last
         renderer->EndSetup();
         renderExtent = extent;
@@ -365,11 +371,11 @@ int main(int argc, char** argv)
     // pre-allocated buffers; only the unreferenced resources are recycled, ready to re-stream.)
     auto ReleaseBlobs = [&]
     {
-        gpu->Join();           // upload worker is done touching the blob payloads we're about to free
+        gpu.Join();           // upload worker is done touching the blob payloads we're about to free
         assets.resize(1);      // keep the floor (assets[0]); drop the blob payloads + their handles
         AuthorFrame(0.0f);     // re-commit floor-only so the blob geometry is now unreferenced
         device->WaitIdle();    // let in-flight frames that still reference the blob BLASes finish
-        gpu->Collect();        // reclaim the unreferenced geometry (slots + primitive memory)
+        gpu.Collect();        // reclaim the unreferenced geometry (slots + primitive memory)
         ubo.ptAccumulatedFrames = 0u;
     };
 
@@ -434,10 +440,10 @@ int main(int argc, char** argv)
         }
 
         // Observe residency (per-resource, lock-free from the caller's view) for the readout.
-        GPUScene::Result drain = gpu->Poll(); // also starts the background worker on first call
+        GPUScene::Result drain = gpu.Poll(); // also starts the background worker on first call
         uint32_t resident = 0;
         for (StreamAsset const& a : assets)
-            resident += gpu->Query(a.handle) == GPUScene::Result::Ready ? 1u : 0u;
+            resident += gpu.Query(a.handle) == GPUScene::Result::Ready ? 1u : 0u;
         bool streaming = drain == GPUScene::Result::InProgress;
 
         if (!paused)
@@ -460,6 +466,12 @@ int main(int argc, char** argv)
         ubo.fbWidth = static_cast<float>(renderExtent.x);
         ubo.fbHeight = static_cast<float>(renderExtent.y);
         ubo.ptViewFlags = cfg.viewFlags;
+        postprocessGlobals.camEV = ubo.camEV;
+        postprocessGlobals.postShowOutline = 0u;
+        postprocessGlobals.ptAccumulatedFrames = ubo.ptAccumulatedFrames;
+        postprocessGlobals.ptDispatchTileSide = ubo.ptDispatchTileSide;
+        postprocessGlobals.fbWidth = ubo.fbWidth;
+        postprocessGlobals.fbHeight = ubo.fbHeight;
 
         // Refresh the HUD readout before submitting (the overlay pass reads it this frame).
         bool atCap = assets.size() >= static_cast<size_t>(kBlobCount + 1u);
@@ -481,7 +493,6 @@ int main(int argc, char** argv)
     }
 
     device->WaitIdle();
-    gpu.reset(); // releases GPUScene + joins its upload worker while the device is alive
     Examples_DestroyVulkan(window, renderer.release(), app, device, swapchain);
     return 0;
 }

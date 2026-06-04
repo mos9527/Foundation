@@ -11,6 +11,7 @@ add_library(Foundation_GPUScene STATIC
     Animation.cpp
     GPUScene.cpp
     Mesh.cpp
+    Postprocess.cpp
     Precompute.cpp
     Serialization.cpp
     Texture.cpp

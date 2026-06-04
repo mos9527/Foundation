@@ -8,7 +8,7 @@ import IPostprocess;
 Texture2D<float4> diffuseTex;
 Texture2D<float4> specularTex;
 SamplerState lutSampler;
-uniform UBO globalParams;
+uniform PostprocessUBO globalParams;
 
 uint GetPTPostprocessTileSide()
 {

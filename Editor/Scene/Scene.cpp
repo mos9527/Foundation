@@ -14,7 +14,7 @@
 #include <string_view>
 #include <type_traits>
 #include <RHICore/Device.hpp>
-#include <Renderer/Tables/ViewLUTs.hpp>
+#include <Renderer/Postprocess.hpp>
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Mesh.hpp>
 #include <Renderer/Animation.hpp>
@@ -71,66 +71,6 @@ bool ParseLUTTuple(std::string_view tuple, std::string_view expectedKind,
     return !outView.empty() && !outLook.empty();
 }
 
-Pair<std::string_view, std::string_view> SplitViewLUTLabel(std::string_view label)
-{
-    size_t split = label.find(" / ");
-    if (split == std::string_view::npos)
-        return {Trim(label), std::string_view{}};
-    return {Trim(label.substr(0, split)), Trim(label.substr(split + 3))};
-}
-
-bool ViewLUTLabelGreaterEqual(Pair<std::string_view, std::string_view> const& lhs,
-                                     Pair<std::string_view, std::string_view> const& rhs)
-{
-    int viewCompare = lhs.first.compare(rhs.first);
-    if (viewCompare != 0)
-        return viewCompare > 0;
-    return lhs.second.compare(rhs.second) >= 0;
-}
-
-bool ViewLUTLabelLess(Pair<std::string_view, std::string_view> const& lhs,
-                             Pair<std::string_view, std::string_view> const& rhs)
-{
-    int viewCompare = lhs.first.compare(rhs.first);
-    if (viewCompare != 0)
-        return viewCompare < 0;
-    return lhs.second.compare(rhs.second) < 0;
-}
-
-template <size_t N>
-uint32_t MatchViewLUTIndex(const ViewLUTEntry (&entries)[N], std::string_view view,
-                                  std::string_view look, uint32_t defaultIndex)
-{
-    if (view.empty())
-        return defaultIndex;
-
-    Optional<uint32_t> viewNoLook;
-    Optional<uint32_t> lexicographic;
-    Pair<std::string_view, std::string_view> lexicographicLabel;
-    Pair<std::string_view, std::string_view> target{view, look};
-
-    for (uint32_t i = 0; i < N; ++i)
-    {
-        Pair<std::string_view, std::string_view> candidate = SplitViewLUTLabel(entries[i].label);
-        if (candidate.first == view && candidate.second == look)
-            return i;
-        if (candidate.first == view && candidate.second == "No Look")
-            viewNoLook = i;
-        if (ViewLUTLabelGreaterEqual(candidate, target) &&
-            (!lexicographic.has_value() || ViewLUTLabelLess(candidate, lexicographicLabel)))
-        {
-            lexicographic = i;
-            lexicographicLabel = candidate;
-        }
-    }
-
-    if (viewNoLook.has_value())
-        return *viewNoLook;
-    if (lexicographic.has_value())
-        return *lexicographic;
-    return defaultIndex;
-}
-
 void LoadFoundationColorManagementExtension(cgltf_data const* data, FSceneGlobals& result)
 {
     if (!data->has_foundation_color_management)
@@ -143,9 +83,11 @@ void LoadFoundationColorManagementExtension(cgltf_data const* data, FSceneGlobal
     std::string_view view;
     std::string_view look;
     if (colorManagement.sdr && ParseLUTTuple(colorManagement.sdr, "SDR", view, look))
-        result.viewLutSdrIndex = MatchViewLUTIndex(kViewLUTsSdr, view, look, kDefaultViewLUTSdr);
+        result.viewLutSdrIndex = Postprocess::MatchViewLUTIndex(Postprocess::ViewLUTDomain::SDR, view, look,
+                                                                Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::SDR));
     if (colorManagement.hdr && ParseLUTTuple(colorManagement.hdr, "HDR", view, look))
-        result.viewLutHdrIndex = MatchViewLUTIndex(kViewLUTsHdr, view, look, kDefaultViewLUTHdr);
+        result.viewLutHdrIndex = Postprocess::MatchViewLUTIndex(Postprocess::ViewLUTDomain::HDR, view, look,
+                                                                Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::HDR));
 }
 
 Optional<String> LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath, FImportedScene& scene)

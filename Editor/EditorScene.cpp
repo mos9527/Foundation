@@ -1,4 +1,4 @@
-﻿#include <Core/Paths.hpp>
+#include <Core/Paths.hpp>
 #include <Core/JobGraph.hpp>
 #include <filesystem>
 #include <limits>
@@ -8,6 +8,7 @@
 #include <Renderer/Mesh.hpp>
 #include <Renderer/Animation.hpp>
 #include "Renderer/GPUScene.hpp"
+#include "Renderer/Postprocess.hpp"
 #include <Math/Decompose.hpp>
 #include <imgui.h>
 #include <tracy/Tracy.hpp>
@@ -57,27 +58,15 @@ static FTexture LoadViewLUT(StringView path, Allocator* alloc = GLOBAL_ALLOC)
     return texture;
 }
 
-static String ResolveSelectedViewLUTPath(int& index, ViewLUTEntry const* entries, int count,
-                                         int defaultIndex, String const& externalPath)
-{
-    const int externalIndex = count;
-    if (index == externalIndex && !externalPath.empty())
-        return externalPath;
-
-    if (index < 0 || index >= count)
-        index = std::clamp(defaultIndex, 0, count - 1);
-    return entries[index].path;
-}
-
 static void LoadSelectedViewLUTs(FTexture& sdr, FTexture& hdr, int& sdrIndex, int& hdrIndex,
                                  String const& sdrExternalPath, String const& hdrExternalPath,
                                  Allocator* alloc = GLOBAL_ALLOC)
 {
     CHECK(alloc != nullptr);
-    String sdrPath = ResolveSelectedViewLUTPath(sdrIndex, kViewLUTsSdr, kViewLUTSdrCount,
-                                                kDefaultViewLUTSdr, sdrExternalPath);
-    String hdrPath = ResolveSelectedViewLUTPath(hdrIndex, kViewLUTsHdr, kViewLUTHdrCount,
-                                                kDefaultViewLUTHdr, hdrExternalPath);
+    String sdrPath = Postprocess::ResolveSelectedViewLUTPath(Postprocess::ViewLUTDomain::SDR,
+                                                             sdrIndex, sdrExternalPath);
+    String hdrPath = Postprocess::ResolveSelectedViewLUTPath(Postprocess::ViewLUTDomain::HDR,
+                                                             hdrIndex, hdrExternalPath);
 
     sdr = LoadViewLUT(sdrPath, alloc);
     hdr = LoadViewLUT(hdrPath, alloc);
@@ -87,6 +76,15 @@ static void LoadSelectedViewLUTs(FTexture& sdr, FTexture& hdr)
 {
     LoadSelectedViewLUTs(sdr, hdr, GEditor.viewLUTSdrIndex, GEditor.viewLUTHdrIndex,
                          GEditor.viewLUTSdrExternalPath, GEditor.viewLUTHdrExternalPath);
+}
+
+static void UploadEditorViewLUTs(GPUScene* gpu, FTexture const& sdr, FTexture const& hdr)
+{
+    CHECK(gpu != nullptr);
+    GPUScene::Result sdrResult = gpu->Upload(sdr, GEditor.viewLUTSdrHandle, "View LUT SDR", true);
+    GPUScene::Result hdrResult = gpu->Upload(hdr, GEditor.viewLUTHdrHandle, "View LUT HDR", true);
+    CHECK_MSG(sdrResult == GPUScene::Result::Ready, "Failed to upload SDR view LUT ({})", static_cast<int>(sdrResult));
+    CHECK_MSG(hdrResult == GPUScene::Result::Ready, "Failed to upload HDR view LUT ({})", static_cast<int>(hdrResult));
 }
 
 static double MillisecondsSince(std::chrono::steady_clock::time_point start)
@@ -151,7 +149,7 @@ bool ApplyViewLUTSelection()
         FTexture sdr(GLOBAL_ALLOC);
         FTexture hdr(GLOBAL_ALLOC);
         LoadSelectedViewLUTs(sdr, hdr);
-        GContext->gpuScene->UploadViewLUTs(sdr, hdr);
+        UploadEditorViewLUTs(GContext->gpuScene, sdr, hdr);
     }
     catch (std::exception const& e)
     {
@@ -164,7 +162,6 @@ bool ApplyViewLUTSelection()
         return false;
     }
 
-    GContext->gpuScene->BuildUBO(GEditor.shaderGlobals, GContext->enableHDR);
     return true;
 }
 
@@ -285,7 +282,7 @@ static Vector<float> CombineRenderTextures(Span<const FTexture> textures, uint32
     return combined;
 }
 
-void DoRenderReadback(RendererHandles const& handles)
+void DoRenderReadback(RendererOutputs const& outputs)
 {
     auto* renderer = GContext->renderer;
     uint32_t w = 0;
@@ -293,14 +290,18 @@ void DoRenderReadback(RendererHandles const& handles)
 
     if (GEditor.renderTask.format == ERenderFormat::HDR)
     {
-        CHECK_MSG(handles.numHdrRT, "Invalid HDR readback texture count");
         Vector<FTexture> hdrTextures(GLOBAL_ALLOC);
-        hdrTextures.reserve(handles.numHdrRT);
-        for (uint32_t i = 0; i < handles.numHdrRT; ++i)
+        auto PushHDR = [&](ResourceHandle handle)
         {
-            auto* texture = renderer->DerefResource(handles.hdrRT[i]).Get<RHITexture*>();
+            if (handle == kInvalidHandle)
+                return;
+            auto* texture = renderer->DerefResource(handle).Get<RHITexture*>();
             hdrTextures.push_back(ReadbackRenderTexture(texture, GLOBAL_ALLOC));
-        }
+        };
+        PushHDR(outputs.diffuse);
+        if (outputs.specular != kInvalidHandle && outputs.specular != outputs.diffuse)
+            PushHDR(outputs.specular);
+        CHECK_MSG(!hdrTextures.empty(), "Invalid HDR readback outputs");
         // AOVs are provided (without alpha), combine them into one HDR buffer
         const Vector<float> combined = CombineRenderTextures(hdrTextures, w, h);
         const char* hdrPath = GEditor.renderTask.outputPath.c_str();
@@ -310,8 +311,8 @@ void DoRenderReadback(RendererHandles const& handles)
             GEditor.shaderGlobals.ptAccumulatedFrames);
     } else
     {
-        CHECK_MSG(handles.sdrRT != kInvalidHandle, "Invalid SDR readback texture");
-        auto sdrTexture = renderer->DerefResource(handles.sdrRT).Get<RHITexture*>();
+        CHECK_MSG(outputs.postprocess != kInvalidHandle, "Invalid SDR readback texture");
+        auto sdrTexture = renderer->DerefResource(outputs.postprocess).Get<RHITexture*>();
         const FTexture sdr = ReadbackRenderTexture(sdrTexture, GLOBAL_ALLOC);
         ValidateRenderReadbackTexture(sdr, RHIResourceFormat::R8G8B8A8Unorm, w, h);
         const char* sdrPath = GEditor.renderTask.outputPath.c_str();
@@ -693,7 +694,7 @@ static void BeginSceneUpload(FImportedScene& scene, GPUScene* gpu, Vector<Geomet
 }
 
 // Applies the scene's globals + camera and uploads the environment map + view LUTs. These
-// are small and synchronous (UploadEnvMap / UploadViewLUTs Join internally), so they run
+// are small and synchronous (UploadEnvMap / Upload(FTexture) for LUTs), so they run
 // BEFORE the heavy geometry/textures are queued: that keeps the synchronous drain limited
 // to env + LUTs and leaves the bulk of the scene to stream in on the background worker.
 static void PrepareSceneGlobals(FImportedScene& scene, GPUScene* gpu, AllocatorStack& sceneAlloc)
@@ -721,11 +722,11 @@ static void PrepareSceneGlobals(FImportedScene& scene, GPUScene* gpu, AllocatorS
         FTexture hdr(&sceneAlloc);
         LoadSelectedViewLUTs(sdr, hdr, GEditor.viewLUTSdrIndex, GEditor.viewLUTHdrIndex,
                              GEditor.viewLUTSdrExternalPath, GEditor.viewLUTHdrExternalPath, &sceneAlloc);
-        gpu->UploadViewLUTs(sdr, hdr);
+        UploadEditorViewLUTs(gpu, sdr, hdr);
     }
 
     ApplySceneCamera(scene, GEditor.camera, GEditor.aperture, GEditor.shaderGlobals);
-    gpu->BuildUBO(GEditor.shaderGlobals, GContext->enableHDR);
+    gpu->BuildUBO(GEditor.shaderGlobals);
 }
 
 
@@ -1362,7 +1363,7 @@ void LoadEnvMap(StringView path)
             .azimuthOffset = GEditor.shaderGlobals.envAzimuthOffset,
         };
         GEditor.shaderGlobals.useEnvMap = 1u;
-        gpu->BuildUBO(GEditor.shaderGlobals, GContext->enableHDR);
+        gpu->BuildUBO(GEditor.shaderGlobals);
         GEditor.shaderGlobals.ptAccumulatedFrames = 0;
         LOG(Editor, LogInfo, "HDRI env map loaded successfully");
     }

@@ -21,10 +21,12 @@
 #include <Editor/Scene/Mesh.hpp>  // FImportedMesh / FSerializedMesh / MemoryBlobSerializer
 #include <Editor/Camera.hpp>      // FArcballCamera
 #include <RenderUtils/CSDebugText.hpp>
+#include <Core/Paths.hpp>
 #include "Examples.hpp"
 #include <cmath>
 
 using namespace RenderUtils;
+using Foundation::Core::PathsResolve;
 
 namespace
 {
@@ -140,8 +142,7 @@ int main(int argc, char** argv)
     desc.lightBudget = 8u;
     desc.dynamicGeometryBudget = 16u * (1u << 20);          // 16 MiB / frame slot
     desc.framesInFlight = renderer->GetFrameSwaps();         // ring sized to frames-in-flight (+1 internally)
-    Optional<GPUScene> gpu;
-    gpu.emplace(device.Get(), GLOBAL_ALLOC, desc);
+    GPUScene gpu(device.Get(), GLOBAL_ALLOC, desc);
 
     // --- Upload the static floor (immutable path) -------------------------------------------
     GeometryHandle floor;
@@ -163,8 +164,8 @@ int main(int argc, char** argv)
         floorSerialized.dagMeshletTri = blobs.AppendArray(plane.dag.meshletTri);
         floorSerialized.dagMeshletVtx = blobs.AppendArray(plane.dag.meshletVtx);
         FBlobDeserializer des = blobs.Deserializer();
-        CHECK_MSG(gpu->Upload(&des, floorSerialized, floor) == GPUScene::Result::InProgress, "floor upload rejected");
-        gpu->Join();
+        CHECK_MSG(gpu.Upload(&des, floorSerialized, floor) == GPUScene::Result::InProgress, "floor upload rejected");
+        gpu.Join();
     }
 
     // --- Upload the deforming grid as DYNAMIC geometry (rest pose seeds all slots) -----------
@@ -184,7 +185,7 @@ int main(int argc, char** argv)
         lod0.indexCount = gridIdxCount;
         // No DAG/meshlets: dynamic geo is drawn via the dedicated vertex/index path.
         FBlobDeserializer des = blobs.Deserializer();
-        GPUScene::Result r = gpu->UploadDynamic(&des, gridSerialized, gridHandle);
+        GPUScene::Result r = gpu.UploadDynamic(&des, gridSerialized, gridHandle);
         CHECK_MSG(r == GPUScene::Result::Ready, "dynamic grid upload failed ({})", r);
     }
 
@@ -201,7 +202,7 @@ int main(int argc, char** argv)
 
     auto AuthorFrame = [&]
     {
-        auto tables = gpu->BeginScene(2u, static_cast<uint32_t>(palette.size()), 1u);
+        auto tables = gpu.BeginScene(2u, static_cast<uint32_t>(palette.size()), 1u);
         tables.instances[0] = InstanceDesc{.geometry = floor, .transform = float3(0.0f, -0.4f, 0.0f),
                                            .rotation = angleAxis(0.0f, float3(0, 1, 0)),
                                            .scale = float3(8.0f, 1.0f, 8.0f), .materialIndex = matFloor};
@@ -220,7 +221,7 @@ int main(int argc, char** argv)
         key.dpdv = float3(0.0f, 0.0f, 2.0f);
         key.direction = float3(0.0f, -1.0f, 0.0f);
         key.selectionWeight = key.power;
-        auto result = gpu->EndScene(tables);
+        auto result = gpu.EndScene(tables);
         ubo.firstInstance = result.firstInstance;
         ubo.numInstances = result.numInstances;
         ubo.firstMaterial = result.firstMaterial;
@@ -231,15 +232,17 @@ int main(int argc, char** argv)
         ubo.sceneLightWeightSum = result.sceneLightWeightSum;
     };
     AuthorFrame();
-    gpu->BuildUBO(ubo, /*hdr*/ false);
+    gpu.BuildUBO(ubo);
     ubo.ambientColor = float3(0.02f, 0.025f, 0.035f);
     ubo.ambientPower = 1.0f;
     ubo.useEnvMap = 0u;
+    TextureHandle viewLUTSdrHandle{};
+    TextureHandle viewLUTHdrHandle{};
     {
         ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
         auto* cmd = ctx.Get();
         cmd->Begin();
-        auto r = gpu->BuildTLAS(cmd, /*update*/ false);
+        auto r = gpu.BuildTLAS(cmd, /*update*/ false);
         cmd->End();
         if (r == GPUScene::TLASBuildResult::Built)
             ctx.Submit(), ctx.WaitIdle();
@@ -248,10 +251,9 @@ int main(int argc, char** argv)
     enum class Mode { Raster, PathTracer };
     Mode mode = Mode::PathTracer;
     bool renderPaused = false;
-    RendererPicking picking{};
     RendererConfig cfg{};
-    RendererScene scene{.gsGlobals = &ubo, .picking = &picking};
-    RendererHandles handles{};
+    PostprocessUBO postprocessGlobals{};
+    RendererOutputs handles{};
     RHIExtent2D renderExtent{};
 
     CSDebugTextData hud[4]{};
@@ -262,11 +264,15 @@ int main(int argc, char** argv)
 
     auto BuildGraph = [&](RHIExtent2D extent)
     {
+        cfg.renderExtent = extent;
+        cfg.ptRenderPaused = &renderPaused;
         renderer->BeginSetup();
         if (mode == Mode::PathTracer)
-            BuildPathTracerRenderGraph(renderer.get(), &*gpu, cfg, scene, extent, handles, &renderPaused);
+            BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
         else
-            BuildRasterRenderGraph(renderer.get(), &*gpu, cfg, scene, extent, handles);
+            BuildRasterRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
+        Examples_InsertBasicTonemapPasses(
+            renderer.get(), gpu, handles, cfg, &postprocessGlobals, viewLUTSdrHandle, viewLUTHdrHandle);
         createCSDebugTextPassBackBuffer(renderer.get(), "Debug Text", hud);
         renderer->EndSetup();
         renderExtent = extent;
@@ -344,13 +350,13 @@ int main(int argc, char** argv)
         // --- Per-frame dynamic geometry update: open the window (advances the ring slot),
         //     rewrite this slot's quantized vertices (marks dirty), close the window. The graph's
         //     refit pass picks it up before the TLAS update.
-        gpu->SetDynamicGeometryRebuildRate(rebuildEveryFrame ? 1u : cadence);
-        gpu->BeginDynamicGeometryUpdate();
-        Span<std::byte> verts = gpu->UpdateDynamicGeometry(gridHandle);
+        gpu.SetDynamicGeometryRebuildRate(rebuildEveryFrame ? 1u : cadence);
+        gpu.BeginDynamicGeometryUpdate();
+        Span<std::byte> verts = gpu.UpdateDynamicGeometry(gridHandle);
         auto* dst = reinterpret_cast<FQVertex*>(verts.data());
         for (uint32_t i = 0; i < gridVtxCount; ++i)
             dst[i] = EvalGridVertex(gridVertices[i], animTime);
-        gpu->EndDynamicGeometryUpdate();
+        gpu.EndDynamicGeometryUpdate();
 
         AuthorFrame();
 
@@ -366,10 +372,16 @@ int main(int argc, char** argv)
         ubo.fbWidth = static_cast<float>(renderExtent.x);
         ubo.fbHeight = static_cast<float>(renderExtent.y);
         ubo.ptViewFlags = cfg.viewFlags;
+        postprocessGlobals.camEV = ubo.camEV;
+        postprocessGlobals.postShowOutline = 0u;
+        postprocessGlobals.ptAccumulatedFrames = ubo.ptAccumulatedFrames;
+        postprocessGlobals.ptDispatchTileSide = ubo.ptDispatchTileSide;
+        postprocessGlobals.fbWidth = ubo.fbWidth;
+        postprocessGlobals.fbHeight = ubo.fbHeight;
 
         const char* refitMode = rebuildEveryFrame ? "rebuild/frame" : (cadence == 0u ? "refit-only" : "periodic(64)");
-        hud[2].SetText(fmt::format("refit {}  rebuild {}  mode {}", gpu->GetDynamicRefitCount(),
-                                   gpu->GetDynamicRebuildCount(), refitMode));
+        hud[2].SetText(fmt::format("refit {}  rebuild {}  mode {}", gpu.GetDynamicRefitCount(),
+                                   gpu.GetDynamicRebuildCount(), refitMode));
         hud[3].SetText(fmt::format("{}   {:.0f} FPS{}", mode == Mode::PathTracer ? "Path Tracer" : "Raster",
                                    fps.Update(), paused ? "   [PAUSED]" : ""));
 
@@ -381,7 +393,6 @@ int main(int argc, char** argv)
     }
 
     device->WaitIdle();
-    gpu.reset();
     Examples_DestroyVulkan(window, renderer.release(), app, device, swapchain);
     return 0;
 }

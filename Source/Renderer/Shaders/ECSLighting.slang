@@ -11,7 +11,8 @@ Texture2D<float4> RT0;
 Texture2D<float4> RT1;
 Texture2D<float4> RT2;
 Texture2D<float> depth;
-RWTexture2D<float4> output;
+RWTexture2D<float4> diffuseOutput;
+RWTexture2D<float4> specularOutput;
 RaytracingAccelerationStructure AS;
 
 bool shadow(float3 p, float3 l, float tMax = INF)
@@ -48,7 +49,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float ndcDepth = depth.Load(uint3(tid,0));
     if (ndcDepth <= EPS) {
         // Infinite depth
-        output[tid] = float4(globalParams.ambientColor * globalParams.ambientPower, 1.0f);
+        diffuseOutput[tid] = float4(globalParams.ambientColor * globalParams.ambientPower, 1.0f);
+        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     }
 
@@ -60,9 +62,9 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float3 p = wsPosition.xyz / wsPosition.w;
     float3 eye = globalParams.camPosition.xyz;
 
-    float3 n, t, b;
-    unpackTBN888(color1.xyz, n, t);
-    b = cross(n, t) * (BSign == 1 ? 1.0f : -1.0f);
+    float3 normalWS, t, b;
+    unpackTBN888(color1.xyz, normalWS, t);
+    b = cross(normalWS, t) * (BSign == 1 ? 1.0f : -1.0f);
 
     float metallic = color1.w;
     float roughness = color2.w;
@@ -70,25 +72,29 @@ void main(uint2 tid: SV_DispatchThreadID) {
 
     if ((flags & (kViewBaseColor | kViewMeshlet | kViewTextureLOD)) != 0) {
         // Meshlet and Texture LOD are passed down to GBuffer RT0.
-        output[tid] = float4(baseColor, 1.0f);
+        diffuseOutput[tid] = float4(baseColor, 1.0f);
+        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     } else if ((flags & kViewMaterialID) != 0) {
-        output[tid] = float4(unpackUnorm4x8ToFloat(hash(materialID)).xyz, 1.0f);
+        diffuseOutput[tid] = float4(unpackUnorm4x8ToFloat(hash(materialID)).xyz, 1.0f);
+        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     } else if ((flags & kViewNormal) != 0) {
-        output[tid] = float4(n * 0.5f + 0.5f, 1.0f);
+        diffuseOutput[tid] = float4(normalWS * 0.5f + 0.5f, 1.0f);
+        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     } else if ((flags & kViewPosition) != 0) {
-        output[tid] = float4(p.xyz, 1.0f);
+        diffuseOutput[tid] = float4(p.xyz, 1.0f);
+        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     } else {
         float3 v = normalize(eye - p);
 
-        float3 L = 0;
+        float3 Ld = 0;
+        float3 Ls = 0;
 
         // Direct lighting from scene lights
-        quat toLocal     = quatRotateToZ(n);
-        float3 n = float3(0,0,1);
+        quat toLocal = quatRotateToZ(normalWS);
         float3 wo = toLocal.rotate(v);
 
         PrincipledBSDF bsdf = PrincipledBSDF(baseColor, metallic, roughness, 1.5f, 1.0f, 0.0f, globalParams.energyCompensation != 0u, wo,
@@ -127,23 +133,28 @@ void main(uint2 tid: SV_DispatchThreadID) {
             }
 
             float3 wi = toLocal.rotate(l);
-            float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
+            float3 fd;
+            float3 fs;
+            bsdf.f(wo, wi, TransportMode::Radiance, fd, fs);
             float vis = 1.0f;
             if ((flags & kEnableRasterRTShadows) != 0) {
                 if (gl.type <= 2 /* Anything not area lights */) {
-                    float3 shadowNormalFF = dot(l, n) < 0.0f ? -n : n;
-                    float3 shadowOrigin = OffsetRay(p, n);
+                    float3 shadowNormalFF = dot(l, normalWS) < 0.0f ? -normalWS : normalWS;
+                    float3 shadowOrigin = OffsetRay(p, shadowNormalFF);
                     vis = shadow(shadowOrigin, l, lightDist) ? 0.0f : 1.0f;
                 }
             }
             else
                 vis = 1.0f;
-            L += f * AbsCosTheta(wi) * vis * lightColor * atten;
+            float3 lightContrib = AbsCosTheta(wi) * vis * lightColor * atten;
+            Ld += fd * lightContrib;
+            Ls += fs * lightContrib;
         }
 
-        L += baseColor * globalParams.ambientColor * globalParams.ambientPower;
+        Ld += baseColor * globalParams.ambientColor * globalParams.ambientPower;
+        Ld += emissive;
 
-        // Final color
-        output[tid] = float4(L + emissive, 1.0f);
+        diffuseOutput[tid] = float4(Ld, 1.0f);
+        specularOutput[tid] = float4(Ls, 1.0f);
     }
 }

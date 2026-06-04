@@ -195,7 +195,7 @@ struct GPUSceneDesc
  *
  * @details Typical render-build flow (after proper Renderer setup seen in Rasterizer.cpp/Pathtracer.cpp):
  *          1. `Upload(blobs, mesh/curve/texture, outHandle)` per resource — reserves
- *             memory immediately, returns @ref Result::InProgress. `UploadEnvMap` / `UploadViewLUTs` for environment + display LUTs.
+ *             memory immediately, returns @ref Result::InProgress.
  *          2. `Poll()` each frame (background drain) or `Join()` (blocking) until ready.
  *          3. `BeginScene` → fill the mapped instance/material/light spans → `EndScene`,
  *             then write the returned @ref UpdateResult offsets into the renderer UBO.
@@ -284,7 +284,7 @@ public:
     /**
      * @brief Queues a serialized texture upload, binding its bindless slot up front.
      * @param outTexture  [in,out] Pass a default (invalid) handle to allocate a new slot,
-     *                    or an existing handle to update it in place (env map / view LUT reload).
+     *                    or an existing handle to update it in place.
      * @param pinned      When true the slot is a GPUScene-owned singleton that @ref Collect
      *                    must never reclaim (LUTs / defaults / env map); scene textures pass false.
      */
@@ -317,11 +317,6 @@ public:
     [[nodiscard]] Result Poll();
 
     /**
-     * @brief Uploads the SDR/HDR display-transform view LUTs (owns its staging).
-     * @return @ref Result::Ready on success.
-     */
-    Result UploadViewLUTs(FTexture const& sdr, FTexture const& hdr);
-    /**
      * @brief Uploads an environment map and computes its importance-sampling CDFs.
      * @return @ref Result::Ready on success.
      */
@@ -329,14 +324,12 @@ public:
 
     /**
      * @brief Writes every GPUScene-owned global bindless index into the renderer UBO:
-     *        the GGX/sheen LUTs, the display-transform view LUT (SDR or HDR per @p hdr),
-     *        and the environment map + its importance-sampling CDFs (default-substituted
-     *        when no env map is loaded).
-     * @param hdr Selects the HDR view LUT when true, the SDR one otherwise.
+     *        the GGX/sheen LUTs and the environment map + its importance-sampling CDFs
+     *        (default-substituted when no env map is loaded).
      * @note Leaves instance/material/light table offsets untouched (those come from
      *       @ref EndScene's @ref UpdateResult).
      */
-    void BuildUBO(UBO& globals, bool hdr) const;
+    void BuildUBO(UBO& globals) const;
 
     /**
      * @brief Ring-buffer offsets and element counts for instances/materials/lights.
@@ -509,6 +502,8 @@ public:
     /* Textures */
     [[nodiscard]] BindlessPool* GetTexture2DPool();
     [[nodiscard]] BindlessPool* GetTexture3DPool();
+    [[nodiscard]] BindlessPool const* GetTexture2DPool() const;
+    [[nodiscard]] BindlessPool const* GetTexture3DPool() const;
     [[nodiscard]] uint32_t GetGGXLutEIndex() const { return mLUTGGXEIndex.index; }
     [[nodiscard]] uint32_t GetGGXLutEavgIndex() const { return mLUTGGXEavgIndex.index; }
     [[nodiscard]] uint32_t GetGGXLutEIORIndex() const { return mLUTGGXEIORIndex.index; }
@@ -516,8 +511,6 @@ public:
     [[nodiscard]] uint32_t GetGGXLutEIORInvIndex() const { return mLUTGGXEIORInvIndex.index; }
     [[nodiscard]] uint32_t GetGGXLutEIORInvavgIndex() const { return mLUTGGXEIORInvavgIndex.index; }
     [[nodiscard]] uint32_t GetSheenLtcIndex() const { return mLUTSheenLTCIndex.index; }
-    [[nodiscard]] uint32_t GetViewLutSdrIndex() const { return mLUTViewSdrIndex.index; }
-    [[nodiscard]] uint32_t GetViewLutHdrIndex() const { return mLUTViewHdrIndex.index; }
     [[nodiscard]] RHITexture* GetFoundationDefaultTexture2D() const;
     [[nodiscard]] RHITexture* GetFoundationDefaultTexture2DFloat() const;
     [[nodiscard]] RHIBuffer* GetFoundationDefaultBufferFloat() const { return mFoundationDefaultBufferFloat.Get(); }
@@ -578,8 +571,6 @@ private:
     TextureHandle mLUTGGXEIORIndex;
     TextureHandle mLUTGGXEIORInvIndex;
     TextureHandle mLUTSheenLTCIndex;
-    // Display transform 3D LUTs (texture3D pool)
-    TextureHandle mLUTViewSdrIndex, mLUTViewHdrIndex;
     // Shared default resources (texture2D pool)
     TextureHandle mFoundationDefaultTexture2DIndex;
     TextureHandle mFoundationDefaultTexture2DFloatIndex;

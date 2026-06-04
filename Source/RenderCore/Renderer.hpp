@@ -914,6 +914,26 @@ namespace Foundation::RenderCore
          */
         void SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain);
         /**
+         * @brief Blocks until the most recently submitted frame has finished executing on the GPU.
+         *
+         * This waits on the graphics / compute fences associated with the previous frame
+         * (i.e. the frame submitted by the last @ref EndExecute() call), without resetting them
+         * or advancing any per-frame state.
+         *
+         * Typical use cases:
+         *  - Safely accessing GPU resources written by the previous frame from the CPU.
+         *  - Forcing serialization between frames for debugging / profiling.
+         *
+         * @note This is a no-op if no frame has been submitted yet, or if the previous frame
+         *       had no graphics / compute work scheduled.
+         * @note This MUST NOT be called between @ref BeginExecute() and @ref EndExecute().
+         *       It is safe to call in @ref State::PostSetup (i.e. after @ref EndSetup() or
+         *       @ref EndExecute(), and before the next @ref BeginExecute()).
+         * @note This does NOT wait for *all* in-flight frames; use @ref WaitIdle() / device idle
+         *       for that.
+         */
+        void WaitForPreviousFrame();
+        /**
          * @brief Resets the temporary execution allocator , and waits for the possibly multi-buffered
          * next frame to finish rendering.
          *

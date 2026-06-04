@@ -248,7 +248,6 @@ public struct UBO
     public uint32_t ggxLutEIORInvIndex;
     public uint32_t ggxLutEIORInvavgIndex;
     public uint32_t sheenLtcIndex;
-    public uint32_t viewLutIndex;
     public uint32_t envMapTextureIndex;
     public uint32_t envMapMarginalCDFIndex;
     public uint32_t envMapConditionalCDFIndex;
@@ -270,6 +269,18 @@ public struct UBO
     // -- Debug
     public uint32_t postShowOutline;
     public uint32_t ptViewFlags;
+};
+
+public struct PostprocessUBO
+{
+    public float camEV;
+    public uint32_t viewLutIndex;
+    public uint32_t postShowOutline;
+    public uint32_t ptAccumulatedFrames;
+    public uint32_t ptDispatchTileSide;
+    public float fbWidth;
+    public float fbHeight;
+    public uint32_t outlineInstanceId;
 };
 // ^^^
 

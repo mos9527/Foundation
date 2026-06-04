@@ -46,7 +46,6 @@ struct UBO
     uint32_t ggxLutEIORInvIndex{UINT32_MAX};
     uint32_t ggxLutEIORInvavgIndex{UINT32_MAX};
     uint32_t sheenLtcIndex{UINT32_MAX};
-    uint32_t viewLutIndex{UINT32_MAX};
     uint32_t envMapTextureIndex{UINT32_MAX};
     uint32_t envMapMarginalCDFIndex{UINT32_MAX};
     uint32_t envMapConditionalCDFIndex{UINT32_MAX};
@@ -137,38 +136,41 @@ struct RendererConfig
 {
     unsigned viewFlags{kEnableRasterRTShadows};
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
+    RHIExtent2D renderExtent{0u, 0u};
     uint32_t ptSampler{kPTSamplerSobol};
+    bool const* ptRenderPaused{nullptr}; // dynamic runtime pause gate, read by PT dispatch pass
     bool ptShaderExecutionReordering{true};
     bool forceTextureLOD0{false};
     bool energyCompensation{true};
-    bool enableHDR{false}; // Output color space: A2B10G10R10 vs R8G8B8A8
 };
 
 class GPUScene;
 
-struct RendererPicking
+struct RendererOutputs
 {
-    int2 pendingPixel{-1, -1}; // (-1,-1) = no pending pick
+    RHIExtent2D extent{0u, 0u};
+    // Unified pre-postprocess outputs.
+    ResourceHandle diffuse{kInvalidHandle};
+    ResourceHandle specular{kInvalidHandle};
+    ResourceHandle depth{kInvalidHandle};
+    ResourceHandle debugOutput{kInvalidHandle}; // Renderer-owned debug visualization (already display-ready)
+    ResourceHandle postprocess{kInvalidHandle}; // Editor-owned composed output
+    ResourceHandle instanceID{kInvalidHandle}; // Per-pixel instance id map (R32_UINT)
 };
 
-struct RendererScene
+struct PostprocessUBO
 {
-    // GPUScene owns all scene-data residency (geometry, instances, lights, materials);
-    // the renderer only carries view/render config and picking state.
-    UBO* gsGlobals;
-    RendererPicking* picking;
+    float camEV{0.0f};
+    uint32_t viewLutIndex{UINT32_MAX};
+    uint32_t postShowOutline{0u};
+    uint32_t ptAccumulatedFrames{0u};
+    uint32_t ptDispatchTileSide{1u};
+    float fbWidth{1.0f};
+    float fbHeight{1.0f};
+    uint32_t outlineInstanceId{~0u};
 };
 
-struct RendererHandles
-{
-    ResourceHandle hdrRT[2]{kInvalidHandle, kInvalidHandle};
-    uint32_t numHdrRT{0u};
-    ResourceHandle sdrRT{kInvalidHandle};
-    ResourceHandle pickBuffer{kInvalidHandle}; // R32_UINT, 4 bytes, persistently mapped
-
-};
-
-extern void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cfg, RendererScene scene,
-                                   RHIExtent2D renderExtent, RendererHandles& outHandles);
-extern void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cfg, RendererScene scene,
-                                       RHIExtent2D renderExtent, RendererHandles& outHandles, bool const* renderPaused);
+extern void BuildRasterRenderGraph(Renderer* renderer, UBO* globals, GPUScene* gpu,
+                                   RendererConfig const& cfg, RendererOutputs& out);
+extern void BuildPathTracerRenderGraph(Renderer* renderer, UBO* globals, GPUScene* gpu,
+                                       RendererConfig const& cfg, RendererOutputs& out);

@@ -7,7 +7,6 @@
 #include "Renderer.hpp"
 using namespace Foundation;
 using namespace RenderUtils;
-using Foundation::Core::PathsResolve;
 #pragma pack(push, 1)
 struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 {
@@ -40,13 +39,17 @@ constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
 
-void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cfg, RendererScene scene,
-                            RHIExtent2D renderExtent, RendererHandles& outHandles)
+void BuildRasterRenderGraph(Renderer* renderer, UBO* globals, GPUScene* gpu,
+                            RendererConfig const& cfg, RendererOutputs& out)
 {
     CHECK(renderer);
+    CHECK(globals);
     CHECK(gpu);
     CHECK(renderer->GetDevice()->GetCapabilities().meshShaders);
-    gpu->BuildUBO(*scene.gsGlobals, cfg.enableHDR);
+    out = {};
+    RHIExtent2D renderExtent = cfg.renderExtent;
+    if (renderExtent.x == 0u || renderExtent.y == 0u)
+        renderExtent = renderer->GetSwapchainExtent();
     /* UBO for everyone */
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
@@ -113,7 +116,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
             // by the Renderer *inter* passes.
             // Note that usage before a Dispatch, etc, may be valid but is still a ROW hazard.
             // TODO: Document these.
-            cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*scene.gsGlobals)));
+            cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*globals)));
             cmd->FillBuffer(counter, 0u);
         });
     bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet | kViewTextureLOD);
@@ -161,7 +164,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
         {
             r->CmdSetPipeline(self, cmd);
             // TODO: This limits us to 65536 instances
-            r->CmdDispatch(self, cmd, {scene.gsGlobals->numInstances, 1, 1});
+            r->CmdDispatch(self, cmd, {globals->numInstances, 1, 1});
         });
     /* Meshlet Drawing */
     uint32_t w = std::max(renderExtent.x, 16u);
@@ -179,7 +182,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
         HIZHeight *= 2;
     HIZWidth /= 2, HIZHeight /= 2;
     const uint32_t HIZMips = glm::log2(std::max(HIZWidth, HIZHeight)) + 1u;
-    scene.gsGlobals->hizWidth = HIZWidth, scene.gsGlobals->hizHeight = HIZHeight, scene.gsGlobals->hizLevels = HIZMips;
+    globals->hizWidth = HIZWidth, globals->hizHeight = HIZHeight, globals->hizLevels = HIZMips;
     RHIDeviceSampler::SamplerDesc HIZSamplerDesc{
         .addressMode = {.u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                         .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -220,19 +223,11 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
                                                               .format = RHIResourceFormat::R16G16B16A16SignedFloat});
     // Instance ID map: R32_UINT, one uint per pixel storing the absolute instance index.
     // ~0u means "no object" (cleared each frame).
-    auto PickIDBuffer = renderer->CreateResource("Pick ID Buffer",
-                                                RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                                                   RHITextureUsageBits::SampledImage,
-                                                               .extent = {w, h, 1},
-                                                               .format = RHIResourceFormat::R32Uint});
-    // 4-byte persistently-mapped readback buffer: Blit PS writes the picked instanceID here.
-    // ~0u = no object / no pending pick.
-    auto PickResultBuffer = renderer->CreateResource("Pick Result Buffer",
-        RHIBufferDesc{.resource = {.heap = RHIDeviceHeapType::Readback,
-                                   .hostAccess = RHIResourceHostAccess::ReadWrite,
-                                   .coherent = true},
-                      .usage = RHIBufferUsageBits::StorageBuffer,
-                      .size = sizeof(uint32_t)});
+    auto InstanceIDBuffer = renderer->CreateResource("Instance ID Buffer",
+                                                    RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                                                       RHITextureUsageBits::SampledImage,
+                                                                   .extent = {w, h, 1},
+                                                                   .format = RHIResourceFormat::R32Uint});
     auto ReduceBuffer = renderer->CreateResource(
         "Reduced Values", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 256});
     if (cfg.viewFlags & kViewOverdraw)
@@ -344,7 +339,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
                     r->BindTextureRTV(self, GBufferRT2,
                                       {.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureRTV(self, PickIDBuffer,
+                    r->BindTextureRTV(self, InstanceIDBuffer,
                                       {.format = RHIResourceFormat::R32Uint,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
@@ -441,7 +436,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
                 auto* count = r->DerefResource(DynamicDrawCount).Get<RHIBuffer*>();
                 cmd->FillBuffer(count, 0u);
                 r->CmdSetPipeline(self, cmd);
-                r->CmdDispatch(self, cmd, {scene.gsGlobals->numInstances, 1, 1});
+                r->CmdDispatch(self, cmd, {globals->numInstances, 1, 1});
             });
         renderer->CreatePass(
             "Dynamic GBuffer", RHIDeviceQueueType::Graphics, 0u,
@@ -469,7 +464,7 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
                 r->BindTextureRTV(self, GBufferRT2,
                                   {.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureRTV(self, PickIDBuffer,
+                r->BindTextureRTV(self, InstanceIDBuffer,
                                   {.format = RHIResourceFormat::R32Uint,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                 r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
@@ -526,118 +521,98 @@ void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cf
                 r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
             });
     }
-    auto LightingBuffer = renderer->CreateResource(
-        "Lighting",
-        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
-                                  RHITextureUsageBits::SampledImage |
-                                  RHITextureUsageBits::TransferSource,
-                       .extent = {w, h, 1},
-                       .format = RHIResourceFormat::R32G32B32A32SignedFloat});
-    const RHIResourceFormat postprocessFormat = cfg.enableHDR
-        ? RHIResourceFormat::A2B10G10R10Unorm
-        : RHIResourceFormat::R8G8B8A8Unorm;
-    auto PostprocessBuffer = renderer->CreateResource(
-        "Postprocess",
-        RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                  RHITextureUsageBits::SampledImage |
-                                  RHITextureUsageBits::TransferSource,
-                       .extent = {w, h, 1},
-                       .format = postprocessFormat});
+    ResourceHandle DebugOutput = kInvalidHandle;
+    // Debug views
+    if (cfg.viewFlags & kViewOverdraw)
+    {
+        DebugOutput = renderer->CreateResource(
+            "Overdraw Debug Output",
+            RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                      RHITextureUsageBits::SampledImage |
+                                      RHITextureUsageBits::TransferSource,
+                           .extent = {w, h, 1},
+                           .format = RHIResourceFormat::R8G8B8A8Unorm});
+        createPSFullscreenPassRTV(
+            renderer, "Overdraw Debug", DebugOutput,
+            RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                               .range = RHITextureSubresourceRange::Create()},
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                              PathsResolve("Data/Shaders/EPSOverdrawDebug.spv"));
+                r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
+                                                     .range = RHITextureSubresourceRange::Create()});
+                r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
+            });
+    } else
+    {
+        auto DiffuseBuffer = renderer->CreateResource(
+            "Diffuse",
+            RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
+                                      RHITextureUsageBits::SampledImage |
+                                      RHITextureUsageBits::TransferSource,
+                           .extent = {w, h, 1},
+                           .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+        auto SpecularBuffer = renderer->CreateResource(
+            "Specular",
+            RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
+                                      RHITextureUsageBits::SampledImage |
+                                      RHITextureUsageBits::TransferSource,
+                           .extent = {w, h, 1},
+                           .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+        auto LUTSampler = renderer->CreateSampler({
+            .addressMode = {
+                .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+            }
+        });
+        renderer->CreatePass(
+            "Lighting", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSLighting.spv"),
+                              AsBytes(AsSpan(lightingViewFlags)));
+                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                                     .range = RHITextureSubresourceRange::Create()});
+                r->BindTextureSRV(self, GBufferRT1, "RT1", RHIPipelineStageBits::ComputeShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                                     .range = RHITextureSubresourceRange::Create()});
+                r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::ComputeShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                                     .range = RHITextureSubresourceRange::Create()});
+                r->BindTextureSRV(
+                    self, ZBuffer, "depth", RHIPipelineStageBits::ComputeShader,
+                    RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
+                r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
+                r->BindTextureSampler(self, LUTSampler, "lutSampler");
+                r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
+                r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
+                r->BindTextureUAV(self, DiffuseBuffer, "diffuseOutput", RHIPipelineStageBits::ComputeShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                     .range = RHITextureSubresourceRange::Create()});
+                r->BindTextureUAV(self, SpecularBuffer, "specularOutput", RHIPipelineStageBits::ComputeShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                     .range = RHITextureSubresourceRange::Create()});
 
-    auto LUTSampler = renderer->CreateSampler({
-    .addressMode = {
-        .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
-        .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
-        .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                r->CmdSetPipeline(self, cmd);
+                r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
+                r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());
+                r->CmdDispatch(self, cmd, {w, h, 1});
+            });
+        out.diffuse = DiffuseBuffer;
+        out.specular = SpecularBuffer;
     }
-});
-    renderer->CreatePass(
-        "Lighting", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSLighting.spv"),
-                          AsBytes(AsSpan(lightingViewFlags)));
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, GBufferRT1, "RT1", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(
-                self, ZBuffer, "depth", RHIPipelineStageBits::ComputeShader,
-                RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-            r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
-            r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
-            r->BindTextureSampler(self, LUTSampler, "lutSampler");
-            r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
-            r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
-            r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                 .range = RHITextureSubresourceRange::Create()});
-
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            r->CmdSetPipeline(self, cmd);
-            r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
-            r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());
-            r->CmdDispatch(self, cmd, {w, h, 1});
-        });
-
-    createPSFullscreenPassRTV(
-        renderer, "Postprocess", PostprocessBuffer,
-        RHITextureViewDesc{.format = postprocessFormat,
-                           .range = RHITextureSubresourceRange::Create()},
-        {w, h},
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                          PathsResolve("Data/Shaders/EPSPostprocess.spv"), AsBytes(AsSpan(cfg.viewFlags)));
-            r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                 .range = RHITextureSubresourceRange::Create(
-                                                     RHITextureAspectFlagBits::Color, 0, 1)});
-            r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
-            r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
-            r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
-            r->BindTextureSampler(self, LUTSampler, "lutSampler");
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());
-        });
-
-    createPSFullscreenPass(
-        renderer, "Blit Image",
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve("Data/Shaders/EPSBlit.spv"));
-            r->BindTextureSRV(self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = postprocessFormat,
-                                                 .range = RHITextureSubresourceRange::Create(
-                                                     RHITextureAspectFlagBits::Color, 0, 1)});
-            r->BindTextureSRV(self, PickIDBuffer, "pickIDBuffer", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
-            r->BindBufferUnordered(self, PickResultBuffer, RHIPipelineStageBits::FragmentShader, "pickResult");
-            r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(int2));
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            // Push pick pixel coordinate every frame; (-1,-1) = no pending pick
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, scene.picking->pendingPixel);
-        });
-    outHandles.hdrRT[0] = LightingBuffer;
-    outHandles.numHdrRT = 1u;
-    outHandles.sdrRT = PostprocessBuffer;
-    outHandles.pickBuffer = PickResultBuffer;
+    out.extent = {w, h};
+    out.depth = ZBuffer;
+    out.debugOutput = DebugOutput;
+    out.instanceID = InstanceIDBuffer;
 }
