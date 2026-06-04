@@ -108,7 +108,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
         RHIBufferDesc{.resource = {.heap = RHIDeviceHeapType::Readback,
                                    .hostAccess = RHIResourceHostAccess::ReadWrite,
                                    .coherent = true},
-                      .usage = RHIBufferUsageBits::StorageBuffer,
+                      .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
                       .size = sizeof(uint32_t)});
     renderer->CreatePass(
         "Pick Result Init", RHIDeviceQueueType::Graphics, 0u,
