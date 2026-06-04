@@ -184,7 +184,7 @@ Editor
 Good to have, not necessary.
 - [ ] Scene Graph, instead of AoS to represent instances.
 Done
-- [x] Animation (Skinning, BlendShapes, Articulated rigid bodies. Contribution by Claude)
+- [x] Animation (Skinning, BlendShapes, Articulated rigid bodies, camera & lights. Contribution by Claude)
 
 Path Tracer
 ---

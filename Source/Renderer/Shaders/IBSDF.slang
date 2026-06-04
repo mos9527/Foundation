@@ -147,29 +147,6 @@ float3 MicrofacetGGXEnergyCompensationScale(
     return 1.0f + Fms * (1.0f / E - 1.0f);
 }
 
-float FresnelDielectricAverage(float eta)
-{
-    // Fit from Imageworks/Cycles for integral_0^1 2*cos(theta) F(cos(theta), eta) d_cos(theta).
-    if (eta < 1.0f)
-        return 0.997118f + eta * (0.1014f - eta * (0.965241f + eta * 0.130607f));
-    return (eta - 1.0f) / (4.08567f + 1.00071f * eta);
-}
-
-float MicrofacetGGXDielectricEnergyCompensationScale(
-    float eta,
-    float E,
-    float Eavg,
-    bool energyCompensation)
-{
-    if (!energyCompensation) return 1.0f;
-
-    E = clamp(E, EPS, 1.0f);
-    Eavg = clamp(Eavg, EPS, 1.0f);
-    float Fss = FresnelDielectricAverage(eta);
-    float Fms = (Fss * Eavg) / max(1.0f - Fss * (1.0f - Eavg), EPS);
-    return 1.0f + Fms * (1.0f / E - 1.0f);
-}
-
 float3 MicrofacetGGXDielectricEnergyCompensationScale(
     float3 Fss,
     float E,
@@ -375,11 +352,6 @@ public struct GlassBSDF : IBxDF {
         return SampleGGXLutEIORavg(ggxLutEIORavgIndex, ggxLutEIORInvavgIndex, roughness, etap);
     }
 
-    float3 EnergyScale(float3 wo) {
-        return MicrofacetGGXDielectricEnergyCompensationScale(
-            baseColor, GlassDirectionalAlbedo(wo), GlassAverageAlbedo(wo), energyCompensation);
-    }
-
     public BxDFFlags Flags() { return BxDFFlags::GlossyReflection | BxDFFlags::GlossyTransmission; }
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
@@ -397,7 +369,7 @@ public struct GlassBSDF : IBxDF {
         if (dot(wm, wi) * cosWi < 0.0f || dot(wm, wo) * cosWo < 0.0f) return 0.0f;
 
         float F = FrDielectric(dot(wo, wm), eta);
-        float3 scale = EnergyScale(wo);
+        float3 scale = MicrofacetGGXDielectricEnergyCompensationScale(baseColor, GlassDirectionalAlbedo(wo), GlassAverageAlbedo(wo), energyCompensation);
 
         if (reflected) {
             float cosWoAbs = AbsCosTheta(wo);
