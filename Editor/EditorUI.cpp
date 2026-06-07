@@ -34,6 +34,7 @@ static constexpr PTSPPOption kPTSPPOptions[] = {
 };
 static constexpr int kPTSPPOptionCount = std::size(kPTSPPOptions);
 static constexpr const char* kExternalViewLUTLabel = "<external>";
+static constexpr const char* kExternalMatcapLabel = "<external>";
 
 template <typename T>
 static size_t DrawMemoryStatsTable(const char* tableId, Vector<T>& stats)
@@ -221,6 +222,22 @@ static void DrawRHIDeviceMemoryTypeStatsTable(RHIDeviceMemoryStats const& stats)
 static bool OpenViewLUTDialog(String& outPath)
 {
     nfdu8filteritem_t filters[] = {{"DDS LUT", "dds"}};
+    nfdopendialogu8args_t args = {0};
+    args.filterList = filters;
+    args.filterCount = 1;
+
+    nfdu8char_t* selectedPath = nullptr;
+    if (NFD_OpenDialogU8_With(&selectedPath, &args) != NFD_OKAY)
+        return false;
+
+    outPath = selectedPath;
+    NFD_FreePathU8(selectedPath);
+    return true;
+}
+
+static bool OpenMatcapDialog(String& outPath)
+{
+    nfdu8filteritem_t filters[] = {{"Matcap Image", "png,jpg,jpeg,tga,bmp,dds"}};
     nfdopendialogu8args_t args = {0};
     args.filterList = filters;
     args.filterCount = 1;
@@ -1967,8 +1984,8 @@ void FRunningImGui()
             ImGui::SeparatorText("Performance");
             changed |= ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0);
             {
-                const char* items[] = {"Overdraw", "Meshlet", "Material ID", "Texture LOD"};
-                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID, kViewTextureLOD};
+                const char* items[] = {"Overdraw", "Meshlet", "Material ID", "Texture LOD", "Matcap"};
+                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID, kViewTextureLOD, kViewMatcap};
                 ImGui::SeparatorText("Debug View");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
             }
@@ -1977,6 +1994,56 @@ void FRunningImGui()
                 const unsigned values[] = {kEnableRasterRTShadows};
                 ImGui::SeparatorText("Options");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values);
+            }
+            if ((GEditor.rendererConfig.viewFlags & kViewMatcap) != 0u)
+            {
+                ImGui::SeparatorText("Matcap");
+                Span<Matcap::Entry const> entries = Matcap::EnumerateEntries();
+                int const count = static_cast<int>(entries.size());
+                int const externalIndex = Matcap::GetExternalEntryIndex();
+                if (GEditor.matcapIndex < 0 || GEditor.matcapIndex > externalIndex ||
+                    (GEditor.matcapIndex == externalIndex && GEditor.matcapExternalPath.empty()))
+                {
+                    GEditor.matcapIndex = std::clamp(GEditor.matcapIndex, 0, count - 1);
+                }
+
+                bool matcapChanged = false;
+                const char* preview = GEditor.matcapIndex == externalIndex
+                                          ? kExternalMatcapLabel
+                                          : entries[GEditor.matcapIndex].label;
+                if (ImGui::BeginCombo("Matcap Preset", preview))
+                {
+                    for (int i = 0; i < count; ++i)
+                    {
+                        bool const selected = i == GEditor.matcapIndex;
+                        if (ImGui::Selectable(entries[i].label, selected))
+                        {
+                            GEditor.matcapIndex = i;
+                            matcapChanged = true;
+                        }
+                        if (selected)
+                            ImGui::SetItemDefaultFocus();
+                    }
+                    bool const selectedExternal = GEditor.matcapIndex == externalIndex;
+                    if (ImGui::Selectable(kExternalMatcapLabel, selectedExternal))
+                    {
+                        String selectedPath;
+                        if (OpenMatcapDialog(selectedPath))
+                        {
+                            GEditor.matcapExternalPath = selectedPath;
+                            GEditor.matcapIndex = externalIndex;
+                            matcapChanged = true;
+                        }
+                    }
+                    if (selectedExternal)
+                        ImGui::SetItemDefaultFocus();
+                    ImGui::EndCombo();
+                }
+                if (GEditor.matcapIndex == externalIndex && !GEditor.matcapExternalPath.empty() && ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", GEditor.matcapExternalPath.c_str());
+                if (matcapChanged)
+                    ApplyMatcapSelection();
+                DrawTexturePreview("Matcap", GEditor.shaderGlobals.matcapTextureIndex);                
             }
             {
                 const char* items[] = {"Frustum", "Occlusion"};

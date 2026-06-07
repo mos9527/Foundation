@@ -1,6 +1,7 @@
 #include <Core/Paths.hpp>
 #include <Core/JobGraph.hpp>
 #include <filesystem>
+#include <cctype>
 #include <limits>
 #include <numbers>
 
@@ -58,6 +59,26 @@ static FTexture LoadViewLUT(StringView path, Allocator* alloc = GLOBAL_ALLOC)
     return texture;
 }
 
+static bool HasDDSExtension(StringView path)
+{
+    String ext = std::filesystem::path(path.data()).extension().string();
+    for (auto& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext == ".dds";
+}
+
+static FTexture LoadMatcapTexture(StringView path, Allocator* alloc = GLOBAL_ALLOC)
+{
+    CHECK(alloc != nullptr);
+    FTexture texture(alloc);
+    String resolvedPath = PathsResolve(path);
+    if (HasDDSExtension(resolvedPath))
+        LoadDDS(texture, resolvedPath);
+    else
+        LoadRGBA8(texture, resolvedPath, false);
+    return texture;
+}
+
 static void LoadSelectedViewLUTs(FTexture& sdr, FTexture& hdr, int& sdrIndex, int& hdrIndex,
                                  String const& sdrExternalPath, String const& hdrExternalPath,
                                  Allocator* alloc = GLOBAL_ALLOC)
@@ -85,6 +106,27 @@ static void UploadEditorViewLUTs(GPUScene* gpu, FTexture const& sdr, FTexture co
     GPUScene::Result hdrResult = gpu->Upload(hdr, GEditor.viewLUTHdrHandle, "View LUT HDR", true);
     CHECK_MSG(sdrResult == GPUScene::Result::Ready, "Failed to upload SDR view LUT ({})", static_cast<int>(sdrResult));
     CHECK_MSG(hdrResult == GPUScene::Result::Ready, "Failed to upload HDR view LUT ({})", static_cast<int>(hdrResult));
+}
+
+static void LoadSelectedMatcap(FTexture& matcap, int& matcapIndex, String const& externalPath,
+                               Allocator* alloc = GLOBAL_ALLOC)
+{
+    CHECK(alloc != nullptr);
+    String matcapPath = Matcap::ResolveSelectedPath(matcapIndex, externalPath);
+    matcap = LoadMatcapTexture(matcapPath, alloc);
+}
+
+static void LoadSelectedMatcap(FTexture& matcap)
+{
+    LoadSelectedMatcap(matcap, GEditor.matcapIndex, GEditor.matcapExternalPath);
+}
+
+static void UploadEditorMatcap(GPUScene* gpu, FTexture const& matcap)
+{
+    CHECK(gpu != nullptr);
+    GPUScene::Result matcapResult = gpu->Upload(matcap, GEditor.matcapHandle, "Matcap", true);
+    CHECK_MSG(matcapResult == GPUScene::Result::Ready, "Failed to upload matcap ({})", static_cast<int>(matcapResult));
+    GEditor.shaderGlobals.matcapTextureIndex = Matcap::ResolveTextureIndex(GEditor.matcapHandle);
 }
 
 static double MillisecondsSince(std::chrono::steady_clock::time_point start)
@@ -162,6 +204,32 @@ bool ApplyViewLUTSelection()
         return false;
     }
 
+    return true;
+}
+
+bool ApplyMatcapSelection()
+{
+    if (!GContext->gpuScene)
+    {
+        LOG(Editor, LogWarn, "Ignoring matcap selection before a scene is loaded");
+        return false;
+    }
+    try
+    {
+        FTexture matcap(GLOBAL_ALLOC);
+        LoadSelectedMatcap(matcap);
+        UploadEditorMatcap(GContext->gpuScene, matcap);
+    }
+    catch (std::exception const& e)
+    {
+        LOG(Editor, LogError, "Failed to apply matcap selection: {}", e.what());
+        return false;
+    }
+    catch (...)
+    {
+        LOG(Editor, LogError, "Failed to apply matcap selection");
+        return false;
+    }
     return true;
 }
 
@@ -623,6 +691,12 @@ static void ApplySceneGlobals(FImportedScene const& scene)
     GEditor.viewLUTHdrIndex = static_cast<int>(sceneGlobals.viewLutHdrIndex);
     GEditor.viewLUTSdrExternalPath.clear();
     GEditor.viewLUTHdrExternalPath.clear();
+    GEditor.viewLUTSdrHandle = {};
+    GEditor.viewLUTHdrHandle = {};
+    GEditor.matcapIndex = Matcap::GetDefaultEntryIndex();
+    GEditor.matcapExternalPath.clear();
+    GEditor.matcapHandle = {};
+    GEditor.shaderGlobals.matcapTextureIndex = UINT32_MAX;
     GEditor.shaderGlobals.ambientColor = sceneGlobals.color;
     GEditor.shaderGlobals.ambientPower = sceneGlobals.strength;
     GEditor.shaderGlobals.envAzimuthOffset = sceneGlobals.azimuthOffset;
@@ -723,6 +797,11 @@ static void PrepareSceneGlobals(FImportedScene& scene, GPUScene* gpu, AllocatorS
         LoadSelectedViewLUTs(sdr, hdr, GEditor.viewLUTSdrIndex, GEditor.viewLUTHdrIndex,
                              GEditor.viewLUTSdrExternalPath, GEditor.viewLUTHdrExternalPath, &sceneAlloc);
         UploadEditorViewLUTs(gpu, sdr, hdr);
+    }
+    {
+        FTexture matcap(&sceneAlloc);
+        LoadSelectedMatcap(matcap, GEditor.matcapIndex, GEditor.matcapExternalPath, &sceneAlloc);
+        UploadEditorMatcap(gpu, matcap);
     }
 
     ApplySceneCamera(scene, GEditor.camera, GEditor.aperture, GEditor.shaderGlobals);
@@ -968,6 +1047,9 @@ void SetupAnimationRuntime()
         sAnimation.duration = std::max(sAnimation.duration, clip.duration);
     for (FMorphTrack const& track : scene.mTables.morphTracks)
         sAnimation.duration = std::max(sAnimation.duration, track.duration);
+    // Skinned-only imports (no clip/morph tracks) should start paused: there's deformable data,
+    // but no time-varying source to advance.
+    sAnimation.playing = !scene.mTables.clips.empty() || !scene.mTables.morphTracks.empty();
 
     LOG(Editor, LogInfo, "Animation runtime: {} deforming mesh(es), {} skeleton(s), {} clip(s), {} morph track(s)",
         sAnimation.meshes.size(), skeletons.size(), scene.mTables.clips.size(), scene.mTables.morphTracks.size());

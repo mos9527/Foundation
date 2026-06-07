@@ -4,11 +4,13 @@ public static const int kViewBaseColor = 1 << 2;
 public static const int kViewNormal = 1 << 3;
 public static const int kViewMaterialID = 1 << 4;
 public static const int kViewPosition = 1 << 5;
+public static const int kViewMatcap = 1 << 6;
 
 // Per-lobe AOV view flags (Diffuse / Specular)
 public static const int kViewAOVDiffuse  = 1 << 7;
 public static const int kViewAOVSpecular = 1 << 8;
 public static const int kViewTextureLOD = 1 << 9;
+
 
 public static const int kEnableRasterRTShadows = 1 << 16;
 public static const int kForceTextureLOD0 = 1 << 24;

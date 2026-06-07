@@ -251,7 +251,7 @@ public struct UBO
     public uint32_t envMapTextureIndex;
     public uint32_t envMapMarginalCDFIndex;
     public uint32_t envMapConditionalCDFIndex;
-    public uint32_t _envTexturePad0;
+    public uint32_t matcapTextureIndex;
     // Scene lights
     public uint32_t firstLight;
     public uint32_t firstLightAliasTable;

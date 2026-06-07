@@ -38,7 +38,7 @@ constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
-
+constexpr size_t kDisableRTBuildFlags = kViewOverdraw | kViewMeshlet | kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMatcap;
 void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
                             RendererConfig const& cfg, RendererOutputs& out)
 {
@@ -119,8 +119,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*globals)));
             cmd->FillBuffer(counter, 0u);
         });
-    bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet | kViewTextureLOD);
-    bool useRTShadows = (cfg.viewFlags & kEnableRasterRTShadows) && !kDebugViewUnlit && hasTLAS;
+    bool disableRT = cfg.viewFlags & kDisableRTBuildFlags;
+    bool useRTShadows = (cfg.viewFlags & kEnableRasterRTShadows) && !disableRT && hasTLAS;
     uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~kEnableRasterRTShadows);
     uint32_t gbufferFlags = cfg.viewFlags | (cfg.forceTextureLOD0 ? kForceTextureLOD0 : 0u);
     // Raytracing. The raster path draws dynamic geometry through its own vertex/index MDI draw

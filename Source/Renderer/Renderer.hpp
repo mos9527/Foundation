@@ -49,7 +49,7 @@ struct RendererUBO
     uint32_t envMapTextureIndex{UINT32_MAX};
     uint32_t envMapMarginalCDFIndex{UINT32_MAX};
     uint32_t envMapConditionalCDFIndex{UINT32_MAX};
-    uint32_t _envTexturePad0{0u};
+    uint32_t matcapTextureIndex{UINT32_MAX};
     // Scene lights
     uint32_t firstLight{0u};
     uint32_t firstLightAliasTable{0u};
@@ -97,12 +97,13 @@ static const int kViewBaseColor = 1 << 2;
 static const int kViewNormal = 1 << 3;
 static const int kViewMaterialID = 1 << 4;
 static const int kViewPosition = 1 << 5;
-static const int kViewPTDirect = 1 << 6;
+static const int kViewMatcap = 1 << 6;
 
 // Per-lobe AOV view flags (Diffuse / Specular)
 static const int kViewAOVDiffuse  = 1 << 7;
 static const int kViewAOVSpecular = 1 << 8;
 static const int kViewTextureLOD = 1 << 9;
+
 
 static const int kEnableRasterRTShadows = 1 << 16;
 static const int kForceTextureLOD0 = 1 << 24;

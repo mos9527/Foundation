@@ -83,6 +83,17 @@ void main(uint2 tid: SV_DispatchThreadID) {
         diffuseOutput[tid] = float4(normalWS * 0.5f + 0.5f, 1.0f);
         specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
+    } else if ((flags & kViewMatcap) != 0) {
+        // https://projects.blender.org/blender/blender/src/commit/e1d15b8920616df11437fd24189064275995b6f6/source/blender/draw/engines/workbench/shaders/workbench_matcap.bsl.hh#L13
+        float3 normalVS = normalize(mul((float3x3)globalParams.view, normalWS));
+        float2 uv = saturate(normalVS.xy * 0.496f + 0.5f);
+        uv.y = 1.0 - uv.y; // Vulkan UV coords
+        float3 matcap = float3(1.0f, 1.0f, 1.0f);
+        if (globalParams.matcapTextureIndex != ~0u)
+            matcap = textures[NonUniformResourceIndex(globalParams.matcapTextureIndex)].SampleLevel(lutSampler, uv, 0.0f).xyz;
+        diffuseOutput[tid] = float4(matcap * baseColor, 1.0f);
+        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        return;
     } else if ((flags & kViewPosition) != 0) {
         diffuseOutput[tid] = float4(p.xyz, 1.0f);
         specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
