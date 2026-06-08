@@ -481,7 +481,7 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const* gpu
         switch (src.type)
         {
         case FLightType::Directional:
-            importance = dst.power;
+            importance = dst.power /* proj into area? still hopeful nontheless. let's get to light bvh one day... */;
             break;
         case FLightType::Point:
             importance = dst.power * 4.0f * std::numbers::pi_v<float>;
@@ -1349,10 +1349,10 @@ void FAnimationPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Animation"))
     {
-        if (ImGui::Button(sAnimation.playing ? "Pause" : "Play"))
+        if (ImModalButton(sAnimation.playing ? "Pause" : "Play", 0, 2))
             sAnimation.playing = !sAnimation.playing;
         ImGui::SameLine();
-        if (ImGui::Button("Restart"))
+        if (ImModalButton("Restart", 1, 2))
         {
             sAnimation.time = 0.0f;
             sAnimation.dirty = true;

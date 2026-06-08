@@ -329,6 +329,20 @@ static const char* InstanceTypeName(uint32_t type)
     return type == kGSInstanceTypeCurve ? "Curve" : "Mesh";
 }
 
+static const char* LightTypeName(FLightType type)
+{
+    switch (type)
+    {
+    case FLightType::Directional: return "Directional";
+    case FLightType::Point:       return "Point";
+    case FLightType::Spot:        return "Spot";
+    case FLightType::Disk:        return "Disk";
+    case FLightType::Rect:        return "Rect";
+    case FLightType::Environment: return "Environment";
+    }
+    return "Unknown";
+}
+
 static int GetSelectedMaterialIndex()
 {
     if (IsSelectedInstanceValid() && GContext->gpuScene)
@@ -1322,13 +1336,17 @@ void FLightingPanel()
         // ---- Scene Lights ----
         if (ImGui::CollapsingHeader("Scene Lights", ImGuiTreeNodeFlags_DefaultOpen))
         {
+            GEditor.Scene().EnsureEnvironmentLight();
             auto& lights = GEditor.Scene().mTables.lights;
             uint32_t lightCapacity = GContext->gpuScene ? GContext->gpuScene->GetLightCapacity() : 0u;
             bool canAddLight = GContext->gpuScene && lights.size() < lightCapacity;
-            ImGui::TextDisabled("Editor-only light edits update the resident scene and GPU state; the FSCN file is unchanged.");
+            uint32_t gpuLightCount = GContext->gpuScene ? GContext->gpuScene->GetLightCount() : 0u;
+            float sceneLightImportanceSum = 0.0f;
+            for (uint32_t lightIndex = 0; lightIndex < gpuLightCount; ++lightIndex)
+                sceneLightImportanceSum += std::max(0.0f, GContext->gpuScene->GetLight(lightIndex).importance);
             if (!canAddLight)
                 ImGui::BeginDisabled();
-            if (ImGui::Button("Add Test Light"))
+            if (ImModalButton(canAddLight ? "Add Light" : "(Lights Full)"))
             {
                 FLight light{};
                 light.type = FLightType::Point;
@@ -1346,32 +1364,15 @@ void FLightingPanel()
             }
             if (!canAddLight)
                 ImGui::EndDisabled();
-            if (!canAddLight && GContext->gpuScene)
-                ImGui::SetItemTooltip("GPU light buffer capacity reached (%u lights)", lightCapacity);
-            ImGui::SameLine();
-            bool canDeleteLight = GEditor.selectedLight >= 0 && GEditor.selectedLight < static_cast<int>(lights.size()) &&
-                lights[GEditor.selectedLight].type != FLightType::Environment;
-            if (!canDeleteLight)
-                ImGui::BeginDisabled();
-            if (ImGui::Button("Delete Selected Light"))
-            {
-                lights.erase(lights.begin() + GEditor.selectedLight);
-                if (GEditor.selectedLight >= static_cast<int>(lights.size()))
-                    GEditor.selectedLight = static_cast<int>(lights.size()) - 1;
-                anyChanged = true;
-            }
-            if (!canDeleteLight)
-                ImGui::EndDisabled();
             ImGui::Separator();
             for (int i = 0; i < static_cast<int>(lights.size()); i++)
             {
                 auto& light = lights[i];
-                if (light.type == FLightType::Environment)
-                    continue;
+                bool const isEnvironment = light.type == FLightType::Environment;
                 ImGui::PushID(i);
 
                 char header[64];
-                snprintf(header, sizeof(header), "Light %d (%s)", i, kLightTypeNames[static_cast<int>(light.type)]);
+                snprintf(header, sizeof(header), "Light %d (%s)", i, LightTypeName(light.type));
                 bool isLightSelected = (GEditor.selectedLight == i);
                 ImGuiTreeNodeFlags headerFlags = ImGuiTreeNodeFlags_DefaultOpen;
                 if (isLightSelected)
@@ -1388,21 +1389,50 @@ void FLightingPanel()
                     bool lightChanged = false;
 
                     // Type selector
-                    int typeInt = static_cast<int>(light.type);
-                    if (ImGui::Combo("Type", &typeInt, kLightTypeNames, kLightTypeCount))
+                    if (isEnvironment)
                     {
-                        light.type = static_cast<FLightType>(typeInt);
-                        lightChanged = true;
+                        ImGui::TextDisabled("Environment light is not removable.");
+                    }
+                    else
+                    {
+                        int typeInt = static_cast<int>(light.type);
+                        if (ImGui::Combo("Type", &typeInt, kLightTypeNames, kLightTypeCount))
+                        {
+                            light.type = static_cast<FLightType>(typeInt);
+                            lightChanged = true;
+                        }
                     }
 
                     // Color + Power
-                    lightChanged |= ImHDRColorEdit("Color", light.color, light.power);
-                    if (GContext->gpuScene && i < static_cast<int>(GContext->gpuScene->GetLightCount()))
+                    lightChanged |= ImHDRColorEdit(isEnvironment ? "Ambient" : "Color", light.color, light.power);
+                    if (GContext->gpuScene && i < static_cast<int>(gpuLightCount))
                     {
                         float importance = GContext->gpuScene->GetLight(static_cast<uint32_t>(i)).importance;
+                        float probability = sceneLightImportanceSum > 0.0f ? importance / sceneLightImportanceSum : 0.0f;
                         ImGui::BeginDisabled();
                         ImGui::InputFloat("Importance", &importance, 0.0f, 0.0f, "%.6g");
+                        ImGui::InputFloat("Prob", &probability, 0.0f, 0.0f, "%.6g");
                         ImGui::EndDisabled();
+                    }
+
+                    if (isEnvironment)
+                    {
+                        ImGui::Separator();
+                        bool hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvMap();
+                        ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
+                        if (hasEnv)
+                        {
+                            DrawTexturePreview("HDRI", GContext->gpuScene->GetEnvMapIndexOrDefault());
+                            lightChanged |= ImGui::SliderFloat("Azimuth Offset", &light.environmentAzimuthOffset,
+                                                              -180.0f, 180.0f, "%.1f deg");
+                            bool envEnabled = light.environmentMap;
+                            if (ImGui::Checkbox("Enable Env Map", &envEnabled))
+                            {
+                                light.environmentMap = envEnabled;
+                                lightChanged = true;
+                            }
+                        }
+                        ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
                     }
 
                     // Direction (Euler angles) for lights with orientation
@@ -1491,43 +1521,30 @@ void FLightingPanel()
                     if (lightChanged)
                         anyChanged = true;
 
+                    if (isEnvironment)
+                        ImGui::BeginDisabled();
+                    bool removeLight = ImGui::Button("Remove Light");
+                    if (isEnvironment)
+                    {
+                        ImGui::EndDisabled();
+                        ImGui::SetItemTooltip("Environment light is required");
+                    }
+                    if (removeLight)
+                    {
+                        lights.erase(lights.begin() + i);
+                        if (GEditor.selectedLight == i)
+                            GEditor.selectedLight = -1;
+                        else if (GEditor.selectedLight > i)
+                            --GEditor.selectedLight;
+                        anyChanged = true;
+                        ImGui::PopID();
+                        break;
+                    }
+
                     ImGui::Separator();
                 }
                 ImGui::PopID();
             }
-        }
-
-        // ---- Ambient / Environment ----
-        if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            FLight& environment = GEditor.Scene().EnsureEnvironmentLight();
-            bool envChanged = ImHDRColorEdit("Ambient", environment.color, environment.power);
-
-            ImGui::Separator();
-            bool hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvMap();
-            ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
-            if (hasEnv)
-            {
-                DrawTexturePreview("HDRI", GContext->gpuScene->GetEnvMapIndexOrDefault());
-                envChanged |= ImGui::SliderFloat("Azimuth Offset", &environment.environmentAzimuthOffset, -180.0f, 180.0f,
-                                              "%.1f deg");
-                bool envEnabled = environment.environmentMap;
-                if (ImGui::Checkbox("Enable Env Map", &envEnabled))
-                {
-                    environment.environmentMap = envEnabled;
-                    envChanged = true;
-                }
-            }
-            if (envChanged)
-                anyChanged = true;
-            if (GContext->gpuScene && !GEditor.Scene().GetLights().empty())
-            {
-                float importance = GContext->gpuScene->GetLight(0u).importance;
-                ImGui::BeginDisabled();
-                ImGui::InputFloat("Importance", &importance, 0.0f, 0.0f, "%.6g");
-                ImGui::EndDisabled();
-            }
-            ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
         }
 
         if (anyChanged)

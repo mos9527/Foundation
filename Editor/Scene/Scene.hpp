@@ -409,30 +409,23 @@ struct FImportedScene
     Span<FLight> GetLights() { return {mTables.lights.data(), mTables.lights.size()}; }
     FLight const* GetEnvironmentLight() const
     {
-        for (FLight const& light : mTables.lights)
-            if (light.type == FLightType::Environment)
-                return &light;
-        return nullptr;
+        if (mTables.lights.empty())
+            return nullptr;
+        CHECK(mTables.lights.front().type == FLightType::Environment);
+        return &mTables.lights.front();
     }
     FLight* GetEnvironmentLight()
     {
-        for (FLight& light : mTables.lights)
-            if (light.type == FLightType::Environment)
-                return &light;
-        return nullptr;
+        if (mTables.lights.empty())
+            return nullptr;
+        CHECK(mTables.lights.front().type == FLightType::Environment);
+        return &mTables.lights.front();
     }
     FLight& EnsureEnvironmentLight()
     {
-        for (size_t i = 0; i < mTables.lights.size(); ++i)
-        {
-            if (mTables.lights[i].type == FLightType::Environment)
-            {
-                if (i != 0)
-                    std::swap(mTables.lights[i], mTables.lights.front());
-                return mTables.lights.front();
-            }
-        }
-        mTables.lights.insert(mTables.lights.begin(), MakeDefaultEnvironmentLight());
+        if (mTables.lights.empty())
+            mTables.lights.insert(mTables.lights.begin(), MakeDefaultEnvironmentLight());
+        CHECK(mTables.lights.front().type == FLightType::Environment);
         return mTables.lights.front();
     }
 
