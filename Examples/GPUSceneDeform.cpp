@@ -203,7 +203,7 @@ int main(int argc, char** argv)
 
         auto AuthorFrame = [&]
         {
-            auto tables = gpu.BeginScene(2u, static_cast<uint32_t>(palette.size()), 1u);
+            auto tables = gpu.BeginScene(2u, static_cast<uint32_t>(palette.size()), 2u);
             tables.instances[0] = InstanceDesc{.geometry = floor, .transform = float3(0.0f, -0.4f, 0.0f),
                                                .rotation = angleAxis(0.0f, float3(0, 1, 0)),
                                                .scale = float3(8.0f, 1.0f, 8.0f), .materialIndex = matFloor};
@@ -212,7 +212,13 @@ int main(int argc, char** argv)
                                                .scale = float3(1.0f), .materialIndex = matGrid};
             for (size_t i = 0; i < palette.size(); ++i)
                 tables.materials[i] = palette[i];
-            GSLight& key = tables.lights[0];
+            GSLight& env = tables.lights[0];
+            env = GSLight{};
+            env.type = 5u; // Environment light, always present as the first light.
+            env.color = float3(0.02f, 0.025f, 0.035f);
+            env.power = 1.0f;
+            env.importance = 0.035f;
+            GSLight& key = tables.lights[1];
             key = GSLight{};
             key.type = 4u; // Rect area light
             key.color = float3(1.0f, 0.97f, 0.92f);
@@ -221,22 +227,11 @@ int main(int argc, char** argv)
             key.dpdu = float3(2.0f, 0.0f, 0.0f);
             key.dpdv = float3(0.0f, 0.0f, 2.0f);
             key.direction = float3(0.0f, -1.0f, 0.0f);
-            key.selectionWeight = key.power;
-            auto result = gpu.EndScene(tables);
-            ubo.firstInstance = result.firstInstance;
-            ubo.numInstances = result.numInstances;
-            ubo.firstMaterial = result.firstMaterial;
-            ubo.numMaterials = result.numMaterials;
-            ubo.firstLight = result.firstLight;
-            ubo.firstLightAliasTable = result.firstLightAliasTable;
-            ubo.numSceneLights = result.numLights;
-            ubo.sceneLightWeightSum = result.sceneLightWeightSum;
+            key.importance = key.power;
+            gpu.EndScene(tables);
+            gpu.BuildUBO(ubo);
         };
         AuthorFrame();
-        gpu.BuildUBO(ubo);
-        ubo.ambientColor = float3(0.02f, 0.025f, 0.035f);
-        ubo.ambientPower = 1.0f;
-        ubo.useEnvMap = 0u;
         TextureHandle viewLUTSdrHandle{};
         TextureHandle viewLUTHdrHandle{};
         {

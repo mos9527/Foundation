@@ -4,6 +4,7 @@
 #include <Renderer/Curve.hpp>
 #include <Renderer/Serialization.hpp>
 #include <Renderer/Texture.hpp>
+#include <utility>
 
 namespace Foundation::RHI { struct RHIDeviceCapabilities; }
 struct GPUSceneDesc;
@@ -115,6 +116,7 @@ enum class FLightType : uint32_t
     Spot = 2,
     Disk = 3,
     Rect = 4,
+    Environment = 5,
 };
 inline constexpr uint32_t kMaxSceneLights = 1024;
 struct FLight
@@ -131,25 +133,28 @@ struct FLight
     float height{1.0f};
     bool twoSided{false};
     bool normalize{true};
+    bool environmentMap{false};
+    uint32_t environmentTexture{kInvalidTexture};
+    float environmentAzimuthOffset{0.0f};
     // Scene-node hierarchy index for rigid node animation; -1 when static.
     int32_t node{-1};
 };
 
-enum class FSceneEnvironmentType : uint32_t
+inline FLight MakeDefaultEnvironmentLight()
 {
-    Color = 0,
-    EnvMap = 1,
-};
+    FLight light{};
+    light.type = FLightType::Environment;
+    light.color = float3{0.05f, 0.05f, 0.05f};
+    light.power = 1.0f;
+    light.node = -1;
+    return light;
+}
+
 struct FSceneGlobals
 {
-    FSceneEnvironmentType type{FSceneEnvironmentType::Color};
-    float3 color{0.05f, 0.05f, 0.05f};
-    float strength{1.0f};
-    float azimuthOffset{0.0f};
     float postExposure{0.0f};
     uint32_t viewLutSdrIndex{1u};
     uint32_t viewLutHdrIndex{1u};
-    uint32_t environmentTexture{kInvalidTexture};
 };
 // A morph-target weight track: per-key weights (one set of `targetCount` per key) driving a mesh's
 // blend-shape weights. Referenced by @ref FSerializedMesh::morphTrack. Same time/value packing and
@@ -165,7 +170,7 @@ struct FMorphTrack
 };
 
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 11;
+static constexpr uint32_t kSceneVersion = 12;
 struct FSceneTables
 {
     FSceneGlobals globals;
@@ -402,6 +407,34 @@ struct FImportedScene
 
     Span<FLight const> GetLights() const { return {mTables.lights.data(), mTables.lights.size()}; }
     Span<FLight> GetLights() { return {mTables.lights.data(), mTables.lights.size()}; }
+    FLight const* GetEnvironmentLight() const
+    {
+        for (FLight const& light : mTables.lights)
+            if (light.type == FLightType::Environment)
+                return &light;
+        return nullptr;
+    }
+    FLight* GetEnvironmentLight()
+    {
+        for (FLight& light : mTables.lights)
+            if (light.type == FLightType::Environment)
+                return &light;
+        return nullptr;
+    }
+    FLight& EnsureEnvironmentLight()
+    {
+        for (size_t i = 0; i < mTables.lights.size(); ++i)
+        {
+            if (mTables.lights[i].type == FLightType::Environment)
+            {
+                if (i != 0)
+                    std::swap(mTables.lights[i], mTables.lights.front());
+                return mTables.lights.front();
+            }
+        }
+        mTables.lights.insert(mTables.lights.begin(), MakeDefaultEnvironmentLight());
+        return mTables.lights.front();
+    }
 
     Span<FInstance const> GetInstances() const { return {mTables.instances.data(), mTables.instances.size()}; }
     Span<FInstance> GetInstances() { return {mTables.instances.data(), mTables.instances.size()}; }

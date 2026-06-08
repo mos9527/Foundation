@@ -49,7 +49,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float ndcDepth = depth.Load(uint3(tid,0));
     if (ndcDepth <= EPS) {
         // Infinite depth
-        diffuseOutput[tid] = float4(globalParams.ambientColor * globalParams.ambientPower, 1.0f);
+        diffuseOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     }
@@ -117,6 +117,10 @@ void main(uint2 tid: SV_DispatchThreadID) {
             GSLight gl = lights[globalParams.firstLight + li];
             float3 lightColor = gl.color * gl.power;
             if (!any(lightColor > 0.0f)) continue;
+            if (gl.type == 5) { // Environment: raster uses the synthetic env light as simple ambient.
+                Ld += baseColor * lightColor;
+                continue;
+            }
 
             float3 l;
             float atten = 1.0f;
@@ -162,7 +166,6 @@ void main(uint2 tid: SV_DispatchThreadID) {
             Ls += fs * lightContrib;
         }
 
-        Ld += baseColor * globalParams.ambientColor * globalParams.ambientPower;
         Ld += emissive;
 
         diffuseOutput[tid] = float4(Ld, 1.0f);

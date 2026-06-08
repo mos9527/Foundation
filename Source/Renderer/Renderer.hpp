@@ -34,11 +34,6 @@ struct RendererUBO
     float camEV{0.0f};
     float4 camPosition;
     float4 camDirection;
-    // Environment light
-    float3 ambientColor{0.05f, 0.05f, 0.05f};
-    float ambientPower{1.0f};
-    uint32_t useEnvMap{0u};
-    float envAzimuthOffset{0.0f}; // [-180, 180]
     uint32_t ggxLutEIndex{UINT32_MAX};
     uint32_t ggxLutEavgIndex{UINT32_MAX};
     uint32_t ggxLutEIORIndex{UINT32_MAX};
@@ -54,7 +49,7 @@ struct RendererUBO
     uint32_t firstLight{0u};
     uint32_t firstLightAliasTable{0u};
     uint32_t numSceneLights{0u};
-    float sceneLightWeightSum{0.0f};
+    float sceneLightImportanceSum{0.0f};
     uint32_t energyCompensation{1u};
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};

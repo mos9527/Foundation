@@ -214,7 +214,7 @@ int main(int argc, char** argv)
     // Four walls (floor/back/left/right, open top) + the bunny grid. Constant count, so the
     // per-frame TLAS refit never needs a full rebuild.
     const uint32_t instanceCount = 4u + static_cast<uint32_t>(kCols * kRows);
-    const uint32_t lightCount = 1u;
+    const uint32_t lightCount = 2u;
 
     // Re-authors the whole scene for animation time `t`: static box, the jumping/squashing bunny
     // grid, and the overhead area light, then writes the ring-buffer offsets into the UBO. Called once up
@@ -277,7 +277,14 @@ int main(int argc, char** argv)
         // power); dpdu/dpdv are half-extent vectors so this is a 1.4 x 1.4 quad facing straight
         // down. GPUScene adds it to the TLAS as area-light geometry; the path tracer samples it
         // with MIS for soft shadows + GI, the raster path treats it as a point at its centre.
-        GSLight& key = tables.lights[0];
+        GSLight& env = tables.lights[0];
+        env = GSLight{};
+        env.type = 5u; // Environment light, always present as the first light.
+        env.color = float3(0.0f);
+        env.power = 1.0f;
+        env.importance = 0.0f;
+
+        GSLight& key = tables.lights[1];
         key = GSLight{};
         key.type = 4u; // Rect
         key.color = float3(1.0f, 0.95f, 0.88f);
@@ -287,27 +294,16 @@ int main(int argc, char** argv)
         key.dpdv = float3(0.0f, 0.0f, 0.70f);
         key.direction = float3(0.0f, -1.0f, 0.0f);
         key.twoSided = 0u;
-        key.selectionWeight = key.power; // only one light, so any positive weight works
+        key.importance = key.power; // only one light, so any positive importance works
 
-        auto result = gpu.EndScene(tables);
-        ubo.firstInstance = result.firstInstance;
-        ubo.numInstances = result.numInstances;
-        ubo.firstMaterial = result.firstMaterial;
-        ubo.numMaterials = result.numMaterials;
-        ubo.firstLight = result.firstLight;
-        ubo.firstLightAliasTable = result.firstLightAliasTable;
-        ubo.numSceneLights = result.numLights;
-        ubo.sceneLightWeightSum = result.sceneLightWeightSum;
+        gpu.EndScene(tables);
+        gpu.BuildUBO(ubo);
     };
     AuthorFrame(0.0f); // seed the tables so the initial TLAS build has instances
     ubo.ptDispatchTileSide = 1;
     ubo.ptSamplesPerPixel = 1;
 
     // --- 4. Globals + TLAS ---------------------------------------------------------------
-    gpu.BuildUBO(ubo);
-    ubo.ambientColor = float3(0.0f); // pitch-black surround: all light comes from the ceiling quad
-    ubo.ambientPower = 1.0f;
-    ubo.useEnvMap = 0u;
     TextureHandle viewLUTSdrHandle{};
     TextureHandle viewLUTHdrHandle{};
     {

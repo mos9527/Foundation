@@ -193,7 +193,7 @@ public struct MeshletTaskWork
 };
 public struct GSLight
 {
-    public uint32_t type;       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect
+    public uint32_t type;       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect, 5=Environment
     public float3 color;        // Normalized RGB color
     public float power;         // Radiant power (type-dependent unit)
     public float3 position;
@@ -206,7 +206,8 @@ public struct GSLight
     public float3 dpdv;         // tangent v-axis (Rect: half-extent v)
     public float2 radius;       // Disk radius (x, y for ellipse)
     public uint32_t twoSided;
-    public float selectionWeight;
+    public float importance;
+    public float envAzimuthOffset;
 };
 public struct UBO
 {
@@ -237,11 +238,6 @@ public struct UBO
     public float camEV;
     public float4 camPosition;
     public float4 camDirection;
-    // Environment light
-    public float3 ambientColor;
-    public float ambientPower;
-    public uint32_t useEnvMap;
-    public float envAzimuthOffset;
     public uint32_t ggxLutEIndex;
     public uint32_t ggxLutEavgIndex;
     public uint32_t ggxLutEIORIndex;
@@ -257,7 +253,7 @@ public struct UBO
     public uint32_t firstLight;
     public uint32_t firstLightAliasTable;
     public uint32_t numSceneLights;
-    public float sceneLightWeightSum;
+    public float sceneLightImportanceSum;
     public uint32_t energyCompensation;
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;

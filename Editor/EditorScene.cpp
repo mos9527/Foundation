@@ -1,5 +1,6 @@
 #include <Core/Paths.hpp>
 #include <Core/JobGraph.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <cctype>
 #include <limits>
@@ -30,14 +31,7 @@ static GPUScene::UpdateResult CommitSceneToGPU(GPUScene* gpu, FImportedScene& sc
     CHECK(gpu);
 
     auto res = BuildSceneTables(gpu, scene);
-    globals.firstInstance = res.firstInstance;
-    globals.numInstances  = res.numInstances;
-    globals.firstMaterial = res.firstMaterial;
-    globals.numMaterials  = res.numMaterials;
-    globals.firstLight    = res.firstLight;
-    globals.numSceneLights = res.numLights;
-    globals.firstLightAliasTable = res.firstLightAliasTable;
-    globals.sceneLightWeightSum = res.sceneLightWeightSum;
+    gpu->BuildUBO(globals);
     if (resetAccumulation)
         globals.ptAccumulatedFrames = 0;
     return res;
@@ -136,10 +130,11 @@ static double MillisecondsSince(std::chrono::steady_clock::time_point start)
 
 static bool IsSceneEnvironmentTexture(FImportedScene const& scene, size_t textureIndex)
 {
-    auto const& environment = scene.GetSceneGlobals();
-    return environment.type == FSceneEnvironmentType::EnvMap &&
-        environment.environmentTexture != kInvalidTexture &&
-        textureIndex == environment.environmentTexture;
+    FLight const* environment = scene.GetEnvironmentLight();
+    return environment != nullptr &&
+        environment->environmentMap &&
+        environment->environmentTexture != kInvalidTexture &&
+        textureIndex == environment->environmentTexture;
 }
 
 static size_t SceneTextureReadBudget(FSerializedTexture const& source)
@@ -392,7 +387,34 @@ void DoRenderReadback(RendererOutputs const& outputs)
     }
 }
 
-static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType sampler)
+static float SpotLightImportanceSolidAngle(float cosInner, float cosOuter)
+{
+    float cosFalloffStart = std::clamp(std::max(cosInner, cosOuter), -1.0f, 1.0f);
+    float cosTotalWidth = std::clamp(std::min(cosInner, cosOuter), -1.0f, cosFalloffStart);
+    // Matches the shader's quartic falloff integral over the penumbra.
+    return 2.0f * std::numbers::pi_v<float> *
+           ((1.0f - cosFalloffStart) + (cosFalloffStart - cosTotalWidth) / 5.0f);
+}
+
+static float LightColorImportance(float3 color)
+{
+    return std::max(0.0f, std::max(color.x, std::max(color.y, color.z)));
+}
+
+static float AreaLightFluxImportance(GSLight const& light)
+{
+    float area = 1.0f;
+    if (light.type == static_cast<uint32_t>(FLightType::Disk))
+        area = std::numbers::pi_v<float> * light.radius.x * light.radius.y;
+    else if (light.type == static_cast<uint32_t>(FLightType::Rect))
+        area = 4.0f * cross(light.dpdu, light.dpdv).length();
+
+    float sides = light.twoSided != 0 ? 2.0f : 1.0f;
+    return light.power * area * std::numbers::pi_v<float> * sides;
+}
+
+static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const* gpu,
+                            GPUScene::LightSamplerType sampler)
 {
     dst.type = static_cast<uint32_t>(src.type);
     dst.color = src.color;
@@ -404,6 +426,19 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamp
     dst.direction = normalize(src.transform.rotation * float3(0, 0, -1));
     dst.spotInnerCosAngle = std::cos(src.spotInnerConeAngle);
     dst.spotOuterCosAngle = std::cos(src.spotOuterConeAngle);
+    if (src.type == FLightType::Environment)
+    {
+        bool const hasEnvMap = src.environmentMap && gpu && gpu->HasEnvMap();
+        dst.color = hasEnvMap ? float3(1.0f) : src.color;
+        dst.power = src.power;
+        dst.twoSided = hasEnvMap ? 1u : 0u;
+        dst.envAzimuthOffset = src.environmentAzimuthOffset;
+        dst.importance = sampler == GPUScene::LightSamplerType::Importance
+            ? std::max(0.0f, LightColorImportance(dst.color) * dst.power)
+            : 1.0f;
+        return;
+    }
+
     // Area light fields
     float areaWidth = std::max(src.width, 1e-6f);
     float areaHeight = std::max(src.height, 1e-6f);
@@ -439,18 +474,29 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamp
             dst.power = src.power / (totalArea * std::numbers::pi_v<float>);
         }
     }
-    // Selection weight
-    float weight = 1.0f;
-    if (sampler == GPUScene::LightSamplerType::Power) {
-        weight = dst.power;
-        if (dst.type == 3)
-            weight *= dst.radius.x * dst.radius.y * pi<float>() * std::numbers::pi_v<float> *
-                      (dst.twoSided != 0 ? 2.0f : 1.0f);
-        else if (dst.type == 4)
-            weight *= cross(dst.dpdu, dst.dpdv).length() * 4.0f * std::numbers::pi_v<float> *
-                      (dst.twoSided != 0 ? 2.0f : 1.0f);
+    // Importance used by the light alias table.
+    float importance = 1.0f;
+    if (sampler == GPUScene::LightSamplerType::Importance)
+    {
+        switch (src.type)
+        {
+        case FLightType::Directional:
+            importance = dst.power;
+            break;
+        case FLightType::Point:
+            importance = dst.power * 4.0f * std::numbers::pi_v<float>;
+            break;
+        case FLightType::Spot:
+            importance = dst.power * SpotLightImportanceSolidAngle(dst.spotInnerCosAngle, dst.spotOuterCosAngle);
+            break;
+        case FLightType::Disk:
+        case FLightType::Rect:
+            importance = AreaLightFluxImportance(dst);
+            break;
+        }
+        importance *= LightColorImportance(dst.color);
     }
-    dst.selectionWeight = std::max(0.0f, weight);
+    dst.importance = std::max(0.0f, importance);
 }
 
 static void FillGSMaterial(GSMaterial& dst, FMaterial const& src, Vector<TextureHandle> const& textureIDMap,
@@ -512,9 +558,12 @@ static GPUScene::UpdateResult BuildSceneTables(GPUScene* gpu, FImportedScene& sc
 {
     auto instances = scene.GetInstances();
     auto materials = scene.GetMaterials();
+    scene.EnsureEnvironmentLight();
     auto lights = scene.GetLights();
     CHECK_MSG(instances.size() <= UINT32_MAX && materials.size() <= UINT32_MAX && lights.size() <= UINT32_MAX,
               "Scene table exceeds uint32_t range");
+    // The serialized environment light is always the first scene light. PT samples it through
+    // the same alias table as authored lights; raster treats it as simple ambient fallback.
     auto tables = gpu->BeginScene(static_cast<uint32_t>(instances.size()),
                                   static_cast<uint32_t>(materials.size()),
                                   static_cast<uint32_t>(lights.size()));
@@ -547,7 +596,7 @@ static GPUScene::UpdateResult BuildSceneTables(GPUScene* gpu, FImportedScene& sc
     for (size_t i = 0; i < materials.size(); ++i)
         FillGSMaterial(tables.materials[i], materials[i], GEditor.textureIDMap, gpu);
     for (size_t i = 0; i < lights.size(); ++i)
-        FLightToGSLight(lights[i], tables.lights[i], gpu->mLightSamplerType);
+        FLightToGSLight(lights[i], tables.lights[i], gpu, gpu->mLightSamplerType);
     return gpu->EndScene(tables);
 }
 
@@ -629,7 +678,7 @@ static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBy
 
     outBudgetBytes = GPUSceneBudgetBytes(estimatedBudget);
 
-    auto lightSamplerType = GPUScene::LightSamplerType::Power;
+    auto lightSamplerType = GPUScene::LightSamplerType::Importance;
     if (GContext->gpuScene)
         lightSamplerType = GContext->gpuScene->mLightSamplerType;
 
@@ -698,11 +747,6 @@ static void ApplySceneGlobals(FImportedScene const& scene)
     GEditor.matcapExternalPath.clear();
     GEditor.matcapHandle = {};
     GEditor.shaderGlobals.matcapTextureIndex = UINT32_MAX;
-    GEditor.shaderGlobals.ambientColor = sceneGlobals.color;
-    GEditor.shaderGlobals.ambientPower = sceneGlobals.strength;
-    GEditor.shaderGlobals.envAzimuthOffset = sceneGlobals.azimuthOffset;
-    GEditor.shaderGlobals.useEnvMap = sceneGlobals.type == FSceneEnvironmentType::EnvMap &&
-        sceneGlobals.environmentTexture != kInvalidTexture ? 1u : 0u;
 }
 
 static void InitializeSceneLoad(FImportedScene& scene, SceneLoadStats& stats, GPUScene*& newGPUScene)
@@ -775,15 +819,16 @@ static void BeginSceneUpload(FImportedScene& scene, GPUScene* gpu, Vector<Geomet
 static void PrepareSceneGlobals(FImportedScene& scene, GPUScene* gpu, AllocatorStack& sceneAlloc)
 {
     ApplySceneGlobals(scene);
-    auto const& environment = scene.GetSceneGlobals();
-    bool const hasEnvironmentTexture = environment.type == FSceneEnvironmentType::EnvMap &&
-        environment.environmentTexture != kInvalidTexture;
+    FLight const* environment = scene.GetEnvironmentLight();
+    bool const hasEnvironmentTexture = environment != nullptr &&
+        environment->environmentMap &&
+        environment->environmentTexture != kInvalidTexture;
 
     if (hasEnvironmentTexture)
     {
-        CHECK_MSG(environment.environmentTexture < scene.GetTextures().size(),
+        CHECK_MSG(environment->environmentTexture < scene.GetTextures().size(),
                   "Scene environment texture index out of range");
-        FSerializedTexture const& environmentTextureDesc = scene.GetTextures()[environment.environmentTexture];
+        FSerializedTexture const& environmentTextureDesc = scene.GetTextures()[environment->environmentTexture];
         ScopedArena environmentArena(GLOBAL_ALLOC, SceneTextureReadBudget(environmentTextureDesc));
         CHECK(environmentArena);
         AllocatorStack environmentAlloc(environmentArena);
@@ -1439,14 +1484,10 @@ void LoadEnvMap(StringView path)
         FTexture tex(GLOBAL_ALLOC);
         LoadHDR(tex, path);
         gpu->UploadEnvMap(tex);
-        GEditor.Scene().GetSceneGlobals() = {
-            .type = FSceneEnvironmentType::EnvMap,
-            .color = GEditor.shaderGlobals.ambientColor,
-            .strength = GEditor.shaderGlobals.ambientPower,
-            .azimuthOffset = GEditor.shaderGlobals.envAzimuthOffset,
-        };
-        GEditor.shaderGlobals.useEnvMap = 1u;
+        FLight& environment = GEditor.Scene().EnsureEnvironmentLight();
+        environment.environmentMap = true;
         gpu->BuildUBO(GEditor.shaderGlobals);
+        UpdateSceneLights();
         GEditor.shaderGlobals.ptAccumulatedFrames = 0;
         LOG(Editor, LogInfo, "HDRI env map loaded successfully");
     }

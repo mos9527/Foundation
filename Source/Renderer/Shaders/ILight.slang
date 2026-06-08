@@ -161,24 +161,20 @@ float PDF2D(uint32_t marginalCDFIndex, uint sizeY,
 
 // https://pbr-book.org/4ed/Light_Sources/Infinite_Area_Lights
 // https://projects.blender.org/blender/blender/src/branch/main/intern/cycles/kernel/light/background.h
-// Unified infinite light: when hasEnvMap is true, radiance comes from the
-// equirectangular env map texture; otherwise it falls back to a constant color.
+// Infinite light backed either by a constant color or by the environment map resources.
 public struct InfiniteLight : ILight {
-    SampledSpectrum fallbackColor; // constant Lemit when no env map
-    float scale;
-    bool  hasEnvMap;
-
+    SampledSpectrum Lemit;
+    bool hasEnvMap;
     float azimuthOffset; // For rotating the env map, in radians
     uint32_t envMapTextureIndex;
     uint32_t envMapMarginalCDFIndex;
     uint32_t envMapConditionalCDFIndex;
 
-    public __init(SampledSpectrum fallbackColor, float scale, bool hasEnvMap = false, float azimuthOffset = 0.0f,
+    public __init(SampledSpectrum Lemit, bool hasEnvMap = false, float azimuthOffset = 0.0f,
                   uint32_t envMapTextureIndex = ~0u, uint32_t envMapMarginalCDFIndex = ~0u,
                   uint32_t envMapConditionalCDFIndex = ~0u) {
-        this.fallbackColor = fallbackColor;
-        this.scale         = scale;
-        this.hasEnvMap     = hasEnvMap;
+        this.Lemit = Lemit;
+        this.hasEnvMap = hasEnvMap;
         this.azimuthOffset = azimuthOffset / 180.0f * Pi; // radians
         this.envMapTextureIndex = envMapTextureIndex;
         this.envMapMarginalCDFIndex = envMapMarginalCDFIndex;
@@ -207,73 +203,72 @@ public struct InfiniteLight : ILight {
     }
     public SampledSpectrum Le(float3 w) {
         if (hasEnvMap)
-            return SampledSpectrum(SampleEnvMapTexture(w)) * scale;
-        return fallbackColor * scale;
+            return SampledSpectrum(SampleEnvMapTexture(w)) * Lemit;
+        return Lemit;
     }
     public void PDF_Le(LightSampleContext, float3, out float pdfPos, out float pdfDir) {
         pdfPos = 0.0f;
         pdfDir = UniformSpherePDF();
     }
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
-        if (hasEnvMap) {
-            uint width, height;
-            textures[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
-            float pdf;
-            uint2 offset;
-            float2 uv = Sample2D(envMapMarginalCDFIndex, height, envMapConditionalCDFIndex, width, u, pdf, offset);
-
-            float phi = (uv.x - 0.5f) * 2.0f * Pi; // radians
-            float theta = uv.y * Pi;
-            // local sample, bring to world
-            phi += azimuthOffset;
-            float sinTheta = sin(theta);
-            float cosTheta = cos(theta);
-            float sinPhi = sin(phi);
-            float cosPhi = cos(phi);
-            
-            float3 wi = float3(sinTheta * cosPhi, cosTheta, sinTheta * sinPhi);
-
-            /**
-            Jacobian change of var:
-            phi = 2pi * u, theta = pi * v
-            du = dphi/2pi, dv = dtheta/pi
-            --
-            p(phi, theta) dphi dtheta = p(u,v) du dv
-            p(phi, theta) = p(u,v) / 2pi^2
-            --
-            PDFs are again measured w.r.t. solid angles. Recap..
-            dω = sin(theta) dtheta dphi
-            p(ω) dω = p(phi, theta) dphi dtheta
-            p(ω) = p(phi, theta) / sin(theta) = p(u,v) / (2pi^2 * sin(theta))
-            **/
-
-            if (sinTheta == 0.0f) pdf = 0.0f;
-            else pdf /= (2.0f * Pi * Pi * sinTheta);
-            // ^^^ offset, no change in jacobian.
-            
-            if (pdf == 0.0f) return LightLiSample();
-            
-            return LightLiSample(Le(wi), wi, pdf, false, INF);
-        } else {
+        if (!hasEnvMap) {
             float3 wi = SampleUniformSphere(u);
             return LightLiSample(Le(wi), wi, UniformSpherePDF(), false, INF);
         }
+
+        uint width, height;
+        textures[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
+        float pdf;
+        uint2 offset;
+        float2 uv = Sample2D(envMapMarginalCDFIndex, height, envMapConditionalCDFIndex, width, u, pdf, offset);
+
+        float phi = (uv.x - 0.5f) * 2.0f * Pi; // radians
+        float theta = uv.y * Pi;
+        // local sample, bring to world
+        phi += azimuthOffset;
+        float sinTheta = sin(theta);
+        float cosTheta = cos(theta);
+        float sinPhi = sin(phi);
+        float cosPhi = cos(phi);
+            
+        float3 wi = float3(sinTheta * cosPhi, cosTheta, sinTheta * sinPhi);
+
+        /**
+        Jacobian change of var:
+        phi = 2pi * u, theta = pi * v
+        du = dphi/2pi, dv = dtheta/pi
+        --
+        p(phi, theta) dphi dtheta = p(u,v) du dv
+        p(phi, theta) = p(u,v) / 2pi^2
+        --
+        PDFs are again measured w.r.t. solid angles. Recap..
+        dω = sin(theta) dtheta dphi
+        p(ω) dω = p(phi, theta) dphi dtheta
+        p(ω) = p(phi, theta) / sin(theta) = p(u,v) / (2pi^2 * sin(theta))
+        **/
+
+        if (sinTheta == 0.0f) pdf = 0.0f;
+        else pdf /= (2.0f * Pi * Pi * sinTheta);
+        // ^^^ offset, no change in jacobian.
+            
+        if (pdf == 0.0f) return LightLiSample();
+            
+        return LightLiSample(Le(wi), wi, pdf, false, INF);
     }
     public float PDF_Li(LightSampleContext ctx, float3 w, bool allowIncompletePDF) {
-        if (hasEnvMap) {
-            uint width, height;
-            textures[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
-            float2 uv = EnvMapDirToUV(w);
-            float pdf = PDF2D(envMapMarginalCDFIndex, height, envMapConditionalCDFIndex, width, uv);
-            
-            float theta = uv.y * Pi;
-            float sinTheta = sin(theta);
-            
-            if (sinTheta == 0.0f) return 0.0f;
-            return pdf / (2.0f * Pi * Pi * sinTheta);
-        } else {
+        if (!hasEnvMap)
             return UniformSpherePDF();
-        }
+
+        uint width, height;
+        textures[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
+        float2 uv = EnvMapDirToUV(w);
+        float pdf = PDF2D(envMapMarginalCDFIndex, height, envMapConditionalCDFIndex, width, uv);
+            
+        float theta = uv.y * Pi;
+        float sinTheta = sin(theta);
+            
+        if (sinTheta == 0.0f) return 0.0f;
+        return pdf / (2.0f * Pi * Pi * sinTheta);
     }
 };
 // https://pbr-book.org/4ed/Light_Sources/Distant_Lights#DistantLight

@@ -240,7 +240,7 @@ int main(int argc, char** argv)
     {
         uint32_t blobs = static_cast<uint32_t>(assets.size()) - 1u; // minus the floor
         uint32_t instanceCount = 1u + blobs;
-        auto tables = gpu.BeginScene(instanceCount, static_cast<uint32_t>(palette.size()), 1u);
+        auto tables = gpu.BeginScene(instanceCount, static_cast<uint32_t>(palette.size()), 2u);
 
         tables.instances[0] = InstanceDesc{.geometry = assets[kFloorAsset].handle,
                                            .transform = float3(0.0f),
@@ -260,7 +260,14 @@ int main(int argc, char** argv)
         for (size_t i = 0; i < palette.size(); ++i)
             tables.materials[i] = palette[i];
 
-        GSLight& key = tables.lights[0];
+        GSLight& env = tables.lights[0];
+        env = GSLight{};
+        env.type = 5u; // Environment light, always present as the first light.
+        env.color = float3(0.02f, 0.025f, 0.035f);
+        env.power = 1.0f;
+        env.importance = 0.035f;
+
+        GSLight& key = tables.lights[1];
         key = GSLight{};
         key.type = 4u; // Rect area light
         key.color = float3(1.0f, 0.96f, 0.9f);
@@ -270,24 +277,13 @@ int main(int argc, char** argv)
         key.dpdv = float3(0.0f, 0.0f, 2.2f);
         key.direction = float3(0.0f, -1.0f, 0.0f);
         key.twoSided = 0u;
-        key.selectionWeight = key.power;
+        key.importance = key.power;
 
-        auto result = gpu.EndScene(tables);
-        ubo.firstInstance = result.firstInstance;
-        ubo.numInstances = result.numInstances;
-        ubo.firstMaterial = result.firstMaterial;
-        ubo.numMaterials = result.numMaterials;
-        ubo.firstLight = result.firstLight;
-        ubo.firstLightAliasTable = result.firstLightAliasTable;
-        ubo.numSceneLights = result.numLights;
-        ubo.sceneLightWeightSum = result.sceneLightWeightSum;
+        gpu.EndScene(tables);
+        gpu.BuildUBO(ubo);
     };
     AuthorFrame(0.0f); // seed the tables (floor only) so the initial TLAS build is well-formed
 
-    gpu.BuildUBO(ubo);
-    ubo.ambientColor = float3(0.02f, 0.025f, 0.035f); // faint sky fill so empty areas aren't pure black
-    ubo.ambientPower = 1.0f;
-    ubo.useEnvMap = 0u;
     TextureHandle viewLUTSdrHandle{};
     TextureHandle viewLUTHdrHandle{};
     // One-time TLAS build sizes the AS inside its pre-allocated 16 MB buffer (the only sync, and

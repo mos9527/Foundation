@@ -658,13 +658,15 @@ struct PathRadiance
 struct DirectLightingState
 {
     InfiniteLight env;
-    float lightTotalWeight;
+    float envImportance;
+    float lightTotalImportance;
     LightSampleContext lastLightCtx;
 
-    __init(InfiniteLight env, float lightTotalWeight)
+    __init(InfiniteLight env, float envImportance, float lightTotalImportance)
     {
         this.env = env;
-        this.lightTotalWeight = lightTotalWeight;
+        this.envImportance = envImportance;
+        this.lightTotalImportance = lightTotalImportance;
         this.lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
     }
 };
@@ -1175,11 +1177,16 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
     return true;
 }
 
-float GetEnvLightSelectionWeight()
+InfiniteLight MakeEnvironmentLight(GSLight gl)
 {
-    return globalParams.useEnvMap != 0u
-        ? globalParams.ambientPower
-        : MaxComponent(globalParams.ambientColor) * globalParams.ambientPower;
+    return InfiniteLight(
+        SampledSpectrum(gl.color * gl.power),
+        gl.twoSided != 0u,
+        gl.envAzimuthOffset,
+        globalParams.envMapTextureIndex,
+        globalParams.envMapMarginalCDFIndex,
+        globalParams.envMapConditionalCDFIndex
+    );
 }
 
 LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
@@ -1208,54 +1215,35 @@ LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
             gl.dpdu, gl.dpdv, gl.twoSided != 0);
         return light.Sample_Li(ctx, u);
     }
+    case 5: {
+        InfiniteLight light = MakeEnvironmentLight(gl);
+        return light.Sample_Li(ctx, u);
+    }
     default:
         return LightLiSample();
     }
 }
 
-LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float uc, float2 u, float weightSum)
+LightLiSample SampleSceneLight(LightSampleContext ctx, float uc, float2 u, float importanceSum)
 {
-    if (weightSum <= 0.0f)
+    if (importanceSum <= 0.0f || globalParams.numSceneLights == 0)
         return LightLiSample();
-
-    float envWeight = GetEnvLightSelectionWeight();
-    
-    // Decide whether to sample env light or scene light
-    if (uc * weightSum < envWeight) {
-        LightLiSample Li = env.Sample_Li(ctx, u);
-        if (Li.pdf <= 0.0f)
-            return LightLiSample();
-
-        float pChoice = envWeight / weightSum;
-        SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
-        float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * pChoice);
-        return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist);
-    }
-    
-    // Sample scene light using alias table
-    if (globalParams.numSceneLights > 0) {
-        // Re-scale uc for scene lights
-        uc = (uc * weightSum - envWeight) / (weightSum - envWeight);
         
-        uint numLights = globalParams.numSceneLights;
-        uint idx = min(uint(uc * numLights), numLights - 1);
-        Alias bin = lightAliasTable[globalParams.firstLightAliasTable + idx];
-        // Get another i.i.d.
-        uc = uc * numLights - idx;
-        idx = uc >= bin.select ? bin.alias : idx;
-        // Final selection
-        float prob = lightAliasTable[globalParams.firstLightAliasTable + idx].prob;
-        // Draw sample from selected light
-        GSLight gl = LoadSceneLight(idx);
-        LightLiSample Li = SampleSceneLight(gl, ctx, u);
-        if (Li.pdf > 0.0f) {
-            float pSceneLights = (weightSum - envWeight) / weightSum;
-            float pChoice = pSceneLights * prob;
-
-            SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
-            float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * pChoice);
-            return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist);
-        }
+    uint numLights = globalParams.numSceneLights;
+    uint idx = min(uint(uc * numLights), numLights - 1);
+    Alias bin = lightAliasTable[globalParams.firstLightAliasTable + idx];
+    // Get another i.i.d.
+    uc = uc * numLights - idx;
+    idx = uc >= bin.select ? bin.alias : idx;
+    // Final selection
+    float prob = lightAliasTable[globalParams.firstLightAliasTable + idx].prob;
+    // Draw sample from selected light
+    GSLight gl = LoadSceneLight(idx);
+    LightLiSample Li = SampleSceneLight(gl, ctx, u);
+    if (Li.pdf > 0.0f) {
+        SampledSpectrum radiance = Li.Li / (Li.pdf * prob);
+        float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * prob);
+        return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist);
     }
 
     return LightLiSample();
@@ -1278,14 +1266,13 @@ void AddRadianceByCategory(
 
 bool SampleVisibleSceneLight<S : ISampler>(
     HitState hit,
-    InfiniteLight env,
     inout S rng,
-    float lightTotalWeight,
+    float lightTotalImportance,
     out LightSampleContext ctx,
     out LightLiSample Li)
 {
     ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal);
-    Li = SampleSceneLight(ctx, env, rng.sample(), rng.sample2D(), lightTotalWeight);
+    Li = SampleSceneLight(ctx, rng.sample(), rng.sample2D(), lightTotalImportance);
     if (Li.pdf <= EPS)
         return false;
 
@@ -1332,7 +1319,7 @@ void AddLocalDirectLighting<S : ISampler>(
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(surface.hit, lighting.env, rng, lighting.lightTotalWeight, ctx, Li))
+    if (!SampleVisibleSceneLight(surface.hit, rng, lighting.lightTotalImportance, ctx, Li))
     {
         lighting.lastLightCtx = ctx;
         return;
@@ -1372,7 +1359,7 @@ void AddDiffuseDirectLighting<S : ISampler>(
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit, lighting.env, rng, lighting.lightTotalWeight, ctx, Li))
+    if (!SampleVisibleSceneLight(hit, rng, lighting.lightTotalImportance, ctx, Li))
     {
         lighting.lastLightCtx = ctx;
         return;
@@ -1457,8 +1444,8 @@ bool AddAnalyticLightHitEmission(
 
     if (bounce > 0 /* do not contribute to primary visibility */ && any(Le > 0.0f))
     {
-        float pLightSelection = lighting.lightTotalWeight > 0.0f
-            ? (gl.selectionWeight / lighting.lightTotalWeight)
+        float pLightSelection = lighting.lightTotalImportance > 0.0f
+            ? (gl.importance / lighting.lightTotalImportance)
             : 0.0f;
         float pdf = pLightSelection * pdfLi;
         float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
@@ -1484,9 +1471,8 @@ void AddEnvironmentMiss(
         return;
     }
 
-    float envWeight = GetEnvLightSelectionWeight();
-    float pdf = lighting.lightTotalWeight > 0.0f
-        ? (envWeight / lighting.lightTotalWeight) * lighting.env.PDF_Li(lighting.lastLightCtx, -view, true)
+    float pdf = lighting.lightTotalImportance > 0.0f
+        ? (lighting.envImportance / lighting.lightTotalImportance) * lighting.env.PDF_Li(lighting.lastLightCtx, -view, true)
         : 0.0f;
     float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
     float3 contrib = beta * lighting.env.Le(-view) * mis;
@@ -1528,17 +1514,11 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     bool pickingWritten = false;
     float frameCount = float(GetPTPixelSampleCount(subSample));    
     float lastSamplePDF = 0.0f;
-    InfiniteLight env = InfiniteLight(
-        SampledSpectrum(globalParams.ambientColor),
-        globalParams.ambientPower,
-        globalParams.useEnvMap != 0u,
-        globalParams.envAzimuthOffset,
-        globalParams.envMapTextureIndex,
-        globalParams.envMapMarginalCDFIndex,
-        globalParams.envMapConditionalCDFIndex
-    );
-    float lightTotalWeight = globalParams.sceneLightWeightSum + GetEnvLightSelectionWeight();
-    DirectLightingState lighting = DirectLightingState(env, lightTotalWeight);
+    // Serialized scenes keep the environment light as the first scene light.
+    GSLight envLight = LoadSceneLight(0u);
+    InfiniteLight env = MakeEnvironmentLight(envLight);
+    float lightTotalImportance = globalParams.sceneLightImportanceSum;
+    DirectLightingState lighting = DirectLightingState(env, envLight.importance, lightTotalImportance);
     uint diffuseBounces = 0;
     uint specularBounces = 0;
     uint transmissionBounces = 0;

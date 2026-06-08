@@ -140,7 +140,7 @@ struct GSMaterial
 };
 struct GSLight
 {
-    uint32_t type{0u};       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect
+    uint32_t type{0u};       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect, 5=Environment
     float3 color{1,1,1};    // Normalized RGB color
     float power{1.0f};      // Radiant power (type-dependent unit)
     float3 position{0,0,0};
@@ -153,13 +153,14 @@ struct GSLight
     float3 dpdv{0,1,0};     // tangent v-axis (Rect: half-extent v)
     float2 radius{0.5f, 0.5f}; // Disk radius (x, y for ellipse)
     uint32_t twoSided{0u};
-    float selectionWeight{0.0f};
+    float importance{0.0f};
+    float envAzimuthOffset{0.0f};
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 56);
 static_assert(sizeof(GSMaterial) == 192);
-static_assert(sizeof(GSLight) == 96);
+static_assert(sizeof(GSLight) == 100);
 
 struct GPUSceneDesc
 {
@@ -240,9 +241,9 @@ public:
     enum class LightSamplerType
     {
         Uniform,
-        Power
+        Importance
     };
-    LightSamplerType mLightSamplerType = LightSamplerType::Power;
+    LightSamplerType mLightSamplerType = LightSamplerType::Importance;
 
     [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FSerializedMesh const& src);
     [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FSerializedCurve const& src);
@@ -327,8 +328,7 @@ public:
      * @brief Writes every GPUScene-owned global bindless index into the renderer UBO:
      *        the GGX/sheen LUTs and the environment map + its importance-sampling CDFs
      *        (default-substituted when no env map is loaded).
-     * @note Leaves instance/material/light table offsets untouched (those come from
-     *       @ref EndScene's @ref UpdateResult).
+     * @note Also copies the latest instance/material/light table offsets committed by @ref EndScene.
      */
     void BuildUBO(RendererUBO& globals) const;
 
@@ -337,14 +337,14 @@ public:
      */
     struct UpdateResult
     {
-        uint32_t firstInstance;
-        uint32_t numInstances;
-        uint32_t firstMaterial;
-        uint32_t numMaterials;
-        uint32_t firstLight;
-        uint32_t firstLightAliasTable;
-        uint32_t numLights;
-        float sceneLightWeightSum;
+        uint32_t firstInstance{0u};
+        uint32_t numInstances{0u};
+        uint32_t firstMaterial{0u};
+        uint32_t numMaterials{0u};
+        uint32_t firstLight{0u};
+        uint32_t firstLightAliasTable{0u};
+        uint32_t numLights{0u};
+        float sceneLightImportanceSum{0.0f};
     };
 
     /**
@@ -552,6 +552,7 @@ private:
     Vector<GSInstance> mCommittedInstances;
     Vector<GSLight> mCommittedLights;
     Vector<GSMaterial> mCommittedMaterials;
+    UpdateResult mLastUpdateResult;
     // TLAS instanceID -> committed instance index, rebuilt each BuildTLAS. When some
     // referenced geometry is not yet Ready those instances are skipped, so the TLAS id
     // is no longer identical to the committed index and picking must go through this map.

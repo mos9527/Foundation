@@ -1337,8 +1337,9 @@ void FLightingPanel()
                 light.color = float3{1.0f, 0.92f, 0.78f};
                 light.power = 10.0f;
                 light.range = 10.0f;
-                lights.push_back(light);
-                GEditor.selectedLight = static_cast<int>(lights.size()) - 1;
+                size_t const insertIndex = !lights.empty() && lights.front().type == FLightType::Environment ? 1u : 0u;
+                lights.insert(lights.begin() + static_cast<std::ptrdiff_t>(insertIndex), light);
+                GEditor.selectedLight = static_cast<int>(insertIndex);
                 GEditor.selectedInstance = -1;
                 GEditor.selectedMaterial = -1;
                 anyChanged = true;
@@ -1348,7 +1349,8 @@ void FLightingPanel()
             if (!canAddLight && GContext->gpuScene)
                 ImGui::SetItemTooltip("GPU light buffer capacity reached (%u lights)", lightCapacity);
             ImGui::SameLine();
-            bool canDeleteLight = GEditor.selectedLight >= 0 && GEditor.selectedLight < static_cast<int>(lights.size());
+            bool canDeleteLight = GEditor.selectedLight >= 0 && GEditor.selectedLight < static_cast<int>(lights.size()) &&
+                lights[GEditor.selectedLight].type != FLightType::Environment;
             if (!canDeleteLight)
                 ImGui::BeginDisabled();
             if (ImGui::Button("Delete Selected Light"))
@@ -1364,6 +1366,8 @@ void FLightingPanel()
             for (int i = 0; i < static_cast<int>(lights.size()); i++)
             {
                 auto& light = lights[i];
+                if (light.type == FLightType::Environment)
+                    continue;
                 ImGui::PushID(i);
 
                 char header[64];
@@ -1393,6 +1397,13 @@ void FLightingPanel()
 
                     // Color + Power
                     lightChanged |= ImHDRColorEdit("Color", light.color, light.power);
+                    if (GContext->gpuScene && i < static_cast<int>(GContext->gpuScene->GetLightCount()))
+                    {
+                        float importance = GContext->gpuScene->GetLight(static_cast<uint32_t>(i)).importance;
+                        ImGui::BeginDisabled();
+                        ImGui::InputFloat("Importance", &importance, 0.0f, 0.0f, "%.6g");
+                        ImGui::EndDisabled();
+                    }
 
                     // Direction (Euler angles) for lights with orientation
                     bool hasDirection = (light.type == FLightType::Directional || light.type == FLightType::Spot ||
@@ -1489,7 +1500,8 @@ void FLightingPanel()
         // ---- Ambient / Environment ----
         if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            bool envChanged = ImHDRColorEdit("Ambient", GEditor.shaderGlobals.ambientColor, GEditor.shaderGlobals.ambientPower);
+            FLight& environment = GEditor.Scene().EnsureEnvironmentLight();
+            bool envChanged = ImHDRColorEdit("Ambient", environment.color, environment.power);
 
             ImGui::Separator();
             bool hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvMap();
@@ -1497,25 +1509,23 @@ void FLightingPanel()
             if (hasEnv)
             {
                 DrawTexturePreview("HDRI", GContext->gpuScene->GetEnvMapIndexOrDefault());
-                envChanged |= ImGui::SliderFloat("Azimuth Offset", &GEditor.shaderGlobals.envAzimuthOffset, -180.0f, 180.0f,
+                envChanged |= ImGui::SliderFloat("Azimuth Offset", &environment.environmentAzimuthOffset, -180.0f, 180.0f,
                                               "%.1f deg");
-                bool envEnabled = GEditor.shaderGlobals.useEnvMap != 0u;
+                bool envEnabled = environment.environmentMap;
                 if (ImGui::Checkbox("Enable Env Map", &envEnabled))
                 {
-                    GEditor.shaderGlobals.useEnvMap = envEnabled ? 1u : 0u;
+                    environment.environmentMap = envEnabled;
                     envChanged = true;
                 }
             }
             if (envChanged)
-            {
-                if (GEditor.HasScene())
-                {
-                    auto& globals = GEditor.Scene().GetSceneGlobals();
-                    globals.color = GEditor.shaderGlobals.ambientColor;
-                    globals.strength = GEditor.shaderGlobals.ambientPower;
-                    globals.azimuthOffset = GEditor.shaderGlobals.envAzimuthOffset;
-                }
                 anyChanged = true;
+            if (GContext->gpuScene && !GEditor.Scene().GetLights().empty())
+            {
+                float importance = GContext->gpuScene->GetLight(0u).importance;
+                ImGui::BeginDisabled();
+                ImGui::InputFloat("Importance", &importance, 0.0f, 0.0f, "%.6g");
+                ImGui::EndDisabled();
             }
             ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
         }
@@ -1970,7 +1980,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
-            const char* lightSamplerItems[] = { "Uniform", "Power" };
+            const char* lightSamplerItems[] = { "Uniform", "Importance" };
             if (ImGui::Combo("Light Sampler", reinterpret_cast<int*>(&GContext->gpuScene->mLightSamplerType), lightSamplerItems, 2))
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
@@ -2352,6 +2362,8 @@ static void DrawLightGizmos()
     // -- Shape overlays for all lights --
     for (int i = 0; i < static_cast<int>(lights.size()); i++)
     {
+        if (lights[i].type == FLightType::Environment)
+            continue;
         bool selected = (i == GEditor.selectedLight);
         ImU32 color = selected ? IM_COL32(255, 200, 50, 255)   // gold for selected
                                : IM_COL32(255, 255, 100, 100); // dim yellow for others
@@ -2372,6 +2384,8 @@ static void DrawLightGizmos()
         return;
 
     auto& light = lights[GEditor.selectedLight];
+    if (light.type == FLightType::Environment)
+        return;
     bool hasPosition = (light.type != FLightType::Directional);
 
     // Build model matrix from light transform (no scale — lights don't scale)

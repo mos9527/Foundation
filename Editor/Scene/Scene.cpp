@@ -90,21 +90,19 @@ void LoadFoundationColorManagementExtension(cgltf_data const* data, FSceneGlobal
                                                                 Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::HDR));
 }
 
-Optional<String> LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath, FImportedScene& scene)
+Optional<String> LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath, FLight& environmentLight)
 {
     cgltf_scene const* gltfScene = data->scene ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
     if (!gltfScene || !gltfScene->has_foundation_environment)
         return {};
 
     cgltf_foundation_environment const& environment = gltfScene->foundation_environment;
-    FSceneGlobals globals = scene.GetSceneGlobals();
-    globals.environmentTexture = kInvalidTexture;
     if (environment.type == cgltf_foundation_environment_type_color)
     {
-        globals.type = FSceneEnvironmentType::Color;
-        globals.color = {environment.color[0], environment.color[1], environment.color[2]};
-        globals.strength = environment.strength;
-        scene.Set(globals);
+        environmentLight = MakeDefaultEnvironmentLight();
+        environmentLight.color = {environment.color[0], environment.color[1], environment.color[2]};
+        environmentLight.power = environment.strength;
+        environmentLight.environmentMap = false;
         return {};
     }
 
@@ -119,10 +117,10 @@ Optional<String> LoadFoundationEnvironmentExtension(cgltf_data const* data, Stri
         CHECK_MSG(IsRadianceHDRPath(hdriPath), "EXT_foundation_environment HDRI must reference .hdr/.hdri, got {}",
                   hdriPath.string());
 
-        globals.type = FSceneEnvironmentType::EnvMap;
-        globals.strength = environment.strength;
-        globals.azimuthOffset = environment.azimuth_offset;
-        scene.Set(globals);
+        environmentLight = MakeDefaultEnvironmentLight();
+        environmentLight.power = environment.strength;
+        environmentLight.environmentMap = true;
+        environmentLight.environmentAzimuthOffset = environment.azimuth_offset;
         return hdriPath.string();
     }
 
@@ -243,21 +241,7 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
     CHECK_MSG(tables.curves.size() <= UINT32_MAX, "FScene curve table is too large");
     CHECK_MSG(tables.textures.size() <= UINT32_MAX, "FScene texture table is too large");
 
-    switch (tables.globals.type)
-    {
-    case FSceneEnvironmentType::Color:
-        break;
-    case FSceneEnvironmentType::EnvMap:
-        CHECK_MSG(tables.globals.environmentTexture != kInvalidTexture,
-                  "FScene EnvMap environment requires globals.environmentTexture");
-        ValidateTextureIndex(tables.globals.environmentTexture, tables.textures.size(), "globals.environmentTexture");
-        break;
-    default:
-        CHECK_MSG(false, "FScene globals have unsupported environment type {}",
-                  static_cast<uint32_t>(tables.globals.type));
-        break;
-    }
-
+    size_t environmentLightCount = 0;
     for (auto const& light : tables.lights)
     {
         switch (light.type)
@@ -268,11 +252,24 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
         case FLightType::Disk:
         case FLightType::Rect:
             break;
+        case FLightType::Environment:
+            environmentLightCount++;
+            if (light.environmentMap)
+            {
+                CHECK_MSG(light.environmentTexture != kInvalidTexture,
+                          "FScene EnvMap environment light requires environmentTexture");
+                ValidateTextureIndex(light.environmentTexture, tables.textures.size(), "light.environmentTexture");
+            }
+            break;
         default:
             CHECK_MSG(false, "FScene light has unsupported type {}", static_cast<uint32_t>(light.type));
             break;
         }
     }
+    CHECK_MSG(environmentLightCount == 1, "FScene must have exactly one environment light, got {}",
+              environmentLightCount);
+    CHECK_MSG(!tables.lights.empty() && tables.lights.front().type == FLightType::Environment,
+              "FScene environment light must be the first light");
 
     for (auto const& material : tables.materials)
     {
@@ -1009,7 +1006,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
     FSceneGlobals globals = scene.GetSceneGlobals();
     LoadFoundationColorManagementExtension(data, globals);
     scene.Set(globals);
-    Optional<String> environmentTexturePath = LoadFoundationEnvironmentExtension(data, path, scene);
+    FLight environmentLight = MakeDefaultEnvironmentLight();
+    Optional<String> environmentTexturePath = LoadFoundationEnvironmentExtension(data, path, environmentLight);
 
     /* Materials */
     // NOTE: Material 0 is reserved as the default material:
@@ -1199,9 +1197,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         BuildTextureBlobJobs(scene.mTables.textures[environmentTextureIndex],
                              textureBlobJobs[environmentTextureIndex].jobs, std::move(environmentTexture));
         AppendResourceBlobJobs(blobJobs, textureBlobJobs[environmentTextureIndex]);
-        FSceneGlobals environmentGlobals = scene.GetSceneGlobals();
-        environmentGlobals.environmentTexture = environmentTextureIndex;
-        scene.Set(environmentGlobals);
+        environmentLight.environmentTexture = environmentTextureIndex;
     }
 
     /* Skeletons (one per glTF skin) + a glTF-mesh -> skin map for skinned-mesh import */
@@ -1658,6 +1654,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         if (!clip.channels.empty())
             scene.mTables.clips.push_back(std::move(clip));
     }
+    scene.mTables.lights.insert(scene.mTables.lights.begin(), environmentLight);
 }
 
 static_assert(std::is_trivially_copyable_v<FSceneHeader>);
@@ -1992,16 +1989,16 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
 
     size_t textureBindings = kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings +
         kGPUSceneTextureBindingSlack;
-    auto const& sceneGlobals = GetSceneGlobals();
+    FLight const* environmentLight = GetEnvironmentLight();
     for (size_t textureIndex = 0; textureIndex < GetTextures().size(); ++textureIndex)
     {
-        if (sceneGlobals.type == FSceneEnvironmentType::EnvMap &&
-            sceneGlobals.environmentTexture != kInvalidTexture && textureIndex == sceneGlobals.environmentTexture)
+        if (environmentLight && environmentLight->environmentMap &&
+            environmentLight->environmentTexture != kInvalidTexture && textureIndex == environmentLight->environmentTexture)
             continue;
         FSerializedTexture const& texture = GetTextures()[textureIndex];
         textureBindings += texture.IsValid() ? 1u : 0u;
     }
-    if (sceneGlobals.type == FSceneEnvironmentType::EnvMap)
+    if (environmentLight && environmentLight->environmentMap)
         textureBindings += kGPUSceneEnvMapBindings;
     textureBindings += kGPUScenePersistentTexture3DBindings;
     desc.texturesBudget = CountGPUSceneBudget(textureBindings);

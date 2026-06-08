@@ -946,27 +946,36 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     if (!tables.lights.empty())
     {
         Allocator* scratch = mFrameScratch ? mFrameScratch : mAllocator;
-        Vector<float> powers(tables.lights.size(), scratch);
-        float weightSum = 0.0f;
+        Vector<float> weights(tables.lights.size(), scratch);
+        float importanceSum = 0.0f;
         for (size_t i = 0; i < tables.lights.size(); ++i)
         {
-            powers[i] = tables.lights[i].selectionWeight;
-            weightSum += powers[i];
+            weights[i] = tables.lights[i].importance;
+            importanceSum += weights[i];
         }
-        AliasTable table(powers, scratch);
+        AliasTable table(weights, scratch);
         CHECK(mOpenTables.aliasPtr != nullptr);
         std::memcpy(mOpenTables.aliasPtr, table.mBins.data(), table.mBins.size() * sizeof(GSAlias));
         res.firstLight = tables.firstLight;
         res.firstLightAliasTable = mOpenTables.firstAliasTable;
         res.numLights = static_cast<uint32_t>(tables.lights.size());
-        res.sceneLightWeightSum = weightSum;
+        res.sceneLightImportanceSum = importanceSum;
     }
+    owner.mLastUpdateResult = res;
     mOpenTables = OpenTables{};
     return res;
 }
 
 void GPUScene::BuildUBO(RendererUBO& globals) const
 {
+    globals.firstInstance = mLastUpdateResult.firstInstance;
+    globals.numInstances = mLastUpdateResult.numInstances;
+    globals.firstMaterial = mLastUpdateResult.firstMaterial;
+    globals.numMaterials = mLastUpdateResult.numMaterials;
+    globals.firstLight = mLastUpdateResult.firstLight;
+    globals.firstLightAliasTable = mLastUpdateResult.firstLightAliasTable;
+    globals.numSceneLights = mLastUpdateResult.numLights;
+    globals.sceneLightImportanceSum = mLastUpdateResult.sceneLightImportanceSum;
     globals.ggxLutEIndex = mLUTGGXEIndex.index;
     globals.ggxLutEavgIndex = mLUTGGXEavgIndex.index;
     globals.ggxLutEIORIndex = mLUTGGXEIORIndex.index;
