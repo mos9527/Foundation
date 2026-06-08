@@ -106,6 +106,7 @@ struct GSMaterial
     uint32_t emissiveTexture = UINT32_MAX;
     uint32_t metallicRoughnessTexture = UINT32_MAX;
     uint32_t normalTexture = UINT32_MAX;
+    float normalScale = 1.0f;
     uint32_t transmissionTexture = UINT32_MAX;
     uint32_t specularTexture = UINT32_MAX;
     uint32_t specularColorTexture = UINT32_MAX;
@@ -157,7 +158,7 @@ struct GSLight
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 56);
-static_assert(sizeof(GSMaterial) == 188);
+static_assert(sizeof(GSMaterial) == 192);
 static_assert(sizeof(GSLight) == 96);
 
 struct GPUSceneDesc

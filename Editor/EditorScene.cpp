@@ -476,6 +476,7 @@ static void FillGSMaterial(GSMaterial& dst, FMaterial const& src, Vector<Texture
     dst.emissiveTexture = RemapTextureIndex(src.emissiveTexture);
     dst.metallicRoughnessTexture = RemapTextureIndex(src.metallicRoughnessTexture);
     dst.normalTexture = RemapTextureIndex(src.normalTexture);
+    dst.normalScale = src.normalScale;
     dst.transmissionTexture = RemapTextureIndex(src.transmissionTexture);
     dst.specularTexture = RemapTextureIndex(src.specularTexture);
     dst.specularColorTexture = RemapTextureIndex(src.specularColorTexture);

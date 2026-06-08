@@ -67,6 +67,8 @@ struct FMaterial
     // Linear. Tangent space XYZ, R [0.0 .. 1.0] to X [-1 .. 1], G [0.0 .. 1.0] to Y [-1 .. 1], B (0.5 .. 1.0] maps to Z
     // (0 .. 1]
     uint32_t normalTexture = kInvalidTexture;
+    // glTF material.normalTextureInfo.scale; scales normal-map X/Y before TBN application.
+    float normalScale = 1.0f;
     // Linear. R channel.
     uint32_t transmissionTexture = kInvalidTexture;
     // Linear. A channel.
@@ -163,7 +165,7 @@ struct FMorphTrack
 };
 
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 10;
+static constexpr uint32_t kSceneVersion = 11;
 struct FSceneTables
 {
     FSceneGlobals globals;

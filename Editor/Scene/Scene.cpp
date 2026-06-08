@@ -1056,6 +1056,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             if (sg.diffuse_texture.texture)
                 material.baseColorTexture = assignTextureIndex(sg.diffuse_texture, kTextureInSRGB);
         }
+        material.normalScale = mat->normal_texture.scale;
         if (mat->normal_texture.texture)
             material.normalTexture = assignTextureIndex(mat->normal_texture);
         if (mat->emissive_texture.texture)

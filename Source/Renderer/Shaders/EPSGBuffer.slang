@@ -65,7 +65,13 @@ Fragment drawGBuffer(V2F input){
         baseColor *= SampleMaterialTexture(material.baseColorTexture, input.uv);
     float4 normalTBN = float4(0,0,1,0);
     if (material.normalTexture != ~0u)
-        normalTBN = SampleMaterialTexture(material.normalTexture, input.uv) * 2 - float4(1);
+    {
+        // glTF: blue maps to Z in [1/255, 1], so the tangent-space normal always points toward
+        // the viewer. Reconstruct Z from the scaled XY (clamped) so the result stays a positive-
+        // hemisphere unit normal regardless of the sampled/filtered blue channel.
+        float2 xy = (SampleMaterialTexture(material.normalTexture, input.uv).xy * 2 - 1) * material.normalScale;
+        normalTBN.xyz = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
+    }
     float4 pbrMetalRough = float4(1, material.roughnessFactor, material.metallicFactor, 1);
     if (material.metallicRoughnessTexture != ~0u)
         pbrMetalRough *= SampleMaterialTexture(material.metallicRoughnessTexture, input.uv);

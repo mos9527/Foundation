@@ -133,6 +133,7 @@ public struct GSMaterial
     public uint32_t emissiveTexture;
     public uint32_t metallicRoughnessTexture;
     public uint32_t normalTexture;
+    public float normalScale;
     public uint32_t transmissionTexture;
     public uint32_t specularTexture;
     public uint32_t specularColorTexture;
