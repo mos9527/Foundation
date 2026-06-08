@@ -95,6 +95,7 @@ uint32_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceHandle<RHID
         // TODO: Handle other errors?
         break;
     }
+    CHECK_MSG(index < mImagesPtrs.size(), "Swapchain image index {} out of range ({}). Result={}", index, mImagesPtrs.size(), static_cast<int>(result))
     return index;
 }
 

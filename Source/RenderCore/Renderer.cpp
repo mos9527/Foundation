@@ -1353,6 +1353,7 @@ void Renderer::BeginExecute()
     {
         ZoneScopedN("Acquire Next Image");
         mCurrentSwap = mSwapchain->GetNextImage(-1, mSwaps[mCurrentSync].present, {});
+        CHECK_MSG(mCurrentSwap < mFrameSwaps, "Invalid swapchain image index {}", mCurrentSwap);
     }
     {
         ZoneScopedN("Reset Cmds");
