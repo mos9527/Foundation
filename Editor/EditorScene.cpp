@@ -425,20 +425,7 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const* gpu
     // Direction from rotation (default forward is (0,0,-1))
     dst.direction = normalize(src.transform.rotation * float3(0, 0, -1));
     dst.spotInnerCosAngle = std::cos(src.spotInnerConeAngle);
-    dst.spotOuterCosAngle = std::cos(src.spotOuterConeAngle);
-    if (src.type == FLightType::Environment)
-    {
-        bool const hasEnvMap = src.environmentMap && gpu && gpu->HasEnvMap();
-        dst.color = hasEnvMap ? float3(1.0f) : src.color;
-        dst.power = src.power;
-        dst.twoSided = hasEnvMap ? 1u : 0u;
-        dst.envAzimuthOffset = src.environmentAzimuthOffset;
-        dst.importance = sampler == GPUScene::LightSamplerType::Importance
-            ? std::max(0.0f, LightColorImportance(dst.color) * dst.power)
-            : 1.0f;
-        return;
-    }
-
+    dst.spotOuterCosAngle = std::cos(src.spotOuterConeAngle);    
     // Area light fields
     float areaWidth = std::max(src.width, 1e-6f);
     float areaHeight = std::max(src.height, 1e-6f);
@@ -474,14 +461,28 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const* gpu
             dst.power = src.power / (totalArea * std::numbers::pi_v<float>);
         }
     }
+    if (src.type == FLightType::Environment)
+    {
+        bool const hasEnvMap = src.environmentMap && gpu && gpu->HasEnvMap();
+        dst.color = hasEnvMap ? float3(1.0f) : src.color;
+        dst.power = src.power;
+        dst.twoSided = hasEnvMap ? 1u : 0u;
+        dst.envAzimuthOffset = src.environmentAzimuthOffset;
+    }
     // Importance used by the light alias table.
     float importance = 1.0f;
     if (sampler == GPUScene::LightSamplerType::Importance)
     {
+        /* proj into area? still hopeful nontheless. let's get to light bvh one day... for now make these
+         * light weight more just because it _may_ contribute to most of the scene. */
+        constexpr float kEnvDirectionalImportance = 100.0f;
         switch (src.type)
         {
+        case FLightType::Environment:
+            importance = LightColorImportance(dst.color) * dst.power * kEnvDirectionalImportance;
+			break;
         case FLightType::Directional:
-            importance = dst.power /* proj into area? still hopeful nontheless. let's get to light bvh one day... */;
+            importance = dst.power * kEnvDirectionalImportance;
             break;
         case FLightType::Point:
             importance = dst.power * 4.0f * std::numbers::pi_v<float>;
