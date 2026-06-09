@@ -50,7 +50,9 @@ void main(uint2 tid: SV_DispatchThreadID) {
     if (ndcDepth <= EPS) {
         // Infinite depth
         diffuseOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
-        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        // Enviornment
+        float3 envLight = lights[globalParams.firstLight].color * lights[globalParams.firstLight].power;
+        specularOutput[tid] = float4(envLight, 1.0f);
         return;
     }
 
