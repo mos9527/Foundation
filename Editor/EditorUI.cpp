@@ -1994,13 +1994,13 @@ void FRunningImGui()
             if (ImGui::Combo("Sampler", &ptSampler, samplerItems, 2))
             {
                 GEditor.rendererConfig.ptSampler = static_cast<uint32_t>(ptSampler);
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;                
                 GEditor.state = FERunningEnter;
             }
             const char* lightSamplerItems[] = { "Uniform", "Importance" };
             if (ImGui::Combo("Light Sampler", reinterpret_cast<int*>(&GContext->gpuScene->mLightSamplerType), lightSamplerItems, 2))
             {
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                CommitSceneToGPU(true); // Light table needs to be rebuilt
             }
         }
         if (GEditor.rendererMode == ERendererMode::Raster)

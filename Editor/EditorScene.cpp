@@ -475,7 +475,7 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const* gpu
     {
         /* proj into area? still hopeful nontheless. let's get to light bvh one day... for now make these
          * light weight more just because it _may_ contribute to most of the scene. */
-        constexpr float kEnvDirectionalImportance = 100.0f;
+        constexpr float kEnvDirectionalImportance = 10.0f;
         switch (src.type)
         {
         case FLightType::Environment:
