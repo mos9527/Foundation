@@ -2012,9 +2012,9 @@ void FRunningImGui()
             ImGui::SeparatorText("Performance");
             changed |= ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0);
             {
-                const char* items[] = {"Overdraw", "Meshlet", "Material ID", "Texture LOD", "Matcap"};
-                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID, kViewTextureLOD, kViewMatcap};
-                ImGui::SeparatorText("Debug View");
+                const char* items[] = {"Overdraw", "Meshlet", "Material ID", "Matcap"};
+                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID, kViewMatcap};
+                ImGui::SeparatorText("Raster Debug View");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
             }
             {
@@ -2071,7 +2071,7 @@ void FRunningImGui()
                     ImGui::SetTooltip("%s", GEditor.matcapExternalPath.c_str());
                 if (matcapChanged)
                     ApplyMatcapSelection();
-                DrawTexturePreview("Matcap", GEditor.shaderGlobals.matcapTextureIndex);                
+                DrawTexturePreview("Matcap", GEditor.shaderGlobals.matcapTextureIndex);
             }
             {
                 const char* items[] = {"Frustum", "Occlusion"};
@@ -2092,23 +2092,18 @@ void FRunningImGui()
                     changed = true;
                 }
             }
-            {
-                const char* items[] = {"Texture LOD"};
-                const unsigned values[] = {kViewTextureLOD};
-                ImGui::SeparatorText("Debug View");
-                if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
-                {
-                    GEditor.rendererConfig.viewFlags &= ~(kViewAOVDiffuse | kViewAOVSpecular);
-                    changed = true;
-                }
-            }
         }
-        if (GEditor.rendererMode == ERendererMode::Raster)
         {
-            const char* items[] = {"Position", "BaseColor", "Normal"};
-            const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal};
-            ImGui::SeparatorText("GBuffer View");
+            const char* items[] = {"BaseColor", "Normal", "Position", "Texture LOD"};
+            const unsigned values[] = {kViewBaseColor, kViewNormal, kViewPosition, kViewTextureLOD};
+            ImGui::SeparatorText("Debug View");
             changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
+        }
+        {
+            const char* items[] = {"White Base Color"};
+            const unsigned values[] = {kMaterialDbgWhiteBaseColor};
+            ImGui::SeparatorText("Material Debug");
+            changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.materialFlags, items, values, true /* solo */);
         }
         if (changed)
             GEditor.state = FERunningEnter;
@@ -2176,7 +2171,7 @@ void FRendering(RendererOutputs const& outputs)
     }
     GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
     GEditor.postprocessGlobals.camEV = GEditor.shaderGlobals.camEV;
-    GEditor.postprocessGlobals.postShowOutline = GEditor.showImGui ? 1u : 0u;
+    GEditor.postprocessGlobals.dbgShowOutline = GEditor.showImGui ? 1u : 0u;
     GEditor.postprocessGlobals.ptAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
     GEditor.postprocessGlobals.ptDispatchTileSide = GEditor.shaderGlobals.ptDispatchTileSide;
     GEditor.postprocessGlobals.fbWidth = GEditor.shaderGlobals.fbWidth;

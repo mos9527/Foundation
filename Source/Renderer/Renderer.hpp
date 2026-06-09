@@ -60,8 +60,9 @@ struct RendererUBO
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1; fractional SPP uses ptDispatchTileSide instead.
     uint32_t ptDispatchTileSide{3u}; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
     // -- Debug
-    uint32_t postShowOutline{0u};
-    uint32_t ptViewFlags{0u};
+    uint32_t dbgShowOutline{0u};
+    uint32_t dbgViewFlags{0u};
+    uint32_t dbgMaterialFlags{0u};
 };
 #pragma pack(pop)
 
@@ -93,12 +94,15 @@ static const int kViewNormal = 1 << 3;
 static const int kViewMaterialID = 1 << 4;
 static const int kViewPosition = 1 << 5;
 static const int kViewMatcap = 1 << 6;
+static const int kViewTextureLOD = 1 << 7;
 
 // Per-lobe AOV view flags (Diffuse / Specular)
-static const int kViewAOVDiffuse  = 1 << 7;
-static const int kViewAOVSpecular = 1 << 8;
-static const int kViewTextureLOD = 1 << 9;
+static const int kViewAOVDiffuse  = 1 << 8;
+static const int kViewAOVSpecular = 1 << 9;
 
+
+// Material debug flags
+static const int kMaterialDbgWhiteBaseColor = 1 << 0;
 
 static const int kEnableRasterRTShadows = 1 << 16;
 static const int kForceTextureLOD0 = 1 << 24;
@@ -131,6 +135,7 @@ inline uint32_t PTPackCompileOptions(uint32_t sampler, bool forceTextureLOD0)
 struct RendererConfig
 {
     unsigned viewFlags{kEnableRasterRTShadows};
+    unsigned materialFlags{0u};
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
     RHIExtent2D renderExtent{0u, 0u};
     uint32_t ptSampler{kPTSamplerSobol};
@@ -158,7 +163,7 @@ struct PostprocessUBO
 {
     float camEV{0.0f};
     uint32_t viewLutIndex{UINT32_MAX};
-    uint32_t postShowOutline{0u};
+    uint32_t dbgShowOutline{0u};
     uint32_t ptAccumulatedFrames{0u};
     uint32_t ptDispatchTileSide{1u};
     float fbWidth{1.0f};

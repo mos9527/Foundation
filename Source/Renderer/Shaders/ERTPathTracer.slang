@@ -714,9 +714,12 @@ void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
     out float sheenWeight, out float sheenRoughness, out float3 sheenTint,
     out float clearcoatFactor, out float clearcoatRoughness)
 {
+    int materialFlags = globalParams.dbgMaterialFlags;
     baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
         baseColor *= SampleMaterialTexture(material.baseColorTexture, uv, uvDX, uvDY);
+    if ((materialFlags & kMaterialDbgWhiteBaseColor) != 0u)
+        baseColor = float4(1.0f, 1.0f, 1.0f, baseColor.a);    
     normalTBN = float4(0, 0, 1, 0);
     if (material.normalTexture != ~0u)
     {
@@ -955,14 +958,16 @@ RayDesc MakeCameraRay(float3 direction, float2 lensSample)
     return ray;
 }
 
-CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng)
+CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng, bool debugView = false)
 {
     float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2D());
-    float2 pixelSample = float2(pixel) + jitter + 0.5f;
+    float2 pixelSample = float2(pixel);
     float2 lensSample = float2(0.0f);
-    if (!IsPanoramicCamera() && globalParams.aperture > EPS)
-        lensSample = SampleAnamorphicLens(rng.sample2D()) * globalParams.aperture;
-
+    if (!debugView) {
+        pixelSample += jitter + 0.5f;
+        if (!IsPanoramicCamera() && globalParams.aperture > EPS)
+            lensSample = SampleAnamorphicLens(rng.sample2D()) * globalParams.aperture;
+    }
     CameraRay cameraRay;
     cameraRay.ray = MakeCameraRay(GeneratePrimaryRayDirection(pixelSample), lensSample);
     if ((ptCompileOptions & kPTCompileOptionForceTextureLOD0) != 0)
@@ -974,11 +979,6 @@ CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng)
     cameraRay.differential.rayDX = MakeCameraRay(GeneratePrimaryRayDirection(pixelSample + float2(1.0f, 0.0f)), lensSample);
     cameraRay.differential.rayDY = MakeCameraRay(GeneratePrimaryRayDirection(pixelSample + float2(0.0f, 1.0f)), lensSample);
     return cameraRay;
-}
-
-bool IsPTTextureLODDebugView()
-{
-    return (globalParams.ptViewFlags & kViewTextureLOD) != 0;
 }
 
 float3 VisualizeTextureLOD(Payload surface)
@@ -1522,8 +1522,9 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     uint diffuseBounces = 0;
     uint specularBounces = 0;
     uint transmissionBounces = 0;
-    CameraRay cameraRay = GenerateCameraRay(pix, rng);
-    bool textureLODDebugView = IsPTTextureLODDebugView();
+    const int supportDebugViewFlags = kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewTextureLOD;
+    bool hasAnyDebugView = (globalParams.dbgViewFlags & supportDebugViewFlags) != 0u;
+    CameraRay cameraRay = GenerateCameraRay(pix, rng, hasAnyDebugView);
     RayDesc ray = cameraRay.ray;
     for (uint bounce = 0; ; bounce++) {
         HitPayload payload;
@@ -1547,30 +1548,16 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         HitRecord hit = MakeHitRecord(payload, ray);
 
         float3 hitPoint;
-        if (AddAnalyticLightHitEmission(hit, ray.Direction, view, beta, bounce, firstBounceCategory,
+        if (!hasAnyDebugView && AddAnalyticLightHitEmission(hit, ray.Direction, view, beta, bounce, firstBounceCategory,
                                         lastSamplePDF, lighting, radiance, hitPoint))
         {
-            if (textureLODDebugView && bounce == 0)
-            {
-                diffuse[pix] = float4(0.0f);
-                specular[pix] = float4(0.0f);
-                WritePrimaryInstanceID(pix, ~0u);
-                return;
-            }
             ray.Origin = hitPoint + ray.Direction * EPS_TMin;
             bounce--; // Don't count this as a bounce
             continue;
         }
 
-        if (hit.kind == HitKind::None)
+        if (!hasAnyDebugView && hit.kind == HitKind::None)
         {
-            if (textureLODDebugView && bounce == 0)
-            {
-                diffuse[pix] = float4(0.0f);
-                specular[pix] = float4(0.0f);
-                WritePrimaryInstanceID(pix, ~0u);
-                return;
-            }
             AddEnvironmentMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
             break;
         }
@@ -1581,10 +1568,21 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         if (bounce == 0 && hit.kind == HitKind::Triangle)
             materialDifferential = cameraRay.differential;
         Payload surface = hit.kind == HitKind::Curve ? SampleCurvePayload(hit.raw, ray) : SamplePayload(hit.raw, ray, materialDifferential);
-        if (textureLODDebugView && bounce == 0)
+        if (hasAnyDebugView && bounce == 0)
         {
-            diffuse[pix] = float4(VisualizeTextureLOD(surface), 1.0f);
-            specular[pix] = float4(0.0f);
+            specular[pix] = diffuse[pix] = float4(0.0f);
+            int flag = globalParams.dbgViewFlags;
+            if ((flag & kViewBaseColor) != 0)
+                diffuse[pix] = float4(surface.baseColor, 1.0f);
+            if ((flag & kViewNormal) != 0)
+                diffuse[pix] = float4(surface.hit.normal * 0.5f + 0.5f, 1.0f);
+            if ((flag & kViewMaterialID) != 0)
+                diffuse[pix] = float4(unpackUnorm4x8ToFloat(hash(surface.materialID)).xyz, 1.0f);
+            if ((flag & kViewPosition) != 0)
+                diffuse[pix] = float4(surface.hit.position, 1.0f);
+            if ((flag & kViewTextureLOD) != 0)
+                diffuse[pix] = float4(VisualizeTextureLOD(surface), 1.0f);            
+            // ...
             WritePrimaryInstanceID(pix, hit.raw.instance);
             return;
         }

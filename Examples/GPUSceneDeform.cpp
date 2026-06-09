@@ -367,9 +367,10 @@ int main(int argc, char** argv)
             ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
             ubo.fbWidth = static_cast<float>(renderExtent.x);
             ubo.fbHeight = static_cast<float>(renderExtent.y);
-            ubo.ptViewFlags = cfg.viewFlags;
+            ubo.dbgViewFlags = cfg.viewFlags;
+            ubo.dbgMaterialFlags = cfg.materialFlags;
             postprocessGlobals.camEV = ubo.camEV;
-            postprocessGlobals.postShowOutline = 0u;
+            postprocessGlobals.dbgShowOutline = 0u;
             postprocessGlobals.ptAccumulatedFrames = ubo.ptAccumulatedFrames;
             postprocessGlobals.ptDispatchTileSide = ubo.ptDispatchTileSide;
             postprocessGlobals.fbWidth = ubo.fbWidth;

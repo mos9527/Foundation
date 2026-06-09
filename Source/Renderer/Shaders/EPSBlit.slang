@@ -23,7 +23,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     float4 result = displayImage.Load(coord);
     // Cross filter for a simple outline
     uint32_t pickID = globalParams.outlineInstanceId;
-    if (globalParams.postShowOutline != 0 && pickID != ~0u) {
+    if (globalParams.dbgShowOutline != 0 && pickID != ~0u) {
         bool isSel  = (instanceID == pickID);
         bool selL = (instanceIDBuffer.Load(coord + int3(-1, 0, 0)) == pickID);
         bool selR = (instanceIDBuffer.Load(coord + int3( 1, 0, 0)) == pickID);

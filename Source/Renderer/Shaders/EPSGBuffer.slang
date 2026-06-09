@@ -59,16 +59,19 @@ float4 SampleMaterialTexture(uint textureIndex, float2 uv)
 
 Fragment drawGBuffer(V2F input){
     Fragment output;
+    int materialFlags = globalParams.dbgMaterialFlags;
     GSMaterial material = materials[globalParams.firstMaterial + input.materialIndex];
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
         baseColor *= SampleMaterialTexture(material.baseColorTexture, input.uv);
+    if ((materialFlags & kMaterialDbgWhiteBaseColor) != 0u)
+        baseColor = float4(1.0f, 1.0f, 1.0f, baseColor.a);
+    // TODO TODO TODO Actual transparency pipeline    
+    if (baseColor.a < 0.5f)
+        discard;
     float4 normalTBN = float4(0,0,1,0);
     if (material.normalTexture != ~0u)
-    {
-        // glTF: blue maps to Z in [1/255, 1], so the tangent-space normal always points toward
-        // the viewer. Reconstruct Z from the scaled XY (clamped) so the result stays a positive-
-        // hemisphere unit normal regardless of the sampled/filtered blue channel.
+    {        
         float2 xy = (SampleMaterialTexture(material.normalTexture, input.uv).xy * 2 - 1) * material.normalScale;
         normalTBN.xyz = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
     }

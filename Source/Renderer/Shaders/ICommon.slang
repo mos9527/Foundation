@@ -264,15 +264,16 @@ public struct UBO
     public uint32_t ptSamplesPerPixel; // Always >= 1; fractional SPP uses ptDispatchTileSide instead.
     public uint32_t ptDispatchTileSide; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
     // -- Debug
-    public uint32_t postShowOutline;
-    public uint32_t ptViewFlags;
+    public uint32_t dbgShowOutline;
+    public uint32_t dbgViewFlags;
+    public uint32_t dbgMaterialFlags;    
 };
 
 public struct PostprocessUBO
 {
     public float camEV;
     public uint32_t viewLutIndex;
-    public uint32_t postShowOutline;
+    public uint32_t dbgShowOutline;
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptDispatchTileSide;
     public float fbWidth;

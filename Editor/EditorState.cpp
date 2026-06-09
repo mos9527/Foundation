@@ -61,7 +61,7 @@ static Renderer* BeginEditorRendererSetup(FContext* context, uint32_t threadCoun
 static void RefreshPostprocessState(RHIExtent2D extent)
 {
     GEditor.postprocessGlobals.camEV = GEditor.shaderGlobals.camEV;
-    GEditor.postprocessGlobals.postShowOutline = GEditor.showImGui ? 1u : 0u;
+    GEditor.postprocessGlobals.dbgShowOutline = GEditor.showImGui ? 1u : 0u;
     GEditor.postprocessGlobals.outlineInstanceId = GEditor.selectedInstance;
     GEditor.postprocessGlobals.ptAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
     GEditor.postprocessGlobals.ptDispatchTileSide = GEditor.shaderGlobals.ptDispatchTileSide;
@@ -362,7 +362,8 @@ static void FRunning()
         : 0.0f;
     GEditor.shaderGlobals.fbWidth = static_cast<float>(renderExtent.x);
     GEditor.shaderGlobals.fbHeight = static_cast<float>(renderExtent.y);
-    GEditor.shaderGlobals.ptViewFlags = GEditor.rendererConfig.viewFlags;
+    GEditor.shaderGlobals.dbgViewFlags = GEditor.rendererConfig.viewFlags;
+    GEditor.shaderGlobals.dbgMaterialFlags = GEditor.rendererConfig.materialFlags;
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
 
     // Skinned animation playback: wait for the scheduled poses, apply rigid transforms + CPU-skin
@@ -494,7 +495,7 @@ bool EditorProcessEvent(SDL_Event* event)
         if (event->key.key == SDLK_TAB)
         {
             GEditor.showImGui = !GEditor.showImGui;
-            GEditor.shaderGlobals.postShowOutline = GEditor.showImGui;
+            GEditor.shaderGlobals.dbgShowOutline = GEditor.showImGui;
         }
         // Gizmo hotkeys
         if (event->key.key == SDLK_G)
