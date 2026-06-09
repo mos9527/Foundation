@@ -961,10 +961,10 @@ RayDesc MakeCameraRay(float3 direction, float2 lensSample)
 CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng, bool debugView = false)
 {
     float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2D());
-    float2 pixelSample = float2(pixel);
+    float2 pixelSample = float2(pixel) + 0.5f;
     float2 lensSample = float2(0.0f);
     if (!debugView) {
-        pixelSample += jitter + 0.5f;
+        pixelSample += jitter;
         if (!IsPanoramicCamera() && globalParams.aperture > EPS)
             lensSample = SampleAnamorphicLens(rng.sample2D()) * globalParams.aperture;
     }
