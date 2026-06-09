@@ -181,7 +181,12 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
     if (HIZHeight * 2 < h)
         HIZHeight *= 2;
     HIZWidth /= 2, HIZHeight /= 2;
-    const uint32_t HIZMips = glm::log2(std::max(HIZWidth, HIZHeight)) + 1u;
+    const uint32_t HIZMips = std::min(glm::log2(std::max(HIZWidth, HIZHeight)) + 1u, 12u);
+    const uint32_t HIZMaxDimension = 1u << (HIZMips - 1);
+    while (HIZWidth > HIZMaxDimension)
+        HIZWidth >>= 1;
+    while (HIZHeight > HIZMaxDimension)
+		HIZHeight >>= 1;
     globals->hizWidth = HIZWidth, globals->hizHeight = HIZHeight, globals->hizLevels = HIZMips;
     RHIDeviceSampler::SamplerDesc HIZSamplerDesc{
         .addressMode = {.u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
