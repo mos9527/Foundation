@@ -83,8 +83,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
 
     auto flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess);
     if (desc.resource.staging)
-        flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT,
-            flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+        flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
     VkMemoryPropertyFlags requiredFlags = desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0;
     if (desc.resource.heap == RHIDeviceHeapType::Local && desc.resource.hostAccess != RHIResourceHostAccess::Invisible)
         requiredFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;

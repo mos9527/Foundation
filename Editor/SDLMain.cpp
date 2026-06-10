@@ -15,13 +15,11 @@ bool /* should close */ mainLoop()
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             return true;
         bool updateSwapchain = event.type == SDL_EVENT_WINDOW_RESIZED;
-#if SDL_VERSION_ATLEAST(3, 2, 0)
         if (event.type == SDL_EVENT_WINDOW_HDR_STATE_CHANGED)
         {
             UpdateWindowHDRState(GContext);
             updateSwapchain = true;
         }
-#endif
         if (updateSwapchain)
         {
             UpdateSwapchain(GContext);

@@ -23,7 +23,7 @@ struct ViewLUTEntry
 [[nodiscard]] uint32_t MatchViewLUTIndex(ViewLUTDomain domain, StringView view, StringView look, uint32_t defaultIndex);
 [[nodiscard]] String ResolveSelectedViewLUTPath(ViewLUTDomain domain, int& index, String const& externalPath);
 
-[[nodiscard]] RHIResourceFormat GetPostprocessOutputFormat();
+[[nodiscard]] RHIResourceFormat GetPostprocessOutputFormat(bool hdr);
 [[nodiscard]] uint32_t ResolvePostprocessViewLutIndex(TextureHandle sdrViewLut, TextureHandle hdrViewLut,
                                                       bool useHdrViewLut);
 } // namespace Postprocess

@@ -308,27 +308,16 @@ FTexture ReadbackRenderTexture(RHITexture* source, Allocator* alloc)
     return texture;
 }
 
-static void ValidateRenderReadbackTexture(FTexture const& texture, RHIResourceFormat expectedFormat,
-                                          uint32_t& outWidth, uint32_t& outHeight)
-{
-    CHECK(texture.IsValid());
-    CHECK_MSG(texture.GetFormat() == expectedFormat,
-              "Render readback expects {}, got {}", expectedFormat, texture.GetFormat());
-    outWidth = texture.GetWidth();
-    outHeight = texture.GetHeight();
-}
-
 static Vector<float> CombineRenderTextures(Span<const FTexture> textures, uint32_t& outWidth, uint32_t& outHeight,
                                          Allocator* alloc = GLOBAL_ALLOC)
 {
     CHECK(alloc != nullptr);
-    CHECK_MSG(!textures.empty(), "Invalid render texture count");
-    ValidateRenderReadbackTexture(textures[0], RHIResourceFormat::R32G32B32A32SignedFloat, outWidth, outHeight);
+    CHECK_MSG(!textures.empty(), "Invalid render texture count");    
     for (FTexture const& texture : textures)
     {
         uint32_t width = 0;
         uint32_t height = 0;
-        ValidateRenderReadbackTexture(texture, RHIResourceFormat::R32G32B32A32SignedFloat, width, height);
+        CHECK_MSG(texture.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat, "Invalid render texture format for readback combine. RGBA32F is expected.");
         CHECK_MSG(width == outWidth && height == outHeight, "Mismatched render readback texture extents");
     }
     size_t const pixelCount = static_cast<size_t>(outWidth) * outHeight;
@@ -376,10 +365,10 @@ void DoRenderReadback(RendererOutputs const& outputs)
     {
         CHECK_MSG(outputs.postprocess != kInvalidHandle, "Invalid SDR readback texture");
         auto sdrTexture = renderer->DerefResource(outputs.postprocess).Get<RHITexture*>();
-        const FTexture sdr = ReadbackRenderTexture(sdrTexture, GLOBAL_ALLOC);
-        ValidateRenderReadbackTexture(sdr, RHIResourceFormat::R8G8B8A8Unorm, w, h);
+        const FTexture sdr = ReadbackRenderTexture(sdrTexture, GLOBAL_ALLOC);        
         const char* sdrPath = GEditor.renderTask.outputPath.c_str();
         // Output as is
+        CHECK_MSG(sdr.GetFormat() == RHIResourceFormat::R8G8B8A8Unorm, "Invalid SDR readback texture format. Is HDR currently enabled?");
         SavePNG(sdr.bytes.data(), static_cast<int>(w), static_cast<int>(h), sdrPath);
         LOG(Editor, LogInfo, "{} SDR image saved to {} ({}x{}, {} frames)",
             GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", sdrPath, w, h,

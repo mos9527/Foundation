@@ -147,7 +147,7 @@ namespace Foundation::RenderCore
                                                   .hostAccess = RHIResourceHostAccess::ReadWrite,
                                                   .shared = false, /* Transfer only */
                                                   .coherent = true, /* No invalidate required */
-                                                  .staging = true,
+                                                  .staging = false,
                                               },
                                           .usage = RHIBufferUsageBits::TransferDestination,
                                           .size = capacity}))

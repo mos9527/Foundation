@@ -120,9 +120,9 @@ String ResolveSelectedViewLUTPath(ViewLUTDomain domain, int& index, String const
     return entries[index].path;
 }
 
-RHIResourceFormat GetPostprocessOutputFormat()
+RHIResourceFormat GetPostprocessOutputFormat(bool hdr)
 {
-    return RHIResourceFormat::A2B10G10R10Unorm;
+    return hdr ? RHIResourceFormat::A2B10G10R10Unorm : RHIResourceFormat::R8G8B8A8Unorm;
 }
 
 uint32_t ResolvePostprocessViewLutIndex(TextureHandle sdrViewLut, TextureHandle hdrViewLut, bool useHdrViewLut)

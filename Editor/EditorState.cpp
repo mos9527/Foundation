@@ -81,7 +81,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
         outputs.extent = ClampViewportExtent(renderer->GetSwapchainExtent());
     uint32_t w = outputs.extent.x;
     uint32_t h = outputs.extent.y;
-    const RHIResourceFormat postprocessFormat = Postprocess::GetPostprocessOutputFormat();
+    const RHIResourceFormat postprocessFormat = Postprocess::GetPostprocessOutputFormat(context->enableHDR);
     RefreshPostprocessState(outputs.extent);
 
     auto PostprocessGlobals = renderer->CreateResource(
