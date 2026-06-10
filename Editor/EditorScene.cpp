@@ -369,6 +369,7 @@ void DoRenderReadback(RendererOutputs const& outputs)
         const char* sdrPath = GEditor.renderTask.outputPath.c_str();
         // Output as is
         CHECK_MSG(sdr.GetFormat() == RHIResourceFormat::R8G8B8A8Unorm, "Invalid SDR readback texture format. Is HDR currently enabled?");
+        w = sdr.GetWidth(), h = sdr.GetHeight();
         SavePNG(sdr.bytes.data(), static_cast<int>(w), static_cast<int>(h), sdrPath);
         LOG(Editor, LogInfo, "{} SDR image saved to {} ({}x{}, {} frames)",
             GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", sdrPath, w, h,
