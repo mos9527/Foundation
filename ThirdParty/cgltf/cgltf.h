@@ -769,6 +769,8 @@ typedef struct cgltf_light {
 	cgltf_float spot_inner_cone_angle;
 	cgltf_float spot_outer_cone_angle;
 	cgltf_extras extras;
+	cgltf_bool has_foundation_lights;
+	cgltf_float angular_diameter;
 } cgltf_light;
 
 typedef struct cgltf_light_area {
@@ -5981,6 +5983,9 @@ static int cgltf_parse_json_light(cgltf_options* options, jsmntok_t const* token
 	out_light->spot_inner_cone_angle = 0.f;
 	out_light->spot_outer_cone_angle = 3.1415926535f / 4.0f;
 
+	out_light->has_foundation_lights = 0;
+	out_light->angular_diameter = 0.f;
+
 	int size = tokens[i].size;
 	++i;
 
@@ -6059,6 +6064,43 @@ static int cgltf_parse_json_light(cgltf_options* options, jsmntok_t const* token
 				{
 					return i;
 				}
+			}
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "extensions") == 0)
+		{
+			CGLTF_CHECK_TOKTYPE(tokens[i + 1], JSMN_OBJECT);
+			int extensions_size = tokens[i + 1].size;
+			i += 2;
+			for (int k = 0; k < extensions_size; ++k)
+			{
+				CGLTF_CHECK_KEY(tokens[i]);
+				if (cgltf_json_strcmp(tokens+i, json_chunk, "EXT_foundation_lights") == 0)
+				{
+					out_light->has_foundation_lights = 1;
+					CGLTF_CHECK_TOKTYPE(tokens[i + 1], JSMN_OBJECT);
+					int ext_size = tokens[i + 1].size;
+					i += 2;
+					for (int m = 0; m < ext_size; ++m)
+					{
+						CGLTF_CHECK_KEY(tokens[i]);
+						if (cgltf_json_strcmp(tokens+i, json_chunk, "angularDiameter") == 0)
+						{
+							++i;
+							out_light->angular_diameter = cgltf_json_to_float(tokens + i, json_chunk);
+							++i;
+						}
+						else
+						{
+							i = cgltf_skip_json(tokens, i+1);
+						}
+						if (i < 0) return i;
+					}
+				}
+				else
+				{
+					i = cgltf_skip_json(tokens, i+1);
+				}
+				if (i < 0) return i;
 			}
 		}
 		else if (cgltf_json_strcmp(tokens + i, json_chunk, "extras") == 0)

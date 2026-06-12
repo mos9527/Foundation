@@ -1578,6 +1578,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             {
             case cgltf_light_type_directional:
                 light.type = FLightType::Directional;
+                light.angularDiameter = node->light->has_foundation_lights ? node->light->angular_diameter : 0.0f;
                 break;
             case cgltf_light_type_point:
                 light.type = FLightType::Point;
