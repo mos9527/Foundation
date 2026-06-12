@@ -179,7 +179,7 @@ void SetHitShadingNormal(inout HitState hit, float3 normal)
     if (LengthSquared(tangent) <= 1e-8f)
     {
         float3 fallbackBitangent;
-        buildOrthonormalBasis(hit.normal, tangent, fallbackBitangent);
+        CoordinateSystem(hit.normal, tangent, fallbackBitangent);
         hit.tangent = normalize(tangent);
         hit.bitangent = normalize(fallbackBitangent) * bitangentSign;
         return;
@@ -457,7 +457,7 @@ HitState GetCurveHitState(uint curveOffset, uint primitive, float2 uv, GSInstanc
     }
     else
     {
-        buildOrthonormalBasis(localRayDirection, projectedTangent, localBitangent);
+        CoordinateSystem(localRayDirection, projectedTangent, localBitangent);
     }
 
     float3 flatNormal = normalize(cross(tangent, localBitangent));
@@ -1194,7 +1194,7 @@ LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
     SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
     switch (gl.type) {
     case 0: {
-        DistantLight light = DistantLight(Lemit, gl.direction);
+        DistantLight light = DistantLight(Lemit, gl.direction, gl.angularDiameter);
         return light.Sample_Li(ctx, u);
     }
     case 1: {

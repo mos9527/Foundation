@@ -198,7 +198,11 @@ public struct GSLight
     public float power;         // Radiant power (type-dependent unit)
     public float3 position;
     public float3 direction;
+    // Directional
+    public float angularDiameter;
+    // Spot/Point
     public float range;
+    // Spot
     public float spotInnerCosAngle;
     public float spotOuterCosAngle;
     // Area lights (Disk / Rect)

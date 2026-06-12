@@ -264,7 +264,16 @@ public float3 SampleCosineHemisphere(float2 u) {
 public float CosineHemispherePDF(float cosTheta) {
     return cosTheta * InvPi;
 }
-
+// https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions#SamplingWithinaCone
+public float3 SampleUniformCone(float cosThetaMax, float2 u) {
+    float cosTheta = (1 - u[0]) + u[0] * cosThetaMax;
+    float sinTheta = SafeSqrt(1 - Sqr(cosTheta));
+    float phi = u[1] * 2 * Pi;
+    return float3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+}
+public float UniformConePDF(float cosThetaMax) {
+    return 1 / (2 * Pi * (1 - cosThetaMax));
+}
 // Lens helpers
 
 public float2 SampleRegularPolygonLens(float corners /* blades */, float rotation /* radians */, float2 u)
@@ -345,7 +354,7 @@ public struct TrowbridgeReitzDistribution {
         float3 wh = normalize(float3(alpha_x * w.x, alpha_y * w.y, w.z));
         if (wh.z < 0) wh = -wh; // Ensure wh is in the upper hemisphere
         // 2. Find a orthonormal basis around wh. This is PBRT's routine, though
-        //    buildOrthonormalBasis [Frisvad, 2012] could be also used w/o normalization.
+        //    CoordinateSystem [Frisvad, 2012] could be also used w/o normalization.
         float3 T1 = wh.z < 0.99999f ? normalize(cross(float3(0,0,1), wh)) : float3(1,0,0);
         float3 T2 = cross(wh, T1);
         // 3. Sample uniformly distributed point on a unit disk and project to clipped hemisphere
@@ -379,7 +388,7 @@ float3 SampleHenyeyGreenstein(float3 wo, float g, float2 u, out float pdf) {
     float sinTheta = SafeSqrt(1 - Sqr(cosTheta));
     float phi = 2 * Pi * u[1];
     float3 t1, t2;
-    buildOrthonormalBasis(wo, t1, t2);
+    CoordinateSystem(wo, t1, t2);
     float3 wi = SphericalDirection(sinTheta, cosTheta, phi);
     return wi.x * wo + wi.y * t1 + wi.z * t2;
 }

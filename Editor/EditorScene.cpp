@@ -414,6 +414,7 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const* gpu
     dst.position = src.transform.transform;
     // Direction from rotation (default forward is (0,0,-1))
     dst.direction = normalize(src.transform.rotation * float3(0, 0, -1));
+    dst.angularDiameter = src.angularDiameter;
     dst.spotInnerCosAngle = std::cos(src.spotInnerConeAngle);
     dst.spotOuterCosAngle = std::cos(src.spotOuterConeAngle);    
     // Area light fields
@@ -426,7 +427,7 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const* gpu
     {
         float3 n = dst.direction;
         float3 u, v;
-        BuildOrthonormalBasis(n, u, v);
+        CoordinateSystem(n, u, v);
         if (src.type == FLightType::Disk)
         {
             dst.dpdu = u; // Unit tangent; radius is separate

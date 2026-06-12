@@ -10,7 +10,7 @@
 constexpr float EPS = 1e-6;
 // Building an Orthonormal Basis from a 3D Unit Vector Without Normalization - Frisvad, 2012
 // https://backend.orbit.dtu.dk/ws/portalfiles/portal/126824972/onb_frisvad_jgt2012_v2.pdf
-void BuildOrthonormalBasis(float3 n, float3& b1, float3& b2)
+void CoordinateSystem(float3 n, float3& b1, float3& b2)
 {
     if (n.z < -0.9999999)
     {
@@ -79,7 +79,7 @@ void RecomputeNormals(Span<FVertex> verts, Span<const uint32_t> indices)
 uint32_t FQVertex::PackTBN(const float3& normal, const float3& tangent, float bitangentSign)
 {
     float3 b1, b2;
-    BuildOrthonormalBasis(normal, b1, b2);
+    CoordinateSystem(normal, b1, b2);
     float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
     float octAngle = PackUnitCircleSnorm(float2(cosAngle, sinAngle));
     float2 oct = PackUnitOctahedralSnorm(normal);
@@ -104,7 +104,7 @@ void FQVertex::UnpackTBN(uint32_t packed, float3& outNormal, float3& outTangent,
     float octAngle = dequantizeSnormShifted(tA, 7);
     float2 octXY = UnpackUnitCircleSnorm(octAngle);
     float3 b1, b2;
-    BuildOrthonormalBasis(outNormal, b1, b2);
+    CoordinateSystem(outNormal, b1, b2);
     outTangent = octXY.x * b1 + octXY.y * b2;
     outBitangentSign = bS == 1 ? 1.0f : -1.0f;
 }

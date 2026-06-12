@@ -273,34 +273,70 @@ public struct InfiniteLight : ILight {
 };
 // https://pbr-book.org/4ed/Light_Sources/Distant_Lights#DistantLight
 public struct DistantLight : ILight {
-    SampledSpectrum Lemit;
+    SampledSpectrum LemitIrradiance;
+    SampledSpectrum LemitRadiance;
     float3 direction;
-    public __init(SampledSpectrum Lemit, float3 direction){
-        this.Lemit = Lemit;
+    float cosThetaMax;
+    float pdfDir;
+    bool isDelta;
+
+    public __init(SampledSpectrum Lemit, float3 direction, float angularDiameter = 0.0f) {
+        this.LemitIrradiance = Lemit;
         this.direction = normalize(direction);
+
+        if (angularDiameter <= 0.0f) {
+            this.cosThetaMax = 1.0f;
+            this.pdfDir = 0.0f;
+            this.isDelta = true;
+        } else {
+            // https://en.wikipedia.org/wiki/Angular_diameter#Use_in_astronomy
+            // Hello, penumbra and umbra
+            this.isDelta = false;
+            this.cosThetaMax = cos(angularDiameter * 0.5f);
+            this.pdfDir = UniformConePDF(cosThetaMax);
+
+            // We're no longer a delta light and actually has a defined PDF. So add it here. 
+            this.LemitRadiance = LemitIrradiance * this.pdfDir;
+        }
     }
+
     public LightType Type() {
-        return LightType::DeltaDirection;
+        return isDelta ? LightType::DeltaDirection : LightType::Infinite;
     }
-    // Not defined
+
     public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
         return {};
     }
-    // Not defined
+
     public SampledSpectrum Le(float3 w) {
         return {};
     }
-    // Not defined
-    public void PDF_Le(LightSampleContext, float3, out float pdfPos, out float pdfDir){
+
+    public void PDF_Le(LightSampleContext ctx, float3 wi, out float pdfPos, out float pdfDir) {
         pdfPos = 0.0f;
-        pdfDir = 0.0f; // Dirac
+        pdfDir = 0.0f;
     }
-    // Dirac
-    public float PDF_Li(LightSampleContext, float3, bool allowIncompletePDF) {
+
+    public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
+        if (isDelta) return 0.0f;
+        if (dot(wi, -direction) >= cosThetaMax) {
+            return pdfDir;
+        }
         return 0.0f;
     }
+
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
-        return LightLiSample(Lemit, -direction, 1.0f, true, INF);
+        if (isDelta) {
+            return LightLiSample(LemitIrradiance, -direction, 1.0f, true, INF);
+        }
+
+        float3 wLocal = SampleUniformCone(cosThetaMax, u);
+        float3 b1, b2;
+        float3 dirToLight = -direction;
+        CoordinateSystem(dirToLight, b1, b2);
+
+        float3 wi = normalize(wLocal.x * b1 + wLocal.y * b2 + wLocal.z * dirToLight);
+        return LightLiSample(LemitRadiance, wi, pdfDir, false, INF);
     }
 };
 

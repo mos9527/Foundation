@@ -1,14 +1,14 @@
 #pragma once
-#include <cstddef>
 #include <Core/Allocator.hpp>
 #include <Core/AllocatorStack.hpp>
 #include <Core/Logging.hpp>
 #include <RenderCore/Bindless.hpp>
 #include <RenderCore/ImmediateContext.hpp>
+#include <cstddef>
 #include "Curve.hpp"
 #include "Mesh.hpp"
-#include "Texture.hpp"
 #include "Precompute.hpp"
+#include "Texture.hpp"
 
 using namespace Math;
 using namespace RenderCore;
@@ -140,27 +140,31 @@ struct GSMaterial
 };
 struct GSLight
 {
-    uint32_t type{0u};       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect, 5=Environment
-    float3 color{1,1,1};    // Normalized RGB color
-    float power{1.0f};      // Radiant power (type-dependent unit)
-    float3 position{0,0,0};
-    float3 direction{0,0,-1};
-    float range{0.0f};
-    float spotInnerCosAngle{1.0f};
-    float spotOuterCosAngle{0.7071f};
+    uint32_t type; // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect, 5=Environment
+    float3 color; // Normalized RGB color
+    float power; // Radiant power (type-dependent unit)
+    float3 position;
+    float3 direction;
+    // Directional
+    float angularDiameter;
+    // Spot/Point
+    float range;
+    // Spot
+    float spotInnerCosAngle;
+    float spotOuterCosAngle;
     // Area lights (Disk / Rect)
-    float3 dpdu{1,0,0};     // tangent u-axis (Rect: half-extent u)
-    float3 dpdv{0,1,0};     // tangent v-axis (Rect: half-extent v)
-    float2 radius{0.5f, 0.5f}; // Disk radius (x, y for ellipse)
-    uint32_t twoSided{0u};
-    float importance{0.0f};
-    float envAzimuthOffset{0.0f};
+    float3 dpdu; // tangent u-axis (Rect: half-extent u)
+    float3 dpdv; // tangent v-axis (Rect: half-extent v)
+    float2 radius; // Disk radius (x, y for ellipse)
+    uint32_t twoSided;
+    float importance;
+    float envAzimuthOffset;
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 56);
 static_assert(sizeof(GSMaterial) == 192);
-static_assert(sizeof(GSLight) == 100);
+static_assert(sizeof(GSLight) == 104);
 
 struct GPUSceneDesc
 {
@@ -249,8 +253,7 @@ public:
     [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FSerializedCurve const& src);
     [[nodiscard]] static size_t CalculateCurveAABBSize(FSerializedCurve const& src);
 
-    GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc,
-             AllocatorStack* frameScratch = nullptr);
+    GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc, AllocatorStack* frameScratch = nullptr);
     ~GPUScene();
 
 
@@ -273,8 +276,9 @@ public:
      * @brief Uploads a mesh as CPU-updateable dynamic geometry (deformation workloads).
      * @details Topology (indices) is fixed; only vertex positions change per frame. The source's
      *          quantized verts + LOD0 indices are reserved in the host-coherent dynamic ring
-     *          (replicated across every frame slot) and a single @ref RHIAccelerationStructureBuildFlagsBits::AllowUpdate
-     *          BLAS is built once. Per frame the caller rewrites the current slot's verts via
+     *          (replicated across every frame slot) and a single @ref
+     * RHIAccelerationStructureBuildFlagsBits::AllowUpdate BLAS is built once. Per frame the caller rewrites the current
+     * slot's verts via
      *          @ref BeginGeometryUpdate / @ref EndGeometryUpdate and the graph's
      *          "Dynamic BLAS Refit" pass (@ref RefitDynamicGeometry) refits the BLAS in place.
      *          DAG/meshlet payloads are ignored (dynamic geo is drawn with a plain vertex/index
@@ -523,11 +527,13 @@ public:
     }
     [[nodiscard]] uint32_t GetEnvMapMarginalCDFIndexOrDefault() const
     {
-        return mEnvMapMarginalCDFIndex.IsValid() ? mEnvMapMarginalCDFIndex.index : mFoundationDefaultTexture2DFloatIndex.index;
+        return mEnvMapMarginalCDFIndex.IsValid() ? mEnvMapMarginalCDFIndex.index
+                                                 : mFoundationDefaultTexture2DFloatIndex.index;
     }
     [[nodiscard]] uint32_t GetEnvMapConditionalCDFIndexOrDefault() const
     {
-        return mEnvMapConditionalCDFIndex.IsValid() ? mEnvMapConditionalCDFIndex.index : mFoundationDefaultTexture2DFloatIndex.index;
+        return mEnvMapConditionalCDFIndex.IsValid() ? mEnvMapConditionalCDFIndex.index
+                                                    : mFoundationDefaultTexture2DFloatIndex.index;
     }
     /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const
@@ -585,12 +591,12 @@ private:
 };
 
 ENUM_NAME_CONV_BEGIN(GPUScene::Result)
-    ENUM_NAME(Ready)
-    ENUM_NAME(InProgress)
-    ENUM_NAME(InvalidInput)
-    ENUM_NAME(InvalidHandle)
-    ENUM_NAME(OutOfMemory)
-    ENUM_NAME(DecodeFailed)
-    ENUM_NAME(SubmitFailed)
-    ENUM_NAME(Cancelled)
+ENUM_NAME(Ready)
+ENUM_NAME(InProgress)
+ENUM_NAME(InvalidInput)
+ENUM_NAME(InvalidHandle)
+ENUM_NAME(OutOfMemory)
+ENUM_NAME(DecodeFailed)
+ENUM_NAME(SubmitFailed)
+ENUM_NAME(Cancelled)
 ENUM_NAME_CONV_END()

@@ -188,7 +188,7 @@ struct FImportedMesh
 };
 
 /* -- Math Exports -- */
-void BuildOrthonormalBasis(float3 n, float3& b1, float3& b2);
+void CoordinateSystem(float3 n, float3& b1, float3& b2);
 float2 PackUnitOctahedralSnorm(float3 v);
 float3 UnpackUnitOctahedralSnorm(float2 v);
 float PackUnitCircleSnorm(float2 v);

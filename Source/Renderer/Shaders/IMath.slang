@@ -151,7 +151,7 @@ public float2 unpackUnitCircleSnorm(float v){
 }
 // -- tangent frame projection
 // Building an Orthonormal Basis from a 3D Unit Vector Without Normalization - Frisvad, 2012
-public void buildOrthonormalBasis(const float3 n, out float3 b1,out float3 b2)
+public void CoordinateSystem(const float3 n, out float3 b1,out float3 b2)
 {
     if (n.z < EPS - 1)
     {
@@ -167,7 +167,7 @@ public void buildOrthonormalBasis(const float3 n, out float3 b1,out float3 b2)
 public uint32_t packTBN(in float3 normal, in float3 tangent, in float bitangentSign)
 {
     float3 b1, b2;
-    buildOrthonormalBasis(normal, b1, b2);
+    CoordinateSystem(normal, b1, b2);
     float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
     float octAngle = packUnitCircleSnorm(float2(cosAngle, sinAngle));
     float2 oct = packUnitOctahedralSnorm(normal);
@@ -191,7 +191,7 @@ public void unpackTBN(uint32_t packed, out float3 outNormal, out float3 outTange
     float octAngle = dequantizeSnormShifted(tA, 7);
     float2 octXY = unpackUnitCircleSnorm(octAngle);
     float3 b1, b2;
-    buildOrthonormalBasis(outNormal, b1, b2);
+    CoordinateSystem(outNormal, b1, b2);
     outTangent = octXY.x * b1 + octXY.y * b2;
     outBitangentSign = bS == 1 ? 1.0f : -1.0f;
 }
@@ -199,7 +199,7 @@ public void unpackTBN(uint32_t packed, out float3 outNormal, out float3 outTange
 public float3 packTBN888(in float3 normal, in float3 tangent)
 {
     float3 b1, b2;
-    buildOrthonormalBasis(normal, b1, b2);
+    CoordinateSystem(normal, b1, b2);
     float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
     float2 oct = packUnitOctahedralSnorm(normal);
     float octAngle = packUnitCircleSnorm(float2(cosAngle, sinAngle));
@@ -211,7 +211,7 @@ public void unpackTBN888(in float3 packed, out float3 outNormal, out float3 outT
     float octAngle = packed.z * 2.0f - 1.0f;
     float2 octXY = unpackUnitCircleSnorm(octAngle);
     float3 b1, b2;
-    buildOrthonormalBasis(outNormal, b1, b2);
+    CoordinateSystem(outNormal, b1, b2);
     outTangent = octXY.x * b1 + octXY.y * b2;
 }
 // -- hashing
