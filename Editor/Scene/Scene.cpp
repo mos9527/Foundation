@@ -37,12 +37,6 @@ String LowerExtension(std::filesystem::path const& path)
     return ext;
 }
 
-bool IsRadianceHDRPath(std::filesystem::path const& path)
-{
-    String ext = LowerExtension(path);
-    return ext == ".hdr" || ext == ".hdri";
-}
-
 std::string_view Trim(std::string_view value)
 {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
@@ -114,9 +108,6 @@ Optional<String> LoadFoundationEnvironmentExtension(cgltf_data const* data, Stri
 
         String uri = DecodeURI(environment.uri);
         std::filesystem::path hdriPath = std::filesystem::path(scenePath.data()).parent_path() / uri;
-        CHECK_MSG(IsRadianceHDRPath(hdriPath), "EXT_foundation_environment HDRI must reference .hdr/.hdri, got {}",
-                  hdriPath.string());
-
         environmentLight = MakeDefaultEnvironmentLight();
         environmentLight.power = environment.strength;
         environmentLight.environmentMap = true;
@@ -542,7 +533,48 @@ FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratch
     return mesh;
 }
 
-// https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#images
+Optional<FTexture> LoadTexture(StringView path, Allocator* scratchAlloc, bool gamma = false)
+{
+    std::filesystem::path dir = std::filesystem::path(path).parent_path();
+    String imageNameWE = std::filesystem::path(path).stem().string();
+    // Try common extensions
+    {
+        const char* extensions[] = {".png", ".jpg", ".jpeg", ".bmp"};
+        for (auto ext : extensions)
+        {
+            auto imagePath = dir / (imageNameWE + ext);
+            if (std::filesystem::exists(imagePath))
+            {
+                FTexture res(scratchAlloc);
+                return LoadRGBA8(res, imagePath.string(), gamma), res;
+            }
+        }
+    }
+    // DDS?
+    {
+        auto imagePath = dir / (imageNameWE + ".dds");
+        if (std::filesystem::exists(imagePath))
+        {
+            FTexture res(scratchAlloc);
+            return LoadDDS(res, imagePath.string()), res;
+        }
+    }
+    // HDR/HDRI?
+    {
+        const char* extensions[] = {".hdr", ".hdri"};
+        for (auto ext : extensions)
+        {
+            auto imagePath = dir / (imageNameWE + ext);
+            if (std::filesystem::exists(imagePath))
+            {
+                FTexture res(scratchAlloc);
+                return LoadHDR(res, imagePath.string()), res;
+            }
+        }
+    }
+    return {};
+}
+    // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#images
 Optional<FTexture> LoadGLTFTexture(cgltf_texture* texture, StringView scenePath, Allocator* scratchAlloc, bool gamma = false)
 {
     CHECK(scratchAlloc != nullptr);
@@ -561,26 +593,10 @@ Optional<FTexture> LoadGLTFTexture(cgltf_texture* texture, StringView scenePath,
         String imageNameWE = std::filesystem::path(uri).stem().string();
         std::filesystem::path dir = std::filesystem::path(scenePath.data()).parent_path();
         dir = dir / std::filesystem::path(uri).parent_path();
-        // Try common extensions
-        const char* extensions[] = {".png", ".jpg", ".jpeg", ".bmp"};
-        for (auto ext : extensions)
-        {
-            auto imagePath = dir / (imageNameWE + ext);
-            if (std::filesystem::exists(imagePath))
-            {
-                FTexture res(scratchAlloc);
-                return LoadRGBA8(res, imagePath.string(), gamma), res;
-            }
-        }
-        // DDS?
-        {
-            auto imagePath = dir / (imageNameWE + ".dds");
-            if (std::filesystem::exists(imagePath))
-            {
-                FTexture res(scratchAlloc);
-                return LoadDDS(res, imagePath.string()), res;
-            }
-        }
+        auto fullpath = dir / imageNameWE;
+        auto result = LoadTexture(fullpath.string(), scratchAlloc, gamma);
+        if (result)
+            return result;
         LOG(Scene, LogWarn, "Texture image file not found: {}", uri);
         return {};
     }
@@ -1193,7 +1209,13 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         CHECK_MSG(environmentTextureIndex != kInvalidTexture, "Invalid environment texture index");
         FTexture environmentTexture(scratchAlloc);
         LOG(Scene, LogInfo, "Loading environment HDRI {}", *environmentTexturePath);
-        LoadHDR(environmentTexture, *environmentTexturePath);
+        auto result = LoadTexture(*environmentTexturePath, scratchAlloc, true);
+        if (!result)
+        {
+            LOG(Scene, LogError, "Failed to load environment HDRI {}", *environmentTexturePath);
+            return;
+        }
+        environmentTexture = std::move(result.value());
         BuildTextureBlobJobs(scene.mTables.textures[environmentTextureIndex],
                              textureBlobJobs[environmentTextureIndex].jobs, std::move(environmentTexture));
         AppendResourceBlobJobs(blobJobs, textureBlobJobs[environmentTextureIndex]);
