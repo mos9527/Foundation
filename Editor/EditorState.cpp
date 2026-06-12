@@ -258,6 +258,9 @@ static void FInitEnter()
     // while it streams in). If no file installs a scene, fall back to the no-scene branch.
     for (size_t i = 0; i < GContext->files.size(); i++)
         HandleFile(GContext->files[i]);
+    // Handle Renderer Settings passed from context (cmd lines)
+    GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride;
+    GEditor.rendererMode = static_cast<ERendererMode>(GContext->rendererSettings.defaultRenderer);
     if (GEditor.state == FEInitEnter)
     {
         LOG(Editor, LogInfo, "No scene path provided, starting with empty editor");
@@ -279,11 +282,23 @@ static void FNoScene()
     renderer->BeginExecute();
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
-    if (GEditor.showImGui)
     {
         EditorDockSpaceAndMenuBar();
-        FHierarchyPanel();
-        FLightingPanel();
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->WorkPos);
+        ImGui::SetNextWindowSize(viewport->WorkSize);
+
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus |
+            ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoInputs;
+
+        ImGui::Begin("##NoSceneOverlay", nullptr, flags);
+        {
+            const char* labels[] = {"  NO SCENE  ", "", " DRAG & DROP TO LOAD ", ""};
+            int blink = (SDL_GetTicks() / 1000) & 3;
+            ImFillText(labels[blink], ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        }
+        ImGui::End();
     }
     float dt = ImGui::GetIO().DeltaTime;
     GEditor.camera.aspect = GContext->swapchain->GetAspectRatio();

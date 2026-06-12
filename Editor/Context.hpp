@@ -45,6 +45,13 @@ struct FContext
     SDL_Event event;
 
     bool enableHDR{false};
+
+    // Renderer Specific settings
+    struct RendererSettings
+    {
+        int defaultRenderer{0}; // 0: PT, 1: RASTER
+        float energyClampOverride{1.0f}; // Applies to default PT, Fast preset
+    } rendererSettings;
 };
 
 extern FContext* GContext;

@@ -63,6 +63,7 @@ struct ImProfilerSample
     }
 };
 extern bool ImModalButton(const char* label, int lineIndex = 0, int lineTotal = 1);
+extern void ImFillText(const char* label, ImU32 col = 0xFFFFFFFF, int lineIndex = 0, int lineTotal = 1);
 
 extern int ImProfilerAssignLanes(Span<ImProfilerSample>, Allocator*);
 extern void ImProfilerDrawTimestampLabel(Span<const ImProfilerSample> samples, float resolution, int numLabels);

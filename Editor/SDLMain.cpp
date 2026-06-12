@@ -57,7 +57,6 @@ int main(int argc, char** argv)
     // --gpu / -g: specify GPU device index
     int gpuId = 0;
     cmdl({"-g", "--gpu"}, 0) >> gpuId;
-
     // --list-gpus: list available GPU devices and exit
     if (cmdl[{"-l", "--list-gpus"}])
     {
@@ -74,6 +73,13 @@ int main(int argc, char** argv)
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);
     NFD_Init();
+
+    // Renderer Settings
+    // --energy-clamp / -e: specify energy clamp value
+    cmdl({"-e", "--energy-clamp"}, 1.0f) >> GContext->rendererSettings.energyClampOverride;
+    // --renderer / -r: specify default renderer (0: PT, 1: RASTER)
+    cmdl({"-r", "--renderer"}, 0) >> GContext->rendererSettings.defaultRenderer;
+    
 
     // Positional arguments (non-flag/option) are treated as file paths passed to the Editor
     // argh's pos_args() index 0 is the program name; file paths start from index 1

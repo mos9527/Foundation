@@ -94,6 +94,31 @@ bool ImModalButton(const char* label, int lineIndex, int lineTotal)
     return ImGui::Button(label, lineTotal > 1 ? ImVec2{width - padding, 0} : ImVec2{width, 0});
 }
 
+void ImFillText(const char* label, ImU32 col, int lineIndex, int lineTotal)
+{
+    auto& style   = ImGui::GetStyle();
+    float padding = style.FramePadding.x;
+    float availX  = ImGui::GetContentRegionAvail().x;
+    float availY  = ImGui::GetContentRegionAvail().y;
+    float colWidth = lineTotal > 1 ? (availX / lineTotal - padding) : availX;
+
+    auto* font = ImGui::GetFont();
+    ImVec2 textSize = ImGui::CalcTextSize(label);
+    float scale     = (textSize.x > 0.0f) ? (colWidth / textSize.x) : 1.0f;
+    float fontSize  = ImGui::GetFontSize() * scale;
+    float height    = textSize.y * scale;
+
+    if (lineIndex)
+        ImGui::SameLine();
+
+    ImVec2 cursor = ImGui::GetCursorScreenPos();
+    float yOffset = (availY - height) * 0.5f;
+    ImVec2 textPos = {cursor.x, cursor.y + std::max(0.0f, yOffset)};
+    
+    ImGui::GetWindowDrawList()->AddText(font, fontSize, textPos, col, label);
+    ImGui::Dummy(ImVec2{colWidth, height});
+}
+
 int ImProfilerAssignLanes(Span<ImProfilerSample> samples, Allocator* alloc)
 {
     std::sort(samples.begin(), samples.end());

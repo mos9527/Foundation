@@ -10,8 +10,8 @@
 
 enum class ERendererMode
 {
-    PathTracer,
-    Raster
+    PathTracer = 0u,
+    Raster = 1u
 };
 
 enum class ERenderFormat { HDR, SDR };
