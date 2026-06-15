@@ -140,7 +140,6 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         // - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/master/src/VulkanSample.cpp#L1850
         CHECK(mPhysicalDevice.getSurfaceSupportKHR(graphics.first, *mSurface));
     }
-// Define the type once so you aren't copy-pasting the template list everywhere.
     using DeviceFeatureChain = vk::StructureChain<
         vk::PhysicalDeviceFeatures2,
         vk::PhysicalDeviceVulkan11Features,
@@ -254,11 +253,10 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     // Extended Dynamic State
     REQUEST_FEATURE(vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, extendedDynamicState)
 
-    // Optional Extension Features (Only checked if the extension was actually enabled)
+    // Optional Extension Features
     if (hasMeshShader) {
         REQUEST_FEATURE(vk::PhysicalDeviceMeshShaderFeaturesEXT, meshShader)
-        // You specifically didn't want taskShader enabled in your original snippet,
-        // so we simply don't request it here. It stays false.
+        REQUEST_FEATURE(vk::PhysicalDeviceMeshShaderFeaturesEXT, taskShader)
     }
 
     if (hasAccelerationStructure) {
@@ -338,7 +336,10 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                 rhiFormat = A2R10G10B10Snorm;
                 break;
             default:
-                // TODO: More formats? HDR?
+                // TODO: More formats?
+                // RGBA8 & RGB10A2 covers most cases (SDR/HDR, sRGB/PQ)
+                // There exists RGBA16F for backbuffer using linear color space but support is sparse,
+                // and can be quite a headache to introduce *another* transfer function. Not supported for now.               
                 break;
             }
             if (rhiFormat != Undefined)
@@ -395,12 +396,14 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     mDeviceCaps = {
         .dedicatedCompute = mQueues->graphics != mQueues->compute,
         .dedicatedTransfer = mQueues->graphics != mQueues->transfer,
+        // NOTE: Compute & Graphics are base requirements for even VK 1.0
         .shaderExecutionReordering = shaderExecutionReordering,
         .meshShaders = hasMeshShader,
         .raytracingInline = hasRayQuery,
         .raytracingPipeline = hasRayTracingPipeline,
         .timestampQueries = timestampQueries,
         .integratedGPU = properties.deviceType == vk::PhysicalDeviceType::eIntegratedGpu,
+        // Hint for ReBAR or UMA architectures
         .deviceLocalHostVisibleBuffers = deviceLocalHostVisibleBuffers,
         .deviceLocalHostVisibleHeapSize = deviceLocalHostVisibleHeapSize,
         .maxStorageBufferRange = properties.limits.maxStorageBufferRange,

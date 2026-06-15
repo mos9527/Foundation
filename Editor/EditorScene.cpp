@@ -102,11 +102,23 @@ static void UploadEditorViewLUTs(GPUScene* gpu, FTexture const& sdr, FTexture co
     CHECK_MSG(hdrResult == GPUScene::Result::Ready, "Failed to upload HDR view LUT ({})", static_cast<int>(hdrResult));
 }
 
+String ResolveMatcapPath(int& index, String const& externalPath)
+{
+    int const externalIndex = kMatcapCount; // Last entry reserved for external path
+    if (index == externalIndex && !externalPath.empty())
+        return externalPath;
+
+    if (index < 0 || index >= externalIndex)
+        index = 0;
+    return kMatcaps[index].path;
+}
+
 static void LoadSelectedMatcap(FTexture& matcap, int& matcapIndex, String const& externalPath,
                                Allocator* alloc = GLOBAL_ALLOC)
 {
     CHECK(alloc != nullptr);
-    String matcapPath = Matcap::ResolveSelectedPath(matcapIndex, externalPath);
+    CHECK(matcapIndex >= 0 && matcapIndex <= kMatcapCount + 1);
+    String matcapPath = ResolveMatcapPath(matcapIndex, externalPath);
     matcap = LoadMatcapTexture(matcapPath, alloc);
 }
 
@@ -120,7 +132,7 @@ static void UploadEditorMatcap(GPUScene* gpu, FTexture const& matcap)
     CHECK(gpu != nullptr);
     GPUScene::Result matcapResult = gpu->Upload(matcap, GEditor.matcapHandle, "Matcap", true);
     CHECK_MSG(matcapResult == GPUScene::Result::Ready, "Failed to upload matcap ({})", static_cast<int>(matcapResult));
-    GEditor.shaderGlobals.matcapTextureIndex = Matcap::ResolveTextureIndex(GEditor.matcapHandle);
+    GEditor.shaderGlobals.matcapTextureIndex = GEditor.matcapHandle.index;
 }
 
 static double MillisecondsSince(std::chrono::steady_clock::time_point start)
@@ -735,7 +747,7 @@ static void ApplySceneGlobals(FImportedScene const& scene)
     GEditor.viewLUTHdrExternalPath.clear();
     GEditor.viewLUTSdrHandle = {};
     GEditor.viewLUTHdrHandle = {};
-    GEditor.matcapIndex = Matcap::GetDefaultEntryIndex();
+    GEditor.matcapIndex = {};
     GEditor.matcapExternalPath.clear();
     GEditor.matcapHandle = {};
     GEditor.shaderGlobals.matcapTextureIndex = UINT32_MAX;

@@ -9,6 +9,7 @@ struct MatcapEntry
 };
 
 inline constexpr MatcapEntry kMatcaps[] = {
+    {"Clay Studio", "Data/Assets/Matcaps/clay_studio.png"},
     {"Basic 1", "Data/Assets/Matcaps/basic_1.png"},
     {"Basic 2", "Data/Assets/Matcaps/basic_2.png"},
     {"Basic Dark", "Data/Assets/Matcaps/basic_dark.png"},
@@ -20,7 +21,6 @@ inline constexpr MatcapEntry kMatcaps[] = {
     {"Check Rim Light", "Data/Assets/Matcaps/check_rim_light.png"},
     {"Clay Brown", "Data/Assets/Matcaps/clay_brown.png"},
     {"Clay Muddy", "Data/Assets/Matcaps/clay_muddy.png"},
-    {"Clay Studio", "Data/Assets/Matcaps/clay_studio.png"},
     {"Jade", "Data/Assets/Matcaps/jade.png"},
     {"Metal Anisotropic", "Data/Assets/Matcaps/metal_anisotropic.png"},
     {"Metal Carpaint", "Data/Assets/Matcaps/metal_carpaint.png"},

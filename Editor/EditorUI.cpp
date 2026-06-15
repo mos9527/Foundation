@@ -2035,25 +2035,23 @@ void FRunningImGui()
             if ((GEditor.rendererConfig.viewFlags & kViewMatcap) != 0u)
             {
                 ImGui::SeparatorText("Matcap");
-                Span<Matcap::Entry const> entries = Matcap::EnumerateEntries();
-                int const count = static_cast<int>(entries.size());
-                int const externalIndex = Matcap::GetExternalEntryIndex();
-                if (GEditor.matcapIndex < 0 || GEditor.matcapIndex > externalIndex ||
-                    (GEditor.matcapIndex == externalIndex && GEditor.matcapExternalPath.empty()))
+                if (GEditor.matcapIndex < 0 || GEditor.matcapIndex > kMatcapCount ||
+                    (GEditor.matcapIndex == kMatcapCount && GEditor.matcapExternalPath.empty()))
                 {
-                    GEditor.matcapIndex = std::clamp(GEditor.matcapIndex, 0, count - 1);
+                    GEditor.matcapIndex = std::clamp(GEditor.matcapIndex, 0, kMatcapCount - 1);
                 }
 
                 bool matcapChanged = false;
-                const char* preview = GEditor.matcapIndex == externalIndex
+                const char* preview =
+                    GEditor.matcapIndex == kMatcapCount
                                           ? kExternalMatcapLabel
-                                          : entries[GEditor.matcapIndex].label;
+                                          : kMatcaps[GEditor.matcapIndex].label;
                 if (ImGui::BeginCombo("Matcap Preset", preview))
                 {
-                    for (int i = 0; i < count; ++i)
+                    for (int i = 0; i < kMatcapCount; ++i)
                     {
                         bool const selected = i == GEditor.matcapIndex;
-                        if (ImGui::Selectable(entries[i].label, selected))
+                        if (ImGui::Selectable(kMatcaps[i].label, selected))
                         {
                             GEditor.matcapIndex = i;
                             matcapChanged = true;
@@ -2061,14 +2059,14 @@ void FRunningImGui()
                         if (selected)
                             ImGui::SetItemDefaultFocus();
                     }
-                    bool const selectedExternal = GEditor.matcapIndex == externalIndex;
+                    bool const selectedExternal = GEditor.matcapIndex == kMatcapCount;
                     if (ImGui::Selectable(kExternalMatcapLabel, selectedExternal))
                     {
                         String selectedPath;
                         if (OpenMatcapDialog(selectedPath))
                         {
                             GEditor.matcapExternalPath = selectedPath;
-                            GEditor.matcapIndex = externalIndex;
+                            GEditor.matcapIndex = kMatcapCount;
                             matcapChanged = true;
                         }
                     }
@@ -2076,7 +2074,7 @@ void FRunningImGui()
                         ImGui::SetItemDefaultFocus();
                     ImGui::EndCombo();
                 }
-                if (GEditor.matcapIndex == externalIndex && !GEditor.matcapExternalPath.empty() && ImGui::IsItemHovered())
+                if (GEditor.matcapIndex == kMatcapCount && !GEditor.matcapExternalPath.empty() && ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", GEditor.matcapExternalPath.c_str());
                 if (matcapChanged)
                     ApplyMatcapSelection();

@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cmath>
 #include <Renderer/GPUScene.hpp>
-#include <Renderer/Matcap.hpp>
 #include <Renderer/Postprocess.hpp>
 #include "Camera.hpp"
 #include "Editor.hpp"
@@ -131,7 +130,7 @@ struct EditorState
     String          viewLUTHdrExternalPath;
     TextureHandle   viewLUTSdrHandle{};
     TextureHandle   viewLUTHdrHandle{};
-    int             matcapIndex = Matcap::GetDefaultEntryIndex();
+    int matcapIndex{};
     String          matcapExternalPath;
     TextureHandle   matcapHandle{};
 
