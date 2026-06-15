@@ -590,10 +590,10 @@ Optional<FTexture> LoadGLTFTexture(cgltf_texture* texture, StringView scenePath,
         // image URIs in cgltf_data are left as-is, so do it ourselves before touching the FS.
         String uri = texture->image->uri;
         uri.resize(cgltf_decode_uri(uri.data()));
-        String imageNameWE = std::filesystem::path(uri).stem().string();
+        String imageName = std::filesystem::path(uri).filename().string();
         std::filesystem::path dir = std::filesystem::path(scenePath.data()).parent_path();
         dir = dir / std::filesystem::path(uri).parent_path();
-        auto fullpath = dir / imageNameWE;
+        auto fullpath = dir / imageName;
         auto result = LoadTexture(fullpath.string(), scratchAlloc, gamma);
         if (result)
             return result;
