@@ -175,6 +175,10 @@ void CommitSceneToGPU(bool resetAccumulation = true);
 void UpdateSceneLights();
 void DeleteSelectedInstance();
 void LoadScene(StringView path);
+// Queues a scene load for the next editor frame (safe to call during ImGui / renderer execute).
+void RequestLoadScene(StringView path, StringView envMapPath = {});
+// Drains any queued scene load. Called at the start of each editor frame.
+void PumpDeferredSceneLoad();
 // Advances an in-flight async scene load; returns true while one is still streaming.
 // Must be pumped once per editor frame.
 bool PumpSceneLoad();

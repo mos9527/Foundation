@@ -258,6 +258,8 @@ static void FInitEnter()
     // while it streams in). If no file installs a scene, fall back to the no-scene branch.
     for (size_t i = 0; i < GContext->files.size(); i++)
         HandleFile(GContext->files[i]);
+    // Startup file opens are not inside a renderer execute frame, so drain the queue now.
+    PumpDeferredSceneLoad();
     // Handle Renderer Settings passed from context (cmd lines)
     GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride;
     GEditor.rendererMode = static_cast<ERendererMode>(GContext->rendererSettings.defaultRenderer);
@@ -564,6 +566,7 @@ bool EditorProcessEvent(SDL_Event* event)
 bool EditorOnFrame(FContext* context)
 {
     ResetEditorFrameScratch(context);
+    PumpDeferredSceneLoad();
     // Finalize/install any scene whose background upload finished this frame.
     PumpSceneLoad();
     switch (GEditor.state)

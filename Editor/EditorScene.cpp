@@ -16,6 +16,37 @@
 #include <tracy/Tracy.hpp>
 #include <cmath>
 static constexpr const char* kTempScenePath = "Cache/Last.fscn";
+
+static String sDeferredScenePath;
+static String sDeferredEnvMapPath;
+
+static bool PathsReferToSameFile(StringView a, StringView b)
+{
+    std::error_code ec;
+    if (std::filesystem::equivalent(a.data(), b.data(), ec))
+        return true;
+    ec.clear();
+    auto const canonA = std::filesystem::weakly_canonical(a.data(), ec);
+    if (ec)
+        return false;
+    ec.clear();
+    auto const canonB = std::filesystem::weakly_canonical(b.data(), ec);
+    if (ec)
+        return false;
+    return canonA == canonB;
+}
+
+// Drop the editor's read-only mapping when we need to rewrite the same payload file (e.g. the
+// glTF import temp cache while a previous import still has it open).
+static void ReleaseScenePayloadFileForRewrite(StringView payloadPath)
+{
+    if (!GEditor.sceneFile.has_value())
+        return;
+    if (!PathsReferToSameFile(GEditor.currentSavePath, payloadPath))
+        return;
+    GEditor.scene.reset();
+    GEditor.sceneFile.reset();
+}
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
 // Accounts for alignment, etc...
 static constexpr size_t kBudgetSlack = 1ull * (1ull << 20);
@@ -714,6 +745,7 @@ static String PrepareScenePayloadFile(StringView path)
     // In this way we don't need to have the whole scene allocated in memory
     // explicitly - and works the same way as loading from FSCN.
     String scenePayloadPath = PathsResolve(kTempScenePath);
+    ReleaseScenePayloadFileForRewrite(scenePayloadPath);
     std::filesystem::path scenePayloadDir = std::filesystem::path(scenePayloadPath).parent_path();
     if (!scenePayloadDir.empty())
         std::filesystem::create_directories(scenePayloadDir);
@@ -1416,6 +1448,25 @@ bool PumpSceneLoad()
     return false;
 }
 
+void RequestLoadScene(StringView path, StringView envMapPath)
+{
+    sDeferredScenePath = path;
+    sDeferredEnvMapPath = envMapPath;
+}
+
+void PumpDeferredSceneLoad()
+{
+    if (sDeferredScenePath.empty())
+        return;
+    String path = std::move(sDeferredScenePath);
+    String envMapPath = std::move(sDeferredEnvMapPath);
+    sDeferredScenePath.clear();
+    sDeferredEnvMapPath.clear();
+    LoadScene(path);
+    if (!envMapPath.empty())
+        DeferEnvMapForPendingLoad(envMapPath);
+}
+
 void LoadScene(StringView path)
 {
     LOG(Editor, LogInfo, "Loading scene: {}", path);
@@ -1510,7 +1561,6 @@ void HandleFile(const char* filePath)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     if (ext == ".gltf" || ext == ".glb" || ext == ".fscn")
     {
-        LoadScene(filePath);
         // HDRIs sharing the scene's filename load too. The scene load is async, so defer
         // the env map until the scene is installed (PumpSceneLoad applies it).
         String hdriPath = path.string().substr(0, path.string().length() - ext.length());
@@ -1519,8 +1569,7 @@ void HandleFile(const char* filePath)
             envPath = hdriPath + ".hdr";
         else if (std::filesystem::exists(hdriPath + ".hdri"))
             envPath = hdriPath + ".hdri";
-        if (!envPath.empty())
-            DeferEnvMapForPendingLoad(envPath);
+        RequestLoadScene(filePath, envPath);
     }
     else if (ext == ".hdr" || ext == ".hdri")
     {
