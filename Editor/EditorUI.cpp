@@ -435,6 +435,8 @@ static void ResetTexturePreviewModal()
     state.pan = {};
 }
 
+static void ResetMaterialTexturePickerModal();
+
 void ClearMaterialTexturePreviewCache()
 {
     auto& cache = TexturePreviewCache();
@@ -443,6 +445,7 @@ void ClearMaterialTexturePreviewCache()
             ImGui_ImplFoundation_RemoveImage(entry.textureID);
     cache.clear();
     ResetTexturePreviewModal();
+    ResetMaterialTexturePickerModal();
 }
 
 static TexturePreviewImage GetTexturePreviewImage(uint32_t textureIndex, ImGui_ImplFoundation_ImageSampler sampler)
@@ -763,6 +766,312 @@ static void DrawTexturePreview(const char* label, uint32_t textureIndex,
     ImGui::PopID();
 }
 
+static bool IsSceneEnvironmentTextureIndex(size_t textureIndex)
+{
+    if (!GEditor.HasScene())
+        return false;
+    FLight const* environment = GEditor.Scene().GetEnvironmentLight();
+    return environment != nullptr && environment->environmentMap &&
+           environment->environmentTexture != kInvalidTexture &&
+           textureIndex == environment->environmentTexture;
+}
+
+static bool IsPickableSceneTexture2D(FSerializedTexture const& texture)
+{
+    if (!texture.IsValid())
+        return false;
+    if (texture.GetDimension() != RHITextureDimension::E2D)
+        return false;
+    if ((texture.header.caps2 & DDS_CUBEMAP) != 0)
+        return false;
+    if (texture.GetNumLayers() != 1)
+        return false;
+    return true;
+}
+
+static uint32_t SceneTextureToGpuIndex(uint32_t sceneTextureIndex)
+{
+    if (sceneTextureIndex == kInvalidTexture || !GContext || !GContext->gpuScene)
+        return UINT32_MAX;
+    if (sceneTextureIndex >= GEditor.textureIDMap.size())
+        return UINT32_MAX;
+    TextureHandle const& handle = GEditor.textureIDMap[sceneTextureIndex];
+    if (!handle.IsValid() || handle.is3D)
+        return UINT32_MAX;
+    if (GContext->gpuScene->Query(handle) != GPUScene::Result::Ready)
+        return UINT32_MAX;
+    return handle.index;
+}
+
+struct MaterialTexturePickerModalState
+{
+    bool pendingOpen{};
+    char label[128]{};
+    uint32_t* targetSlot{};
+    uint32_t pendingSelection{kInvalidTexture};
+    ImGui_ImplFoundation_ImageSampler sampler{ImGuiImplFoundationImageSamplerLinear};
+};
+
+static constexpr const char* kMaterialTexturePickerModalName = "Select Texture";
+
+static MaterialTexturePickerModalState& MaterialTexturePickerModal()
+{
+    static MaterialTexturePickerModalState state;
+    return state;
+}
+
+static void ResetMaterialTexturePickerModal()
+{
+    auto& state = MaterialTexturePickerModal();
+    state.pendingOpen = false;
+    state.label[0] = '\0';
+    state.targetSlot = nullptr;
+    state.pendingSelection = kInvalidTexture;
+    state.sampler = ImGuiImplFoundationImageSamplerLinear;
+}
+
+static void OpenMaterialTexturePickerModal(const char* label, uint32_t* targetSlot,
+                                           ImGui_ImplFoundation_ImageSampler sampler)
+{
+    auto& state = MaterialTexturePickerModal();
+    state.pendingOpen = true;
+    std::snprintf(state.label, sizeof(state.label), "%s", label);
+    state.targetSlot = targetSlot;
+    state.pendingSelection = *targetSlot;
+    state.sampler = sampler;
+}
+
+static void MaterialTexturePickerTileStyleBegin(bool selected)
+{
+    if (!selected)
+        return;
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::GetStyleColorVec4(ImGuiCol_NavHighlight));
+}
+
+static void MaterialTexturePickerTileStyleEnd(bool selected)
+{
+    if (!selected)
+        return;
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+}
+
+static void MaterialTexturePickerTileSelectionOutline(bool selected)
+{
+    if (!selected || !ImGui::IsItemVisible())
+        return;
+    ImVec2 const min = ImGui::GetItemRectMin();
+    ImVec2 const max = ImGui::GetItemRectMax();
+    ImGui::GetWindowDrawList()->AddRect(min, max, ImGui::GetColorU32(ImGuiCol_NavHighlight), 0.0f, 0, 2.0f);
+}
+
+static void DrawMaterialTexturePickerNoneTile(ImVec2 size, bool selected)
+{
+    MaterialTexturePickerTileStyleBegin(selected);
+    ImGui::InvisibleButton("##NoneTile", size);
+    MaterialTexturePickerTileStyleEnd(selected);
+
+    ImVec2 const min = ImGui::GetItemRectMin();
+    ImVec2 const max = ImGui::GetItemRectMax();
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    drawList->AddRectFilled(min, max, IM_COL32(31, 31, 31, 255));
+    char const* label = "(none)";
+    ImVec2 const textSize = ImGui::CalcTextSize(label);
+    ImVec2 const center{(min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f};
+    drawList->AddText(ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f),
+                      ImGui::GetColorU32(ImGuiCol_TextDisabled), label);
+    MaterialTexturePickerTileSelectionOutline(selected);
+}
+
+static void DrawMaterialTexturePickerGrid(uint32_t& pendingSelection, ImGui_ImplFoundation_ImageSampler sampler)
+{
+    Span<FSerializedTexture const> textures = GEditor.Scene().GetTextures();
+    float const thumbSize = 64.0f;
+    float const thumbPad = 4.0f;
+    ImVec2 const thumb{thumbSize, thumbSize};
+    ImVec2 const gridAvail = ImGui::GetContentRegionAvail();
+    int const columns = std::max(1, static_cast<int>((gridAvail.x + thumbPad) / (thumbSize + thumbPad)));
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+
+    int gridIndex = 0;
+    auto nextGridColumn = [&]()
+    {
+        if (gridIndex % columns != 0)
+            ImGui::SameLine(0.0f, thumbPad);
+        ++gridIndex;
+    };
+
+    nextGridColumn();
+    ImGui::PushID("None");
+    {
+        bool const selected = pendingSelection == kInvalidTexture;
+        DrawMaterialTexturePickerNoneTile(thumb, selected);
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+            pendingSelection = kInvalidTexture;
+    }
+    ImGui::PopID();
+
+    for (size_t textureIndex = 0; textureIndex < textures.size(); ++textureIndex)
+    {
+        if (IsSceneEnvironmentTextureIndex(textureIndex))
+            continue;
+        FSerializedTexture const& texture = textures[textureIndex];
+        if (!IsPickableSceneTexture2D(texture))
+            continue;
+
+        nextGridColumn();
+        ImGui::PushID(static_cast<int>(textureIndex));
+        bool const selected = pendingSelection == static_cast<uint32_t>(textureIndex);
+        MaterialTexturePickerTileStyleBegin(selected);
+
+        uint32_t const gpuIndex = SceneTextureToGpuIndex(static_cast<uint32_t>(textureIndex));
+        TexturePreviewImage preview = GetTexturePreviewImage(gpuIndex, sampler);
+        if (preview.textureID != 0)
+            ImGui::ImageButton("##Thumb", preview.textureID, thumb);
+        else
+        {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+            ImGui::Button("...", thumb);
+            ImGui::PopStyleColor();
+        }
+
+        MaterialTexturePickerTileStyleEnd(selected);
+        MaterialTexturePickerTileSelectionOutline(selected);
+
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::BeginTooltip();
+            ImGui::Text("#%zu  %ux%u", textureIndex, texture.GetWidth(), texture.GetHeight());
+            if (preview.textureID == 0)
+                ImGui::TextUnformatted("Not resident yet");
+            else
+                ImGui::TextUnformatted("Double-click to preview");
+            ImGui::EndTooltip();
+        }
+
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && preview.textureID != 0)
+        {
+            char viewerTitle[128];
+            std::snprintf(viewerTitle, sizeof(viewerTitle), "%s #%zu", MaterialTexturePickerModal().label, textureIndex);
+            OpenTexturePreviewModal(viewerTitle, gpuIndex, sampler, preview);
+        }
+        else if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+            pendingSelection = static_cast<uint32_t>(textureIndex);
+
+        ImGui::PopID();
+    }
+
+    ImGui::PopStyleVar();
+}
+
+static bool DrawMaterialTexturePickerModal()
+{
+    auto& state = MaterialTexturePickerModal();
+    if (state.pendingOpen)
+    {
+        ImGui::OpenPopup(kMaterialTexturePickerModalName);
+        state.pendingOpen = false;
+    }
+
+    if (!state.targetSlot)
+        return false;
+
+    ImGui::SetNextWindowSize(ImVec2(640.0f, 520.0f), ImGuiCond_FirstUseEver);
+    bool modalOpen = true;
+    if (!ImGui::BeginPopupModal(kMaterialTexturePickerModalName, &modalOpen))
+        return false;
+
+    bool committed = false;
+    if (!modalOpen)
+    {
+        ResetMaterialTexturePickerModal();
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return false;
+    }
+
+    ImGui::TextUnformatted(state.label);
+    ImGui::Separator();
+    ImGui::BeginChild("MaterialTexturePickerGrid", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing() * 2.0f), true);
+    DrawMaterialTexturePickerGrid(state.pendingSelection, state.sampler);
+    ImGui::EndChild();
+
+    if (ImGui::Button("OK", ImVec2(120.0f, 0.0f)))
+    {
+        if (*state.targetSlot != state.pendingSelection)
+        {
+            *state.targetSlot = state.pendingSelection;
+            committed = true;
+        }
+        ResetMaterialTexturePickerModal();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+    {
+        ResetMaterialTexturePickerModal();
+        ImGui::CloseCurrentPopup();
+    }
+
+    DrawTexturePreviewModal();
+
+    ImGui::EndPopup();
+    return committed;
+}
+
+static bool IsMaterialTexturePickerOpen()
+{
+    return MaterialTexturePickerModal().targetSlot != nullptr;
+}
+
+static char const* MaterialTexturePropLabel(char* buf, size_t bufSize, char const* name, uint32_t textureIndex)
+{
+    if (textureIndex != kInvalidTexture)
+        std::snprintf(buf, bufSize, "*%s", name);
+    else
+        std::snprintf(buf, bufSize, "%s", name);
+    return buf;
+}
+
+static void DrawMaterialTextureSlot(const char* label, uint32_t& sceneTextureIndex,
+                                    ImGui_ImplFoundation_ImageSampler sampler = ImGuiImplFoundationImageSamplerLinear)
+{
+    ImGui::PushID(label);
+
+    ImVec2 const previewSize{48.0f, 48.0f};
+    uint32_t const gpuIndex = SceneTextureToGpuIndex(sceneTextureIndex);
+    TexturePreviewImage preview = GetTexturePreviewImage(gpuIndex, sampler);
+    bool openPicker = false;
+    if (preview.textureID != 0)
+    {
+        if (ImGui::ImageButton("Preview", preview.textureID, previewSize))
+            openPicker = true;
+    }
+    else if (ImGui::Button("None", previewSize))
+        openPicker = true;
+
+    if (openPicker)
+        OpenMaterialTexturePickerModal(label, &sceneTextureIndex, sampler);
+
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    if (sceneTextureIndex == kInvalidTexture)
+        ImGui::Text("%s: none", label);
+    else if (sceneTextureIndex < GEditor.Scene().GetTextures().size())
+    {
+        FSerializedTexture const& texture = GEditor.Scene().GetTextures()[sceneTextureIndex];
+        ImGui::Text("%s: #%u (%ux%u)", label, sceneTextureIndex, texture.GetWidth(), texture.GetHeight());
+    }
+    else if (preview.textureID == 0)
+        ImGui::Text("%s: #%u (unavailable)", label, sceneTextureIndex);
+    else
+        ImGui::Text("%s: #%u", label, sceneTextureIndex);
+
+    ImGui::PopID();
+}
+
 static bool IsTexturePreviewFormatSupported(RHIResourceFormat format)
 {
     switch (format)
@@ -892,12 +1201,12 @@ void EditorDockSpaceAndMenuBar()
         ImGui::DockBuilderSetNodeSize(dockspaceID, ImGui::GetMainViewport()->Size);
 
         ImGuiID dockLeft, dockCenter;
-        ImGui::DockBuilderSplitNode(dockspaceID, ImGuiDir_Left, 0.20f, &dockLeft, &dockCenter);
+        ImGui::DockBuilderSplitNode(dockspaceID, ImGuiDir_Left, 0.25f, &dockLeft, &dockCenter);
         ImGuiID dockRight;
         ImGui::DockBuilderSplitNode(dockCenter, ImGuiDir_Right, 0.25f, &dockRight, &dockCenter);
-
+            
         ImGuiID dockLeftTop, dockLeftBottom;
-        ImGui::DockBuilderSplitNode(dockLeft, ImGuiDir_Up, 0.5f, &dockLeftTop, &dockLeftBottom);
+        ImGui::DockBuilderSplitNode(dockLeft, ImGuiDir_Up, 0.25f, &dockLeftTop, &dockLeftBottom);
         ImGui::DockBuilderDockWindow("Hierarchy", dockLeftTop);
         ImGui::DockBuilderDockWindow("Inspector", dockLeftBottom);
         ImGui::DockBuilderDockWindow("Material", dockLeftBottom);
@@ -1140,75 +1449,105 @@ void FHierarchyPanel()
             GEditor.selectedMaterial = materialIndex;
 
             auto& material = GEditor.Scene().GetMaterials()[materialIndex];
-            GSMaterial gpuMaterial = GContext->gpuScene->GetMaterial(materialIndex);
-            ImGui::Text("Material %d", materialIndex);
+            ImGui::TextDisabled("Material %d", materialIndex);
             if (IsSelectedInstanceValid())
-                ImGui::Text("From Instance %d", GEditor.selectedInstance);
+                ImGui::SameLine(), ImGui::TextDisabled("| From Instance %d", GEditor.selectedInstance);
             ImGui::Separator();
 
             bool changed = false;
-            const char* shaderBlockLabels[] = {"Principled", "Hair"};
-            int shaderBlock = static_cast<int>(material.shaderBlockID);
-            if (ImGui::Combo("Shader Block", &shaderBlock, shaderBlockLabels, IM_ARRAYSIZE(shaderBlockLabels)))
+            if (ImGui::BeginTabBar("MaterialTabs"))
             {
-                material.shaderBlockID = static_cast<FMaterialShaderBlock>(shaderBlock);
-                changed = true;
+                if (ImGui::BeginTabItem("Properties"))
+                {
+                    ImGui::TextDisabled("NOTE: Properties with an asterisk (*) are texture-mapped.");
+                    ImGui::Separator();
+
+                    const char* shaderBlockLabels[] = {"Principled", "Hair"};
+                    int shaderBlock = static_cast<int>(material.shaderBlockID);
+                    if (ImGui::Combo("Shader Block", &shaderBlock, shaderBlockLabels, IM_ARRAYSIZE(shaderBlockLabels)))
+                    {
+                        material.shaderBlockID = static_cast<FMaterialShaderBlock>(shaderBlock);
+                        changed = true;
+                    }
+
+                    ImGui::SeparatorText("Principled");
+                    char propLabel[64];
+                    changed |= ImGui::ColorEdit4(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Base Color", material.baseColorTexture),
+                                                 &material.baseColorFactor.x);
+                    changed |= ImHDRColorEdit(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Emissive", material.emissiveTexture),
+                                              reinterpret_cast<float3&>(material.emissiveFactor), material.emissiveFactor.w /* otherwise unused */);
+                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Metallic", material.metallicRoughnessTexture),
+                                                  &material.metallicFactor, 0.0f, 1.0f, "%.3f");
+                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Roughness", material.metallicRoughnessTexture),
+                                                  &material.roughnessFactor, 0.0f, 1.0f, "%.3f");
+                    changed |= ImGui::DragFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Normal Scale", material.normalTexture),
+                                                &material.normalScale, 0.01f, -8.0f, 8.0f, "%.3f");
+                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Transmission", material.transmissionTexture),
+                                                  &material.transmissionFactor, 0.0f, 1.0f, "%.3f");
+                    changed |= ImGui::SliderFloat("IOR", &material.ior, 1.0f, 3.0f, "%.3f");
+                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Specular", material.specularTexture),
+                                                  &material.specularFactor, 0.0f, 1.0f, "%.3f");
+                    changed |= ImGui::DragFloat3(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Specular Color", material.specularColorTexture),
+                                                 &material.specularColorFactor.x, 0.01f, 0.0f, FLT_MAX, "%.3f");
+                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Anisotropy Strength", material.anisotropyTexture),
+                                                  &material.anisotropyStrength, 0.0f, 1.0f, "%.3f");
+                    changed |= ImGui::DragFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Anisotropy Rotation", material.anisotropyTexture),
+                                                &material.anisotropyRotation, 0.01f, -FLT_MAX, FLT_MAX, "%.3f rad");
+
+                    ImGui::SeparatorText("Sheen");
+                    float sheenWeight = std::clamp(std::max({material.sheenColorFactor.x, material.sheenColorFactor.y, material.sheenColorFactor.z}), 0.0f, 1.0f);
+                    float3 sheenTint = sheenWeight > 1e-6f ? material.sheenColorFactor / sheenWeight : float3{1.0f, 1.0f, 1.0f};
+                    bool sheenChanged = false;
+                    sheenChanged |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Weight", material.sheenColorTexture),
+                                                       &sheenWeight, 0.0f, 1.0f, "%.3f");
+                    sheenChanged |= ImGui::ColorEdit3(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Tint", material.sheenColorTexture),
+                                                      &sheenTint.x);
+                    if (sheenChanged)
+                    {
+                        material.sheenColorFactor = std::clamp(sheenWeight, 0.0f, 1.0f) * Math::clamp(sheenTint, float3{0.0f, 0.0f, 0.0f}, float3{1.0f, 1.0f, 1.0f});
+                        changed = true;
+                    }
+                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Roughness", material.sheenRoughnessTexture),
+                                                  &material.sheenRoughnessFactor, 0.0f, 1.0f, "%.3f");
+
+                    ImGui::SeparatorText("Clearcoat");
+                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Clearcoat Weight", material.clearcoatTexture),
+                                                  &material.clearcoatFactor, 0.0f, 1.0f, "%.3f");
+                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Clearcoat Roughness", material.clearcoatRoughnessTexture),
+                                                  &material.clearcoatRoughnessFactor, 0.0f, 1.0f, "%.3f");
+
+                    ImGui::SeparatorText("Hair");
+                    changed |= ImGui::SliderFloat("Beta M", &material.hairBetaM, 0.0f, 1.0f, "%.3f");
+                    changed |= ImGui::SliderFloat("Beta N", &material.hairBetaN, 0.0f, 1.0f, "%.3f");
+                    changed |= ImGui::DragFloat("Alpha", &material.hairAlpha, 0.1f, -20.0f, 20.0f, "%.2f deg");
+
+                    ImGui::SeparatorText("Subsurface");
+                    changed |= ImGui::SliderFloat("Weight", &material.subsurfaceFactor, 0.0f, 1.0f, "%.3f");
+                    changed |= ImGui::ColorEdit3("Color", &material.subsurfaceColor.x);
+                    changed |= ImGui::DragFloat3("Radius", &material.subsurfaceRadius.x, 0.001f, 0.0f, FLT_MAX, "%.4f");
+                    changed |= ImGui::SliderFloat("Scale", &material.subsurfaceScale, 0.0f, 1.0f, "%.4f");
+
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Textures"))
+                {
+                    DrawMaterialTextureSlot("Base Color", material.baseColorTexture);
+                    DrawMaterialTextureSlot("Emissive", material.emissiveTexture);
+                    DrawMaterialTextureSlot("Metallic/Roughness", material.metallicRoughnessTexture);
+                    DrawMaterialTextureSlot("Normal", material.normalTexture, ImGuiImplFoundationImageSamplerNearest);
+                    DrawMaterialTextureSlot("Transmission", material.transmissionTexture);
+                    DrawMaterialTextureSlot("Specular", material.specularTexture);
+                    DrawMaterialTextureSlot("Specular Color", material.specularColorTexture);
+                    DrawMaterialTextureSlot("Anisotropy", material.anisotropyTexture);
+                    DrawMaterialTextureSlot("Sheen Color", material.sheenColorTexture);
+                    DrawMaterialTextureSlot("Sheen Roughness", material.sheenRoughnessTexture);
+                    DrawMaterialTextureSlot("Clearcoat", material.clearcoatTexture);
+                    DrawMaterialTextureSlot("Clearcoat Roughness", material.clearcoatRoughnessTexture);
+
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
             }
-
-            ImGui::SeparatorText("Principled");
-            changed |= ImGui::ColorEdit4("Base Color", &material.baseColorFactor.x);
-            changed |= ImHDRColorEdit("Emissive", reinterpret_cast<float3&>(material.emissiveFactor), material.emissiveFactor.w /* otherwise unused */);
-            changed |= ImGui::SliderFloat("Metallic", &material.metallicFactor, 0.0f, 1.0f, "%.3f");
-            changed |= ImGui::SliderFloat("Roughness", &material.roughnessFactor, 0.0f, 1.0f, "%.3f");
-            changed |= ImGui::DragFloat("Normal Scale", &material.normalScale, 0.01f, -8.0f, 8.0f, "%.3f");
-            changed |= ImGui::SliderFloat("Transmission", &material.transmissionFactor, 0.0f, 1.0f, "%.3f");
-            changed |= ImGui::SliderFloat("IOR", &material.ior, 1.0f, 3.0f, "%.3f");
-            changed |= ImGui::SliderFloat("Specular", &material.specularFactor, 0.0f, 1.0f, "%.3f");
-            changed |= ImGui::DragFloat3("Specular Color", &material.specularColorFactor.x, 0.01f, 0.0f, FLT_MAX, "%.3f");
-            changed |= ImGui::SliderFloat("Anisotropy Strength", &material.anisotropyStrength, 0.0f, 1.0f, "%.3f");
-            changed |= ImGui::DragFloat("Anisotropy Rotation", &material.anisotropyRotation, 0.01f, -FLT_MAX, FLT_MAX, "%.3f rad");
-
-            ImGui::SeparatorText("Sheen");
-            float sheenWeight = std::clamp(std::max({material.sheenColorFactor.x, material.sheenColorFactor.y, material.sheenColorFactor.z}), 0.0f, 1.0f);
-            float3 sheenTint = sheenWeight > 1e-6f ? material.sheenColorFactor / sheenWeight : float3{1.0f, 1.0f, 1.0f};
-            bool sheenChanged = false;
-            sheenChanged |= ImGui::SliderFloat("Sheen Weight", &sheenWeight, 0.0f, 1.0f, "%.3f");
-            sheenChanged |= ImGui::ColorEdit3("Sheen Tint", &sheenTint.x);
-            if (sheenChanged)
-            {
-                material.sheenColorFactor = std::clamp(sheenWeight, 0.0f, 1.0f) * Math::clamp(sheenTint, float3{0.0f, 0.0f, 0.0f}, float3{1.0f, 1.0f, 1.0f});
-                changed = true;
-            }
-            changed |= ImGui::SliderFloat("Sheen Roughness", &material.sheenRoughnessFactor, 0.0f, 1.0f, "%.3f");
-
-            ImGui::SeparatorText("Clearcoat");
-            changed |= ImGui::SliderFloat("Clearcoat Weight", &material.clearcoatFactor, 0.0f, 1.0f, "%.3f");
-            changed |= ImGui::SliderFloat("Clearcoat Roughness", &material.clearcoatRoughnessFactor, 0.0f, 1.0f, "%.3f");
-
-            ImGui::SeparatorText("Hair");
-            changed |= ImGui::SliderFloat("Beta M", &material.hairBetaM, 0.0f, 1.0f, "%.3f");
-            changed |= ImGui::SliderFloat("Beta N", &material.hairBetaN, 0.0f, 1.0f, "%.3f");
-            changed |= ImGui::DragFloat("Alpha", &material.hairAlpha, 0.1f, -20.0f, 20.0f, "%.2f deg");
-
-            ImGui::SeparatorText("Subsurface");
-            changed |= ImGui::SliderFloat("Weight", &material.subsurfaceFactor, 0.0f, 1.0f, "%.3f");
-            changed |= ImGui::ColorEdit3("Color", &material.subsurfaceColor.x);
-            changed |= ImGui::DragFloat3("Radius", &material.subsurfaceRadius.x, 0.001f, 0.0f, FLT_MAX, "%.4f");
-            changed |= ImGui::SliderFloat("Scale", &material.subsurfaceScale, 0.0f, 1.0f, "%.4f");
-
-            ImGui::SeparatorText("Textures");
-            DrawTexturePreview("Base Color", gpuMaterial.baseColorTexture);
-            DrawTexturePreview("Emissive", gpuMaterial.emissiveTexture);
-            DrawTexturePreview("Metallic/Roughness", gpuMaterial.metallicRoughnessTexture);
-            DrawTexturePreview("Normal", gpuMaterial.normalTexture, ImGuiImplFoundationImageSamplerNearest);
-            DrawTexturePreview("Transmission", gpuMaterial.transmissionTexture);
-            DrawTexturePreview("Specular", gpuMaterial.specularTexture);
-            DrawTexturePreview("Specular Color", gpuMaterial.specularColorTexture);
-            DrawTexturePreview("Anisotropy", gpuMaterial.anisotropyTexture);
-            DrawTexturePreview("Sheen Color", gpuMaterial.sheenColorTexture);
-            DrawTexturePreview("Sheen Roughness", gpuMaterial.sheenRoughnessTexture);
-            DrawTexturePreview("Clearcoat", gpuMaterial.clearcoatTexture);
-            DrawTexturePreview("Clearcoat Roughness", gpuMaterial.clearcoatRoughnessTexture);
 
             if (changed)
             {
@@ -2116,7 +2455,10 @@ void FRunningImGui()
             GEditor.state = FERunningEnter;
     }
     ImGui::End();
-    DrawTexturePreviewModal();
+    if (DrawMaterialTexturePickerModal())
+        CommitSceneToGPU(true);
+    if (!IsMaterialTexturePickerOpen())
+        DrawTexturePreviewModal();
     PruneTexturePreviewCache(texturePreviewFrame);
     ImGui::PopStyleColor();
 }
