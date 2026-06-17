@@ -702,6 +702,8 @@ static size_t GPUSceneBudgetBytes(GPUSceneDesc const& desc)
 static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBytes)
 {
     auto estimatedBudget = scene.CalculateGPUSceneDesc(GContext->device->GetCapabilities());
+    // Some more lights to play with
+    estimatedBudget.lightBudget = std::max(estimatedBudget.lightBudget, 1024u);
     LOG(Editor, LogDebug,
         "Estimated GPUScene budget: primitive {} MB, curve AABB {} MB, instances {}, TLAS instances {}, materials {}, lights {}, textures {}",
         estimatedBudget.primitiveBudget / (1u << 20),
