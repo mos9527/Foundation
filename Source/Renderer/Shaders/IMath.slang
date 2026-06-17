@@ -371,7 +371,7 @@ public struct Sobol : ISampler
     }
 }
 
-public static const float EPS_TMin = 1e-2;
+public static const float EPS_TMin = 1e-3f;
 // The safeOffsetRay function shifts a point on a surface so that a ray
 // bouncing off the surface is no longer treated as intersecting the surface
 // from which it originated when tMin = 0.0.
