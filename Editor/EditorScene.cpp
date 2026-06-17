@@ -358,10 +358,10 @@ static Vector<float> CombineRenderTextures(Span<const FTexture> textures, uint32
     CHECK_MSG(!textures.empty(), "Invalid render texture count");    
     for (FTexture const& texture : textures)
     {
-        uint32_t width = 0;
-        uint32_t height = 0;
-        CHECK_MSG(texture.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat, "Invalid render texture format for readback combine. RGBA32F is expected.");
-        CHECK_MSG(width == outWidth && height == outHeight, "Mismatched render readback texture extents");
+        uint32_t width = texture.GetWidth();
+        uint32_t height = texture.GetHeight();
+        CHECK_MSG(texture.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat, "Invalid render texture format for readback combine (got {}). RGBA32F is expected.", texture.GetFormat());
+        CHECK_MSG(width == outWidth && height == outHeight, "Mismatched render readback texture extents (got {}x{}, expected {}x{})", width, height, outWidth, outHeight);
     }
     size_t const pixelCount = static_cast<size_t>(outWidth) * outHeight;
     size_t const componentCount = pixelCount * 4;
@@ -398,6 +398,7 @@ void DoRenderReadback(RendererOutputs const& outputs)
             PushHDR(outputs.specular);
         CHECK_MSG(!hdrTextures.empty(), "Invalid HDR readback outputs");
         // AOVs are provided (without alpha), combine them into one HDR buffer
+        w = hdrTextures[0].GetWidth(), h = hdrTextures[0].GetHeight();
         const Vector<float> combined = CombineRenderTextures(hdrTextures, w, h);
         const char* hdrPath = GEditor.renderTask.outputPath.c_str();
         SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
