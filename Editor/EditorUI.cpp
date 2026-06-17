@@ -1689,7 +1689,7 @@ void FLightingPanel()
             {
                 FLight light{};
                 light.type = FLightType::Point;
-                light.transform.transform = GEditor.camera.center;
+                light.transform.transform = GEditor.camera.position;
                 light.transform.rotation = GEditor.camera.rot;
                 light.color = float3{1.0f, 0.92f, 0.78f};
                 light.power = 10.0f;
