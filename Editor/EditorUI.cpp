@@ -1250,7 +1250,7 @@ void EditorDockSpaceAndMenuBar()
     {
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem("Open Scene..."))
+            if (ImGui::MenuItem("Scene"))
             {
                 nfdu8filteritem_t filters[] = {{"Scene Files", "gltf,glb,fscn"}};
                 nfdopendialogu8args_t args = {0};
@@ -1263,7 +1263,7 @@ void EditorDockSpaceAndMenuBar()
                     NFD_FreePathU8(outPath);
                 }
             }
-            if (ImGui::MenuItem("Open HDR..."))
+            if (ImGui::MenuItem("HDRI"))
             {
                 nfdu8filteritem_t filters[] = {{"HDR Images", "hdr,hdri"}};
                 nfdopendialogu8args_t args = {0};
@@ -1276,10 +1276,14 @@ void EditorDockSpaceAndMenuBar()
                     NFD_FreePathU8(outPath);
                 }
             }
-            ImGui::Separator();
-            if (GContext->gpuScene && GContext->gpuScene->GetInstanceCount() != 0)
+            ImGui::EndMenu();
+        }
+
+        if (GContext->gpuScene && GContext->gpuScene->GetInstanceCount() != 0)
+        {
+            if (ImGui::BeginMenu("Render"))
             {
-                if (ImGui::MenuItem("Render HDR..."))
+                if (ImGui::MenuItem("HDR Image"))
                 {
                     nfdu8filteritem_t filters[] = {{"Radiance HDR", "hdr"}};
                     nfdsavedialogu8args_t args = {0};
@@ -1294,7 +1298,7 @@ void EditorDockSpaceAndMenuBar()
                         NFD_FreePathU8(outPath);
                     }
                 }
-                if (ImGui::MenuItem("Render SDR...", nullptr, false, !GContext->enableHDR))
+                if (ImGui::MenuItem("SDR Image", nullptr, false, !GContext->enableHDR))
                 {
                     nfdu8filteritem_t filters[] = {{"PNG Image", "png"}};
                     nfdsavedialogu8args_t args = {0};
@@ -1311,7 +1315,15 @@ void EditorDockSpaceAndMenuBar()
                 }
                 if (GContext->enableHDR && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                     ImGui::SetTooltip("Disable HDR output before rendering SDR PNGs.");
+                ImGui::EndMenu();
             }
+        }
+
+        static bool openHelpPopup = false;
+        if (ImGui::BeginMenu("Help"))
+        {
+            if (ImGui::MenuItem("Keyboard Shortcuts..."))
+                openHelpPopup = true;
             ImGui::EndMenu();
         }
 
@@ -1358,6 +1370,34 @@ void EditorDockSpaceAndMenuBar()
             ImGui::EndPopup();
         }
 
+        if (openHelpPopup)
+        {
+            ImGui::OpenPopup("Keyboard Shortcuts");
+            openHelpPopup = false;
+        }
+        if (ImGui::BeginPopupModal("Keyboard Shortcuts", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::TextUnformatted("Camera");
+            ImGui::BulletText("Mouse Left drag: Orbit");
+            ImGui::BulletText("Mouse Right drag: Pan");
+            ImGui::BulletText("Mouse Wheel: Zoom");
+            ImGui::BulletText("W / A / S / D: Fly");
+            ImGui::BulletText("Shift: Move faster");
+            ImGui::BulletText("Space: Reset orbit center");
+            ImGui::Separator();
+            ImGui::TextUnformatted("Viewport Gizmo");
+            ImGui::BulletText("G: Translate");
+            ImGui::BulletText("R: Rotate");
+            ImGui::BulletText("Q: Scale");
+            ImGui::BulletText("Ctrl (held): Snap while transforming");
+            ImGui::Separator();
+            ImGui::TextUnformatted("Interface");
+            ImGui::BulletText("Tab: Toggle editor panels");
+            if (ImGui::Button("Close"))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+
         // Right-aligned PT / Raster toggle
         if (GContext->gpuScene && GContext->gpuScene->GetInstanceCount() != 0)
         {
@@ -1369,6 +1409,7 @@ void EditorDockSpaceAndMenuBar()
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - totalW);
 
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
             if (GEditor.rendererMode == ERendererMode::PathTracer)
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
             else
@@ -1424,7 +1465,7 @@ void EditorDockSpaceAndMenuBar()
                 }
             }
             ImGui::PopStyleColor();
-            ImGui::PopStyleVar();
+            ImGui::PopStyleVar(2);
         }
 
         ImGui::EndMainMenuBar();
