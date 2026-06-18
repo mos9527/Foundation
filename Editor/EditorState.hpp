@@ -134,7 +134,8 @@ struct EditorState
     String          matcapExternalPath;
     TextureHandle   matcapHandle{};
 
-    RendererUBO             shaderGlobals;
+    RendererUBO     shaderGlobals;
+    ResourceHandle  postprocessOutput;
     PostprocessUBO  postprocessGlobals;
     FArcballCamera  camera{
         .center = float3{0, 0, 0},

@@ -169,8 +169,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
     /* Meshlet Drawing */
     uint32_t w = std::max(renderExtent.x, 16u);
     uint32_t h = std::max(renderExtent.y, 16u);
-    auto ZBuffer = renderer->CreateResource(
-        "ZBuffer",
+    auto Depth = renderer->CreateResource(
+        "Depth",
         RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::D32SignedFloat});
@@ -350,7 +350,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                     r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                                       {.format = RHIResourceFormat::R32Uint,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureDSV(self, ZBuffer,
+                    r->BindTextureDSV(self, Depth,
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                     r->BindBufferIndirectRead(self, IndirectMeshletDispatch);
@@ -388,13 +388,13 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 // TODO: Single pass currently present higher register pressure than expected (72 VGPRs?)
                 //       Figure out where I messed up.                
                 if (true)
-                    createCSMipGenerationSinglePass(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, ZBuffer,
+                    createCSMipGenerationSinglePass(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, Depth,
                                                     HIZ, RHIResourceFormat::D32SignedFloat,
                                                     RHIResourceFormat::R32SignedFloat, RHITextureAspectFlagBits::Depth,
                                                     RHITextureAspectFlagBits::Color, HIZSampler, HIZMips, 1,
                                                     HIZSamplerDesc.reduction);
                 else
-                    createCSMipGenerationPasses(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, ZBuffer, HIZ,
+                    createCSMipGenerationPasses(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, Depth, HIZ,
                                                 RHIResourceFormat::D32SignedFloat, RHIResourceFormat::R32SignedFloat,
                                                 RHITextureAspectFlagBits::Depth, RHITextureAspectFlagBits::Color,
                                                 HIZSampler, HIZMips);
@@ -473,7 +473,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                                   {.format = RHIResourceFormat::R32Uint,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureDSV(self, ZBuffer,
+                r->BindTextureDSV(self, Depth,
                                   {.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                 r->BindBufferIndirectRead(self, DynamicDrawCmds);
@@ -588,7 +588,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                   RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create()});
                 r->BindTextureSRV(
-                    self, ZBuffer, "depth", RHIPipelineStageBits::ComputeShader,
+                    self, Depth, "depth", RHIPipelineStageBits::ComputeShader,
                     RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                 r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
@@ -615,7 +615,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
         out.specular = SpecularBuffer;
     }
     out.extent = {w, h};
-    out.depth = ZBuffer;
+    out.depth = Depth;
     out.debugOutput = DebugOutput;
     out.instanceID = InstanceIDBuffer;
 }

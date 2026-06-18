@@ -118,7 +118,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
             auto* pickResult = r->DerefResource(sPickResultBuffer).Get<RHIBuffer*>();
             cmd->FillBuffer(pickResult, ~0u);
         });
-    outputs.postprocess = PostprocessBuffer;
+    GEditor.postprocessOutput = PostprocessBuffer;
     auto LUTSampler = renderer->CreateSampler({.addressMode = {
                                                    .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                    .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,

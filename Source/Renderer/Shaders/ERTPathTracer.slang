@@ -31,8 +31,10 @@ StructuredBuffer<Alias> lightAliasTable;
 SamplerState textureSampler;
 StructuredBuffer<uint> sobolMatrices;
 // -- Path radiance accumulation buffers
-RWTexture2D<float4> diffuse;   // Diffuse lobe radiance
-RWTexture2D<float4> specular;  // Specular lobe radiance (incl. transmission)
+RWTexture2D<float4> diffuse;            // Diffuse lobe radiance
+RWTexture2D<float4> specular;           // Specular lobe radiance (incl. transmission)
+RWTexture2D<float> depth;               // NDC depth
+// -- Debug buffers
 RWTexture2D<uint32_t> instanceIDBuffer; // Instance ID map, ~0u = no object (written on primary hit only)
 
 // SER coherence hint layout:
@@ -107,6 +109,7 @@ void ClearPTTile()
 
             diffuse[clearPix] = float4(0);
             specular[clearPix] = float4(0);
+            depth[clearPix] = 0.0f;
             instanceIDBuffer[clearPix] = ~0u;
         }
     }
@@ -917,6 +920,12 @@ float3 GeneratePrimaryRayDirection(float2 pixelSample)
     return normalize(wsPosition.xyz / wsPosition.w - globalParams.camPosition.xyz);
 }
 
+float WorldToNDCDepth(float3 worldPosition)
+{
+    float4 clipPosition = mul(mul(globalParams.proj, globalParams.view), float4(worldPosition, 1.0f));
+    return clipPosition.z / clipPosition.w;
+}
+
 float3 GeneratePrimaryRay<S : ISampler>(uint2 pixel, inout S rng)
 {
     float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2D());
@@ -1390,7 +1399,7 @@ void WritePrimaryInstanceID(uint2 pix, uint32_t instanceID)
     instanceIDBuffer[pix] = instanceID;
 }
 
-void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float frameCount)
+void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float ndcDepth, float frameCount)
 {
     float4 outD = float4(radiance.diffuse, 1.0f);
     float4 outS = float4(radiance.specular, 1.0f);
@@ -1398,10 +1407,12 @@ void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float frameCount)
     if (frameCount == 1) {
         diffuse[pix]  = outD;
         specular[pix] = outS;
+        depth[pix] = ndcDepth;
     } else {
         float invN = 1.0f / frameCount;
         diffuse[pix]  += (outD - diffuse[pix])  * invN;
         specular[pix] += (outS - specular[pix]) * invN;
+        depth[pix] += (ndcDepth - depth[pix]) * invN;
     }
 }
 
@@ -1526,6 +1537,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     bool hasAnyDebugView = (globalParams.dbgViewFlags & supportDebugViewFlags) != 0u;
     CameraRay cameraRay = GenerateCameraRay(pix, rng, hasAnyDebugView);
     RayDesc ray = cameraRay.ray;
+    float chitNDCDepth = 0.0f;
     for (uint bounce = 0; ; bounce++) {
         HitPayload payload;
         #ifdef USE_SER
@@ -1592,6 +1604,10 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             WritePrimaryInstanceID(pix, hit.raw.instance);
             pickingWritten = true;
         }
+
+        if (bounce == 0)
+            chitNDCDepth = WorldToNDCDepth(surface.hit.position);
+
         // Local frame setup
         float3 wo = WorldToShadingLocal(surface.hit, view);
         bool foldSubsurfaceToDiffuse = diffuseBounces > 0;
@@ -1697,7 +1713,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     if (!pickingWritten)
         WritePrimaryInstanceID(pix, ~0u);
 
-    AccumulatePathRadiance(pix, radiance, frameCount);
+    AccumulatePathRadiance(pix, radiance, chitNDCDepth, frameCount);
 }
 // Naive stochastic opacity map implementation
 // TODO: OMM? Maybe one day.

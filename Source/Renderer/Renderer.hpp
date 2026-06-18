@@ -154,9 +154,8 @@ struct RendererOutputs
     ResourceHandle diffuse{kInvalidHandle};
     ResourceHandle specular{kInvalidHandle};
     ResourceHandle depth{kInvalidHandle};
-    ResourceHandle debugOutput{kInvalidHandle}; // Renderer-owned debug visualization (already display-ready)
-    ResourceHandle postprocess{kInvalidHandle}; // Editor-owned composed output
-    ResourceHandle instanceID{kInvalidHandle}; // Per-pixel instance id map (R32_UINT)
+    ResourceHandle instanceID{kInvalidHandle};
+    ResourceHandle debugOutput{kInvalidHandle};    
 };
 
 struct PostprocessUBO

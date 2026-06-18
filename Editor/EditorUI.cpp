@@ -1117,11 +1117,13 @@ static bool IsTexturePreviewFormatSupported(RHIResourceFormat format)
 static void DrawRenderGraphTexturePreviews(Renderer* renderer, Allocator* scratch)
 {
     Vector<Renderer::TexturePreviewStat> previews(scratch);
+    Set<int> visitedViews(scratch);
     renderer->DbgGetTexturePreviews(previews);
-    ImGui::SeparatorText("Texture Views");
+    ImGui::SeparatorText("Textures");
+    ImGui::TextDisabled("NOTE: Only resources that can be sampled and interpolated (i.e. non-depth, ID maps) are shown here.");
     if (previews.empty())
     {
-        ImGui::TextDisabled("No texture views available");
+        ImGui::TextDisabled("No textures available");
         return;
     }
 
@@ -1145,6 +1147,10 @@ static void DrawRenderGraphTexturePreviews(Renderer* renderer, Allocator* scratc
         TexturePreviewImage preview = supported ? GetTexturePreviewImage(renderer, item.viewHandle, item.view,
                                                                          ImGuiImplFoundationImageSamplerLinear)
                                                : TexturePreviewImage{};
+        if (visitedViews.contains(item.resourceHandle) || !supported)
+            continue;
+        visitedViews.insert(item.resourceHandle);
+
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         char previewId[32];

@@ -63,6 +63,12 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
                                                                 RHITextureUsageBits::TransferSource,
                                                             .extent = {w, h, 1},
                                                             .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+    auto Depth = renderer->CreateResource("Depth",
+                                          RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
+                                                             RHITextureUsageBits::SampledImage |
+                                                             RHITextureUsageBits::TransferSource,
+                                                         .extent = {w, h, 1},
+                                                         .format = RHIResourceFormat::R32SignedFloat});
     // Instance ID map: R32_UINT, written every frame on primary hit (no accumulation)
     auto InstanceIDBuffer = renderer->CreateResource(
         "Instance ID Buffer",
@@ -140,12 +146,15 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
         r->BindBufferStorageRead(self, SobolMatricesBuffer, RHIPipelineStageBits::ComputeShader, "sobolMatrices");
         r->BindTextureSampler(self, TexSampler, "textureSampler");
         r->BindTextureSampler(self, LUTSampler, "lutSampler");
-        // Accumulation UAVs (Welford online mean)
+        // Accumulation UAVs
         r->BindTextureUAV(self, Diffuse, "diffuse", RHIPipelineStageBits::RayTracingShader,
                           RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                              .range = RHITextureSubresourceRange::Create()});
         r->BindTextureUAV(self, Specular, "specular", RHIPipelineStageBits::RayTracingShader,
                           RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                             .range = RHITextureSubresourceRange::Create()});
+        r->BindTextureUAV(self, Depth, "depth", RHIPipelineStageBits::RayTracingShader,
+                          RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                              .range = RHITextureSubresourceRange::Create()});
         r->BindTextureUAV(self, InstanceIDBuffer, "instanceIDBuffer", RHIPipelineStageBits::RayTracingShader,
                           RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
@@ -170,5 +179,6 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
     out.extent = {w, h};
     out.diffuse = Diffuse;
     out.specular = Specular;
+    out.depth = Depth;
     out.instanceID = InstanceIDBuffer;
 }

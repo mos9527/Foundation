@@ -407,8 +407,8 @@ void DoRenderReadback(RendererOutputs const& outputs)
             GEditor.shaderGlobals.ptAccumulatedFrames);
     } else
     {
-        CHECK_MSG(outputs.postprocess != kInvalidHandle, "Invalid SDR readback texture");
-        auto sdrTexture = renderer->DerefResource(outputs.postprocess).Get<RHITexture*>();
+        CHECK_MSG(GEditor.postprocessOutput != kInvalidHandle, "Invalid SDR readback texture");
+        auto sdrTexture = renderer->DerefResource(GEditor.postprocessOutput).Get<RHITexture*>();
         const FTexture sdr = ReadbackRenderTexture(sdrTexture, GLOBAL_ALLOC);        
         const char* sdrPath = GEditor.renderTask.outputPath.c_str();
         // Output as is

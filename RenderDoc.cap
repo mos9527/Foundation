@@ -2,10 +2,10 @@
     "rdocCaptureSettings": 1,
     "settings": {
         "autoStart": false,
-        "commandLine": "\"E:\\Custom-Scenes\\ColorCheck.gltf\"",
+        "commandLine": "\"D:\\Custom-Scenes\\SunAngle.gltf\"",
         "environment": [
         ],
-        "executable": "E:\\Foundation\\cmake-build-release\\bin\\Editor.exe",
+        "executable": "D:\\Foundation\\out\\build\\x64-Release\\bin\\Editor.exe",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {
