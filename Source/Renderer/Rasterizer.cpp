@@ -195,7 +195,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
         .mipmap = {.mipmapMode = RHIDeviceSampler::SamplerDesc::Mipmap::Nearest},
         .reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min};
     auto HIZSampler = renderer->CreateSampler(HIZSamplerDesc);
-    auto TexSampler = renderer->CreateSampler({});
+    auto TexSampler = renderer->CreateSampler(MakeTextureSamplerDesc(cfg));
     auto HIZ = renderer->CreateResource(
         "HIZ",
         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,

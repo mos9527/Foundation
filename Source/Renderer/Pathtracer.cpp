@@ -47,7 +47,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
     auto LightBuffer = renderer->CreateResource("Light Buffer", gpu->GetLightBuffer());
     auto LightAliasTableBuffer = renderer->CreateResource("Light Alias Table Buffer", gpu->GetLightAliasTableBuffer());
     auto SobolMatricesBuffer = renderer->CreateResource("Sobol Matrices Buffer", gpu->GetSobolMatricesBuffer());
-    auto TexSampler = renderer->CreateSampler({});
+    auto TexSampler = renderer->CreateSampler(MakeTextureSamplerDesc(cfg));
     uint32_t w = std::max(renderExtent.x, 1u);
     uint32_t h = std::max(renderExtent.y, 1u);
     // AOV buffers

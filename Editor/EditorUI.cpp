@@ -2269,6 +2269,36 @@ void FRunningImGui()
         {
             ImGui::TextDisabled("SDL HDR window properties unavailable");
         }
+        ImGui::SeparatorText("Texture Sampling");
+        if (ImGui::Checkbox("Anisotropic Filtering", &GEditor.rendererConfig.textureAnisoEnable))
+        {
+            changed = true;
+            if (GEditor.rendererMode == ERendererMode::PathTracer)
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+        }
+        {
+            float anisoLevel = GEditor.rendererConfig.textureAnisoLevel;
+            ImGui::BeginDisabled(!GEditor.rendererConfig.textureAnisoEnable);
+            if (ImGui::SliderFloat("Anisotropy Level", &anisoLevel, 1.0f, 16.0f, "%.0f"))
+            {
+                GEditor.rendererConfig.textureAnisoLevel = anisoLevel;
+                changed = true;
+                if (GEditor.rendererMode == ERendererMode::PathTracer)
+                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
+            ImGui::EndDisabled();
+        }
+        {
+            const char* filterItems[] = {"Bilinear", "Trilinear"};
+            int filterMode = GEditor.rendererConfig.textureTrilinear ? 1 : 0;
+            if (ImGui::Combo("Texture Filter", &filterMode, filterItems, 2))
+            {
+                GEditor.rendererConfig.textureTrilinear = filterMode == 1;
+                changed = true;
+                if (GEditor.rendererMode == ERendererMode::PathTracer)
+                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
+        }
         if (GEditor.rendererMode == ERendererMode::PathTracer)
         {
             ImGui::SeparatorText("Stats");

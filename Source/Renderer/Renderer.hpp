@@ -143,7 +143,21 @@ struct RendererConfig
     bool ptShaderExecutionReordering{true};
     bool forceTextureLOD0{false};
     bool energyCompensation{true};
+    bool textureAnisoEnable{true};
+    float textureAnisoLevel{16.0f};
+    bool textureTrilinear{true};
 };
+
+inline RHIDeviceSampler::SamplerDesc MakeTextureSamplerDesc(RendererConfig const& cfg)
+{
+    using SamplerDesc = RHIDeviceSampler::SamplerDesc;
+    using MipmapMode = SamplerDesc::Mipmap::MipmapMode;
+    return {
+        .anisotropy = {.enable = cfg.textureAnisoEnable, .maxLevel = cfg.textureAnisoLevel},
+        .mipmap = {.mipmapMode = cfg.textureTrilinear ? MipmapMode::Linear : MipmapMode::Nearest},
+        .lod = {.max = 16.0f},
+    };
+}
 
 class GPUScene;
 
