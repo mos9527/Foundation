@@ -1663,6 +1663,9 @@ void FHierarchyPanel()
 
 void FLightingPanel()
 {
+    if (GEditor.scrollSelectedLightToTop && GEditor.selectedLight >= 0)
+        ImGui::SetWindowFocus("Lighting");
+
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Lighting"))
     {
