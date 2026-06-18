@@ -7,6 +7,7 @@
 #include <numbers>
 
 #include "EditorState.hpp"
+#include <Fonts/PlexSansIcon.h>
 #include <Renderer/Mesh.hpp>
 #include <Renderer/Animation.hpp>
 #include "Renderer/GPUScene.hpp"
@@ -1388,10 +1389,10 @@ void FAnimationPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Animation"))
     {
-        if (ImModalButton(sAnimation.playing ? "Pause" : "Play", 0, 2))
+        if (ImModalButton(sAnimation.playing ? PSI_PAUSE " Pause" : PSI_PLAY " Play", 0, 2))
             sAnimation.playing = !sAnimation.playing;
         ImGui::SameLine();
-        if (ImModalButton("Restart", 1, 2))
+        if (ImModalButton(PSI_REPEAT " Restart", 1, 2))
         {
             sAnimation.time = 0.0f;
             sAnimation.dirty = true;

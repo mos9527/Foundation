@@ -14,7 +14,7 @@ target_sources(ThirdParty_ImGui PRIVATE
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
     ${imguizmo_SOURCE_DIR}/ImGuizmo.cpp
     "Bindings/ImGui.cpp"
-    
+    "Fonts/PlexSansIcon.c"
 )
 target_include_directories(ThirdParty_ImGui PUBLIC
     ${imgui_SOURCE_DIR}

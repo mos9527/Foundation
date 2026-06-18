@@ -6,6 +6,7 @@
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
 #include <Renderer/Postprocess.hpp>
+#include <Fonts/PlexSansIcon.h>
 #include "EditorState.hpp"
 #include <Renderer/Mesh.hpp>
 
@@ -674,7 +675,7 @@ static void DrawTexturePreviewModal()
     if (preview.textureID == 0 || preview.width == 0 || preview.height == 0)
     {
         ImGui::TextUnformatted("Texture is unavailable.");
-        if (ImGui::Button("Close"))
+        if (ImGui::Button(PSI_REMOVE " Close"))
         {
             ResetTexturePreviewModal();
             ImGui::CloseCurrentPopup();
@@ -687,18 +688,18 @@ static void DrawTexturePreviewModal()
     float textureHeight = static_cast<float>(std::max(1u, preview.height));
     ImGui::Text("%s  (%.0fx%.0f)", state.title, textureWidth, textureHeight);
     ImGui::SameLine();
-    ImGui::TextDisabled("Mouse wheel: zoom at cursor, drag: pan");
+    ImGui::TextDisabled(PSI_ZOOM_IN " Mouse wheel: zoom at cursor, drag: pan");
 
     ImGui::SetNextItemWidth(180.0f);
     ImGui::SliderFloat("Zoom", &state.zoom, 0.05f, 16.0f, "%.2fx");
     ImGui::SameLine();
-    if (ImGui::Button("Reset"))
+        if (ImGui::Button(PSI_REFRESH " Reset"))
     {
         state.zoom = 1.0f;
         state.pan = {};
     }
     ImGui::SameLine();
-    if (ImGui::Button("Close"))
+    if (ImGui::Button(PSI_REMOVE " Close"))
     {
         ResetTexturePreviewModal();
         ImGui::CloseCurrentPopup();
@@ -1020,7 +1021,7 @@ static bool DrawMaterialTexturePickerModal()
     DrawMaterialTexturePickerGrid(state.pendingSelection, state.sampler);
     ImGui::EndChild();
 
-    if (ImGui::Button("OK", ImVec2(120.0f, 0.0f)))
+    if (ImGui::Button(PSI_OK " OK", ImVec2(120.0f, 0.0f)))
     {
         if (*state.targetSlot != state.pendingSelection)
         {
@@ -1031,7 +1032,7 @@ static bool DrawMaterialTexturePickerModal()
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+    if (ImGui::Button(PSI_REMOVE " Cancel", ImVec2(120.0f, 0.0f)))
     {
         ResetMaterialTexturePickerModal();
         ImGui::CloseCurrentPopup();
@@ -1141,7 +1142,7 @@ static void DrawRenderGraphTexturePreviews(Renderer* renderer, Allocator* scratc
     Vector<Renderer::TexturePreviewStat> previews(scratch);
     Set<int> visitedViews(scratch);
     renderer->DbgGetTexturePreviews(previews);
-    ImGui::SeparatorText("Textures");
+    ImGui::SeparatorText(PSI_PICTURE " Textures");
     ImGui::TextDisabled("NOTE: Only resources that can be sampled and interpolated (i.e. non-depth, ID maps) are shown here.");
     if (previews.empty())
     {
@@ -1248,9 +1249,9 @@ void EditorDockSpaceAndMenuBar()
     // Main menu bar
     if (ImGui::BeginMainMenuBar())
     {
-        if (ImGui::BeginMenu("File"))
+        if (ImGui::BeginMenu(PSI_FOLDER_CLOSE " File"))
         {
-            if (ImGui::MenuItem("Scene"))
+            if (ImGui::MenuItem(PSI_FOLDER_OPEN " Scene"))
             {
                 nfdu8filteritem_t filters[] = {{"Scene Files", "gltf,glb,fscn"}};
                 nfdopendialogu8args_t args = {0};
@@ -1263,7 +1264,7 @@ void EditorDockSpaceAndMenuBar()
                     NFD_FreePathU8(outPath);
                 }
             }
-            if (ImGui::MenuItem("HDRI"))
+            if (ImGui::MenuItem(PSI_SUN " HDRI"))
             {
                 nfdu8filteritem_t filters[] = {{"HDR Images", "hdr,hdri"}};
                 nfdopendialogu8args_t args = {0};
@@ -1281,9 +1282,9 @@ void EditorDockSpaceAndMenuBar()
 
         if (GContext->gpuScene && GContext->gpuScene->GetInstanceCount() != 0)
         {
-            if (ImGui::BeginMenu("Render"))
+            if (ImGui::BeginMenu(PSI_CAMERA " Render"))
             {
-                if (ImGui::MenuItem("HDR Image"))
+                if (ImGui::MenuItem(PSI_PICTURE " HDR Image"))
                 {
                     nfdu8filteritem_t filters[] = {{"Radiance HDR", "hdr"}};
                     nfdsavedialogu8args_t args = {0};
@@ -1298,7 +1299,7 @@ void EditorDockSpaceAndMenuBar()
                         NFD_FreePathU8(outPath);
                     }
                 }
-                if (ImGui::MenuItem("SDR Image", nullptr, false, !GContext->enableHDR))
+                if (ImGui::MenuItem(PSI_PICTURE " SDR Image", nullptr, false, !GContext->enableHDR))
                 {
                     nfdu8filteritem_t filters[] = {{"PNG Image", "png"}};
                     nfdsavedialogu8args_t args = {0};
@@ -1320,9 +1321,9 @@ void EditorDockSpaceAndMenuBar()
         }
 
         static bool openHelpPopup = false;
-        if (ImGui::BeginMenu("Help"))
+        if (ImGui::BeginMenu(PSI_QUESTION_SIGN " Help"))
         {
-            if (ImGui::MenuItem("Keyboard Shortcuts..."))
+            if (ImGui::MenuItem(PSI_INFO_SIGN " Keyboard Shortcuts..."))
                 openHelpPopup = true;
             ImGui::EndMenu();
         }
@@ -1350,7 +1351,7 @@ void EditorDockSpaceAndMenuBar()
             {
                 ImGui::TextUnformatted("Raster export captures the next rendered frame.");
             }
-            if (ImGui::Button("Start Render"))
+            if (ImGui::Button(PSI_PLAY " Start Render"))
             {
                 GEditor.renderTask.targetSamples = pathTracerRender ? GEditor.renderTask.samplePopupInput : 1;
                 GEditor.renderTask.renderPaused = false;
@@ -1365,7 +1366,7 @@ void EditorDockSpaceAndMenuBar()
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel"))
+            if (ImGui::Button(PSI_REMOVE " Cancel"))
                 ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
@@ -1377,7 +1378,7 @@ void EditorDockSpaceAndMenuBar()
         }
         if (ImGui::BeginPopupModal("Keyboard Shortcuts", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::TextUnformatted("Camera");
+            ImGui::TextUnformatted(PSI_CAMERA " Camera");
             ImGui::BulletText("Mouse Left drag: Orbit");
             ImGui::BulletText("Mouse Right drag: Pan");
             ImGui::BulletText("Mouse Wheel: Zoom");
@@ -1385,15 +1386,15 @@ void EditorDockSpaceAndMenuBar()
             ImGui::BulletText("Shift: Move faster");
             ImGui::BulletText("Space: Reset orbit center");
             ImGui::Separator();
-            ImGui::TextUnformatted("Viewport Gizmo");
+            ImGui::TextUnformatted(PSI_MOVE " Viewport Gizmo");
             ImGui::BulletText("G: Translate");
             ImGui::BulletText("R: Rotate");
             ImGui::BulletText("Q: Scale");
             ImGui::BulletText("Ctrl (held): Snap while transforming");
             ImGui::Separator();
-            ImGui::TextUnformatted("Interface");
+            ImGui::TextUnformatted(PSI_COG " Interface");
             ImGui::BulletText("Tab: Toggle editor panels");
-            if (ImGui::Button("Close"))
+            if (ImGui::Button(PSI_REMOVE " Close"))
                 ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
@@ -1456,7 +1457,7 @@ void EditorDockSpaceAndMenuBar()
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
             else
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
-            if (ImGui::Button("RASTER"))
+            if (ImGui::Button(" RASTER "))
             {
                 if (GEditor.rendererMode != ERendererMode::Raster)
                 {
@@ -1526,7 +1527,7 @@ void FHierarchyPanel()
             bool changed = false;
             if (ImGui::BeginTabBar("MaterialTabs"))
             {
-                if (ImGui::BeginTabItem("Properties"))
+                if (ImGui::BeginTabItem(PSI_ADJUST " Properties"))
                 {
                     ImGui::TextDisabled("NOTE: Properties with an asterisk (*) are texture-mapped.");
                     ImGui::Separator();
@@ -1598,7 +1599,7 @@ void FHierarchyPanel()
 
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Textures"))
+                if (ImGui::BeginTabItem(PSI_PICTURE " Textures"))
                 {
                     DrawMaterialTextureSlot("Base Color", material.baseColorTexture);
                     DrawMaterialTextureSlot("Emissive", material.emissiveTexture);
@@ -1654,20 +1655,20 @@ void FHierarchyPanel()
 
             // -- Gizmo controls --
             ImGui::Separator();
-            if (ImGui::RadioButton("Translate (G)", GEditor.gizmo.op == ImGuizmo::TRANSLATE))
+            if (ImGui::RadioButton(PSI_MOVE " Translate (G)", GEditor.gizmo.op == ImGuizmo::TRANSLATE))
                 GEditor.gizmo.op = ImGuizmo::TRANSLATE;
             ImGui::SameLine();
-            if (ImGui::RadioButton("Rotate (R)", GEditor.gizmo.op == ImGuizmo::ROTATE))
+            if (ImGui::RadioButton(PSI_REFRESH " Rotate (R)", GEditor.gizmo.op == ImGuizmo::ROTATE))
                 GEditor.gizmo.op = ImGuizmo::ROTATE;
             ImGui::SameLine();
-            if (ImGui::RadioButton("Scale (Q)", GEditor.gizmo.op == ImGuizmo::SCALE))
+            if (ImGui::RadioButton(PSI_RESIZE_FULL " Scale (Q)", GEditor.gizmo.op == ImGuizmo::SCALE))
                 GEditor.gizmo.op = ImGuizmo::SCALE;
             if (GEditor.gizmo.op != ImGuizmo::SCALE)
             {
-                if (ImGui::RadioButton("Local", GEditor.gizmo.mode == ImGuizmo::LOCAL))
+                if (ImGui::RadioButton(PSI_MAP_MARKER " Local", GEditor.gizmo.mode == ImGuizmo::LOCAL))
                     GEditor.gizmo.mode = ImGuizmo::LOCAL;
                 ImGui::SameLine();
-                if (ImGui::RadioButton("World", GEditor.gizmo.mode == ImGuizmo::WORLD))
+                if (ImGui::RadioButton(PSI_GLOBE " World", GEditor.gizmo.mode == ImGuizmo::WORLD))
                     GEditor.gizmo.mode = ImGuizmo::WORLD;
             }
 
@@ -1685,7 +1686,7 @@ void FHierarchyPanel()
             ImGui::Text("Resource Index: %u", inst.resourceIndex);
             ImGui::Separator();
             // Invalidates inst/pi references; must be the last use this frame.
-            if (ImGui::Button("Delete Instance"))
+            if (ImGui::Button(PSI_TRASH " Delete Instance"))
                 DeleteSelectedInstance();
         }
         else
@@ -1718,7 +1719,7 @@ void FLightingPanel()
         static constexpr int kLightTypeCount = 5;
 
         // ---- Scene Lights ----
-        if (ImGui::CollapsingHeader("Scene Lights", ImGuiTreeNodeFlags_DefaultOpen))
+        if (ImGui::CollapsingHeader(PSI_SUN " Scene Lights", ImGuiTreeNodeFlags_DefaultOpen))
         {
             GEditor.Scene().EnsureEnvironmentLight();
             auto& lights = GEditor.Scene().mTables.lights;
@@ -1730,7 +1731,7 @@ void FLightingPanel()
                 sceneLightImportanceSum += std::max(0.0f, GContext->gpuScene->GetLight(lightIndex).importance);
             if (!canAddLight)
                 ImGui::BeginDisabled();
-            if (ImModalButton(canAddLight ? "Add Light" : "(Lights Full)"))
+            if (ImModalButton(canAddLight ? PSI_PLUS_SIGN " Add Light" : "(Lights Full)"))
             {
                 FLight light{};
                 light.type = FLightType::Point;
@@ -1760,7 +1761,7 @@ void FLightingPanel()
                 ImGui::PushID(i);
 
                 char header[64];
-                snprintf(header, sizeof(header), "Light %d (%s)", i, LightTypeName(light.type));
+                snprintf(header, sizeof(header), PSI_BOLT " Light %d (%s)", i, LightTypeName(light.type));
                 bool isLightSelected = (GEditor.selectedLight == i);
                 ImGuiTreeNodeFlags headerFlags = ImGuiTreeNodeFlags_DefaultOpen;
                 if (isLightSelected)
@@ -1836,7 +1837,7 @@ void FLightingPanel()
                     {
                         ImGui::Separator();
                         bool hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvMap();
-                        ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
+                        ImGui::Text(hasEnv ? PSI_OK " HDRI Loaded" : PSI_WARNING_SIGN " No HDRI");
                         if (hasEnv)
                         {
                             DrawTexturePreview("HDRI", GContext->gpuScene->GetEnvMapIndexOrDefault());
@@ -1849,7 +1850,7 @@ void FLightingPanel()
                                 lightChanged = true;
                             }
                         }
-                        ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
+                        ImGui::TextDisabled(PSI_UPLOAD " Drag & drop .hdr/.hdri to load");
                     }
 
                     // Direction (Euler angles) for lights with orientation
@@ -1950,7 +1951,7 @@ void FLightingPanel()
 
                     if (isEnvironment)
                         ImGui::BeginDisabled();
-                    bool removeLight = ImGui::Button("Remove Light");
+                    bool removeLight = ImGui::Button(PSI_TRASH " Remove Light");
                     if (isEnvironment)
                     {
                         ImGui::EndDisabled();
@@ -2056,7 +2057,7 @@ void FRunningImGui()
         }
         else
         {
-            if (ImGui::TreeNodeEx("Device", ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::TreeNodeEx(PSI_SIGNAL " Device", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 {
                     size_t used, budget;
@@ -2099,7 +2100,7 @@ void FRunningImGui()
                 }
                 ImGui::TreePop();
             }
-            if (ImGui::TreeNodeEx("GPU Scene", ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::TreeNodeEx(PSI_SITEMAP " GPU Scene", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 if (GContext->gpuScene)
                 {
@@ -2111,7 +2112,7 @@ void FRunningImGui()
                 }
                 ImGui::TreePop();
             }
-            if (ImGui::TreeNodeEx("Render Graph", ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::TreeNodeEx(PSI_PICTURE " Render Graph", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 if (GContext->renderer)
                 {
@@ -2124,7 +2125,7 @@ void FRunningImGui()
                 }
                 ImGui::TreePop();
             }
-            if (ImGui::TreeNodeEx("Frametime", ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::TreeNodeEx(PSI_TIME " Frametime", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 Allocator* frameScratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
                 static constexpr size_t kHistogramSamples = 5e3, kFrametimeSamples = 3e2;
@@ -2145,9 +2146,9 @@ void FRunningImGui()
                     for (auto& hist : histograms)
                         hist.clear();
                 };
-                if (ImModalButton(pause ? "Resume" : "Pause", 0, 2))
+                if (ImModalButton(pause ? PSI_PLAY " Resume" : PSI_PAUSE " Pause", 0, 2))
                     pause = !pause;
-                if (ImModalButton("Flush", 1, 2))
+                if (ImModalButton(PSI_REFRESH " Flush", 1, 2))
                     ClearHistogramData();
                 if (!pause)
                 {
@@ -2229,7 +2230,7 @@ void FRunningImGui()
     if (ImGui::Begin("Rendering"))
     {
         bool changed = false;
-        ImGui::SeparatorText("Display");
+        ImGui::SeparatorText(PSI_EYE_OPEN " Display");
         bool viewLUTChanged = false;
         auto viewLUTCombo = [](const char* label, int& index, String& externalPath,
                                Postprocess::ViewLUTDomain domain)
@@ -2306,7 +2307,7 @@ void FRunningImGui()
         {
             ImGui::TextDisabled("SDL HDR window properties unavailable");
         }
-        ImGui::SeparatorText("Texture Sampling");
+        ImGui::SeparatorText(PSI_PICTURE " Texture Sampling");
         if (ImGui::Checkbox("Anisotropic Filtering", &GEditor.rendererConfig.textureAnisoEnable))
         {
             changed = true;
@@ -2338,7 +2339,7 @@ void FRunningImGui()
         }
         if (GEditor.rendererMode == ERendererMode::PathTracer)
         {
-            ImGui::SeparatorText("Stats");
+            ImGui::SeparatorText(PSI_SIGNAL " Stats");
             // Throughput: measure delta on the *frame* (dispatch) counter every ~250ms,
             // then derive samples/sec from frames/sec via the spp/tile ratio.
             //   frames  = ptAccumulatedFrames / PTSamplesPerDispatch   (dispatch count)
@@ -2389,8 +2390,8 @@ void FRunningImGui()
                     GEditor.renderTask.renderPaused = false;
                 }
             }
-            ImGui::SeparatorText("Path Tracer");
-            if (ImModalButton("Fast", 0, 3))
+            ImGui::SeparatorText(PSI_BOLT " Path Tracer");
+            if (ImModalButton(PSI_BOLT " Fast", 0, 3))
             {
                 GEditor.shaderGlobals.ptMaxBouncesDiffuse = 4;
                 GEditor.shaderGlobals.ptMaxBouncesSpecular = 4;
@@ -2398,7 +2399,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 1.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
-            if (ImModalButton("Full", 1, 3))
+            if (ImModalButton(PSI_FIRE " Full", 1, 3))
             {
                 GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
                 GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
@@ -2406,7 +2407,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptFireflyClamp = 2.0f;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
-            if (ImModalButton("Über", 2, 3))
+            if (ImModalButton(PSI_BEAKER " Über", 2, 3))
             {
                 GEditor.shaderGlobals.ptMaxBouncesDiffuse = 100;
                 GEditor.shaderGlobals.ptMaxBouncesSpecular = 100;
@@ -2414,7 +2415,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptFireflyClamp = 100.0f;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
-            ImGui::SeparatorText("Performance");
+            ImGui::SeparatorText(PSI_DASHBOARD " Performance");
             const bool serSupported = GContext->device->GetCapabilities().shaderExecutionReordering;
             bool serEnabled = serSupported && GEditor.rendererConfig.ptShaderExecutionReordering;
             ImGui::BeginDisabled(!serSupported);
@@ -2436,11 +2437,11 @@ void FRunningImGui()
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
-            ImGui::SeparatorText("Ray Bounce");
+            ImGui::SeparatorText(PSI_RANDOM " Ray Bounce");
             ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesDiffuse), 0, 64);
             ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);
             ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
-            ImGui::SeparatorText("Sampling");
+            ImGui::SeparatorText(PSI_RANDOM " Sampling");
             ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
             static int ptSPPIndex = 3; // 1/25 SPP
             ptSPPIndex = PTSPPOptionIndex(GEditor.shaderGlobals);
@@ -2463,27 +2464,27 @@ void FRunningImGui()
         }
         if (GEditor.rendererMode == ERendererMode::Raster)
         {
-            ImGui::SeparatorText("Rasterizer");
+            ImGui::SeparatorText(PSI_EYE_OPEN " Rasterizer");
             static float lodLogThreshold = 3;
             ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
             GEditor.shaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
-            ImGui::SeparatorText("Performance");
+            ImGui::SeparatorText(PSI_DASHBOARD " Performance");
             changed |= ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0);
             {
                 const char* items[] = {"Overdraw", "Meshlet", "Material ID", "Matcap"};
                 const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID, kViewMatcap};
-                ImGui::SeparatorText("Raster Debug View");
+                ImGui::SeparatorText(PSI_EYE_OPEN " Raster Debug View");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
             }
             {
                 const char* items[] = {"RT Shadows"};
                 const unsigned values[] = {kEnableRasterRTShadows};
-                ImGui::SeparatorText("Options");
+                ImGui::SeparatorText(PSI_COG " Options");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values);
             }
             if ((GEditor.rendererConfig.viewFlags & kViewMatcap) != 0u)
             {
-                ImGui::SeparatorText("Matcap");
+                ImGui::SeparatorText(PSI_TINT " Matcap");
                 if (GEditor.matcapIndex < 0 || GEditor.matcapIndex > kMatcapCount ||
                     (GEditor.matcapIndex == kMatcapCount && GEditor.matcapExternalPath.empty()))
                 {
@@ -2532,7 +2533,7 @@ void FRunningImGui()
             {
                 const char* items[] = {"Frustum", "Occlusion"};
                 const unsigned values[] = {kCullFrustum, kCullOcclusion};
-                ImGui::SeparatorText("Culling");
+                ImGui::SeparatorText(PSI_FILTER " Culling");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.cullFlags, items, values);
             }
         }
@@ -2541,7 +2542,7 @@ void FRunningImGui()
             {
                 const char* items[] = {"Diffuse Buffer", "Specular Buffer"};
                 const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
-                ImGui::SeparatorText("AOV View");
+                ImGui::SeparatorText(PSI_EYE_OPEN " AOV View");
                 if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
                 {
                     GEditor.rendererConfig.viewFlags &= ~kViewTextureLOD;
@@ -2552,13 +2553,13 @@ void FRunningImGui()
         {
             const char* items[] = {"BaseColor", "Normal", "Position", "Texture LOD"};
             const unsigned values[] = {kViewBaseColor, kViewNormal, kViewPosition, kViewTextureLOD};
-            ImGui::SeparatorText("Debug View");
+            ImGui::SeparatorText(PSI_BUG " Debug View");
             changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
         }
         {
             const char* items[] = {"White Base Color"};
             const unsigned values[] = {kMaterialDbgWhiteBaseColor};
-            ImGui::SeparatorText("Material Debug");
+            ImGui::SeparatorText(PSI_ADJUST " Material Debug");
             changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.materialFlags, items, values, true /* solo */);
         }
         if (changed)
@@ -2612,7 +2613,7 @@ void FRendering(RendererOutputs const& outputs)
     // Cancel button at the bottom-right corner
     {
         auto& io = ImGui::GetIO();
-        const char* cancelLabel = "  Cancel  ";
+        const char* cancelLabel = PSI_REMOVE " Cancel";
         ImVec2 textSize = ImGui::CalcTextSize(cancelLabel);
         float btnW = textSize.x + ImGui::GetStyle().FramePadding.x * 2.0f;
         float btnH = textSize.y + ImGui::GetStyle().FramePadding.y * 2.0f;
