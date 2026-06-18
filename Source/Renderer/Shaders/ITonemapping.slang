@@ -41,6 +41,7 @@ public interface IOOTF {
 
 public interface IEOTF {
     float3 Inverse(TonemapInfo info, float3 L);
+    float3 Forward(TonemapInfo info, float3 Ep);
 }
 
 public interface ITonemapper {
@@ -64,6 +65,14 @@ public struct SrgbEOTF : IEOTF {
         Ep = lerp(12.92f * L, Ep, sel);
         return Ep;
     }
+    // sRGB->Linear for convience
+    float3 Forward(TonemapInfo info, float3 Ep) {
+        Ep = saturate(Ep);
+        float3 L = pow((Ep + 0.055f) / 1.055f, 2.4f);
+        float3 sel = float3(Ep > float3(0.04045f));
+        L = lerp(Ep / 12.92f, L, sel);
+        return L;
+    }
 }
 
 // Reference PQ OOTF
@@ -75,7 +84,7 @@ public struct PqOOTF : IOOTF {
         // E' = G709[E], E=x, post exposure, in [0,1]
         // Note that when E=1.0
         // E' = 6.81, Fd = 100 * (6.81)^2.4 = 9989.714 Nits
-        // This is _NOT_ our definition of E, where x=1.0 maps to  paperwhite brightness instead
+        // This is _NOT_ our definition of E, where x=1.0 maps to paperwhite brightness instead
         // Solve for Fd = PaperWhite -> E' = 1 -> pow(59.5208x', 0.45) = 1.0
         // So div first to linearly map x' to x
         x = x / 59.5208f;
@@ -106,6 +115,8 @@ public struct PqEOTF : IEOTF {
         
         return pq;
     }
+    // NOT IMPLEMENTED
+    float3 Forward(TonemapInfo info, float3 Ep) { return 0; }
 }
 
 public struct Tonemapper<OO, EO> : ITonemapper

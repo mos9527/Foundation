@@ -914,6 +914,10 @@ namespace Foundation::RenderCore
          */
         void SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain);
         /**
+        * @brief Returns the currently used @ref RHISwapchain object.
+        */
+        RHISwapchain* GetSwapchain() const { return mSwapchain.Get(); }
+        /**
          * @brief Blocks until the most recently submitted frame has finished executing on the GPU.
          *
          * This waits on the graphics / compute fences associated with the previous frame

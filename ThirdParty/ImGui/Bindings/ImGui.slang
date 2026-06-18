@@ -1,3 +1,5 @@
+import ITonemapping;
+
 struct Vertex
 {
     float4 pos : SV_Position;
@@ -37,6 +39,13 @@ Vertex vertMain(
     return output;
 }
 
+// Tonemap ImGui outputs to these colorspaces
+// On Blending:
+//  - Our output is always
+static const int kFlagsOutputSrgb = 1 << 0;
+static const int kFlagsOutputSt2084 = 1 << 1;
+[[SpecializationConstant]] int flags;
+
 [shader("fragment")]
 float4 fragMain(Vertex vtx) : SV_Target
 {
@@ -49,5 +58,19 @@ float4 fragMain(Vertex vtx) : SV_Target
             sample = textures[vtx.textureId].Sample(nearSampler, vtx.uv);
             break;
     }
-    return vtx.color * sample;
+    sample = vtx.color * sample;
+    TonemapInfo info;
+    if ((flags & kFlagsOutputSt2084) != 0) {
+        PqOOTF ootf;
+        PqEOTF eotf;
+        // 1.0 -> Paperwhite
+        // We take linear input. So invert (gamma-linear) first.
+        SrgbEOTF srgb;
+        sample.rgb = srgb.Forward(info, sample.rgb);
+        float3 L = ootf.Transfer(info, sample.rgb);
+        return float4(eotf.Inverse(info, L), sample.a);
+    } else {
+        // Output is already gamma-encoded.
+        return sample;
+    }
 }

@@ -111,6 +111,23 @@ namespace Foundation::RHI {
         ENUM_NAME(Bc7Srgb)
     ENUM_NAME_CONV_END()
 
+    constexpr bool IsFormatSRGB(RHIResourceFormat format)
+    {
+        switch (format)
+        {
+        case RHIResourceFormat::R8G8B8A8Srgb:
+        case RHIResourceFormat::B8G8R8A8Srgb:
+        case RHIResourceFormat::Bc1RgbSrgb:
+        case RHIResourceFormat::Bc1RgbaSrgb:
+        case RHIResourceFormat::Bc2Srgb:
+        case RHIResourceFormat::Bc3Srgb:
+        case RHIResourceFormat::Bc7Srgb:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     enum class RHIColorSpace {
         SrgbNonLinear,
         ExtendedSrgbLinear,

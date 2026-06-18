@@ -42,7 +42,7 @@ function(slangc_compile TARGET)
         list(APPEND SLANGC_ARGS -capability ${CAPABILITY})
     endforeach()
     foreach(INCLUDE_DIR ${ARG_INCLUDE_DIRS})
-        list(APPEND SLANGC_ARGS -I"${INCLUDE_DIR}")
+        list(APPEND SLANGC_ARGS -I "${INCLUDE_DIR}")
     endforeach()
 
     add_custom_command(

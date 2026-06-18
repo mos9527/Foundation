@@ -18,8 +18,6 @@ using namespace RenderCore;
 constexpr RHISurfaceFormat kFormatPreferenceList[] = {
     {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
     {RHIResourceFormat::B8G8R8A8Unrom, RHIColorSpace::SrgbNonLinear},
-    {RHIResourceFormat::R8G8B8A8Srgb, RHIColorSpace::SrgbNonLinear},
-    {RHIResourceFormat::B8G8R8A8Srgb, RHIColorSpace::SrgbNonLinear}
 };
 
 constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {

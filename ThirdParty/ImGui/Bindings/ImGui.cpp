@@ -198,8 +198,27 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
     r->BindBufferCopyDst(self, vtxBuffer);
     r->BindBufferCopyDst(self, idxBuffer);
     r->BindPushConstant(self, RHIShaderStageBits::Vertex, 0, sizeof(PushConstants));
-    r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("Data/Shaders/ImGui.spv"));
-    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/ImGui.spv"));
+    // Specialization constant
+    uint flags{};
+    // We can output to these colorspaces:
+    const int kFlagsOutputSrgb = 1 << 0;
+    const int kFlagsOutputSt2084 = 1 << 1;
+    // As for formats, disallow sRGB backbuffers since these doesn't make scene for UI elements *and* we'd always tonemap to sRGB space
+    // (output in SDR therefore *requires* UNORM backbuffers)
+    // HDR-wise we'd only support ST2084/PQ and it happily takes RGB10A2 formats.
+    CHECK_MSG(!IsFormatSRGB(r->GetSwapchain()->mDesc.format), "sRGB backbuffers are not supported by ImGui. Please use UNORM formats instead.");
+    switch (r->GetSwapchain()->mDesc.colorSpace)
+    {       
+    case RHIColorSpace::Hdr10St2084:
+        flags |= kFlagsOutputSt2084;
+        break;
+    case RHIColorSpace::SrgbNonLinear:
+    default:
+        flags |= kFlagsOutputSrgb;
+        break;
+    }
+    r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("Data/Shaders/ImGui.spv"), AsBytes(AsSpan(flags)));
+    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/ImGui.spv"), AsBytes(AsSpan(flags)));
     r->BindDescriptorSet(self, "textures", gImGuiTexturePool->GetDescriptorSetLayout());
     // We have fixed samplers for ImGui - quite enough for UI elements
     r->BindTextureSampler(self, linSampler, "linSampler");
@@ -213,7 +232,7 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
              {.location = 2, .offset = offsetof(ImDrawVert, col), .format = RHIResourceFormat::R8G8B8A8Unorm},
          }}});
     // No culling
-    r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});
+    r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});    
 }
 void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clear, RHICommandList* cmd,
                                          ResourceHandle vtxBuffer, ResourceHandle idxBuffer)
