@@ -38,7 +38,10 @@ struct RenderWorkflow
 // Gizmo UI state (matches ImGuizmo::OPERATION and ImGuizmo::MODE)
 struct GizmoState
 {
-    int op, mode;
+    int op{7 /* TRANSLATE */}, mode{0 /* LOCAL */};
+    float translateSnap{1.0f};
+    float rotateSnap{15.0f};
+    float scaleSnap{0.1f};
 };
 
 struct CameraApertureState

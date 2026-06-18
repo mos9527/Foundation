@@ -11,8 +11,9 @@ struct GizmoUBO
     float3 camUp;
     float _pad1;
     float iconWorldHalfExtent;
-    float _pad2;
-    float2 _pad3;
+    float distanceFadeStart;
+    float distanceFadeEnd;
+    float3 camPosition;
 };
 uniform GizmoUBO globalParams;
 
@@ -23,6 +24,7 @@ struct VertexOutput
     float4 svPosition : SV_Position;
     float4 color : COLOR0;
     float viewDepth : TEXCOORD0;
+    float3 worldPos : TEXCOORD1;
 };
 
 // Reverse-Z infinite perspective: ndcDepth = zNear / viewDepth, viewDepth = -view.z > 0.
@@ -39,7 +41,15 @@ VertexOutput vertMain(float3 position : POSITION, float4 color : COLOR0)
     output.color = color;
     float4 viewPos = mul(globalParams.view, float4(position, 1.0f));
     output.viewDepth = -viewPos.z;
+    output.worldPos = position;
     return output;
+}
+
+float DistanceFade(float3 worldPos)
+{
+    float dist = length(worldPos - globalParams.camPosition);
+    float t = 1.0f - smoothstep(globalParams.distanceFadeStart, globalParams.distanceFadeEnd, dist);
+    return lerp(0.15f, 1.0f, t);
 }
 
 [shader("fragment")]
@@ -57,6 +67,7 @@ float4 fragMain(VertexOutput input) : SV_TARGET
             visibility = 1.0f - smoothstep(0.0f, globalParams.fadeRange, delta);
     }
 
-    float alpha = input.color.a * lerp(globalParams.occludedAlpha, 1.0f, visibility);
+    float distanceFade = DistanceFade(input.worldPos);
+    float alpha = input.color.a * distanceFade * lerp(globalParams.occludedAlpha, 1.0f, visibility);
     return float4(input.color.rgb, alpha);
 }

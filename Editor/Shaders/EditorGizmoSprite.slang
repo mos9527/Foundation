@@ -13,8 +13,9 @@ struct GizmoUBO
     float3 camUp;
     float _pad1;
     float iconWorldHalfExtent;
-    float _pad2;
-    float2 _pad3;
+    float distanceFadeStart;
+    float distanceFadeEnd;
+    float3 camPosition;
 };
 uniform GizmoUBO globalParams;
 

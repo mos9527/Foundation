@@ -10,6 +10,28 @@
 #include <Renderer/Mesh.hpp>
 
 static void DrawLightGizmos();
+static void DrawInstanceGizmos();
+
+static float const* GizmoSnapForOperation(ImGuizmo::OPERATION op)
+{
+    if (!ImGui::GetIO().KeyCtrl)
+        return nullptr;
+
+    static float snap[3]{};
+    if ((op & ImGuizmo::TRANSLATE) != 0)
+    {
+        snap[0] = GEditor.gizmo.translateSnap;
+        snap[1] = GEditor.gizmo.translateSnap;
+        snap[2] = GEditor.gizmo.translateSnap;
+    }
+    else if ((op & ImGuizmo::ROTATE) != 0)
+        snap[0] = GEditor.gizmo.rotateSnap;
+    else if ((op & ImGuizmo::SCALE) != 0)
+        snap[0] = GEditor.gizmo.scaleSnap;
+    else
+        return nullptr;
+    return snap;
+}
 
 struct PTSPPOption
 {
@@ -1608,33 +1630,6 @@ void FHierarchyPanel()
                     GEditor.gizmo.mode = ImGuizmo::WORLD;
             }
 
-            // Build model matrix (TRS -> mat4)
-            mat4 modelMatrix = translate(mat4(1.0f), vec3(pi.transform.transform)) * mat4_cast(pi.transform.rotation) *
-                glm::scale(mat4(1.0f), vec3(pi.transform.scale));
-
-            // ImGuizmo rendering — only when no light is selected (mutual exclusion)
-            if (GEditor.selectedLight < 0 && GEditor.viewport.HasRect())
-            {
-                ImGuizmo::BeginFrame();
-                ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
-                ImVec2 viewportSize = GEditor.viewport.Size();
-                ImGuizmo::SetRect(GEditor.viewport.contentMin.x, GEditor.viewport.contentMin.y,
-                                  viewportSize.x, viewportSize.y);
-                // Note: ImGuizmo uses column-major float[16], matching GLM mat4 memory layout
-                if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0], static_cast<ImGuizmo::OPERATION>(GEditor.gizmo.op), static_cast<ImGuizmo::MODE>(GEditor.gizmo.mode),
-                                         &modelMatrix[0][0]))
-                {
-                    // Decompose back to TRS
-                    float3 newTranslation;
-                    quat newRotation;
-                    float3 newScale;
-                    Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
-                    pi.transform.transform = newTranslation;
-                    pi.transform.rotation = newRotation;
-                    pi.transform.scale = newScale;
-                    changed = true;
-                }
-            }
             if (changed)
             {
                 // The transform edit lives on the scene instance; recommit refills the
@@ -2188,6 +2183,7 @@ void FRunningImGui()
     ImGui::PopStyleColor();
     FLightingPanel();
     FAnimationPanel();
+    DrawInstanceGizmos();
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Rendering"))
     {
@@ -2615,6 +2611,42 @@ void FRendering(RendererOutputs const& outputs)
     }
 }
 
+static void DrawInstanceGizmos()
+{
+    if (!IsSelectedInstanceValid())
+        return;
+    if (GEditor.selectedLight >= 0)
+        return;
+    if (!GEditor.viewport.HasRect())
+        return;
+
+    auto& pi = SelectedSceneInstance();
+    mat4 modelMatrix = translate(mat4(1.0f), vec3(pi.transform.transform)) * mat4_cast(pi.transform.rotation) *
+        glm::scale(mat4(1.0f), vec3(pi.transform.scale));
+
+    ImVec2 const displaySize = GEditor.viewport.Size();
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+
+    ImGuizmo::BeginFrame();
+    ImGuizmo::SetDrawlist(drawList);
+    ImGuizmo::SetRect(GEditor.viewport.contentMin.x, GEditor.viewport.contentMin.y, displaySize.x, displaySize.y);
+
+    if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0],
+                             static_cast<ImGuizmo::OPERATION>(GEditor.gizmo.op),
+                             static_cast<ImGuizmo::MODE>(GEditor.gizmo.mode), &modelMatrix[0][0], nullptr,
+                             GizmoSnapForOperation(static_cast<ImGuizmo::OPERATION>(GEditor.gizmo.op))))
+    {
+        float3 newTranslation;
+        quat newRotation;
+        float3 newScale;
+        Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
+        pi.transform.transform = newTranslation;
+        pi.transform.rotation = newRotation;
+        pi.transform.scale = newScale;
+        CommitSceneToGPU(true);
+    }
+}
+
 static void DrawLightGizmos()
 {
     if (!GEditor.HasScene())
@@ -2646,7 +2678,8 @@ static void DrawLightGizmos()
         op = ImGuizmo::TRANSLATE;
 
     if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0],
-                             op, static_cast<ImGuizmo::MODE>(GEditor.gizmo.mode), &modelMatrix[0][0]))
+                             op, static_cast<ImGuizmo::MODE>(GEditor.gizmo.mode), &modelMatrix[0][0], nullptr,
+                             GizmoSnapForOperation(op)))
     {
         float3 newTranslation;
         quat newRotation;

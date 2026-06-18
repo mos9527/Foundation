@@ -18,8 +18,11 @@ using Foundation::Core::PathsResolve;
 namespace
 {
 static constexpr int kCircleSegments = 32;
-static constexpr float kIconWorldHalfExtent = 0.25f;
+static constexpr float kIconWorldHalfExtent = 1.0f;
 static constexpr size_t kMaxIconBindings = 16u;
+static constexpr float kGridCellSize = 1.0f;
+static constexpr int kGridMajorEvery = 10;
+static constexpr float kGridHalfExtent = 100.0f;
 
 struct GizmoVertex
 {
@@ -49,8 +52,9 @@ struct GizmoUBO
     float3 camUp{0.0f, 1.0f, 0.0f};
     float _pad1{};
     float iconWorldHalfExtent{kIconWorldHalfExtent};
-    float _pad2{};
-    float2 _pad3{};
+    float distanceFadeStart{25.0f};
+    float distanceFadeEnd{120.0f};
+    float3 camPosition{};
 };
 
 struct LightIconBindings
@@ -188,6 +192,42 @@ static void AppendLine(Vector<GizmoVertex>& vertices, float3 a, float3 b, float4
 {
     vertices.push_back({a, color});
     vertices.push_back({b, color});
+}
+
+static float4 GridLineColor(float worldCoord, float4 axisColor, float4 majorColor, float4 minorColor)
+{
+    if (std::abs(worldCoord) < kGridCellSize * 0.5f)
+        return axisColor;
+
+    int const lineIndex = static_cast<int>(std::round(worldCoord / kGridCellSize));
+    if (lineIndex % kGridMajorEvery == 0)
+        return majorColor;
+    return minorColor;
+}
+
+static void AppendXZGrid(Vector<GizmoVertex>& vertices, float3 origin)
+{
+    int const cellCount = static_cast<int>(kGridHalfExtent / kGridCellSize);
+    float const originX = std::floor(origin.x / kGridCellSize) * kGridCellSize;
+    float const originZ = std::floor(origin.z / kGridCellSize) * kGridCellSize;
+
+    float4 const minorColor{0.55f, 0.55f, 0.55f, 0.2f};
+    float4 const majorColor{0.65f, 0.65f, 0.65f, 0.35f};
+    float4 const xAxisColor{0.85f, 0.25f, 0.25f, 0.55f};
+    float4 const zAxisColor{0.25f, 0.45f, 0.85f, 0.55f};
+
+    for (int i = -cellCount; i <= cellCount; ++i)
+    {
+        float const z = originZ + static_cast<float>(i) * kGridCellSize;
+        float4 const rowColor = GridLineColor(z, xAxisColor, majorColor, minorColor);
+        AppendLine(vertices, float3{originX - kGridHalfExtent, 0.0f, z}, float3{originX + kGridHalfExtent, 0.0f, z},
+                   rowColor);
+
+        float const x = originX + static_cast<float>(i) * kGridCellSize;
+        float4 const colColor = GridLineColor(x, zAxisColor, majorColor, minorColor);
+        AppendLine(vertices, float3{x, 0.0f, originZ - kGridHalfExtent}, float3{x, 0.0f, originZ + kGridHalfExtent},
+                   colColor);
+    }
 }
 
 static void AppendWireCircle(Vector<GizmoVertex>& vertices, float3 center, float3 u, float3 v, float2 radius,
@@ -384,6 +424,9 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
             params.camRight = GEditor.camera.rot * float3(1.0f, 0.0f, 0.0f);
             params.camUp = GEditor.camera.rot * float3(0.0f, 1.0f, 0.0f);
             params.iconWorldHalfExtent = kIconWorldHalfExtent;
+            params.camPosition = GEditor.camera.position;
+            params.distanceFadeStart = kGridHalfExtent * 0.25f;
+            params.distanceFadeEnd = kGridHalfExtent;
             auto* ubo = r->DerefResource(sGizmo.ubo).Get<RHIBuffer*>();
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(params)));
         });
@@ -507,6 +550,8 @@ void BuildLightGizmos()
 
     if (!GEditor.showImGui || !GEditor.HasScene())
         return;
+
+    AppendXZGrid(sGizmo.vertices, GEditor.camera.center);
 
     auto lights = GEditor.Scene().GetLights();
     for (int i = 0; i < static_cast<int>(lights.size()); ++i)
