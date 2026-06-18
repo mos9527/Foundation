@@ -71,6 +71,9 @@ target_sources(Editor PRIVATE
         SDLMain.cpp ImGui.cpp
         EditorState.cpp EditorScene.cpp EditorUI.cpp EditorGizmos.cpp
 )
+if (WIN32)
+    target_sources(Editor PRIVATE Editor.rc)
+endif ()
 target_link_libraries(
         Editor PRIVATE
         Editor_Context
