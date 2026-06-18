@@ -61,10 +61,12 @@ if (FOUNDATION_USE_PCH)
             "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
     )
 endif()
+add_subdirectory(Shaders)
+
 add_executable(Editor)
 target_sources(Editor PRIVATE
         SDLMain.cpp ImGui.cpp
-        EditorState.cpp EditorScene.cpp EditorUI.cpp
+        EditorState.cpp EditorScene.cpp EditorUI.cpp EditorGizmos.cpp
 )
 target_link_libraries(
         Editor PRIVATE
@@ -79,6 +81,7 @@ target_link_libraries(
 add_dependencies(
         Editor
         Foundation_Shaders
+        Editor_Shaders
         Editor_Data
 )
 

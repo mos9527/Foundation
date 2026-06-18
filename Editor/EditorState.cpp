@@ -2,6 +2,7 @@
 #include <cmath>
 #include <RenderUtils/PSFullscreen.hpp>
 #include <Renderer/Postprocess.hpp>
+#include "EditorGizmos.hpp"
 #include "EditorState.hpp"
 #include <ImGuizmo.h>
 using namespace RenderUtils;
@@ -223,6 +224,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
         {
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, sPickingPixel);
         });
+    EditorGizmos::InsertPass(renderer, outputs.depth, {w, h});
 }
 
 static void EndEditorRendererSetup(Renderer* renderer)
@@ -406,6 +408,7 @@ static void FRunning()
     if (GEditor.cameraUpdated)
         GEditor.shaderGlobals.ptAccumulatedFrames = 0, GEditor.cameraUpdated = false;
     RefreshPostprocessState(renderExtent);
+    EditorGizmos::BuildLightGizmos();
     renderer->ExecuteFrame();
     renderer->EndExecute();
     // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
