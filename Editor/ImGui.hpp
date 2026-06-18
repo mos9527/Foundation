@@ -80,3 +80,31 @@ bool ImBitmaskOptionPicker(unsigned& value, const char* (&labels)[N], const unsi
     return ImBitmaskOptionPicker(value, labels, masks, N, solo, columns);
 }
 bool ImHDRColorEdit(const char* label, float3& color, float& power, float maxScale = 100.0f);
+
+// Generate linear, monotonous ints of [0, count - 1] at interval of intervalMS
+inline int ImBlink(int intervalMS, int count)
+{
+    size_t time = ImGui::GetTime() * 1000;
+    time = time % (intervalMS * count);
+    return time / intervalMS;
+}
+
+// Generate linear, monotonous float in range of [0, 1] at interval of intervalMS
+inline float ImBlinkF(float intervalMS)
+{
+    float time = ImGui::GetTime();
+    intervalMS /= 1000.0f;
+    time = fmod(time, intervalMS);
+    return time / intervalMS;
+}
+
+// CSS linear easing function on x of range [0,1]
+constexpr inline float ImEaseLinear(float x) { return x; }
+
+// CSS easeInOutCubic easing function on x of range [0,1]
+constexpr inline float ImEaseInOutCubic(float x)
+{
+    return x < 0.5f ? 4 * pow(x, 3.0f) : 1.0f - pow(-2.0f * x + 2.0f, 3.0f) / 2.0f;
+}
+
+using ImEaseFunction = float (*)(float);

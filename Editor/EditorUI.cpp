@@ -1705,11 +1705,15 @@ void FLightingPanel()
                 GEditor.selectedLight = static_cast<int>(insertIndex);
                 GEditor.selectedInstance = -1;
                 GEditor.selectedMaterial = -1;
+                GEditor.scrollSelectedLightToTop = true;
+                GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
                 anyChanged = true;
             }
             if (!canAddLight)
                 ImGui::EndDisabled();
             ImGui::Separator();
+            static constexpr float kLightHighlightDuration = 1.2f;
+
             for (int i = 0; i < static_cast<int>(lights.size()); i++)
             {
                 auto& light = lights[i];
@@ -1722,12 +1726,41 @@ void FLightingPanel()
                 ImGuiTreeNodeFlags headerFlags = ImGuiTreeNodeFlags_DefaultOpen;
                 if (isLightSelected)
                     headerFlags |= ImGuiTreeNodeFlags_Selected;
+
+                bool pushedHeaderTextColor = false;
+                if (isLightSelected && GEditor.selectedLightHighlightStart >= 0.0f)
+                {
+                    float const elapsed = static_cast<float>(ImGui::GetTime()) - GEditor.selectedLightHighlightStart;
+                    float const t = std::clamp(elapsed / kLightHighlightDuration, 0.0f, 1.0f);
+                    float const boost = ImEaseInOutCubic(1.0f - t);
+                    if (boost > 0.0f)
+                    {
+                        ImVec4 const base = ImGui::GetStyleColorVec4(ImGuiCol_Header);
+                        ImVec4 const bright{1.0f, 1.0f, 1.0f, base.w};
+                        ImGui::PushStyleColor(ImGuiCol_Header,
+                                              ImVec4(base.x + (bright.x - base.x) * boost,
+                                                     base.y + (bright.y - base.y) * boost,
+                                                     base.z + (bright.z - base.z) * boost, base.w));
+                        pushedHeaderTextColor = true;
+                    }
+                }
+
                 bool headerOpen = ImGui::CollapsingHeader(header, headerFlags);
+                if (pushedHeaderTextColor)
+                    ImGui::PopStyleColor();
+
+                if (isLightSelected && GEditor.scrollSelectedLightToTop)
+                {
+                    ImGui::SetScrollHereY(0.0f);
+                    GEditor.scrollSelectedLightToTop = false;
+                }
                 if (ImGui::IsItemClicked())
                 {
                     GEditor.selectedLight = i;
                     GEditor.selectedInstance = -1; // deselect instance when selecting light
                     GEditor.selectedMaterial = -1;
+                    GEditor.scrollSelectedLightToTop = true;
+                    GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
                 }
                 if (headerOpen)
                 {

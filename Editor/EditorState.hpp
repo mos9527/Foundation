@@ -118,6 +118,8 @@ struct EditorState
     int                selectedInstance = -1;
     int                selectedMaterial = -1;
     int                selectedLight    = -1;
+    bool               scrollSelectedLightToTop = false;
+    float              selectedLightHighlightStart = -1.0f;
     RenderWorkflow  renderTask;
     GizmoState      gizmo;
     CameraApertureState aperture;

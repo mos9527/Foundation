@@ -4,6 +4,7 @@
 #include <Renderer/Postprocess.hpp>
 #include "EditorGizmos.hpp"
 #include "EditorState.hpp"
+#include <imgui.h>
 #include <ImGuizmo.h>
 using namespace RenderUtils;
 using Foundation::Core::PathsResolve;
@@ -423,6 +424,8 @@ static void FRunning()
             GEditor.selectedLight = lightPick;
             GEditor.selectedInstance = -1;
             GEditor.selectedMaterial = -1;
+            GEditor.scrollSelectedLightToTop = true;
+            GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
         }
         else
         {

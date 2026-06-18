@@ -316,6 +316,14 @@ static float4 GizmoColor(bool selected)
     return selected ? float4{1.0f, 0.78f, 0.2f, 1.0f} : float4{1.0f, 1.0f, 0.4f, 0.4f};
 }
 
+static float4 LightGizmoSpriteColor(FLight const& light, bool selected)
+{
+    float3 rgb = max(light.color, float3(0.0f));
+    float const maxC = std::max({rgb.x, rgb.y, rgb.z, 1e-6f});
+    rgb *= 1.0f / maxC;
+    return float4(rgb, selected ? 1.0f : 0.85f);
+}
+
 static bool WorldToRenderPixel(float3 world, mat4 const& viewProj, float2 renderSize, float2& outPixel)
 {
     float4 clip = viewProj * float4(world, 1.0f);
@@ -508,7 +516,7 @@ void BuildLightGizmos()
             continue;
 
         bool const selected = i == GEditor.selectedLight;
-        float4 color = GizmoColor(selected);
+        float4 const color = GizmoColor(selected);
         switch (light.type)
         {
         case FLightType::Directional: AppendDirectionalGizmo(sGizmo.vertices, light, color); break;
@@ -523,7 +531,7 @@ void BuildLightGizmos()
         if (textureId != ~0u)
         {
             float3 const pos = light.transform.transform;
-            float4 const spriteColor = selected ? float4{1.0f, 1.0f, 1.0f, 1.0f} : float4{1.0f, 1.0f, 1.0f, 0.85f};
+            float4 const spriteColor = LightGizmoSpriteColor(light, selected);
             AppendSpriteBillboard(sGizmo.spriteVertices, sGizmo.spriteIndices, pos, spriteColor, textureId);
         }
     }
