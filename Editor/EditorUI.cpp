@@ -1818,9 +1818,10 @@ void FLightingPanel()
                         }
                     }
 
-                    // Position for positional lights
-                    bool hasPosition = (light.type == FLightType::Point || light.type == FLightType::Spot ||
-                                        light.type == FLightType::Disk || light.type == FLightType::Rect);
+                    // Position (gizmo anchor; direction is unchanged for directionals)
+                    bool hasPosition = (light.type == FLightType::Directional || light.type == FLightType::Point ||
+                                        light.type == FLightType::Spot || light.type == FLightType::Disk ||
+                                        light.type == FLightType::Rect);
                     if (hasPosition)
                     {
                         lightChanged |= ImGui::DragFloat3("Position", &light.transform.transform.x, 0.1f);
@@ -2562,7 +2563,6 @@ static void DrawLightGizmos()
     auto& light = lights[GEditor.selectedLight];
     if (light.type == FLightType::Environment)
         return;
-    bool hasPosition = (light.type != FLightType::Directional);
 
     ImVec2 displaySize = GEditor.viewport.Size();
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
@@ -2575,7 +2575,7 @@ static void DrawLightGizmos()
     ImGuizmo::SetRect(GEditor.viewport.contentMin.x, GEditor.viewport.contentMin.y,
                       displaySize.x, displaySize.y);
 
-    ImGuizmo::OPERATION op = static_cast<ImGuizmo::OPERATION>(hasPosition ? GEditor.gizmo.op : ImGuizmo::ROTATE);
+    ImGuizmo::OPERATION op = static_cast<ImGuizmo::OPERATION>(GEditor.gizmo.op);
     if (op == ImGuizmo::SCALE)
         op = ImGuizmo::TRANSLATE;
 

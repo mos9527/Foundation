@@ -5,6 +5,8 @@
 #include <nfd.h>
 extern bool EditorProcessEvent(SDL_Event*);
 extern bool EditorOnFrame(FContext*);
+extern void EditorCleanup();
+
 bool /* should close */ mainLoop()
 {
     SDL_Event& event = GContext->event;
@@ -92,6 +94,7 @@ int main(int argc, char** argv)
     LOG(SDLMain, LogInfo, "Quitting...");
     ClearMaterialTexturePreviewCache();
     NFD_Quit();
+    EditorCleanup();
     ImGui_ImplFoundation_Shutdown();
     DestroyContext();
 }

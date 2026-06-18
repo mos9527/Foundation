@@ -381,6 +381,12 @@ void Renderer::PassSetRasterizerFlags(PassHandle pass,
     tpass.psoDepthStencil = depth_stencil;
 }
 
+void Renderer::PassSetTopology(PassHandle pass, RHIPipelineState::PipelineStateDesc::Topology topology) const
+{
+    CHECK(mState == State::Setup);
+    mSetup->trackedPasses[pass].psoTopology = topology;
+}
+
 /* --- */
 void Renderer::EndSetup()
 {
@@ -971,7 +977,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
             .psoCache = mDesc.pipelineCache,
             .type = tracked.GetPipelineType(),
             .vertexInput = {.bindings = tracked.vertexInputBindings, .attributes = tracked.vertexInputAttributes},
-            .topology = RHIPipelineState::PipelineStateDesc::TriangleList,
+            .topology = tracked.psoTopology,
             .rasterizer = tracked.psoRasterizer,
             .multisample = {.enabled = false},
             .depthStencil = tracked.psoDepthStencil,

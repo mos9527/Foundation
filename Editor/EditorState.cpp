@@ -41,6 +41,7 @@ void DestroyEditorRenderer(FContext* context)
     if (!context || !context->renderer)
         return;
 
+    EditorGizmos::Shutdown();
     Destruct(context->allocator, context->renderer);
     context->renderer = nullptr;
 }
@@ -415,20 +416,31 @@ static void FRunning()
     if (sPickingPixel.x >= 0)
     {
         renderer->WaitForPreviousFrame();
-        auto* pPickResultBuffer = renderer->DerefResource(sPickResultBuffer).Get<RHIBuffer*>();
-        uint32_t id = *pPickResultBuffer->Map<uint32_t>();
-        GEditor.selectedInstance = -1;
-        GEditor.selectedMaterial = -1;
-        // The pick id is a TLAS instanceID, which equals the committed instance index
-        // (the editor commits instances 1:1 in scene-row order).
-        uint32_t picked = (id != ~0u && GContext->gpuScene)
-            ? GContext->gpuScene->ResolvePickedInstance(id)
-            : UINT32_MAX;
-        if (picked != UINT32_MAX)
+
+        int const lightPick = EditorGizmos::PickLightAtRenderPixel(sPickingPixel);
+        if (lightPick >= 0)
         {
-            GEditor.selectedInstance = static_cast<int>(picked);
-            GEditor.selectedMaterial = static_cast<int>(GContext->gpuScene->GetInstance(picked).materialIndex);
-            GEditor.selectedLight = -1;
+            GEditor.selectedLight = lightPick;
+            GEditor.selectedInstance = -1;
+            GEditor.selectedMaterial = -1;
+        }
+        else
+        {
+            auto* pPickResultBuffer = renderer->DerefResource(sPickResultBuffer).Get<RHIBuffer*>();
+            uint32_t id = *pPickResultBuffer->Map<uint32_t>();
+            GEditor.selectedInstance = -1;
+            GEditor.selectedMaterial = -1;
+            // The pick id is a TLAS instanceID, which equals the committed instance index
+            // (the editor commits instances 1:1 in scene-row order).
+            uint32_t picked = (id != ~0u && GContext->gpuScene)
+                ? GContext->gpuScene->ResolvePickedInstance(id)
+                : UINT32_MAX;
+            if (picked != UINT32_MAX)
+            {
+                GEditor.selectedInstance = static_cast<int>(picked);
+                GEditor.selectedMaterial = static_cast<int>(GContext->gpuScene->GetInstance(picked).materialIndex);
+                GEditor.selectedLight = -1;
+            }
         }
         sPickingPixel = {-1, -1};
     }
@@ -594,3 +606,5 @@ bool EditorOnFrame(FContext* context)
     }
     return false;
 }
+
+void EditorCleanup() { DestroyEditorRenderer(); }

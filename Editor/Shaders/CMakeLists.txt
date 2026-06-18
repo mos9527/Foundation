@@ -9,6 +9,7 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             "Shader_Editor_${ShaderName}"
             SOURCE          "${SlangFile}"
             OUTPUT_DIR      "${SHADER_BUILD_DIR}/Editor"
+            INCLUDE_DIRS    "${CMAKE_SOURCE_DIR}/Source/Renderer/Shaders"
     )
     add_dependencies(Editor_Shaders "Shader_Editor_${ShaderName}")
 endforeach()

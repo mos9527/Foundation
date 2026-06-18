@@ -143,6 +143,8 @@ namespace Foundation::RenderCore
         // PSO Creation parameters
         RHIPipelineState::PipelineStateDesc::Rasterizer psoRasterizer{};
         RHIPipelineState::PipelineStateDesc::DepthStencil psoDepthStencil{};
+        RHIPipelineState::PipelineStateDesc::Topology psoTopology{
+            RHIPipelineState::PipelineStateDesc::TriangleList};
         // Layouts created by ourselves
         Vector<RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout>> descriptorLayouts;
         // Pointers. Can also contain external sets

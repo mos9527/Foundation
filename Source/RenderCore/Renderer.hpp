@@ -651,6 +651,11 @@ namespace Foundation::RenderCore
         void PassSetRasterizerFlags(PassHandle pass,
                                     RHIPipelineState::PipelineStateDesc::Rasterizer const& rasterizer = {},
                                     RHIPipelineState::PipelineStateDesc::DepthStencil const& depth_stencil = {}) const;
+        /**
+         * @brief Sets the input assembly topology for a graphics pass (TriangleList, LineList, etc.).
+         */
+        void PassSetTopology(PassHandle pass,
+                             RHIPipelineState::PipelineStateDesc::Topology topology) const;
 #pragma endregion
         /**
          * @brief Finish setting up the render graph.

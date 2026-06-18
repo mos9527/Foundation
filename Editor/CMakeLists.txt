@@ -16,6 +16,9 @@ add_custom_target(
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
                 "${CMAKE_SOURCE_DIR}/Source/Renderer/Data"
                 "${ASSET_BUILD_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/Data/Icons"
+                "${DERIVED_DATA_DIR}/Icons"
         COMMENT "Copying editor data to ${ASSET_BUILD_DIR}"
         VERBATIM
 )
