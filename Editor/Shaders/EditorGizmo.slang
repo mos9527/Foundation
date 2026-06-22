@@ -61,7 +61,6 @@ float4 fragMain(VertexOutput input) : SV_TARGET
 
     float visibility = 1.0f;
     float2 uv = input.svPosition.xy / globalParams.screenSize;
-    uv.y = 1.0f - uv.y;
     float sceneNdc = sceneDepth.SampleLevel(linSampler, uv, 0.0f);
     if (sceneNdc > kDepthEps)
     {

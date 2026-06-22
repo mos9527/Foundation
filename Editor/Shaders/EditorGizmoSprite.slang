@@ -27,7 +27,6 @@ float GizmoVisibility(float viewDepth, float2 fragCoord)
 {
     static const float kDepthEps = 1e-6f;
     float2 uv = fragCoord / globalParams.screenSize;
-    uv.y = 1.0f - uv.y;
     float sceneNdc = sceneDepth.SampleLevel(linSampler, uv, 0.0f);
     if (sceneNdc <= kDepthEps)
         return 1.0f;
