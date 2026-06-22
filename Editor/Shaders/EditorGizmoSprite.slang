@@ -1,22 +1,5 @@
+#include "GizmoCommon.h"
 import ITonemapping;
-
-struct GizmoUBO
-{
-    float4x4 viewProj;
-    float4x4 view;
-    float zNear;
-    float depthBias;
-    float fadeRange;
-    float occludedAlpha;
-    float3 camRight;
-    float _pad0;
-    float3 camUp;
-    float _pad1;
-    float iconWorldHalfExtent;
-    float distanceFadeStart;
-    float distanceFadeEnd;
-    float3 camPosition;
-};
 uniform GizmoUBO globalParams;
 
 Texture2D<float> sceneDepth;
@@ -43,7 +26,9 @@ float NdcDepthToViewDepth(float ndcDepth)
 float GizmoVisibility(float viewDepth, float2 fragCoord)
 {
     static const float kDepthEps = 1e-6f;
-    float sceneNdc = sceneDepth.Load(int3(fragCoord, 0));
+    float2 uv = fragCoord / globalParams.screenSize;
+    uv.y = 1.0f - uv.y;
+    float sceneNdc = sceneDepth.SampleLevel(linSampler, uv, 0.0f);
     if (sceneNdc <= kDepthEps)
         return 1.0f;
 

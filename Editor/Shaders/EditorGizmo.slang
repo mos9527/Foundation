@@ -14,10 +14,12 @@ struct GizmoUBO
     float distanceFadeStart;
     float distanceFadeEnd;
     float3 camPosition;
+    float2 screenSize;
 };
 uniform GizmoUBO globalParams;
 
 Texture2D<float> sceneDepth;
+SamplerState linSampler;
 
 struct VertexOutput
 {
@@ -58,7 +60,9 @@ float4 fragMain(VertexOutput input) : SV_TARGET
     static const float kDepthEps = 1e-6f;
 
     float visibility = 1.0f;
-    float sceneNdc = sceneDepth.Load(int3(input.svPosition.xy, 0));
+    float2 uv = input.svPosition.xy / globalParams.screenSize;
+    uv.y = 1.0f - uv.y;
+    float sceneNdc = sceneDepth.SampleLevel(linSampler, uv, 0.0f);
     if (sceneNdc > kDepthEps)
     {
         float sceneViewDepth = NdcDepthToViewDepth(sceneNdc);

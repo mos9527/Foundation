@@ -55,6 +55,7 @@ struct GizmoUBO
     float distanceFadeStart{25.0f};
     float distanceFadeEnd{120.0f};
     float3 camPosition{};
+    float2 screenSize{};
 };
 
 struct LightIconBindings
@@ -427,6 +428,7 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
             params.camPosition = GEditor.camera.position;
             params.distanceFadeStart = kGridHalfExtent * 0.25f;
             params.distanceFadeEnd = kGridHalfExtent;
+            params.screenSize = float2(extent.x, extent.y);
             auto* ubo = r->DerefResource(sGizmo.ubo).Get<RHIBuffer*>();
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(params)));
         });
@@ -451,6 +453,7 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
                           PathsResolve("Data/Shaders/Editor/EditorGizmo.spv"));
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
                           PathsResolve("Data/Shaders/Editor/EditorGizmo.spv"));
+            r->BindTextureSampler(self, sGizmo.linearSampler, "linSampler");
             if (depthTexture != kInvalidHandle)
             {
                 r->BindTextureSRV(self, depthTexture, "sceneDepth", RHIPipelineStageBits::FragmentShader,
