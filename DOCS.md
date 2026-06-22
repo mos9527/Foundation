@@ -188,17 +188,14 @@ Done
 
 Path Tracer
 ---
-Also w/ blog post series update on:
-- [ ] Denoising
-- [ ] Wavefront PT with indirect ray dispatches (https://developer.blender.org/docs/features/cycles/kernel_scheduling/)
+Sorted by priority (high to low), also w/ future blog post series update on:
+- [ ] Sample by blocks with auto-stopping (https://jo.dreggn.org/home/2009_stopping.pdf)
+- [ ] Wavefront kernels (https://developer.blender.org/docs/features/cycles/kernel_scheduling/)
 - [ ] Light Tree ([BVH Light Sampling](https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling))
-- [ ] ReSTIR Spatial + Temporal Reuse
-- [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC)?)
-- [ ] MNEE (Manifold NEE) for *much* better caustics convergence
-  - https://jo.dreggn.org/home/2015_mnee_talk.pdf
-- [ ] Volume rendering
-- [ ] Thin Film Iridescence
-  - "A Practical Extension to Microfacet Theory for the Modeling of Varying Iridescence" https://dl.acm.org/doi/pdf/10.1145/3072959.3073620
+- [ ] Tracing from surfaces (baking lightmaps, probe generation, etc)
+- [ ] Denoising and error estimate for live viewport
+- [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC) or other spatial hash grid)
+- [ ] ReSTIR DI/PT
 
 Done, awaiting Blog Update:
 - [x] Hair Shading
