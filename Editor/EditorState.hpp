@@ -32,7 +32,7 @@ struct RenderWorkflow
     // have accumulated. Set via Rendering window slider.
     int           autoPauseSampleLimit = 0;
     String        outputPath;
-    int           previousSpp = 0, previousSppTile = 0;
+    int           previousSpp = 0;
 };
 
 // Gizmo UI state (matches ImGuizmo::OPERATION and ImGuizmo::MODE)

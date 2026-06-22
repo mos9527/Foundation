@@ -220,7 +220,7 @@ int main(int argc, char** argv)
     const size_t kFloorAsset = 0; // assets[0] is the floor; assets[1..] are blobs
 
     RendererUBO ubo{};
-    ubo.ptDispatchTileSide = 1;
+
     ubo.ptSamplesPerPixel = 1;
 
     // Phyllotaxis placement: blob `i` sits on a golden-angle spiral so the field fills outward
@@ -466,7 +466,7 @@ int main(int argc, char** argv)
         postprocessGlobals.camEV = ubo.camEV;
         postprocessGlobals.dbgShowOutline = 0u;
         postprocessGlobals.ptAccumulatedFrames = ubo.ptAccumulatedFrames;
-        postprocessGlobals.ptDispatchTileSide = ubo.ptDispatchTileSide;
+
         postprocessGlobals.fbWidth = ubo.fbWidth;
         postprocessGlobals.fbHeight = ubo.fbHeight;
 
@@ -482,7 +482,7 @@ int main(int argc, char** argv)
 
         Examples_NewFrame(renderer.get());
         if (mode == Mode::PathTracer)
-            ubo.ptAccumulatedFrames += PTSamplesPerDispatch(ubo);
+            ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
         // The scene changes whenever it streams, a wave spawns, the camera moves, or the blobs
         // spin (not paused), so restart accumulation; pause + hold still to let it converge.
         if (streaming || spawnedThisFrame || cameraMoved || !paused)

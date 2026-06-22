@@ -29,7 +29,7 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 
 ### Path Tracer
 - **Full Foundation Material support**
-- Unidirectional megakernel integrator with tiled sampling
+- Unidirectional megakernel integrator
 - Energy conserving BSDFs with Cycles output parity 
 - Sobol & PCG samplers
 - Path-traced Subsurface scattering

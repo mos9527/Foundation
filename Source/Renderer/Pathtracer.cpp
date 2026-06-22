@@ -180,8 +180,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
         bool canTrace = (!cfg.ptRenderPaused || !*cfg.ptRenderPaused);
         if (canTrace)
         {
-            uint32_t tileSide = PTDispatchTileSide(*globals);
-            cmd->TraceRays((w - 1u) / tileSide + 1u, (h - 1u) / tileSide + 1u, 1);
+            cmd->TraceRays(w, h, 1);
         }
     });
 

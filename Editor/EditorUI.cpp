@@ -34,28 +34,7 @@ static float const* GizmoSnapForOperation(ImGuizmo::OPERATION op)
     return snap;
 }
 
-struct PTSPPOption
-{
-    const char* label;
-    uint32_t samplesPerPixel;
-    uint32_t dispatchTileSide;
-};
 
-static constexpr PTSPPOption kPTSPPOptions[] = {
-    {"1/64", 1u, 8u},
-    {"1/49", 1u, 7u},
-    {"1/36", 1u, 6u},
-    {"1/25", 1u, 5u},
-    {"1/16", 1u, 4u},
-    {"1/9",  1u, 3u},
-    {"1/4",  1u, 2u},
-    {"1",    1u, 1u},
-    {"2",    2u, 1u},
-    {"3",    3u, 1u},
-    {"4",    4u, 1u},
-    {"5",    5u, 1u},
-};
-static constexpr int kPTSPPOptionCount = std::size(kPTSPPOptions);
 static constexpr const char* kExternalViewLUTLabel = "<external>";
 static constexpr const char* kExternalMatcapLabel = "<external>";
 
@@ -274,28 +253,7 @@ static bool OpenMatcapDialog(String& outPath)
     return true;
 }
 
-static int PTSPPOptionIndex(RendererUBO const& ubo)
-{
-    uint32_t samplesPerPixel = PTSamplesPerDispatch(ubo);
-    uint32_t dispatchTileSide = PTDispatchTileSide(ubo);
-    for (int i = 0; i < kPTSPPOptionCount; ++i)
-        if (kPTSPPOptions[i].samplesPerPixel == samplesPerPixel &&
-            kPTSPPOptions[i].dispatchTileSide == dispatchTileSide)
-            return i;
-    return 3; // 1/25 SPP
-}
 
-static void SetPTSPPOption(int index)
-{
-    PTSPPOption const& option = kPTSPPOptions[std::clamp(index, 0, kPTSPPOptionCount - 1)];
-    if (GEditor.shaderGlobals.ptSamplesPerPixel != option.samplesPerPixel ||
-        GEditor.shaderGlobals.ptDispatchTileSide != option.dispatchTileSide)
-    {
-        GEditor.shaderGlobals.ptSamplesPerPixel = option.samplesPerPixel;
-        GEditor.shaderGlobals.ptDispatchTileSide = option.dispatchTileSide;
-        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-    }
-}
 
 static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
 {
@@ -1358,10 +1316,8 @@ void EditorDockSpaceAndMenuBar()
                 GEditor.renderTask.renderAutoPaused = false;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.renderTask.previousSpp = GEditor.shaderGlobals.ptSamplesPerPixel;
-                GEditor.renderTask.previousSppTile = GEditor.shaderGlobals.ptDispatchTileSide;
                 // Go for 1spp always during rendering
                 GEditor.shaderGlobals.ptSamplesPerPixel = 1;
-                GEditor.shaderGlobals.ptDispatchTileSide = 1;
                 GEditor.state = FERendering;
                 ImGui::CloseCurrentPopup();
             }
@@ -2341,19 +2297,16 @@ void FRunningImGui()
         {
             ImGui::SeparatorText(PSI_SIGNAL " Stats");
             // Throughput: measure delta on the *frame* (dispatch) counter every ~250ms,
-            // then derive samples/sec from frames/sec via the spp/tile ratio.
-            //   frames  = ptAccumulatedFrames / PTSamplesPerDispatch   (dispatch count)
-            //   samples = frames * PTSamplesPerDispatch / PTTileSampleCount
-            //           = ptAccumulatedFrames / PTTileSampleCount      (== PTCompletedPixelSamples)
-            // i.e. one dispatch advances `spp / tile^2` pixel-samples; spp>1 and tiled
-            // dispatch are both handled by this single ratio.
+            // then derive samples/sec from frames/sec via the spp multiplier.
+            //   frames  = ptAccumulatedFrames / ptSamplesPerPixel      (dispatch count)
+            //   samples = ptAccumulatedFrames
+            // i.e. one dispatch advances `spp` pixel-samples.
             static double   sLastSampleTime  = ImGui::GetTime();
             static uint32_t sLastFrameCount  = 0u;
             static float    sFramesPerSec    = 0.0f;
-            uint32_t samplesPerDispatch = PTSamplesPerDispatch(GEditor.shaderGlobals);
-            uint32_t tileSampleCount    = PTTileSampleCount(GEditor.shaderGlobals);
+            uint32_t samplesPerDispatch = GEditor.shaderGlobals.ptSamplesPerPixel;
             uint32_t frameCount         = GEditor.shaderGlobals.ptAccumulatedFrames / samplesPerDispatch;
-            uint32_t completedSamples   = PTCompletedPixelSamples(GEditor.shaderGlobals);
+            uint32_t completedSamples   = GEditor.shaderGlobals.ptAccumulatedFrames;
             double now = ImGui::GetTime();
             double dt  = now - sLastSampleTime;
             if (dt >= 0.25)
@@ -2372,8 +2325,7 @@ void FRunningImGui()
                 sLastSampleTime = now;
                 sFramesPerSec   = 0.0f;
             }
-            float samplesPerSec = sFramesPerSec * static_cast<float>(samplesPerDispatch) /
-                                  static_cast<float>(tileSampleCount);
+            float samplesPerSec = sFramesPerSec * static_cast<float>(samplesPerDispatch);
             ImGui::Text("samples: %u (%.2f sps), frames: %u (%.1f fps)",
                         completedSamples, samplesPerSec, frameCount, sFramesPerSec);
             // Auto-Pause sample limit slider. 0 = disabled.
@@ -2443,15 +2395,19 @@ void FRunningImGui()
             ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
             ImGui::SeparatorText(PSI_RANDOM " Sampling");
             ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
-            if (ImGui::SliderFloat("Adaptive Threshold", &GEditor.shaderGlobals.adaptiveThreshold, 0.0f, 0.05f, "%.4f"))
+            if (ImGui::SliderFloat("Adaptive Threshold", &GEditor.shaderGlobals.adaptiveThreshold, 0.0f, 1.0f, "%.4f"))
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             if (ImGui::SliderInt("Adaptive Min Samples", reinterpret_cast<int*>(&GEditor.shaderGlobals.adaptiveMinSamples), 1, 256))
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-            static int ptSPPIndex = 3; // 1/25 SPP
-            ptSPPIndex = PTSPPOptionIndex(GEditor.shaderGlobals);
-            if (ImGui::SliderInt("SPP", &ptSPPIndex, 0, kPTSPPOptionCount - 1,
-                                 kPTSPPOptions[ptSPPIndex].label, ImGuiSliderFlags_AlwaysClamp))
-                SetPTSPPOption(ptSPPIndex);
+            int spp = static_cast<int>(GEditor.shaderGlobals.ptSamplesPerPixel);
+            if (ImGui::SliderInt("SPP", &spp, 1, 64, "%d", ImGuiSliderFlags_Logarithmic))
+            {
+                if (spp != static_cast<int>(GEditor.shaderGlobals.ptSamplesPerPixel))
+                {
+                    GEditor.shaderGlobals.ptSamplesPerPixel = static_cast<uint32_t>(std::max(1, spp));
+                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                }
+            }
             const char* samplerItems[] = {"PCG (Independent)", "Sobol (Quasi-Monte Carlo)"};
             int ptSampler = static_cast<int>(GEditor.rendererConfig.ptSampler);
             if (ImGui::Combo("Sampler", &ptSampler, samplerItems, 2))
@@ -2600,9 +2556,7 @@ void FRendering(RendererOutputs const& outputs)
         ImGui::Begin("##RenderProgressBar", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                          ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize);
-        uint32_t completedSamples = GEditor.rendererMode == ERendererMode::PathTracer
-            ? PTCompletedPixelSamples(GEditor.shaderGlobals)
-            : GEditor.shaderGlobals.ptAccumulatedFrames;
+        uint32_t completedSamples = GEditor.shaderGlobals.ptAccumulatedFrames;
         float fraction = GEditor.renderTask.targetSamples > 0 ? static_cast<float>(completedSamples) /
                 static_cast<float>(GEditor.renderTask.targetSamples)
                                                             : 0.0f;
@@ -2637,20 +2591,18 @@ void FRendering(RendererOutputs const& outputs)
     GEditor.postprocessGlobals.camEV = GEditor.shaderGlobals.camEV;
     GEditor.postprocessGlobals.dbgShowOutline = GEditor.showImGui ? 1u : 0u;
     GEditor.postprocessGlobals.ptAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
-    GEditor.postprocessGlobals.ptDispatchTileSide = GEditor.shaderGlobals.ptDispatchTileSide;
     GEditor.postprocessGlobals.fbWidth = GEditor.shaderGlobals.fbWidth;
     GEditor.postprocessGlobals.fbHeight = GEditor.shaderGlobals.fbHeight;
     GEditor.postprocessGlobals.viewLutIndex =
         Postprocess::ResolvePostprocessViewLutIndex(GEditor.viewLUTSdrHandle, GEditor.viewLUTHdrHandle, GContext->enableHDR);
     renderer->ExecuteFrame();
     renderer->EndExecute();
-    GEditor.shaderGlobals.ptAccumulatedFrames += PTSamplesPerDispatch(GEditor.shaderGlobals);
+    GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
 
     if (cancelRendering || GEditor.shaderGlobals.ptAccumulatedFrames >= targetFrames)
     {
         // Restore spp preview settings
         GEditor.shaderGlobals.ptSamplesPerPixel = GEditor.renderTask.previousSpp;
-        GEditor.shaderGlobals.ptDispatchTileSide = GEditor.renderTask.previousSppTile;
         if (!cancelRendering)
             DoRenderReadback(outputs);
         GEditor.state = FERunning;

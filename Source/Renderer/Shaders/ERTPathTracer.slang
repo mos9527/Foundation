@@ -57,70 +57,7 @@ static const uint32_t kGSInstanceTypeCurve = 1u;
 static const uint kMeshMask = 0x01;
 static const uint kCurveMask = 0x04;
 
-// Tiling helpers
-uint GetPTTileSide()
-{
-    return max(globalParams.ptDispatchTileSide, 1u);
-}
 
-uint GetPTSamplesPerDispatch()
-{
-    return max(globalParams.ptSamplesPerPixel, 1u);
-}
-
-uint GetPTTileSampleCount()
-{
-    uint tileSide = GetPTTileSide();
-    return max(tileSide * tileSide, 1u);
-}
-
-uint GetPTBasePixelSampleCount()
-{
-    return globalParams.ptAccumulatedFrames / GetPTTileSampleCount();
-}
-
-uint2 GetPTPixel()
-{
-    uint tileSide = GetPTTileSide();
-    uint sampleIndex = globalParams.ptAccumulatedFrames % GetPTTileSampleCount();
-    uint2 sampleOffset = uint2(sampleIndex % tileSide, sampleIndex / tileSide);
-    return DispatchRaysIndex().xy * tileSide + sampleOffset;
-}
-
-bool IsPTPixelInBounds(uint2 pix)
-{
-    return pix.x < uint(globalParams.fbWidth) && pix.y < uint(globalParams.fbHeight);
-}
-
-void ClearPTTile()
-{
-    uint tileSide = GetPTTileSide();
-    if (tileSide <= 1u || globalParams.ptAccumulatedFrames != 0u)
-        return;
-
-    uint2 tileOrigin = DispatchRaysIndex().xy * tileSide;
-    uint2 extent = uint2(uint(globalParams.fbWidth), uint(globalParams.fbHeight));
-    for (uint y = 0u; y < tileSide; y++)
-    {
-        for (uint x = 0u; x < tileSide; x++)
-        {
-            uint2 clearPix = tileOrigin + uint2(x, y);
-            if (any(clearPix >= extent))
-                continue;
-
-            diffuse[clearPix] = float4(0);
-            specular[clearPix] = float4(0);
-            depth[clearPix] = 0.0f;
-            instanceIDBuffer[clearPix] = ~0u;
-            adaptiveAux[clearPix] = float4(0.0f);
-        }
-    }
-}
-
-uint GetPTPixelSampleCount(uint subSample)
-{
-    return GetPTBasePixelSampleCount() + subSample + 1u;
-}
 
 // Hit state helpers
 struct RayDifferential
@@ -1527,10 +1464,8 @@ void AddEnvironmentMiss(
 [shader("raygeneration")]
 void RayGeneration()
 {
-    ClearPTTile();
-
-    uint2 pix = GetPTPixel();
-    if (!IsPTPixelInBounds(pix))
+    uint2 pix = DispatchRaysIndex().xy;
+    if (pix.x >= uint(globalParams.fbWidth) || pix.y >= uint(globalParams.fbHeight))
         return;
 
     if (globalParams.ptAccumulatedFrames > globalParams.adaptiveMinSamples &&
@@ -1540,9 +1475,9 @@ void RayGeneration()
         return;
     }
 
-    for (uint subSample = 0; subSample < GetPTSamplesPerDispatch(); subSample++)
+    for (uint subSample = 0; subSample < globalParams.ptSamplesPerPixel; subSample++)
     {
-        uint sampleIndex = GetPTBasePixelSampleCount() + subSample;
+        uint sampleIndex = globalParams.ptAccumulatedFrames + subSample;
 
         // PCG or Sobol
         if ((ptCompileOptions & kPTCompileOptionSamplerPCG) != 0)
@@ -1564,7 +1499,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     PathRadiance radiance = PathRadiance();
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
     bool pickingWritten = false;
-    float frameCount = float(GetPTPixelSampleCount(subSample));    
+    float frameCount = float(globalParams.ptAccumulatedFrames + subSample + 1u);    
     float lastSamplePDF = 0.0f;
     // Serialized scenes keep the environment light as the first scene light.
     GSLight envLight = LoadSceneLight(0u);
@@ -2063,7 +1998,7 @@ void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
 {
     uint instance = InstanceID();
     uint primitive = PrimitiveIndex();
-    PCG rng = PCG(GetPTPixel(), globalParams.frameNumber, hash(uint2(instance, primitive)));
+    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
     if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
         return IgnoreHit();
 }
@@ -2073,7 +2008,7 @@ void ShadowRayAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersection
 {
     uint instance = InstanceID();
     uint primitive = PrimitiveIndex();
-    PCG rng = PCG(GetPTPixel(), globalParams.frameNumber, hash(uint2(instance, primitive)));
+    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
     if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
         return IgnoreHit();
     payload.hit = true;
@@ -2088,7 +2023,7 @@ void BSSRDFQueryAnyHit(inout BSSRDFQueryPayload payload, in BuiltInTriangleInter
     if (IsLightInstance(instance))
         return IgnoreHit();
 
-    PCG rng = PCG(GetPTPixel(), globalParams.frameNumber,
+    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber,
                   hash(uint3(instance, primitive, payload.reservoir.sampleCount)));
     if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
         return IgnoreHit();

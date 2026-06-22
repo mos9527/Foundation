@@ -300,7 +300,7 @@ int main(int argc, char** argv)
         gpu.BuildUBO(ubo);
     };
     AuthorFrame(0.0f); // seed the tables so the initial TLAS build has instances
-    ubo.ptDispatchTileSide = 1;
+
     ubo.ptSamplesPerPixel = 1;
 
     // --- 4. Globals + TLAS ---------------------------------------------------------------
@@ -437,7 +437,7 @@ int main(int argc, char** argv)
         postprocessGlobals.camEV = ubo.camEV;
         postprocessGlobals.dbgShowOutline = 0u;
         postprocessGlobals.ptAccumulatedFrames = ubo.ptAccumulatedFrames;
-        postprocessGlobals.ptDispatchTileSide = ubo.ptDispatchTileSide;
+
         postprocessGlobals.fbWidth = ubo.fbWidth;
         postprocessGlobals.fbHeight = ubo.fbHeight;
 
@@ -448,7 +448,7 @@ int main(int argc, char** argv)
         Examples_NewFrame(renderer.get());
         // Advance path-tracer accumulation after the frame is submitted.
         if (mode == Mode::PathTracer)
-            ubo.ptAccumulatedFrames += PTSamplesPerDispatch(ubo);
+            ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
         if (!cameraPaused || cameraMoved)
             ubo.ptAccumulatedFrames = 0;
     }

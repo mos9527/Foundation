@@ -67,7 +67,6 @@ static void RefreshPostprocessState(RHIExtent2D extent)
     GEditor.postprocessGlobals.dbgShowOutline = GEditor.showImGui ? 1u : 0u;
     GEditor.postprocessGlobals.outlineInstanceId = GEditor.selectedInstance;
     GEditor.postprocessGlobals.ptAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
-    GEditor.postprocessGlobals.ptDispatchTileSide = GEditor.shaderGlobals.ptDispatchTileSide;
     GEditor.postprocessGlobals.fbWidth = static_cast<float>(extent.x);
     GEditor.postprocessGlobals.fbHeight = static_cast<float>(extent.y);
     GEditor.postprocessGlobals.viewLutIndex =
@@ -448,14 +447,14 @@ static void FRunning()
         sPickingPixel = {-1, -1};
     }
     if (!GEditor.renderTask.renderPaused)
-        GEditor.shaderGlobals.ptAccumulatedFrames += PTSamplesPerDispatch(GEditor.shaderGlobals);
+        GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
 
     // If the sample limit is reached, auto-pause the render.
     if (GEditor.rendererMode == ERendererMode::PathTracer &&
         !GEditor.renderTask.renderPaused &&
         GEditor.renderTask.autoPauseSampleLimit > 0)
     {
-        uint32_t completed = PTCompletedPixelSamples(GEditor.shaderGlobals);
+        uint32_t completed = GEditor.shaderGlobals.ptAccumulatedFrames;
         if (completed >= static_cast<uint32_t>(GEditor.renderTask.autoPauseSampleLimit))
         {
             GEditor.renderTask.renderAutoPaused = true;

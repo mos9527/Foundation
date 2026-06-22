@@ -37,6 +37,10 @@ namespace
         HashBytes(hash, &value, sizeof(T));
     }
 
+#ifndef FOUNDATION_GIT_COMMIT_HASH
+#define FOUNDATION_GIT_COMMIT_HASH "unknown"
+#endif
+
     RHIPipelineStateCacheKey MakePipelineCacheKey(vk::PhysicalDeviceProperties const& properties)
     {
         uint64_t high = 14695981039346656037ull;
@@ -48,11 +52,18 @@ namespace
         HashValue(high, properties.deviceID);
         HashBytes(high, properties.pipelineCacheUUID, VK_UUID_SIZE);
         HashValue(high, cacheVersion);
+        
+        const std::string_view gitHash = FOUNDATION_GIT_COMMIT_HASH;
+        HashBytes(high, gitHash.data(), gitHash.size());
+
         HashValue(low, cacheVersion);
         HashBytes(low, properties.pipelineCacheUUID, VK_UUID_SIZE);
         HashValue(low, properties.deviceID);
         HashValue(low, properties.vendorID);
         HashValue(low, backend);
+
+        HashBytes(low, gitHash.data(), gitHash.size());
+
         return {.high = high, .low = low};
     }
 }

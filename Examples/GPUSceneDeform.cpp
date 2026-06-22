@@ -198,7 +198,7 @@ int main(int argc, char** argv)
         { GSMaterial m = BaseMat(); m.baseColorFactor = float4(0.25f, 0.55f, 0.9f, 1.0f); m.roughnessFactor = 0.3f; m.metallicFactor = 0.4f; palette.push_back(m); }
 
         RendererUBO ubo{};
-        ubo.ptDispatchTileSide = 1;
+
         ubo.ptSamplesPerPixel = 1;
 
         auto AuthorFrame = [&]
@@ -372,7 +372,7 @@ int main(int argc, char** argv)
             postprocessGlobals.camEV = ubo.camEV;
             postprocessGlobals.dbgShowOutline = 0u;
             postprocessGlobals.ptAccumulatedFrames = ubo.ptAccumulatedFrames;
-            postprocessGlobals.ptDispatchTileSide = ubo.ptDispatchTileSide;
+
             postprocessGlobals.fbWidth = ubo.fbWidth;
             postprocessGlobals.fbHeight = ubo.fbHeight;
 
@@ -384,7 +384,7 @@ int main(int argc, char** argv)
 
             Examples_NewFrame(renderer.get());
             if (mode == Mode::PathTracer)
-                ubo.ptAccumulatedFrames += PTSamplesPerDispatch(ubo);
+                ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
             if (cameraMoved || !paused)
                 ubo.ptAccumulatedFrames = 0;
         }

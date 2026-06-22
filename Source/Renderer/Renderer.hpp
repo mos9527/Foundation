@@ -57,8 +57,7 @@ struct RendererUBO
     uint32_t ptMaxBouncesSpecular{4u};
     uint32_t ptMaxBouncesTransmission{12u};
     float ptFireflyClamp{1.0f}; // 10^x
-    uint32_t ptSamplesPerPixel{1u}; // Always >= 1; fractional SPP uses ptDispatchTileSide instead.
-    uint32_t ptDispatchTileSide{1u}; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
+    uint32_t ptSamplesPerPixel{1u}; // Always >= 1.
     // -- Debug
     uint32_t dbgShowOutline{0u};
     uint32_t dbgViewFlags{0u};
@@ -68,26 +67,6 @@ struct RendererUBO
 };
 #pragma pack(pop)
 
-inline uint32_t PTDispatchTileSide(RendererUBO const& ubo)
-{
-    return ubo.ptDispatchTileSide > 0u ? ubo.ptDispatchTileSide : 1u;
-}
-
-inline uint32_t PTTileSampleCount(RendererUBO const& ubo)
-{
-    uint32_t tileSide = PTDispatchTileSide(ubo);
-    return tileSide * tileSide;
-}
-
-inline uint32_t PTSamplesPerDispatch(RendererUBO const& ubo)
-{
-    return ubo.ptSamplesPerPixel > 0u ? ubo.ptSamplesPerPixel : 1u;
-}
-
-inline uint32_t PTCompletedPixelSamples(RendererUBO const& ubo)
-{
-    return ubo.ptAccumulatedFrames / PTTileSampleCount(ubo);
-}
 
 static const int kViewOverdraw = 1 << 0;
 static const int kViewMeshlet = 1 << 1;
@@ -180,7 +159,6 @@ struct PostprocessUBO
     uint32_t viewLutIndex{UINT32_MAX};
     uint32_t dbgShowOutline{0u};
     uint32_t ptAccumulatedFrames{0u};
-    uint32_t ptDispatchTileSide{1u};
     float fbWidth{1.0f};
     float fbHeight{1.0f};
     uint32_t outlineInstanceId{~0u};

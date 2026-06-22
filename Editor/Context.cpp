@@ -225,6 +225,28 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::Dev
     context->application = ConstructBase<RHIApplication, VulkanApplication>(allocator, allocator);
     context->device = context->application->CreateDevice(deviceDesc, window);
     context->psoCachePath = PipelineCachePathForDevice(*context->device.Get());
+    
+    // Clear stale caches
+    {
+        std::filesystem::path cacheDir = std::filesystem::path(context->psoCachePath).parent_path();
+        if (std::filesystem::exists(cacheDir))
+        {
+            for (auto const& entry : std::filesystem::directory_iterator(cacheDir))
+            {
+                if (entry.is_regular_file() && entry.path() != std::filesystem::path(context->psoCachePath))
+                {
+                    auto filename = entry.path().filename().string();
+                    if (filename.starts_with("pso-cache-") && filename.ends_with(".bin"))
+                    {
+                        LOG(Editor, LogInfo, "Clearing stale pipeline cache: {}", entry.path().string());
+                        std::error_code ec;
+                        std::filesystem::remove(entry.path(), ec);
+                    }
+                }
+            }
+        }
+    }
+
     auto psoCacheBytes = LoadPipelineCacheBytes(context->psoCachePath, allocator);
     context->psoCache = context->device->CreatePipelineCache({
         .initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())
