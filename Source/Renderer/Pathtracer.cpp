@@ -32,7 +32,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
     ResourceHandle TLAS = kInvalidHandle;
     TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
     renderer->CreatePass(
-        "TLAS/BLAS Update", RHIDeviceQueueType::Compute, 0u, [=](PassHandle self, Renderer* r)
+        "TLAS/BLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
         { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
         {
             if (gpu->HasDynamicGeometry())
@@ -75,6 +75,12 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::R32Uint});
+    auto AdaptiveAux = renderer->CreateResource("Adaptive Aux",
+                                                RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
+                                                                    RHITextureUsageBits::SampledImage |
+                                                                    RHITextureUsageBits::TransferSource,
+                                                               .extent = {w, h, 1},
+                                                               .format = RHIResourceFormat::R32G32B32A32SignedFloat});
     ResourceHandle EnvMapSampler = renderer->CreateSampler({
         .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear, RHIDeviceSampler::SamplerDesc::Filter::Linear},
     });
@@ -159,6 +165,9 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
         r->BindTextureUAV(self, InstanceIDBuffer, "instanceIDBuffer", RHIPipelineStageBits::RayTracingShader,
                           RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                              .range = RHITextureSubresourceRange::Create()});
+        r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::RayTracingShader,
+                          RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                             .range = RHITextureSubresourceRange::Create()});
         r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
         r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
         r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
@@ -175,6 +184,50 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
             cmd->TraceRays((w - 1u) / tileSide + 1u, (h - 1u) / tileSide + 1u, 1);
         }
     });
+
+    renderer->CreatePass(
+        "Adaptive Filter X", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            if (globals->adaptiveThreshold > 0.0f)
+                r->MakePassUncullable(self);
+            r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", PathsResolve("Data/Shaders/ECSAdaptiveFilter.spv"),
+                          AsBytes(AsSpan(0u))); // Pass 0
+            r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            if (globals->adaptiveThreshold > 0.0f)
+            {
+                r->CmdSetPipeline(self, cmd);
+                cmd->Dispatch((w - 1) / 8 + 1, (h - 1) / 8 + 1, 1);
+            }
+        });
+
+    renderer->CreatePass(
+        "Adaptive Filter Y", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            if (globals->adaptiveThreshold > 0.0f)
+                r->MakePassUncullable(self);
+            r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", PathsResolve("Data/Shaders/ECSAdaptiveFilter.spv"),
+                          AsBytes(AsSpan(1u))); // Pass 1
+            r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            if (globals->adaptiveThreshold > 0.0f)
+            {
+                r->CmdSetPipeline(self, cmd);
+                cmd->Dispatch((w - 1) / 8 + 1, (h - 1) / 8 + 1, 1);
+            }
+        });
 
     out.extent = {w, h};
     out.diffuse = Diffuse;

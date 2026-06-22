@@ -10,8 +10,7 @@ public static const int kViewTextureLOD = 1 << 7;
 // Per-lobe AOV view flags (Diffuse / Specular)
 public static const int kViewAOVDiffuse  = 1 << 8;
 public static const int kViewAOVSpecular = 1 << 9;
-
-
+public static const int kViewAOVSampleCount = 1 << 10;
 public static const int kEnableRasterRTShadows = 1 << 16;
 public static const int kForceTextureLOD0 = 1 << 24;
 

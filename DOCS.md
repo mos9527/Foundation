@@ -189,7 +189,6 @@ Done
 Path Tracer
 ---
 Sorted by priority (high to low), also w/ future blog post series update on:
-- [ ] Sample by blocks with auto-stopping (https://jo.dreggn.org/home/2009_stopping.pdf)
 - [ ] Wavefront kernels (https://developer.blender.org/docs/features/cycles/kernel_scheduling/)
 - [ ] Light Tree ([BVH Light Sampling](https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling))
 - [ ] Tracing from surfaces (baking lightmaps, probe generation, etc)
@@ -198,6 +197,10 @@ Sorted by priority (high to low), also w/ future blog post series update on:
 - [ ] ReSTIR DI/PT
 
 Done, awaiting Blog Update:
+- [x] Adaptive Sampling (https://jo.dreggn.org/home/2009_stopping.pdf)
+  - Per-pixel instead of hierarchical, same as Cycles
+  - Kills the warps to skip converged pixels, not regenerating paths as discussed in [Megakernels Considered Harmful: Wavefront Path Tracing on GPUs](https://research.nvidia.com/sites/default/files/pubs/2013-07_Megakernels-Considered-Harmful/laine2013hpg_paper.pdf)
+    - TODO? Perhaps unnecessary if we'd actually move to wavefronts...
 - [x] Hair Shading
   - [A Practical and Controllable Hair and Fur Model for Production Path Tracing [Chiang et al. 2016]](https://sci-hub.sg/storage/2024/5766/a1c3a0a1d0aeccafa669d9c39f33341d/chiang2016.pdf)
   - Impl based again based on PBRT's https://www.pbr-book.org/4ed/Reflection_Models/Scattering_from_Hair

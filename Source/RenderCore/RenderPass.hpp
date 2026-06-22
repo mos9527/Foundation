@@ -81,6 +81,7 @@ namespace Foundation::RenderCore
         // The queue to run this pass on
         RHIDeviceQueueType queue;
         bool used{false}; // Culled?
+        bool unCullable{false}; // Acts as an additional execution root
         // Backbuffer specializations
         Optional<RHIPipelineState::PipelineStateDesc::Attachment::Blending> backbufferRTV{}; // opt: blending mode
         Optional<int> backbufferUAV; // opt: set index

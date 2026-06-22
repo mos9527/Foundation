@@ -56,6 +56,12 @@ void Renderer::BeginSetup()
         SetFrameSyncObjects();
 }
 
+void Renderer::MakePassUncullable(PassHandle pass) const
+{
+    CHECK(mState == State::Setup);
+    mSetup->trackedPasses[pass].unCullable = true;
+}
+
 ResourceHandle Renderer::CreateTextureView(PassHandle pass, ResourceHandle handle, RHITextureViewDesc const& desc) const
 {
     CHECK(mState == State::Setup);
@@ -413,12 +419,67 @@ void Renderer::CullPasses(PassHandle epilogue) const
 {
     CHECK(mState == State::Setup);
     CHECK(epilogue < mSetup->trackedPasses.size());
-    // Cull and topsort
+    // 1. Find live nodes using BFS (reachability from epilogue and uncullable passes)
+    Set<PassHandle> live(mAllocator);
+    Vector<PassHandle> q(mAllocator);
+    
+    auto addRoot = [&](PassHandle pass) {
+        if (!live.contains(pass)) {
+            q.push_back(pass);
+            live.insert(pass);
+        }
+    };
+    addRoot(epilogue);
+    for (PassHandle i = 0; i < mSetup->trackedPasses.size(); i++)
+    {
+        if (mSetup->trackedPasses[i].unCullable)
+            addRoot(i);
+    }
+
+    size_t head = 0;
+    while (head < q.size())
+    {
+        auto u = q[head++];
+        if (mSetup->graph.size() > u)
+        {
+            for (const auto& v : mSetup->graph[u] | std::views::keys)
+            {
+                if (!live.contains(v))
+                {
+                    live.insert(v);
+                    q.push_back(v);
+                }
+            }
+        }
+    }
+
+    // 2. Compute in-degrees considering only live nodes
+    Vector<int> live_in(mSetup->trackedPasses.size(), 0, mAllocator);
+    for (auto u : live)
+    {
+        if (mSetup->graph.size() > u)
+        {
+            for (const auto& v : mSetup->graph[u] | std::views::keys)
+            {
+                if (live.contains(v))
+                    live_in[v]++;
+            }
+        }
+    }
+
+    // 3. Cull and topsort
     PriorityQueue<Pair<int, PassHandle>> pq(mAllocator); // (pri, node)
     Vector<PassHandle> topo(mAllocator);
     Vector<int> dis(mSetup->trackedPasses.size(), 0, mAllocator);
-    auto& in = mSetup->in;
-    pq.emplace(std::numeric_limits<int>::max(), epilogue);
+    auto& in = mSetup->in; // (Legacy array)
+    
+    // Nodes with 0 live in-degree are roots of the live graph
+    for (auto u : live)
+    {
+        if (live_in[u] == 0)
+            pq.emplace(mSetup->trackedPasses[u].priority, u);
+    }
+
     // BFS with priority <pri then insertion order (handle value)>
     while (!pq.empty())
     {
@@ -429,9 +490,11 @@ void Renderer::CullPasses(PassHandle epilogue) const
         {
             for (const auto& v : mSetup->graph[u] | std::views::keys)
             {
-                in[v]--;
+                if (!live.contains(v))
+                    continue;
+                live_in[v]--;
                 dis[v] = std::max(dis[v], dis[u] + 1);
-                if (in[v] == 0)
+                if (live_in[v] == 0)
                     pq.emplace(mSetup->trackedPasses[v].priority, v);
             }
         }
@@ -446,7 +509,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     for (PassHandle ord = 0; ord < exec.size(); ord++)
     {
         auto& pass = mSetup->trackedPasses[exec[ord]];
-        CHECK_MSG(exec[ord] == epilogue || in[exec[ord]] == 0, "Cycles in render graph. Pass {} has at least one cycle connecting to it.", pass.name);
+        CHECK_MSG(exec[ord] == epilogue || live_in[exec[ord]] == 0, "Cycles in render graph. Pass {} has at least one cycle connecting to it.", pass.name);
         pass.used = true;
         // Derive lifetimes for resources from execution order
         // FinalizeResources() uses this to overlap resources.
@@ -1215,7 +1278,7 @@ void Renderer::DbgGetTexturePreviews(Vector<TexturePreviewStat>& outStats) const
 
         RHITextureView* view = mResources->views[viewHandle].Visit([](auto const& handle) -> RHITextureView*
         {
-            return handle.Get();
+            return handle.IsValid() ? handle.Get() : nullptr;
         });
         if (!view)
             continue;
@@ -1382,7 +1445,9 @@ void Renderer::BeginExecute()
         }
         else
         {
-            auto queryResult = queryPool->GetResults(true /* wait */);
+            // We already waited for the GPU fences, so all submitted queries are done.
+            // Using wait=false prevents a device hang for culled passes that never wrote timestamps.
+            auto queryResult = queryPool->GetResults(false /* wait */);
             auto& queryTimestamps = mSwaps[mCurrentSync].dbgQueryPassTimestampsResults;
             queryTimestamps.resize(queryResult.size());
             Ranges::copy(queryResult, queryTimestamps.begin());

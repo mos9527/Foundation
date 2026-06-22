@@ -2443,6 +2443,10 @@ void FRunningImGui()
             ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
             ImGui::SeparatorText(PSI_RANDOM " Sampling");
             ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
+            if (ImGui::SliderFloat("Adaptive Threshold", &GEditor.shaderGlobals.adaptiveThreshold, 0.0f, 0.05f, "%.4f"))
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            if (ImGui::SliderInt("Adaptive Min Samples", reinterpret_cast<int*>(&GEditor.shaderGlobals.adaptiveMinSamples), 1, 256))
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             static int ptSPPIndex = 3; // 1/25 SPP
             ptSPPIndex = PTSPPOptionIndex(GEditor.shaderGlobals);
             if (ImGui::SliderInt("SPP", &ptSPPIndex, 0, kPTSPPOptionCount - 1,
@@ -2540,8 +2544,8 @@ void FRunningImGui()
         if (GEditor.rendererMode == ERendererMode::PathTracer)
         {
             {
-                const char* items[] = {"Diffuse Buffer", "Specular Buffer"};
-                const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
+                const char* items[] = {"Diffuse Buffer", "Specular Buffer", "Sample Count (Heatmap)"};
+                const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular, kViewAOVSampleCount};
                 ImGui::SeparatorText(PSI_EYE_OPEN " AOV View");
                 if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
                 {

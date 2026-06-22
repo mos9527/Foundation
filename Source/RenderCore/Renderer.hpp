@@ -543,6 +543,13 @@ namespace Foundation::RenderCore
          */
         void BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout);
         /**
+         * @brief Marks a pass as "uncullable", meaning it will always be executed even if it has no dependencies.
+         *
+         * This is useful for passes that produces resources that's *only* used on the next frame, or have side effects
+         * that are not tracked by the Renderer, e.g. async readback, timestamp queries, etc.
+         */
+        void MakePassUncullable(PassHandle pass) const;
+        /**
          * @brief Binds a texture as a Shader Resource View (read-only sampling / fetch).
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
@@ -551,7 +558,7 @@ namespace Foundation::RenderCore
          * indexed by order of declaration.
          *
          * No view is created until EndSetup() is called.
-         */
+         */        
         void BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
         /**

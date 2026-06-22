@@ -271,6 +271,8 @@ public struct UBO
     public uint32_t dbgShowOutline;
     public uint32_t dbgViewFlags;
     public uint32_t dbgMaterialFlags;    
+    public uint32_t adaptiveMinSamples;
+    public float adaptiveThreshold;
 };
 
 public struct PostprocessUBO

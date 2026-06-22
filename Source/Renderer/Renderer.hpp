@@ -58,11 +58,13 @@ struct RendererUBO
     uint32_t ptMaxBouncesTransmission{12u};
     float ptFireflyClamp{1.0f}; // 10^x
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1; fractional SPP uses ptDispatchTileSide instead.
-    uint32_t ptDispatchTileSide{3u}; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
+    uint32_t ptDispatchTileSide{1u}; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
     // -- Debug
     uint32_t dbgShowOutline{0u};
     uint32_t dbgViewFlags{0u};
     uint32_t dbgMaterialFlags{0u};
+    uint32_t adaptiveMinSamples{32u};
+    float adaptiveThreshold{0.05f}; // 0 = disabled
 };
 #pragma pack(pop)
 
@@ -99,7 +101,7 @@ static const int kViewTextureLOD = 1 << 7;
 // Per-lobe AOV view flags (Diffuse / Specular)
 static const int kViewAOVDiffuse  = 1 << 8;
 static const int kViewAOVSpecular = 1 << 9;
-
+static const int kViewAOVSampleCount = 1 << 10;
 
 // Material debug flags
 static const int kMaterialDbgWhiteBaseColor = 1 << 0;

@@ -36,6 +36,7 @@ RWTexture2D<float4> specular;           // Specular lobe radiance (incl. transmi
 RWTexture2D<float> depth;               // NDC depth
 // -- Debug buffers
 RWTexture2D<uint32_t> instanceIDBuffer; // Instance ID map, ~0u = no object (written on primary hit only)
+RWTexture2D<float4> adaptiveAux; // xyz = Half-samples, w = Convergence flag
 
 // SER coherence hint layout:
 //   [7:6] hit class (miss, analytic light, triangle, curve)
@@ -111,6 +112,7 @@ void ClearPTTile()
             specular[clearPix] = float4(0);
             depth[clearPix] = 0.0f;
             instanceIDBuffer[clearPix] = ~0u;
+            adaptiveAux[clearPix] = float4(0.0f);
         }
     }
 }
@@ -1401,7 +1403,7 @@ void WritePrimaryInstanceID(uint2 pix, uint32_t instanceID)
 
 void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float ndcDepth, float frameCount)
 {
-    float4 outD = float4(radiance.diffuse, 1.0f);
+    float4 outD = float4(radiance.diffuse, frameCount);
     float4 outS = float4(radiance.specular, 1.0f);
 
     if (frameCount == 1) {
@@ -1410,9 +1412,41 @@ void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float ndcDepth, fl
         depth[pix] = ndcDepth;
     } else {
         float invN = 1.0f / frameCount;
-        diffuse[pix]  += (outD - diffuse[pix])  * invN;
+        float4 currentD = diffuse[pix];
+        currentD.rgb += (outD.rgb - currentD.rgb) * invN;
+        currentD.a = frameCount; // Store raw sample count
+        diffuse[pix] = currentD;
+        
         specular[pix] += (outS - specular[pix]) * invN;
         depth[pix] += (ndcDepth - depth[pix]) * invN;
+    }
+
+    uint frameA = (uint(frameCount) + 1) / 2;
+    float3 totalRadiance = outD.rgb + outS.rgb;
+    if (uint(frameCount) % 2 == 1)
+    {
+        float3 currentA = adaptiveAux[pix].xyz;
+        if (frameA == 1) {
+            adaptiveAux[pix] = float4(totalRadiance, 0.0f);
+        } else {
+            float invNA = 1.0f / float(frameA);
+            adaptiveAux[pix] = float4(currentA + (totalRadiance - currentA) * invNA, adaptiveAux[pix].w);
+        }
+    }
+
+    if (frameCount > globalParams.adaptiveMinSamples && globalParams.adaptiveThreshold > 0.0f)
+    {
+        float3 I = diffuse[pix].rgb + specular[pix].rgb;
+        float3 A = adaptiveAux[pix].xyz;
+        
+        float error_difference = abs(I.r - A.r) + abs(I.g - A.g) + abs(I.b - A.b);
+        float intensity = I.r + I.g + I.b;
+        
+        float error_normalize = intensity < 1.0f ? sqrt(intensity) : intensity;
+        float error = error_difference / (0.0001f + error_normalize);
+        
+        bool did_converge = (error < globalParams.adaptiveThreshold);
+        adaptiveAux[pix] = float4(adaptiveAux[pix].xyz, did_converge ? 1.0f : 0.0f);
     }
 }
 
@@ -1498,6 +1532,13 @@ void RayGeneration()
     uint2 pix = GetPTPixel();
     if (!IsPTPixelInBounds(pix))
         return;
+
+    if (globalParams.ptAccumulatedFrames > globalParams.adaptiveMinSamples &&
+        globalParams.adaptiveThreshold > 0.0f &&
+        adaptiveAux[pix].w != 0.0f)
+    {
+        return;
+    }
 
     for (uint subSample = 0; subSample < GetPTSamplesPerDispatch(); subSample++)
     {

@@ -76,6 +76,18 @@ uint2 GetPTPostprocessSourcePixel(uint2 pixel)
 
 float3 LoadPTPostprocessRadiance(int3 coord)
 {
+    if ((flags & kViewAOVSampleCount) != 0)
+    {
+        float samples = diffuseTex.Load(coord).a;
+        float maxSamples = float(globalParams.ptAccumulatedFrames);
+        float ratio = maxSamples > 0.0f ? saturate(samples / maxSamples) : 0.0f;
+        // Simple heatmap: Blue (0) -> Green (0.5) -> Red (1.0)
+        return float3(
+            ratio > 0.5f ? (ratio - 0.5f) * 2.0f : 0.0f,
+            ratio <= 0.5f ? ratio * 2.0f : 1.0f - (ratio - 0.5f) * 2.0f,
+            ratio < 0.5f ? 1.0f - ratio * 2.0f : 0.0f
+        );
+    }
     if ((flags & kViewAOVDiffuse) != 0)
         return diffuseTex.Load(coord).xyz;
     if ((flags & kViewAOVSpecular) != 0)
@@ -93,7 +105,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     
     PostprocessInfo pp;
     pp.Exposure = globalParams.camEV;
-    if ((flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewTextureLOD)) != 0)
+    if ((flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewTextureLOD | kViewAOVSampleCount)) != 0)
         pp.Exposure = 0.0f;
 
     return float4(Postprocess(src, pp, textures3D[NonUniformResourceIndex(globalParams.viewLutIndex)], lutSampler), 1.0f);

@@ -1040,12 +1040,18 @@ void VulkanDeviceQueryPool::Reset() { mQueryPool.reset(0, mDesc.count); }
 
 Span<const uint64_t> VulkanDeviceQueryPool::GetResults(bool wait)
 {
+    // For timestamps of culled passes, they are never written. If we wait, the GPU hangs.
+    // Since we already waited for fences before calling GetResults in Renderer,
+    // all written queries are guaranteed to be available.
+    // We use PARTIAL_BIT so unwritten queries simply return 0 or remain untouched,
+    // and we don't hang waiting for them.
+    std::fill(mResults.begin(), mResults.end(), 0ull);
     VkResult res = vkGetQueryPoolResults(
         *mDevice.GetVkDevice(), *mQueryPool, 0, mDesc.count, sizeof(uint64_t) * mDesc.count, mResults.data(),
-        sizeof(uint64_t), wait ? VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_64_BIT : VK_QUERY_RESULT_64_BIT);
-    if (res == VK_NOT_READY)
-        return {};
-    CHECK(res == VK_SUCCESS);
+        sizeof(uint64_t), (wait ? VK_QUERY_RESULT_WAIT_BIT : VK_QUERY_RESULT_PARTIAL_BIT) | VK_QUERY_RESULT_64_BIT);
+    if (res == VK_NOT_READY && !wait)
+        return mResults; // Partial results are in mResults
+    CHECK(res == VK_SUCCESS || res == VK_NOT_READY);
     return mResults;
 }
 
