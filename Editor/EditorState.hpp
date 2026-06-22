@@ -33,6 +33,7 @@ struct RenderWorkflow
     int           autoPauseSampleLimit = 0;
     String        outputPath;
     int           previousSpp = 0;
+    float         previousResolutionScale = 1.0f;
 };
 
 // Gizmo UI state (matches ImGuizmo::OPERATION and ImGuizmo::MODE)

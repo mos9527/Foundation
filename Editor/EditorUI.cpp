@@ -1316,9 +1316,11 @@ void EditorDockSpaceAndMenuBar()
                 GEditor.renderTask.renderAutoPaused = false;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.renderTask.previousSpp = GEditor.shaderGlobals.ptSamplesPerPixel;
-                // Go for 1spp always during rendering
-                GEditor.shaderGlobals.ptSamplesPerPixel = 1;
-                GEditor.state = FERendering;
+                GEditor.renderTask.previousResolutionScale = GEditor.renderResolutionScale;
+                // Go for 1:1, 1spp always during rendering
+                GEditor.shaderGlobals.ptSamplesPerPixel = 1;                
+                GEditor.renderResolutionScale = 1.0f;
+                GEditor.state = FERenderingEnter;                
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
@@ -2620,9 +2622,11 @@ void FRendering(RendererOutputs const& outputs)
     {
         // Restore spp preview settings
         GEditor.shaderGlobals.ptSamplesPerPixel = GEditor.renderTask.previousSpp;
+        GEditor.renderResolutionScale = GEditor.renderTask.previousResolutionScale;
+        GEditor.rendererConfig.isRendering = false;
         if (!cancelRendering)
             DoRenderReadback(outputs);
-        GEditor.state = FERunning;
+        GEditor.state = FERunningEnter;
     }
 }
 

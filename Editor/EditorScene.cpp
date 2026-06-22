@@ -913,10 +913,6 @@ static void InstallLoadedScene(String const& scenePayloadPath, GPUScene*& newGPU
     GEditor.state = FERunningEnter;
 }
 
-// In-flight streaming scene load. The scene is installed up front (so it renders while it
-// loads), but the FSCN scratch arena, mapped file, and parsed scene must outlive the
-// background GPUScene drain (which holds pointers into the serialized data + payload), so
-// they live here until Poll() reports Ready.
 struct PendingSceneLoad
 {
     String scenePayloadPath;

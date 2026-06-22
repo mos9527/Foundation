@@ -78,7 +78,7 @@ static void RefreshPostprocessState(RHIExtent2D renderExtent)
         Postprocess::ResolvePostprocessViewLutIndex(GEditor.viewLUTSdrHandle, GEditor.viewLUTHdrHandle, GContext->enableHDR);
 }
 
-static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer, RendererOutputs& outputs)
+static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer, RendererOutputs& outputs, bool isRendering)
 {
     CHECK(context);
     CHECK(renderer);
@@ -223,7 +223,11 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
         renderer, "Editor Blit",
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve("Data/Shaders/EPSBlit.spv"));
+            const int kViewInteractive = 1 << 0; 
+            uint flags{};
+            if (!isRendering)
+                flags |= kViewInteractive;
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve("Data/Shaders/EPSBlit.spv"), AsBytes(AsSpan(flags)));
             r->BindTextureSRV(self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = postprocessFormat,
                                                  .range = RHITextureSubresourceRange::Create()});
@@ -239,7 +243,8 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
         {
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, sPickingPixel);
         });
-    EditorGizmos::InsertPass(renderer, outputs.depth, {w, h});
+    if (!isRendering)
+        EditorGizmos::InsertPass(renderer, outputs.depth, {w, h});
 }
 
 static void EndEditorRendererSetup(Renderer* renderer)
@@ -270,7 +275,7 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
         BuildPathTracerRenderGraph(renderer, &GEditor.shaderGlobals, context->gpuScene, GEditor.rendererConfig, outOutputs);
     if (GEditor.rendererMode == ERendererMode::Raster)
         BuildRasterRenderGraph(renderer, &GEditor.shaderGlobals, context->gpuScene, GEditor.rendererConfig, outOutputs);
-    InsertEditorPostprocessPasses(context, renderer, outOutputs);
+    InsertEditorPostprocessPasses(context, renderer, outOutputs, GEditor.rendererConfig.isRendering);
     EndEditorRendererSetup(renderer);
 }
 
@@ -342,18 +347,6 @@ static void FRunningEnter()
     UpdateSwapchain(GContext);
     // Invalidate stale readback handles before rebuilding the renderer
     sRenderOutputs = {};
-    // Build the TLAS up front so the render graph captures a valid, correctly-sized TLAS
-    // (a full build grows the TLAS buffers; the per-frame pass then only refits).
-    if (GContext->gpuScene)
-    {
-        ImmediateContext tlasCtx(RHIDeviceQueueType::Compute, GContext->device.Get());
-        auto* cmd = tlasCtx.Get();
-        cmd->Begin();
-        auto tlasResult = GContext->gpuScene->BuildTLAS(cmd, false);
-        cmd->End();
-        if (tlasResult == GPUScene::TLASBuildResult::Built)
-            tlasCtx.Submit(), tlasCtx.WaitIdle();
-    }
     SetupSceneRenderer(GContext, sRenderOutputs);
     GEditor.state = FERunning;
 }
@@ -488,6 +481,12 @@ static void FRunning()
         }
     }
     sPrevPTAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
+}
+
+static void FRenderingEnter() { 
+    GEditor.rendererConfig.isRendering = true;
+    FRunningEnter();  // Rebuild graph
+    GEditor.state = FERendering;
 }
 
 static ImVec2 EventMousePosition(SDL_Event const& event)
@@ -625,6 +624,9 @@ bool EditorOnFrame(FContext* context)
         break;
     case FERunning:
         FRunning();
+        break;
+    case FERenderingEnter:
+        FRenderingEnter();
         break;
     case FERendering:
         FRendering(sRenderOutputs);

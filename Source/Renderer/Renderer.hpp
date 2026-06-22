@@ -127,6 +127,7 @@ struct RendererConfig
     bool textureAnisoEnable{true};
     float textureAnisoLevel{16.0f};
     bool textureTrilinear{true};
+    bool isRendering{false};
 };
 
 inline RHIDeviceSampler::SamplerDesc MakeTextureSamplerDesc(RendererConfig const& cfg)

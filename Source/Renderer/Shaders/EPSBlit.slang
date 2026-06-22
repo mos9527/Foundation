@@ -13,10 +13,16 @@ struct BlitPC {
 };
 [[vk::push_constant]] BlitPC blitPC;
 
+static const int kViewInteractive = 1 << 0;
+[[SpecializationConstant]] int flags;
+
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
     // UV-based sample for the display image (handles resolution mismatch / upscale)
     float4 result = displayImage.Sample(displaySampler, uv);
+
+    if ((flags & kViewInteractive) == 0)
+        return result;
 
     // Map display-space UV to internal render resolution for integer-addressed buffers
     float2 internalCoord = uv * float2(globalParams.renderWidth, globalParams.renderHeight);

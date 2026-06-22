@@ -8,6 +8,7 @@ enum FEditorState
     FENoScene, // no scene loaded: render ImGui only until a scene is installed
     FERunningEnter,
     FERunning,
+    FERenderingEnter,
     FERendering
 };
 
