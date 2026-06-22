@@ -243,8 +243,9 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
         {
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, sPickingPixel);
         });
+    auto [screenWidth, screenHeight] = renderer->GetSwapchainExtent();
     if (!isRendering)
-        EditorGizmos::InsertPass(renderer, outputs.depth, {w, h});
+        EditorGizmos::InsertPass(renderer, outputs.depth, {screenWidth, screenHeight});
 }
 
 static void EndEditorRendererSetup(Renderer* renderer)
