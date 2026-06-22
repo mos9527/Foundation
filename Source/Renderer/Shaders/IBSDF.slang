@@ -352,7 +352,7 @@ public struct GlassBSDF : IBxDF {
         return SampleGGXLutEIORavg(ggxLutEIORavgIndex, ggxLutEIORInvavgIndex, roughness, etap);
     }
 
-    public BxDFFlags Flags() { return BxDFFlags::GlossyReflection | BxDFFlags::GlossyTransmission; }
+    public BxDFFlags Flags() { return mfDistrib.EffectivelySmooth() ? (BxDFFlags::SpecularTransmission | BxDFFlags::SpecularReflection) : (BxDFFlags::GlossyReflection | BxDFFlags::GlossyTransmission); }
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         float cosWo = CosTheta(wo);
@@ -708,6 +708,7 @@ public interface IBSDF {
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags);
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags,
                                out AOVCategory category);
+    public bool IsDirac();
 };
 
 static const int HairPMax = 3;
@@ -888,6 +889,10 @@ public struct HairBSDF : IBSDF
         this.cos2kAlpha1 = Sqr(this.cos2kAlpha0) - Sqr(this.sin2kAlpha0);
         this.sin2kAlpha2 = 2.0f * this.cos2kAlpha1 * this.sin2kAlpha1;
         this.cos2kAlpha2 = Sqr(this.cos2kAlpha1) - Sqr(this.sin2kAlpha1);
+    }
+
+    public bool IsDirac() {
+        return false;
     }
 
     public float V(int p)
@@ -1186,6 +1191,7 @@ public struct PrincipledBSDF : IBSDF {
 
     float weightSum;
 
+    bool isDirac;
     public __init(float3 baseColor, float metallic, float roughness, float ior, float specularFactor = 1.0f,
                   float transmission = 0.0f, bool energyCompensation = true, float3 wo = float3(0,0,1),
                   float diffuseWeight = 1.0f, float anisotropyStrength = 0.0f,
@@ -1258,7 +1264,17 @@ public struct PrincipledBSDF : IBSDF {
                                     ggxLutEIndex, ggxLutEavgIndex);
         this.metallic  = MetallicBSDF(baseColor, roughness, anisotropyStrength, energyCompensation, ggxLutEIndex, ggxLutEavgIndex);
         this.coat      = GlossyBSDF(coatF0, coatF90, coatRoughness, 0.0f, energyCompensation, ggxLutEIndex, ggxLutEavgIndex);
+
+        isDirac = true;
+        if (hasDiffuse) isDirac = false;
+        if (hasTrans) isDirac &= IsSpecular(this.glass.Flags());
+        if (hasDielSpec) isDirac &= IsSpecular(this.glossy.Flags());
+        if (hasMetal) isDirac &= IsSpecular(this.metallic.Flags());
+        if (hasSheen) isDirac = false;
+        if (hasCoat) isDirac &= IsSpecular(this.coat.Flags());
     }
+
+    public bool IsDirac() { return isDirac; }
 
     public void f(float3 wo, float3 wi, TransportMode mode,
                         out float3 fDiffuse, out float3 fSpecular) {

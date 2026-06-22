@@ -190,6 +190,7 @@ Path Tracer
 ---
 Also w/ blog post series update on:
 - [ ] Denoising
+- [ ] Wavefront PT with indirect ray dispatches (https://developer.blender.org/docs/features/cycles/kernel_scheduling/)
 - [ ] Light Tree ([BVH Light Sampling](https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling))
 - [ ] ReSTIR Spatial + Temporal Reuse
 - [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC)?)
