@@ -80,7 +80,7 @@ int main(int argc, char** argv)
 
     // Renderer Settings
     // --energy-clamp / -e: specify energy clamp value
-    cmdl({"-e", "--energy-clamp"}, 1.0f) >> GContext->rendererSettings.energyClampOverride;
+    cmdl({"-e", "--energy-clamp"}, 2.0f) >> GContext->rendererSettings.energyClampOverride;
     // --renderer / -r: specify default renderer (0: PT, 1: RASTER)
     cmdl({"-r", "--renderer"}, 0) >> GContext->rendererSettings.defaultRenderer;
     // --render-scale / -s: initial viewport render resolution scale

@@ -2367,7 +2367,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptMaxBouncesDiffuse = 4;
                 GEditor.shaderGlobals.ptMaxBouncesSpecular = 4;
                 GEditor.shaderGlobals.ptMaxBouncesTransmission = 12;
-                GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 1.0
+                GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton(PSI_FIRE " Full", 1, 3))
@@ -2375,7 +2375,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
                 GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
                 GEditor.shaderGlobals.ptMaxBouncesTransmission = 32;
-                GEditor.shaderGlobals.ptFireflyClamp = 2.0f;
+                GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton(PSI_BEAKER " Über", 2, 3))
