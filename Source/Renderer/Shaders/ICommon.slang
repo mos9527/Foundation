@@ -283,6 +283,8 @@ public struct PostprocessUBO
     public float fbWidth;
     public float fbHeight;
     public uint32_t outlineInstanceId;
+    public float renderWidth;
+    public float renderHeight;
 };
 // ^^^
 

@@ -2,6 +2,7 @@
 #include "Paths.hpp"
 #include "EditorState.hpp"
 #include <argh.h>
+#include <algorithm>
 #include <nfd.h>
 extern bool EditorProcessEvent(SDL_Event*);
 extern bool EditorOnFrame(FContext*);
@@ -46,6 +47,7 @@ int main(int argc, char** argv)
         fmt::println("\t-h, --help\t\tShow this help message");
         fmt::println("\t-g, --gpu <id>\t\tSpecify GPU device index");
         fmt::println("\t-l, --list-gpus\t\tList available GPU devices");
+        fmt::println("\t-s, --render-scale <f>\tInitial render resolution scale (0.25..1.0)");
         return 0;
     }
     Paths::Init(argv[0]);
@@ -81,6 +83,9 @@ int main(int argc, char** argv)
     cmdl({"-e", "--energy-clamp"}, 1.0f) >> GContext->rendererSettings.energyClampOverride;
     // --renderer / -r: specify default renderer (0: PT, 1: RASTER)
     cmdl({"-r", "--renderer"}, 0) >> GContext->rendererSettings.defaultRenderer;
+    // --render-scale / -s: initial viewport render resolution scale
+    cmdl({"-s", "--render-scale"}, 1.0f) >> GContext->rendererSettings.renderScale;
+    GContext->rendererSettings.renderScale = std::clamp(GContext->rendererSettings.renderScale, 0.25f, 1.0f);
     
 
     // Positional arguments (non-flag/option) are treated as file paths passed to the Editor

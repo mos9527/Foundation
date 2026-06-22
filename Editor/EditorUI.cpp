@@ -2187,6 +2187,23 @@ void FRunningImGui()
     {
         bool changed = false;
         ImGui::SeparatorText(PSI_EYE_OPEN " Display");
+        {
+            static float sPendingScale = GEditor.renderResolutionScale;
+            RHIExtent2D displayExtent = GEditor.viewport.renderExtent;
+            uint32_t internalW = std::max(16u, static_cast<uint32_t>(displayExtent.x * sPendingScale));
+            uint32_t internalH = std::max(16u, static_cast<uint32_t>(displayExtent.y * sPendingScale));
+            ImGui::Text("Display: %ux%u, Internal: %ux%u", displayExtent.x, displayExtent.y, internalW, internalH);
+            ImGui::SliderFloat("Render Scale", &sPendingScale, 0.25f, 1.0f, "%.2fx");
+            sPendingScale = std::clamp(sPendingScale, 0.25f, 1.0f);
+            // Commit scale + rebuild render graph only when the user releases the slider
+            if (ImGui::IsItemDeactivatedAfterEdit())
+            {
+                GEditor.renderResolutionScale = sPendingScale;
+                GEditor.state = FERunningEnter;
+                if (GEditor.rendererMode == ERendererMode::PathTracer)
+                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
+        }
         bool viewLUTChanged = false;
         auto viewLUTCombo = [](const char* label, int& index, String& externalPath,
                                Postprocess::ViewLUTDomain domain)

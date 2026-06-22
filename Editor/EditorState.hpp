@@ -151,6 +151,7 @@ struct EditorState
     bool            showImGui = false;
     FEditorState    state = FEInitEnter;
     bool            cameraUpdated = true;
+    float           renderResolutionScale = 1.0f; // 0.25 .. 1.0
 
     [[nodiscard]] bool HasScene() const { return scene.has_value(); }
     FImportedScene& Scene()

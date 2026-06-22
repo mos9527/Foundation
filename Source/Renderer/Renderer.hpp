@@ -56,7 +56,7 @@ struct RendererUBO
     uint32_t ptMaxBouncesDiffuse{4u};
     uint32_t ptMaxBouncesSpecular{4u};
     uint32_t ptMaxBouncesTransmission{12u};
-    float ptFireflyClamp{1.0f}; // 10^x
+    float ptFireflyClamp{2.0f}; // 10^x
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1.
     // -- Debug
     uint32_t dbgShowOutline{0u};
@@ -162,6 +162,8 @@ struct PostprocessUBO
     float fbWidth{1.0f};
     float fbHeight{1.0f};
     uint32_t outlineInstanceId{~0u};
+    float renderWidth{1.0f};   // Internal render target width
+    float renderHeight{1.0f};  // Internal render target height
 };
 
 extern void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,

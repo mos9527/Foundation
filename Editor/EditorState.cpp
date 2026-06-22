@@ -61,14 +61,19 @@ static Renderer* BeginEditorRendererSetup(FContext* context, uint32_t threadCoun
     return renderer;
 }
 
-static void RefreshPostprocessState(RHIExtent2D extent)
+static void RefreshPostprocessState(RHIExtent2D renderExtent)
 {
     GEditor.postprocessGlobals.camEV = GEditor.shaderGlobals.camEV;
     GEditor.postprocessGlobals.dbgShowOutline = GEditor.showImGui ? 1u : 0u;
     GEditor.postprocessGlobals.outlineInstanceId = GEditor.selectedInstance;
     GEditor.postprocessGlobals.ptAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
-    GEditor.postprocessGlobals.fbWidth = static_cast<float>(extent.x);
-    GEditor.postprocessGlobals.fbHeight = static_cast<float>(extent.y);
+    // fbWidth/fbHeight = display (output) extent for the blit pass UV mapping
+    RHIExtent2D displayExtent = ClampViewportExtent(GEditor.viewport.renderExtent);
+    GEditor.postprocessGlobals.fbWidth = static_cast<float>(displayExtent.x);
+    GEditor.postprocessGlobals.fbHeight = static_cast<float>(displayExtent.y);
+    // renderWidth/renderHeight = internal (scaled) render resolution
+    GEditor.postprocessGlobals.renderWidth = static_cast<float>(renderExtent.x);
+    GEditor.postprocessGlobals.renderHeight = static_cast<float>(renderExtent.y);
     GEditor.postprocessGlobals.viewLutIndex =
         Postprocess::ResolvePostprocessViewLutIndex(GEditor.viewLUTSdrHandle, GEditor.viewLUTHdrHandle, GContext->enableHDR);
 }
@@ -206,6 +211,14 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
         }
     }
 
+    auto BlitSampler = renderer->CreateSampler({
+        .addressMode = {
+            .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+            .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+            .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+        },
+        .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear, RHIDeviceSampler::SamplerDesc::Filter::Linear},
+    });
     createPSFullscreenPass(
         renderer, "Editor Blit",
         [=](PassHandle self, Renderer* r)
@@ -214,6 +227,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
             r->BindTextureSRV(self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = postprocessFormat,
                                                  .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSampler(self, BlitSampler, "displaySampler");
             r->BindTextureSRV(self, outputs.instanceID, "instanceIDBuffer", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});
@@ -244,8 +258,13 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
 {
     auto* renderer = BeginEditorRendererSetup(context, 4u);
     RHIExtent2D renderExtent = ClampViewportExtent(renderer->GetSwapchainExtent());
-    GEditor.viewport.renderExtent = renderExtent;
-    GEditor.rendererConfig.renderExtent = renderExtent;
+    GEditor.viewport.renderExtent = renderExtent; // display extent (for mouse mapping)
+    // Apply render resolution scale for internal render targets
+    RHIExtent2D scaledExtent = {
+        std::max(16u, static_cast<uint32_t>(renderExtent.x * GEditor.renderResolutionScale)),
+        std::max(16u, static_cast<uint32_t>(renderExtent.y * GEditor.renderResolutionScale))
+    };
+    GEditor.rendererConfig.renderExtent = scaledExtent;
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
     if (GEditor.rendererMode == ERendererMode::PathTracer)
         BuildPathTracerRenderGraph(renderer, &GEditor.shaderGlobals, context->gpuScene, GEditor.rendererConfig, outOutputs);
@@ -266,6 +285,7 @@ static void FInitEnter()
     // Handle Renderer Settings passed from context (cmd lines)
     GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride;
     GEditor.rendererMode = static_cast<ERendererMode>(GContext->rendererSettings.defaultRenderer);
+    GEditor.renderResolutionScale = GContext->rendererSettings.renderScale;
     if (GEditor.state == FEInitEnter)
     {
         LOG(Editor, LogInfo, "No scene path provided, starting with empty editor");
@@ -359,8 +379,13 @@ static void FRunning()
     // Kick the per-skeleton pose evaluation now so it overlaps the camera/UBO globals update below.
     // EndAnimationUpdate (further down) waits for it before skinning + committing the scene.
     BeginAnimationUpdate(dt);
-    RHIExtent2D renderExtent = ClampViewportExtent(GEditor.viewport.renderExtent);
-    GEditor.camera.aspect = static_cast<float>(renderExtent.x) / static_cast<float>(renderExtent.y);
+    RHIExtent2D displayExtent = ClampViewportExtent(GEditor.viewport.renderExtent);
+    // Apply render resolution scale for internal render targets
+    RHIExtent2D renderExtent = {
+        std::max(16u, static_cast<uint32_t>(displayExtent.x * GEditor.renderResolutionScale)),
+        std::max(16u, static_cast<uint32_t>(displayExtent.y * GEditor.renderResolutionScale))
+    };
+    GEditor.camera.aspect = static_cast<float>(displayExtent.x) / static_cast<float>(displayExtent.y);
     GEditor.cameraUpdated |= GEditor.camera.UpdateMovement(dt);
     // An animated scene camera overrides user navigation while it's playing/scrubbing.
     if (followAnimatedCamera)
@@ -380,6 +405,7 @@ static void FRunning()
         ? ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm * 1e-3f,
                                   GEditor.camera.fovY)
         : 0.0f;
+    // UBO fbWidth/fbHeight = internal render resolution (used by PT ray gen, raster lighting CS, etc.)
     GEditor.shaderGlobals.fbWidth = static_cast<float>(renderExtent.x);
     GEditor.shaderGlobals.fbHeight = static_cast<float>(renderExtent.y);
     GEditor.shaderGlobals.dbgViewFlags = GEditor.rendererConfig.viewFlags;

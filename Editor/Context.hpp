@@ -51,6 +51,7 @@ struct FContext
     {
         int defaultRenderer{0}; // 0: PT, 1: RASTER
         float energyClampOverride{1.0f}; // Applies to default PT, Fast preset
+        float renderScale{1.0f}; // 0.25 .. 1.0
     } rendererSettings;
 };
 
