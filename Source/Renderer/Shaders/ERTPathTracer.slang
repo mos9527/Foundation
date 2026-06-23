@@ -1518,11 +1518,8 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         HitPayload payload;
         #ifdef USE_SER
             // SER
-            // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
-            // https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_invocation_reorder/README.html
-            // And beware. AMD treats this as stub even on RDNA4 offerings.
-            // Sigh... Work Graphs, then?
-            // https://devblogs.microsoft.com/directx/shader-model-6-9-retail-and-more/#appendix
+            // Beware. AMD treats this as stub even on RDNA4 offerings. This path only becomes active on NV hardware.
+            // Someday. *Actual* Wavefront tracing... let's hope whatever we'd come up with would beat SER
             HitObject hitObj = TraceHitObject(ray);
             uint coherenceHint = BuildSERCoherenceHint(hitObj, bounce);
             ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);
@@ -1694,9 +1691,8 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     AccumulatePathRadiance(pix, radiance, chitNDCDepth, frameCount);
 }
 // Naive stochastic opacity map implementation
-// TODO: OMM? Maybe one day.
-//  https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_opacity_micromap.html
-//  https://devblogs.microsoft.com/directx/omm/
+// And before you ask - OMM is NV only
+//  - https://devblogs.microsoft.com/directx/omm/
 bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitive,
     BuiltInTriangleIntersectionAttributes attr)
 {

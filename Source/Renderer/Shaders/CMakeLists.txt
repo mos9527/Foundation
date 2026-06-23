@@ -21,7 +21,7 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             spvGroupNonUniformBallot
             spvGroupNonUniformArithmetic
             spvRayQueryKHR
-            spvShaderInvocationReorderEXT
+            # spvShaderInvocationReorderEXT (sigh)
             spvShaderInvocationReorderNV
     )
     slangc_compile(
@@ -39,7 +39,7 @@ foreach(SlangFile IN LISTS SLANG_FILES)
                 SOURCE          "${SlangFile}"
                 OUTPUT_DIR      "${SHADER_BUILD_DIR}"
                 OUTPUT_NAME     "${ShaderName}_SER"
-                CAPABILITIES    ${ShaderCapabilities} spvShaderInvocationReorderEXT
+                CAPABILITIES    ${ShaderCapabilities}
                 DEFINES         "USE_SER=1"
         )
         add_dependencies(Foundation_Shaders "Shader_${ShaderName}_SER")

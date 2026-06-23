@@ -161,7 +161,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
         vk::PhysicalDeviceRayQueryFeaturesKHR,
         vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
-        vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>;
+        vk::PhysicalDeviceRayTracingInvocationReorderFeaturesNV>;
 
     // featureChain is zero-initialized (everything defaults to false).
     // supportedChain will hold what the physical device actually supports.
@@ -207,7 +207,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     UNLINK_IF_UNSUPPORTED(hasAccelerationStructure, vk::PhysicalDeviceAccelerationStructureFeaturesKHR)
     UNLINK_IF_UNSUPPORTED(hasRayQuery, vk::PhysicalDeviceRayQueryFeaturesKHR)
     UNLINK_IF_UNSUPPORTED(hasRayTracingPipeline, vk::PhysicalDeviceRayTracingPipelineFeaturesKHR)
-    UNLINK_IF_UNSUPPORTED(hasRayTracingInvocationReorder, vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT)
+    UNLINK_IF_UNSUPPORTED(hasRayTracingInvocationReorder, vk::PhysicalDeviceRayTracingInvocationReorderFeaturesNV)
     #undef UNLINK_IF_UNSUPPORTED
     (*mPhysicalDevice).getFeatures2(&supportedChain.get<vk::PhysicalDeviceFeatures2>());
 
@@ -284,9 +284,16 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
 
     bool shaderExecutionReordering = false;
     if (hasRayTracingInvocationReorder) {
-        REQUEST_FEATURE(vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT, rayTracingInvocationReorder)
+        // There's PhysicalDeviceRayTracingInvocationReorderFeaturesEXT, but:
+        // * AMD doesn't do anything with it enabled.
+        //   https://devblogs.microsoft.com/directx/ser/?commentid=594#comment-594
+        // * Intel... actually supports it even on lower-end cards like A380. With markable perf gains.
+        //   Had one myself for a while before switching to NV. But I don't think I know another person who use one unironically.
+        // * NVIDIA should support it. But at this point just go with the NV extension.
+        //   Also getting false-negatives on the EXT extension there, so here we are...
+        REQUEST_FEATURE(vk::PhysicalDeviceRayTracingInvocationReorderFeaturesNV, rayTracingInvocationReorder)
         shaderExecutionReordering =
-            featureChain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>().rayTracingInvocationReorder ==
+            featureChain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesNV>().rayTracingInvocationReorder ==
             VK_TRUE;
     }
 

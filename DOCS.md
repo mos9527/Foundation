@@ -198,8 +198,7 @@ Sorted by priority (high to low), also w/ future blog post series update on:
 
 Done, awaiting Blog Update:
 - [x] Adaptive Sampling (https://jo.dreggn.org/home/2009_stopping.pdf)
-  - Blocks has the max size of 64x64
-  - Splits done in a heap/quadtree
+  - Per-pixel then dialated with a box filter. Same as Cycles.
   - Kills the warps to skip converged pixels, not regenerating paths as discussed in [Megakernels Considered Harmful: Wavefront Path Tracing on GPUs](https://research.nvidia.com/sites/default/files/pubs/2013-07_Megakernels-Considered-Harmful/laine2013hpg_paper.pdf)
     - TODO? Perhaps unnecessary if we'd actually move to wavefronts...
 - [x] Hair Shading
