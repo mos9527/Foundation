@@ -1302,8 +1302,12 @@ void EditorDockSpaceAndMenuBar()
             if (pathTracerRender)
             {
                 ImGui::InputInt("Samples / pixel", &GEditor.renderTask.samplePopupInput);
-                if (GEditor.renderTask.samplePopupInput < 1)
-                    GEditor.renderTask.samplePopupInput = 1;
+                if (GEditor.renderTask.samplePopupInput < 0)
+                    GEditor.renderTask.samplePopupInput = 0;
+                ImGui::InputInt("Time limit (s)", &GEditor.renderTask.timePopupInput);
+                if (GEditor.renderTask.timePopupInput < 0)
+                    GEditor.renderTask.timePopupInput = 0;
+                ImGui::TextDisabled("Set to 0 to disable limit");
             }
             else
             {
@@ -1312,6 +1316,8 @@ void EditorDockSpaceAndMenuBar()
             if (ImGui::Button(PSI_PLAY " Start Render"))
             {
                 GEditor.renderTask.targetSamples = pathTracerRender ? GEditor.renderTask.samplePopupInput : 1;
+                GEditor.renderTask.targetTimeSeconds = pathTracerRender ? GEditor.renderTask.timePopupInput : 0;
+                GEditor.renderTask.startTime = ImGui::GetTime();
                 GEditor.renderTask.renderPaused = false;
                 GEditor.renderTask.renderAutoPaused = false;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
@@ -2562,6 +2568,7 @@ void FRendering(RendererOutputs const& outputs)
 
     bool cancelRendering = false;
     uint32_t targetFrames = static_cast<uint32_t>(GEditor.renderTask.targetSamples);
+    double elapsed = ImGui::GetTime() - GEditor.renderTask.startTime;
     // Full-width progress bar at the top
     {
         auto& io = ImGui::GetIO();
@@ -2576,14 +2583,36 @@ void FRendering(RendererOutputs const& outputs)
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                          ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize);
         uint32_t completedSamples = GEditor.shaderGlobals.ptAccumulatedFrames;
-        float fraction = GEditor.renderTask.targetSamples > 0 ? static_cast<float>(completedSamples) /
-                static_cast<float>(GEditor.renderTask.targetSamples)
-                                                            : 0.0f;
+        float fraction = 0.0f;
         char overlay[128];
-        snprintf(overlay, sizeof(overlay), "%d / %d %s", completedSamples,
-                 GEditor.renderTask.targetSamples,
-                 GEditor.rendererMode == ERendererMode::PathTracer ? "samples" : "frames");
-        ImGui::ProgressBar(fraction, ImVec2(barW, barH), overlay);
+        const char* unitStr = GEditor.rendererMode == ERendererMode::PathTracer ? "samples" : "frames";
+
+        if (GEditor.renderTask.targetTimeSeconds > 0 && GEditor.renderTask.targetSamples > 0)
+        {
+            float timeFrac = static_cast<float>(elapsed / GEditor.renderTask.targetTimeSeconds);
+            float sampleFrac = static_cast<float>(completedSamples) / static_cast<float>(GEditor.renderTask.targetSamples);
+            fraction = std::max(timeFrac, sampleFrac);
+            snprintf(overlay, sizeof(overlay), "%d / %d %s (%.1fs / %ds)", completedSamples,
+                     GEditor.renderTask.targetSamples, unitStr, elapsed, GEditor.renderTask.targetTimeSeconds);
+        }
+        else if (GEditor.renderTask.targetTimeSeconds > 0)
+        {
+            fraction = static_cast<float>(elapsed / GEditor.renderTask.targetTimeSeconds);
+            snprintf(overlay, sizeof(overlay), "%d %s (%.1fs / %ds)", completedSamples, unitStr, elapsed, GEditor.renderTask.targetTimeSeconds);
+        }
+        else if (GEditor.renderTask.targetSamples > 0)
+        {
+            fraction = static_cast<float>(completedSamples) / static_cast<float>(GEditor.renderTask.targetSamples);
+            snprintf(overlay, sizeof(overlay), "%d / %d %s (%.1fs elapsed)", completedSamples,
+                     GEditor.renderTask.targetSamples, unitStr, elapsed);
+        }
+        else
+        {
+            fraction = 0.0f;
+            snprintf(overlay, sizeof(overlay), "%d %s (%.1fs elapsed) - No limit", completedSamples, unitStr, elapsed);
+        }
+
+        ImGui::ProgressBar(std::clamp(fraction, 0.0f, 1.0f), ImVec2(barW, barH), overlay);
         ImGui::End();
         ImGui::PopStyleVar(2);
     }
@@ -2618,7 +2647,10 @@ void FRendering(RendererOutputs const& outputs)
     renderer->EndExecute();
     GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
 
-    if (cancelRendering || GEditor.shaderGlobals.ptAccumulatedFrames >= targetFrames)
+    bool timeLimitReached = GEditor.renderTask.targetTimeSeconds > 0 && elapsed >= GEditor.renderTask.targetTimeSeconds;
+    bool sampleLimitReached = GEditor.renderTask.targetSamples > 0 && GEditor.shaderGlobals.ptAccumulatedFrames >= targetFrames;
+
+    if (cancelRendering || timeLimitReached || sampleLimitReached)
     {
         // Restore spp preview settings
         GEditor.shaderGlobals.ptSamplesPerPixel = GEditor.renderTask.previousSpp;

@@ -22,6 +22,7 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             spvGroupNonUniformArithmetic
             spvRayQueryKHR
             spvShaderInvocationReorderEXT
+            spvShaderInvocationReorderNV
     )
     slangc_compile(
             "Shader_${ShaderName}"

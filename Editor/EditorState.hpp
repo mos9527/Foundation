@@ -21,6 +21,9 @@ struct RenderWorkflow
     ERenderFormat format       = ERenderFormat::HDR;
     int           targetSamples     = 0;
     int           samplePopupInput  = 4096;
+    int           targetTimeSeconds = 0;
+    int           timePopupInput    = 0;
+    double        startTime         = 0.0;
     bool          openRenderPopup   = false;
     // Pause state - kept here so the Path Tracer pass setup can read it via pointer.
     // renderPaused is true whenever rendering should NOT progress (manual OR auto).
