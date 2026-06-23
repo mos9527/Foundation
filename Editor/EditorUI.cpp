@@ -2420,7 +2420,7 @@ void FRunningImGui()
             ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
             ImGui::SeparatorText(PSI_RANDOM " Sampling");
             ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
-            if (ImGui::SliderFloat("Adaptive Threshold", &GEditor.shaderGlobals.adaptiveThreshold, 0.0f, 1.0f, "%.4f"))
+            if (ImGui::SliderFloat("Adaptive Threshold", &GEditor.shaderGlobals.adaptiveThreshold, 0.0f, 0.01f, "%.4f"))
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             if (ImGui::SliderInt("Adaptive Min Samples", reinterpret_cast<int*>(&GEditor.shaderGlobals.adaptiveMinSamples), 1, 256))
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;

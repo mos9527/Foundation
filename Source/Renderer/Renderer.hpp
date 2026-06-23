@@ -63,7 +63,7 @@ struct RendererUBO
     uint32_t dbgViewFlags{0u};
     uint32_t dbgMaterialFlags{0u};
     uint32_t adaptiveMinSamples{32u};
-    float adaptiveThreshold{0.01f}; // 0 = disabled
+    float adaptiveThreshold{0.001f}; // 0 = disabled
 };
 #pragma pack(pop)
 

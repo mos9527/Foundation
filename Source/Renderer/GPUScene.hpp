@@ -239,7 +239,7 @@ public:
         OutOfMemory,
         DecodeFailed,
         SubmitFailed,
-        Cancelled,
+        Cancelled, 
     };
 
     enum class LightSamplerType
