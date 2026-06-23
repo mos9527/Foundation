@@ -46,6 +46,7 @@ struct GizmoState
     float translateSnap{1.0f};
     float rotateSnap{15.0f};
     float scaleSnap{0.1f};
+    bool enabled{true};
 };
 
 struct CameraApertureState

@@ -1286,6 +1286,12 @@ void EditorDockSpaceAndMenuBar()
             ImGui::EndMenu();
         }
 
+        if (ImGui::BeginMenu(PSI_EYE_OPEN " View"))
+        {
+            ImGui::MenuItem("Gizmos", nullptr, &GEditor.gizmo.enabled);
+            ImGui::EndMenu();
+        }
+
         // Render Settings modal popup (opened after file dialog)
         if (GEditor.renderTask.openRenderPopup)
         {
@@ -2664,6 +2670,8 @@ void FRendering(RendererOutputs const& outputs)
 
 static void DrawInstanceGizmos()
 {
+    if (!GEditor.gizmo.enabled)
+        return;
     if (!IsSelectedInstanceValid())
         return;
     if (GEditor.selectedLight >= 0)
@@ -2700,6 +2708,8 @@ static void DrawInstanceGizmos()
 
 static void DrawLightGizmos()
 {
+    if (!GEditor.gizmo.enabled)
+        return;
     if (!GEditor.HasScene())
         return;
     auto lights = GEditor.Scene().GetLights();
