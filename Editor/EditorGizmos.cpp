@@ -383,6 +383,9 @@ namespace EditorGizmos
 
 void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D extent)
 {
+    if (!GEditor.gizmo.enabled)
+        return;
+
     CHECK(renderer);
 
     sGizmo.iconPool = ConstructUnique<BindlessPool>(GLOBAL_ALLOC, renderer->GetDevice(), GLOBAL_ALLOC,
@@ -590,7 +593,7 @@ void BuildLightGizmos()
 
 int PickLightAtRenderPixel(Math::int2 pixel)
 {
-    if (!GEditor.showImGui || !GEditor.HasScene())
+    if (!GEditor.showImGui || !GEditor.gizmo.enabled || !GEditor.HasScene())
         return -1;
 
     RHIExtent2D const renderExtent = GEditor.viewport.renderExtent;

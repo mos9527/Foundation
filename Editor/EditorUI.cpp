@@ -1288,7 +1288,8 @@ void EditorDockSpaceAndMenuBar()
 
         if (ImGui::BeginMenu(PSI_EYE_OPEN " View"))
         {
-            ImGui::MenuItem("Gizmos", nullptr, &GEditor.gizmo.enabled);
+            if (ImGui::MenuItem("Gizmos", nullptr, &GEditor.gizmo.enabled))
+                GEditor.state = FERunningEnter;
             ImGui::EndMenu();
         }
 
