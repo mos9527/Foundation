@@ -19,7 +19,8 @@ GENERATE_LATEX         = NO
 #---------------------------------------------------------------------------
 INPUT                  = ./Source \
                          ./Examples \
-                         ./ModelViewer \                         
+                         ./Editor \
+                         ./Scripts \
                          ./ThirdParty \
                          ./DOCS.md
 EXAMPLE_PATH           = ./Examples
