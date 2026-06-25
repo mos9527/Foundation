@@ -76,6 +76,7 @@ static void RefreshPostprocessState(RHIExtent2D renderExtent)
     GEditor.postprocessGlobals.renderHeight = static_cast<float>(renderExtent.y);
     GEditor.postprocessGlobals.viewLutIndex =
         Postprocess::ResolvePostprocessViewLutIndex(GEditor.viewLUTSdrHandle, GEditor.viewLUTHdrHandle, GContext->enableHDR);
+    GEditor.postprocessGlobals.dbgViewFlags = GEditor.rendererConfig.viewFlags;
 }
 
 static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer, RendererOutputs& outputs, bool isRendering)
@@ -142,8 +143,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
             [=](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                              PathsResolve("Data/Shaders/EPSPostprocessPT.spv"),
-                              AsBytes(AsSpan(GEditor.rendererConfig.viewFlags)));
+                              PathsResolve("Data/Shaders/EPSPostprocessPT.spv"));
                 r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create()});
@@ -188,8 +188,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
             [=](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                              PathsResolve("Data/Shaders/EPSPostprocess.spv"),
-                              AsBytes(AsSpan(GEditor.rendererConfig.viewFlags)));
+                              PathsResolve("Data/Shaders/EPSPostprocess.spv"));
                 CHECK_MSG(outputs.diffuse != kInvalidHandle, "Raster postprocess missing diffuse output");
                 ResourceHandle specular = outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
                 r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,

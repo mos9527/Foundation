@@ -2,7 +2,6 @@ import IFlags;
 import IBindless3D;
 import ICommon;
 import IPostprocess;
-[[SpecializationConstant]] int flags;
 
 // Buffers (Welford online mean - already averaged)
 Texture2D<float4> diffuseTex;
@@ -13,7 +12,7 @@ uniform PostprocessUBO globalParams;
 
 float3 LoadPTPostprocessRadiance(int3 coord)
 {
-    if ((flags & kViewAOVSampleCount) != 0)
+    if ((globalParams.dbgViewFlags & kViewAOVSampleCount) != 0)
     {
         float samples = diffuseTex.Load(coord).a;
         float maxSamples = float(globalParams.ptAccumulatedFrames);
@@ -25,9 +24,9 @@ float3 LoadPTPostprocessRadiance(int3 coord)
             ratio < 0.5f ? 1.0f - ratio * 2.0f : 0.0f
         );
     }
-    if ((flags & kViewAOVDiffuse) != 0)
+    if ((globalParams.dbgViewFlags & kViewAOVDiffuse) != 0)
         return diffuseTex.Load(coord).xyz;
-    if ((flags & kViewAOVSpecular) != 0)
+    if ((globalParams.dbgViewFlags & kViewAOVSpecular) != 0)
         return specularTex.Load(coord).xyz;
     return diffuseTex.Load(coord).xyz + specularTex.Load(coord).xyz;
 }
@@ -40,7 +39,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     
     PostprocessInfo pp;
     pp.Exposure = globalParams.camEV;
-    if ((flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewTextureLOD | kViewAOVSampleCount)) != 0)
+    if ((globalParams.dbgViewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewTextureLOD | kViewAOVSampleCount)) != 0)
         pp.Exposure = 0.0f;
 
     return float4(Postprocess(src, pp, textures3D[NonUniformResourceIndex(globalParams.viewLutIndex)], lutSampler), 1.0f);

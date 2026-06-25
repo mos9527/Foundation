@@ -2538,7 +2538,6 @@ void FRunningImGui()
                 if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
                 {
                     GEditor.rendererConfig.viewFlags &= ~kViewTextureLOD;
-                    changed = true;
                 }
             }
         }
@@ -2546,13 +2545,23 @@ void FRunningImGui()
             const char* items[] = {"BaseColor", "Normal", "Position", "Texture LOD"};
             const unsigned values[] = {kViewBaseColor, kViewNormal, kViewPosition, kViewTextureLOD};
             ImGui::SeparatorText(PSI_BUG " Debug View");
-            changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
+            if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
+            {
+                if (GEditor.rendererMode == ERendererMode::Raster)
+                    changed = true;
+                else if (GEditor.rendererMode == ERendererMode::PathTracer)
+                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
         }
         {
             const char* items[] = {"White Base Color"};
             const unsigned values[] = {kMaterialDbgWhiteBaseColor};
             ImGui::SeparatorText(PSI_ADJUST " Material Debug");
-            changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.materialFlags, items, values, true /* solo */);
+            if (ImBitmaskOptionPicker(GEditor.rendererConfig.materialFlags, items, values, true /* solo */))
+            {
+                if (GEditor.rendererMode == ERendererMode::PathTracer)
+                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
         }
         if (changed)
             GEditor.state = FERunningEnter;

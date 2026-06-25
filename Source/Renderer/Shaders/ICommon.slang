@@ -285,6 +285,7 @@ public struct PostprocessUBO
     public uint32_t outlineInstanceId;
     public float renderWidth;
     public float renderHeight;
+    public uint32_t dbgViewFlags;
 };
 // ^^^
 

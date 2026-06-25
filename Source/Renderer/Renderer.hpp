@@ -165,6 +165,7 @@ struct PostprocessUBO
     uint32_t outlineInstanceId{~0u};
     float renderWidth{1.0f};   // Internal render target width
     float renderHeight{1.0f};  // Internal render target height
+    uint32_t dbgViewFlags{0u};
 };
 
 extern void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,

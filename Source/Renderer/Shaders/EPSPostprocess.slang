@@ -2,7 +2,6 @@
 #include "ICommon.slang"
 #include "IPostprocess.slang"
 import IBindless3D;
-[[SpecializationConstant]] int flags;
 
 Texture2D<float4> diffuseTex;
 Texture2D<float4> specularTex;
@@ -14,12 +13,12 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     int3 coord = int3(int(fragCoord.x), int(fragCoord.y), 0);
     float4 src = diffuseTex.Load(coord);
 
-    if ((flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMeshlet | kViewTextureLOD)) == 0)
+    if ((globalParams.dbgViewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMeshlet | kViewTextureLOD)) == 0)
         src += specularTex.Load(coord);
 
     PostprocessInfo pp;
     pp.Exposure = globalParams.camEV;
-    if ((flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMeshlet | kViewTextureLOD)) != 0)
+    if ((globalParams.dbgViewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMeshlet | kViewTextureLOD)) != 0)
         pp.Exposure = 0.0f;
 
     return float4(Postprocess(src.xyz, pp, textures3D[NonUniformResourceIndex(globalParams.viewLutIndex)], lutSampler), 1.0f);
