@@ -1969,7 +1969,7 @@ void FRunningImGui()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Camera"))
     {
-        ImGui::TextUnformatted(FArcballCamera::kControlsText);
+        ImGui::TextUnformatted("Mouse Left: Rotate | Mouse Right: Pan | Mouse Wheel: Zoom | WASD: Move | Shift: Fast | Space: Toggle Orbit/Free");
         ImGui::Separator();
         GEditor.cameraUpdated |= ImGui::SliderFloat3("Cam Center", &GEditor.camera.center.x, -50.0f, 50.0f);
         GEditor.cameraUpdated |= ImGui::SliderFloat("Cam Radius", &GEditor.camera.radius, 0.0f, 100.0f);

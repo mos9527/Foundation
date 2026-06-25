@@ -547,8 +547,16 @@ bool EditorProcessEvent(SDL_Event* event)
     {
         if (event->key.key == SDLK_SPACE)
         {
-            GEditor.camera.radius = std::max(length(GEditor.camera.center), 1.0f);
-            GEditor.camera.center = {};
+            if (GEditor.camera.radius <= 1e-3f)
+            {
+                GEditor.camera.radius = std::max(length(GEditor.camera.position), 1.0f);
+                GEditor.camera.center = {};
+            }
+            else
+            {
+                GEditor.camera.center = GEditor.camera.position;
+                GEditor.camera.radius = 0.0f;
+            }
             GEditor.cameraUpdated |= true;
         }
         if (event->key.key == SDLK_TAB)
