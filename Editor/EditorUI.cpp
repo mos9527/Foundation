@@ -2463,10 +2463,10 @@ void FRunningImGui()
             ImGui::SeparatorText(PSI_DASHBOARD " Performance");
             changed |= ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0);
             {
-                const char* items[] = {"Overdraw", "Meshlet", "Material ID", "Matcap"};
-                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID, kViewMatcap};
+                const char* names[] = {"Overdraw", "Meshlet", "Matcap"};
+                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMatcap};
                 ImGui::SeparatorText(PSI_EYE_OPEN " Raster Debug View");
-                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
+                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, names, values, true /* solo */);
             }
             {
                 const char* items[] = {"RT Shadows"};

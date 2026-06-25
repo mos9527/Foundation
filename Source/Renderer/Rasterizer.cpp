@@ -38,7 +38,7 @@ constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
-constexpr size_t kDisableRTBuildFlags = kViewOverdraw | kViewMeshlet | kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMatcap;
+constexpr size_t kDisableRTBuildFlags = kViewOverdraw | kViewMeshlet | kViewBaseColor | kViewNormal | kViewPosition | kViewMatcap;
 void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
                             RendererConfig const& cfg, RendererOutputs& out)
 {
@@ -225,7 +225,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                                                   RHITextureUsageBits::StorageImage |
                                                                   RHITextureUsageBits::SampledImage,
                                                               .extent = {w, h, 1},
-                                                              .format = RHIResourceFormat::R16G16B16A16SignedFloat});
+                                                              .format = RHIResourceFormat::B10G11R11Ufloat});
     // Instance ID map: R32_UINT, one uint per pixel storing the absolute instance index.
     // ~0u means "no object" (cleared each frame).
     auto InstanceIDBuffer = renderer->CreateResource("Instance ID Buffer",
@@ -342,7 +342,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureRTV(self, GBufferRT2,
-                                      {.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                      {.format = RHIResourceFormat::B10G11R11Ufloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureRTV(self, InstanceIDBuffer,
                                       {.format = RHIResourceFormat::R32Uint,
@@ -465,7 +465,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                   {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                 r->BindTextureRTV(self, GBufferRT2,
-                                  {.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                  {.format = RHIResourceFormat::B10G11R11Ufloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                 r->BindTextureRTV(self, InstanceIDBuffer,
                                   {.format = RHIResourceFormat::R32Uint,
@@ -585,7 +585,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                   RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
                                                      .range = RHITextureSubresourceRange::Create()});
                 r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                      .range = RHITextureSubresourceRange::Create()});
                 r->BindTextureSRV(
                     self, Depth, "depth", RHIPipelineStageBits::ComputeShader,

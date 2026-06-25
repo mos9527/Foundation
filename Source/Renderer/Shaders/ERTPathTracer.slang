@@ -1509,7 +1509,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     uint diffuseBounces = 0;
     uint specularBounces = 0;
     uint transmissionBounces = 0;
-    const int supportDebugViewFlags = kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewTextureLOD;
+    const int supportDebugViewFlags = kViewBaseColor | kViewNormal | kViewPosition | kViewTextureLOD;
     bool hasAnyDebugView = (globalParams.dbgViewFlags & supportDebugViewFlags) != 0u;
     CameraRay cameraRay = GenerateCameraRay(pix, rng, hasAnyDebugView);
     RayDesc ray = cameraRay.ray;
@@ -1561,8 +1561,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
                 diffuse[pix] = float4(surface.baseColor, 1.0f);
             if ((flag & kViewNormal) != 0)
                 diffuse[pix] = float4(surface.hit.normal * 0.5f + 0.5f, 1.0f);
-            if ((flag & kViewMaterialID) != 0)
-                diffuse[pix] = float4(unpackUnorm4x8ToFloat(hash(surface.materialID)).xyz, 1.0f);
+
             if ((flag & kViewPosition) != 0)
                 diffuse[pix] = float4(surface.hit.position, 1.0f);
             if ((flag & kViewTextureLOD) != 0)

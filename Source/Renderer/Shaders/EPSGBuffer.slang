@@ -14,7 +14,7 @@ struct Fragment
 {
     float4 RT0 : SV_Target0;
     float4 RT1 : SV_Target1;
-    float4 RT2 : SV_Target2;
+    float3 RT2 : SV_Target2;
     uint32_t RT3 : SV_Target3; // Instance ID map for picking
 };
 
@@ -24,7 +24,7 @@ Fragment drawMeshlet(V2F input)
     uint32_t hashed = hash(input.meshlet);
     output.RT0 = float4(unpackUnorm4x8(hashed).xyz, 1.0);
     output.RT1 = float4(0);
-    output.RT2 = float4(0);
+    output.RT2 = float3(0);
     output.RT3 = input.instanceID - globalParams.firstInstance;
     return output;
 }
@@ -45,7 +45,7 @@ Fragment drawTextureLOD(V2F input)
     }
     output.RT0 = float4(color, 1.0f);
     output.RT1 = float4(0);
-    output.RT2 = float4(0);
+    output.RT2 = float3(0);
     output.RT3 = input.instanceID - globalParams.firstInstance;
     return output;
 }
@@ -84,12 +84,9 @@ Fragment drawGBuffer(V2F input){
     // -- GBuffer Packing
     float3 normal = normalize(input.tangent * normalTBN.x + input.bitangent * normalTBN.y + input.normal * normalTBN.z);
     float3 normal888 = packTBN888(normal, input.tangent);
-    uint ID = 0; // Material ID [7] Handness [1]
-    ID = bitfieldInsert(ID, input.materialIndex, 0, 7);
-    ID = bitfieldInsert(ID, input.bitangentSign >= 0.0f ? 1 : 0, 7, 1);
-    output.RT0 = float4(baseColor.xyz, (float)ID / 255.0f); // BaseColor, ID
+    output.RT0 = float4(baseColor.xyz, pbrMetalRough.y); // BaseColor, Roughness
     output.RT1 = float4(normal888, pbrMetalRough.z); // Normal 888, Metallic
-    output.RT2 = float4(emissive.xyz, pbrMetalRough.y); // Emissive, Roughness
+    output.RT2 = float3(emissive.xyz); // Emissive
     output.RT3 = input.instanceID - globalParams.firstInstance;
     return output;
 }

@@ -42,9 +42,6 @@ void main(uint2 tid: SV_DispatchThreadID) {
 
 
     float3 baseColor = color0.xyz;
-    uint32_t materialID = (uint)(color0.w * 255.0f), BSign;
-    BSign = bitfieldExtract(materialID, 7, 1);
-    materialID = bitfieldExtract(materialID, 0, 7);
 
     float ndcDepth = depth.Load(uint3(tid,0));
     if (ndcDepth <= EPS) {
@@ -64,21 +61,16 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float3 p = wsPosition.xyz / wsPosition.w;
     float3 eye = globalParams.camPosition.xyz;
 
-    float3 normalWS, t, b;
+    float3 normalWS, t;
     unpackTBN888(color1.xyz, normalWS, t);
-    b = cross(normalWS, t) * (BSign == 1 ? 1.0f : -1.0f);
 
     float metallic = color1.w;
-    float roughness = color2.w;
+    float roughness = color0.w;
     float3 emissive = color2.xyz;
 
     if ((flags & (kViewBaseColor | kViewMeshlet | kViewTextureLOD)) != 0) {
         // Meshlet and Texture LOD are passed down to GBuffer RT0.
         diffuseOutput[tid] = float4(baseColor, 1.0f);
-        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
-        return;
-    } else if ((flags & kViewMaterialID) != 0) {
-        diffuseOutput[tid] = float4(unpackUnorm4x8ToFloat(hash(materialID)).xyz, 1.0f);
         specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     } else if ((flags & kViewNormal) != 0) {

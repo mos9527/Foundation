@@ -2,7 +2,7 @@ public static const int kViewOverdraw = 1 << 0;
 public static const int kViewMeshlet = 1 << 1;
 public static const int kViewBaseColor = 1 << 2;
 public static const int kViewNormal = 1 << 3;
-public static const int kViewMaterialID = 1 << 4;
+
 public static const int kViewPosition = 1 << 5;
 public static const int kViewMatcap = 1 << 6;
 public static const int kViewTextureLOD = 1 << 7;
