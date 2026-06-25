@@ -672,8 +672,8 @@ static void ApplySceneCamera(FImportedScene const& scene, FArcballCamera& camera
 
     auto& camera = cameras.front();
     cameraState.rot = camera.transform.rotation;
-    cameraState.radius = length(camera.transform.transform);
-    cameraState.center = {};
+    cameraState.center = camera.transform.transform;
+    cameraState.radius = 0.0f;
     cameraState.fovY = camera.fovY;
     apertureState.dofEnabled = camera.lensEnabled;
     if (camera.lensEnabled)

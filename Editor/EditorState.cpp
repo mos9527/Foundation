@@ -550,7 +550,8 @@ bool EditorProcessEvent(SDL_Event* event)
             if (GEditor.camera.radius <= 1e-3f)
             {
                 GEditor.camera.radius = std::max(length(GEditor.camera.position), 1.0f);
-                GEditor.camera.center = {};
+                vec3 dir = GEditor.camera.rot * vec3(0, 0, 1);
+                GEditor.camera.center = GEditor.camera.position - dir * GEditor.camera.radius;
             }
             else
             {
