@@ -575,9 +575,16 @@ bool EditorProcessEvent(SDL_Event* event)
     ImGui_ImplFoundation_ProcessEvent(event);
     auto& io = ImGui::GetIO();
     bool viewportMouse = ViewportAcceptsMouse(*event);
+    bool isRelative = SDL_GetWindowRelativeMouseMode(GContext->window);
     bool gizmoActive = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
-    if (viewportMouse && !gizmoActive)
+    if (isRelative || (viewportMouse && !gizmoActive))
+    {
+        if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT)
+            SDL_SetWindowRelativeMouseMode(GContext->window, true);
         GEditor.cameraUpdated |= GEditor.camera.Update(*event);
+    }
+    if (event->type == SDL_EVENT_MOUSE_BUTTON_UP && event->button.button == SDL_BUTTON_LEFT)
+        SDL_SetWindowRelativeMouseMode(GContext->window, false);
     // GPU picking: record click pixel on left mouse button release (not dragging)
     if (viewportMouse && !gizmoActive)
     {
