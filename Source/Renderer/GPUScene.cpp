@@ -2230,12 +2230,12 @@ void GPUSceneImpl::AllocateDynamicBLAS(GeometryResidency& g)
         .triangleData = {
             .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
             .vertexBuffer = mDynamicPrimitiveBuffer.Get(),
-            .vertexOffset = base + sizeof(GSMesh),
+            .vertexOffset = base + static_cast<uint32_t>(sizeof(GSMesh)),
             .vertexCount = g.mesh.vtxCount,
             .vertexStride = sizeof(FQVertex),
             .indexFormat = RHIResourceFormat::R32Uint,
             .indexBuffer = mDynamicPrimitiveBuffer.Get(),
-            .indexOffset = base + sizeof(GSMesh) + g.dynamicVtxBytes,
+            .indexOffset = base + static_cast<uint32_t>(sizeof(GSMesh) + g.dynamicVtxBytes),
             .indexCount = g.mesh.idxCount,
         }};
     RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = g.mesh.idxCount / 3};
@@ -2439,12 +2439,12 @@ void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
             .triangleData = {
                 .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
                 .vertexBuffer = mDynamicPrimitiveBuffer.Get(),
-                .vertexOffset = base + sizeof(GSMesh),
+                .vertexOffset = base + static_cast<uint32_t>(sizeof(GSMesh)),
                 .vertexCount = g.mesh.vtxCount,
                 .vertexStride = sizeof(FQVertex),
                 .indexFormat = RHIResourceFormat::R32Uint,
                 .indexBuffer = mDynamicPrimitiveBuffer.Get(),
-                .indexOffset = base + sizeof(GSMesh) + g.dynamicVtxBytes,
+                .indexOffset = base + static_cast<uint32_t>(sizeof(GSMesh) + g.dynamicVtxBytes),
                 .indexCount = g.mesh.idxCount,
             }};
         RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = g.mesh.idxCount / 3};
