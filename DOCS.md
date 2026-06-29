@@ -165,10 +165,14 @@ Framework
       - [ ] TODO iOS builds?
   - [x] Lavapipe
     - https://www.vulkan.org/user/pages/09.events/vulkanised-2025/T5-Lucas-Fryzek-Igalia.pdf
-    - Small Guide on Windows usage:
-      - Get build from https://github.com/pal1000/mesa-dist-win/releases
-      - Set environment variable VK_ADD_DRIVER_FILES to fullpath pointing to `lvp_icd.x86_64.json` (per [Driver Discovery](https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderDriverInterface.md#driver-discovery))
-      - Run stuff from the shell.
+    - Get your own build.
+      - Windows: https://github.com/pal1000/mesa-dist-win/releases
+      - macOS: Try https://github.com/rerun-io/lavapipe-build script to build from source
+      - Linux: https://docs.mesa3d.org/install.html      
+    - Set `VK_DRIVER_FILES` environ.
+      - Powershell: ` $env:VK_DRIVER_FILES="C:\Users\komahuang\Downloads\mesa3d-26.1.3-release-msvc\x64\lvp_icd.x86_64.json"` - note the full path, change this to your own.
+      - Bash et al: `export VK_DRIVER_FILES="/path/to/lvp_icd.x86_64.json"`
+    - Run stuff from the same shell.
 
 Editor
 ---
