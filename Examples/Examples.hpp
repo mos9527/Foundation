@@ -11,7 +11,9 @@
 #include <argh.h>
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <stb_image_write.h>
+#include <vector>
 using namespace Foundation;
 using namespace Core;
 using namespace Math;
@@ -27,6 +29,107 @@ constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
 
 namespace details
 {
+    inline String PipelineCachePathForDevice(RHIDevice const& device)
+    {
+        auto key = device.GetPipelineCacheKey();
+        return PathsResolve(fmt::format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
+    }
+
+    inline Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)
+    {
+        Vector<unsigned char> data(allocator);
+        if (!std::filesystem::exists(path.data()))
+            return data;
+
+        std::ifstream file(path.data(), std::ios::binary | std::ios::ate);
+        if (!file)
+        {
+            LOG(Examples, LogWarn, "Failed to open pipeline cache file for reading: {}", path);
+            return data;
+        }
+
+        auto fileSize = file.tellg();
+        if (fileSize <= std::streampos(0))
+            return data;
+
+        auto size = static_cast<size_t>(fileSize);
+        data.resize(size);
+        file.seekg(0, std::ios::beg);
+        if (!file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size)))
+        {
+            LOG(Examples, LogWarn, "Failed to read pipeline cache file: {}", path);
+            data.clear();
+        }
+        return data;
+    }
+
+    inline void ClearStalePipelineCaches(StringView activePath)
+    {
+        std::filesystem::path cacheDir = std::filesystem::path(activePath).parent_path();
+        if (!std::filesystem::exists(cacheDir))
+            return;
+
+        std::filesystem::path active(activePath);
+        for (auto const& entry : std::filesystem::directory_iterator(cacheDir))
+        {
+            if (!entry.is_regular_file() || entry.path() == active)
+                continue;
+
+            auto filename = entry.path().filename().string();
+            if (!filename.starts_with("pso-cache-") || !filename.ends_with(".bin"))
+                continue;
+
+            LOG(Examples, LogInfo, "Clearing stale pipeline cache: {}", entry.path().string());
+            std::error_code ec;
+            std::filesystem::remove(entry.path(), ec);
+        }
+    }
+
+    inline void SavePipelineCache(RHIPipelineStateCache const& cache, StringView path, Allocator* allocator)
+    {
+        size_t size = cache.GetSerializedDataSize();
+        if (size == 0)
+            return;
+
+        Vector<unsigned char> data(size, allocator);
+        size_t written = cache.WriteSerializedData(data);
+        if (written == 0)
+            return;
+
+        data.resize(written);
+        std::filesystem::path fsPath(path);
+        std::filesystem::create_directories(fsPath.parent_path());
+        std::ofstream file(fsPath, std::ios::binary | std::ios::trunc);
+        if (!file)
+        {
+            LOG(Examples, LogWarn, "Failed to open pipeline cache file for writing: {}", path);
+            return;
+        }
+
+        file.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+        if (!file)
+        {
+            LOG(Examples, LogWarn, "Failed to write pipeline cache file: {}", path);
+        }
+        else
+        {
+            LOG(Examples, LogInfo, "Saved pipeline cache: {} ({} bytes)", path, data.size());
+        }
+    }
+
+    struct PipelineCacheContext
+    {
+        Renderer* renderer{};
+        RHIDeviceScopedHandle<RHIPipelineStateCache> cache;
+        String path;
+    };
+
+    inline std::vector<PipelineCacheContext>& PipelineCacheContexts()
+    {
+        static std::vector<PipelineCacheContext> contexts;
+        return contexts;
+    }
+
     inline void CreateSwapchain(SDL_Window* window, RHIDevice* device,
                                         RHIDeviceScopedHandle<RHISwapchain>& outSwap)
     {
@@ -97,7 +200,31 @@ inline auto Examples_InitVulkan(SDL_Window* window, int argc, char** argv, Rende
     RHIDeviceScopedHandle<RHISwapchain> swap;
     if (!headless)
         details::CreateSwapchain(window, *device, swap);
+    RHIDeviceScopedHandle<RHIPipelineStateCache> psoCache;
+    String psoCachePath;
+    if (!desc.pipelineCache)
+    {
+        psoCachePath = details::PipelineCachePathForDevice(*device.Get());
+        details::ClearStalePipelineCaches(psoCachePath);
+        auto psoCacheBytes = details::LoadPipelineCacheBytes(psoCachePath, GLOBAL_ALLOC);
+        psoCache = device->CreatePipelineCache({
+            .initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())
+        });
+        LOG(Examples, LogInfo, "Pipeline cache {}: {} ({} bytes)",
+            psoCache->GetImportStatus(),
+            psoCachePath,
+            psoCacheBytes.size());
+        desc.pipelineCache = psoCache.Get();
+    }
     auto renderer = Construct<Renderer>(GLOBAL_ALLOC, desc, device, swap, GLOBAL_ALLOC);
+    if (psoCache)
+    {
+        details::PipelineCacheContexts().push_back({
+            .renderer = renderer,
+            .cache = std::move(psoCache),
+            .path = std::move(psoCachePath),
+        });
+    }
     return std::make_tuple(renderer, app, std::move(device), std::move(swap));
 }
 // Polls event, possibly resizing the swapchain, and returns true if the window should close.
@@ -128,9 +255,23 @@ inline void Examples_NewFrame(Renderer* renderer)
 }
 inline auto Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app, RHIApplicationScopedHandle<RHIDevice>& device, RHIDeviceScopedHandle<RHISwapchain>& swapchain)
 {
-    Destruct(GLOBAL_ALLOC, renderer);
     if (device)
         device->WaitIdle();
+
+    auto& psoCacheContexts = details::PipelineCacheContexts();
+    auto psoCacheIt = std::ranges::find_if(psoCacheContexts,
+        [renderer](details::PipelineCacheContext const& context)
+        {
+            return context.renderer == renderer;
+        });
+    if (psoCacheIt != psoCacheContexts.end())
+    {
+        details::SavePipelineCache(*psoCacheIt->cache.Get(), psoCacheIt->path, GLOBAL_ALLOC);
+    }
+
+    Destruct(GLOBAL_ALLOC, renderer);
+    if (psoCacheIt != psoCacheContexts.end())
+        psoCacheContexts.erase(psoCacheIt);
     swapchain.Reset();
     device.Reset();
     Destruct(GLOBAL_ALLOC, app);

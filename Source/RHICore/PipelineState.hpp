@@ -9,6 +9,11 @@ namespace Foundation::RHI {
         Unknown = 0,
         Vulkan = 1,
     };
+    ENUM_NAME_CONV_BEGIN(RHIPipelineStateCacheBackend)
+        ENUM_NAME(Unknown)
+        ENUM_NAME(Vulkan)
+    ENUM_NAME_CONV_END()
+
     struct RHIPipelineStateCacheKey
     {
         uint64_t high{};
@@ -24,6 +29,16 @@ namespace Foundation::RHI {
         CorruptData,
         BackendRejected,
     };
+    ENUM_NAME_CONV_BEGIN(RHIPipelineStateCacheImportStatus)
+        ENUM_NAME(Empty)
+        ENUM_NAME(Imported)
+        ENUM_NAME(IncompatibleBackend)
+        ENUM_NAME(IncompatibleDevice)
+        ENUM_NAME(IncompatibleEngineVersion)
+        ENUM_NAME(CorruptData)
+        ENUM_NAME(BackendRejected)
+    ENUM_NAME_CONV_END()
+
     class RHIPipelineStateCache : public RHIObject
     {
     protected:

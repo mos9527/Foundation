@@ -6,7 +6,7 @@ add_subdirectory(Shaders)
 add_subdirectory(Samples)
 
 add_library(Example_Common INTERFACE)
-target_link_libraries(Example_Common INTERFACE Foundation_RenderCore Foundation_RHIVulkan Foundation_RenderUtils argh)
+target_link_libraries(Example_Common INTERFACE Foundation_RenderCore Foundation_RHIVulkan Foundation_RenderUtils ThirdParty_STB argh)
 
 add_executable(Example_Triangle "Triangle.cpp")
 target_link_libraries(Example_Triangle PUBLIC Example_Common)
@@ -15,7 +15,7 @@ add_dependencies(Example_Triangle Shader_Triangle)
 # Headless offscreen rendering (no SDL window / no Vulkan WSI). Validates the
 # present=false Renderer path and works on software backends such as Lavapipe.
 add_executable(Example_HeadlessTriangle "HeadlessTriangle.cpp")
-target_link_libraries(Example_HeadlessTriangle PUBLIC Example_Common ThirdParty_STB)
+target_link_libraries(Example_HeadlessTriangle PUBLIC Example_Common)
 add_dependencies(Example_HeadlessTriangle Shader_Triangle)
 
 add_executable(Example_SDF2D "SDF2D.cpp")
@@ -41,7 +41,7 @@ add_executable(Example_ImGui "ImGui.cpp")
 target_link_libraries(Example_ImGui PUBLIC Example_Common ThirdParty_ImGui)
 
 add_executable(Example_MipGeneration "MipGeneration.cpp")
-target_link_libraries(Example_MipGeneration PUBLIC Example_Common ThirdParty_ImGui ThirdParty_STB)
+target_link_libraries(Example_MipGeneration PUBLIC Example_Common ThirdParty_ImGui)
 add_dependencies(Example_MipGeneration Shader_MipGenerationBlur Examples_SampleFiles)
 
 add_executable(Example_MeshShaderHello "MeshShaderHello.cpp")
@@ -69,6 +69,6 @@ target_link_libraries(Example_GPUSceneDeform PUBLIC Example_Common Editor_Assets
 add_dependencies(Example_GPUSceneDeform Foundation_Shaders Editor_Data Examples_SampleFiles Shader_PostprocessBasic Shader_PostprocessBasicPT)
 
 add_executable(Example_HeadlessPathTracer "HeadlessPathTracer.cpp")
-target_link_libraries(Example_HeadlessPathTracer PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer ThirdParty_STB)
+target_link_libraries(Example_HeadlessPathTracer PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
 add_dependencies(Example_HeadlessPathTracer Foundation_Shaders Editor_Data Examples_SampleFiles Shader_PostprocessBasic Shader_PostprocessBasicPT)
 

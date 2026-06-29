@@ -8,29 +8,6 @@
 
 FContext* GContext = nullptr;
 
-static const char* PipelineCacheImportStatusName(RHIPipelineStateCacheImportStatus status)
-{
-    switch (status)
-    {
-    case RHIPipelineStateCacheImportStatus::Empty:
-        return "empty";
-    case RHIPipelineStateCacheImportStatus::Imported:
-        return "imported";
-    case RHIPipelineStateCacheImportStatus::IncompatibleBackend:
-        return "incompatible backend";
-    case RHIPipelineStateCacheImportStatus::IncompatibleDevice:
-        return "incompatible device";
-    case RHIPipelineStateCacheImportStatus::IncompatibleEngineVersion:
-        return "incompatible engine version";
-    case RHIPipelineStateCacheImportStatus::CorruptData:
-        return "corrupt data";
-    case RHIPipelineStateCacheImportStatus::BackendRejected:
-        return "backend rejected";
-    default:
-        return "unknown";
-    }
-}
-
 static String PipelineCachePathForDevice(RHIDevice const& device)
 {
     auto key = device.GetPipelineCacheKey();
@@ -252,7 +229,7 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::Dev
         .initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())
     });
     LOG(Editor, LogInfo, "Pipeline cache {}: {} ({} bytes)",
-        PipelineCacheImportStatusName(context->psoCache->GetImportStatus()),
+        context->psoCache->GetImportStatus(),
         context->psoCachePath,
         psoCacheBytes.size());
     UpdateSwapchain(context);
