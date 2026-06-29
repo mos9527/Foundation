@@ -11,6 +11,8 @@ set(ShaderCapabilities
         spvGroupNonUniformBallot
         spvGroupNonUniformArithmetic
 )
+
+file(MAKE_DIRECTORY "${SHADER_BUILD_DIR}/Editor")
 add_custom_target(Editor_Shaders)
 foreach(SlangFile IN LISTS SLANG_FILES)
     get_filename_component(ShaderName ${SlangFile} NAME_WE)
