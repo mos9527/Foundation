@@ -1,7 +1,7 @@
 using namespace Foundation;
 using namespace Core;
 using namespace RHI;
-const char* kVulkanInstanceExtensions[] = {
+const char* kVulkanDesiredInstanceExtensions[] = {
     VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
     VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME
 };
@@ -23,29 +23,82 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
         .pEngineName = engineName,
         .apiVersion = apiVersion,
     };
-    uint32_t count = 0;
-    if (!SDL_Vulkan_GetInstanceExtensions(&count))
-        count = 0;
-    char const* const* extensions = SDL_Vulkan_GetInstanceExtensions(&count);
-    Vector<const char*> instanceExtensions(mAllocator);
-    instanceExtensions.insert(instanceExtensions.end(), extensions, extensions + count);
-    // Add our own extensions
-    instanceExtensions.insert(instanceExtensions.end(), kVulkanInstanceExtensions,
-                              kVulkanInstanceExtensions + std::size(kVulkanInstanceExtensions));
-    Vector<const char*> instanceLayers(mAllocator);
+    uint32_t sdlExtensionCount = 0;
+    if (!SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount))
+        sdlExtensionCount = 0;
+    char const* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
+    Vector<const char*> desiredLayers(mAllocator);
 #if FOUNDATION_RHIVULKAN_VVL
-    instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
+    desiredLayers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
-    Ranges::sort(instanceLayers);
-    instanceLayers.erase(Ranges::unique(instanceLayers).begin(), instanceLayers.end());
-    Ranges::sort(instanceExtensions);
-    instanceExtensions.erase(Ranges::unique(instanceExtensions).begin(), instanceExtensions.end());
+    Ranges::sort(desiredLayers);
+    desiredLayers.erase(Ranges::unique(desiredLayers).begin(), desiredLayers.end());
+
+    // --- Extension Querying ---
+    auto availableExtensions = mContext.enumerateInstanceExtensionProperties();
+    auto isExtensionAvailable = [&](const char* extName) -> bool {
+        for (auto const& ext : availableExtensions) {
+            if (StringView(ext.extensionName.data()) == extName)
+                return true;
+        }
+        return false;
+    };
+
+    Vector<const char*> enabledExtensions(mAllocator);
+    bool allRequiredExtensionsAvailable = true;
+    for (uint32_t i = 0; i < sdlExtensionCount; ++i) {
+        if (isExtensionAvailable(sdlExtensions[i])) {
+            enabledExtensions.push_back(sdlExtensions[i]);
+        } else {
+            LOG(VulkanApplication, LogError, "Required instance extension '{}' is not available.", sdlExtensions[i]);
+            allRequiredExtensionsAvailable = false;
+        }
+    }
+    for (auto* desired : kVulkanDesiredInstanceExtensions) {
+        if (isExtensionAvailable(desired)) {
+            enabledExtensions.push_back(desired);
+        } else {
+            LOG(VulkanApplication, LogWarn, "Instance extension '{}' is not available and will not be enabled.", desired);
+        }
+    }
+    Ranges::sort(enabledExtensions);
+    enabledExtensions.erase(Ranges::unique(enabledExtensions).begin(), enabledExtensions.end());
+    CHECK_MSG(allRequiredExtensionsAvailable,
+              "One or more required Vulkan instance extensions are not available (see log above).");
+
+    auto isExtensionEnabled = [&](const char* extName) -> bool {
+        for (auto* ext : enabledExtensions) {
+            if (StringView(ext) == extName)
+                return true;
+        }
+        return false;
+    };
+
+    // --- Layer Querying ---
+    auto availableLayers = mContext.enumerateInstanceLayerProperties();
+    auto isLayerAvailable = [&](const char* layerName) -> bool {
+        for (auto const& layer : availableLayers) {
+            if (StringView(layer.layerName.data()) == layerName)
+                return true;
+        }
+        return false;
+    };
+
+    Vector<const char*> enabledLayers(mAllocator);
+    for (auto* desired : desiredLayers) {
+        if (isLayerAvailable(desired)) {
+            enabledLayers.push_back(desired);
+        } else {
+            LOG(VulkanApplication, LogWarn, "Instance layer '{}' is not available and will not be enabled.", desired);
+        }
+    }
+
     vk::InstanceCreateInfo instanceInfo{
         .pApplicationInfo = &vkAppInfo,
-        .enabledLayerCount = static_cast<uint32_t>(instanceLayers.size()),
-        .ppEnabledLayerNames = instanceLayers.data(),
-        .enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size()),
-        .ppEnabledExtensionNames = instanceExtensions.data(),
+        .enabledLayerCount = static_cast<uint32_t>(enabledLayers.size()),
+        .ppEnabledLayerNames = enabledLayers.data(),
+        .enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
+        .ppEnabledExtensionNames = enabledExtensions.data(),
     };
 #if FOUNDATION_RHIVULKAN_VVL
     // Enable shader printf
@@ -64,15 +117,16 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
         auto props = device.getProperties();
         mDevices.emplace_back(RHIDevice::DeviceDesc{.id = id, .name = props.deviceName});
     }
-    // Debug layer callbacks
-    mDebugHandler = mInstance.createDebugUtilsMessengerEXT(
-        {.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-             vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-             vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-         .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-             vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
-         .pfnUserCallback = &VkDebugLayerCallback},
-        GetVkAllocationCallbacks());
+    if (isExtensionEnabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
+        mDebugHandler = mInstance.createDebugUtilsMessengerEXT(
+            {.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
+                 vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+                 vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+             .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                 vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
+             .pfnUserCallback = &VkDebugLayerCallback},
+            GetVkAllocationCallbacks());
+    }
 }
 
 VulkanApplication::~VulkanApplication()

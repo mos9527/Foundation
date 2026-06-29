@@ -2,7 +2,6 @@
 #include "Device.hpp"
 
 #include <queue>
-#include <string_view>
 #include <type_traits>
 #include <vk_mem_alloc.h>
 
@@ -53,7 +52,7 @@ namespace
         HashBytes(high, properties.pipelineCacheUUID, VK_UUID_SIZE);
         HashValue(high, cacheVersion);
         
-        const std::string_view gitHash = FOUNDATION_GIT_COMMIT_HASH;
+        const StringView gitHash = FOUNDATION_GIT_COMMIT_HASH;
         HashBytes(high, gitHash.data(), gitHash.size());
 
         HashValue(low, cacheVersion);
@@ -172,7 +171,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     auto availableExtensions = mPhysicalDevice.enumerateDeviceExtensionProperties();
     auto isExtensionAvailable = [&](const char* extName) -> bool {
         for (auto const& ext : availableExtensions) {
-            if (std::string_view(ext.extensionName.data()) == extName) return true;
+            if (StringView(ext.extensionName.data()) == extName) return true;
         }
         return false;
     };
@@ -188,7 +187,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
 
     auto isExtensionEnabled = [&](const char* extName) -> bool {
         for (auto* ext : enabledExtensions) {
-            if (std::string_view(ext) == extName) return true;
+            if (StringView(ext) == extName) return true;
         }
         return false;
     };

@@ -7,7 +7,7 @@ using namespace Core;
 #endif
 
 Mutex gLogImplMutex;
-void Foundation_LogImpl(LogLevel level, const char* tag, std::string_view formatted)
+void Foundation_LogImpl(LogLevel level, const char* tag, const char* formatted)
 {
     static auto init = std::chrono::steady_clock::now();
     auto now = std::chrono::steady_clock::now() - init;

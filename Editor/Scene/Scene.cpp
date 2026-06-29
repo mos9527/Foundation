@@ -11,7 +11,6 @@
 #include <filesystem>
 #include <lz4.h>
 #include <numeric>
-#include <string_view>
 #include <type_traits>
 #include <RHICore/Device.hpp>
 #include <Renderer/Postprocess.hpp>
@@ -22,7 +21,7 @@
 
 namespace
 {
-String DecodeURI(std::string_view encoded)
+String DecodeURI(StringView encoded)
 {
     String uri(encoded);
     uri.resize(cgltf_decode_uri(uri.data()));
@@ -37,7 +36,7 @@ String LowerExtension(std::filesystem::path const& path)
     return ext;
 }
 
-std::string_view Trim(std::string_view value)
+StringView Trim(StringView value)
 {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
         value.remove_prefix(1);
@@ -46,17 +45,17 @@ std::string_view Trim(std::string_view value)
     return value;
 }
 
-bool ParseLUTTuple(std::string_view tuple, std::string_view expectedKind,
-                          std::string_view& outView, std::string_view& outLook)
+bool ParseLUTTuple(StringView tuple, StringView expectedKind,
+                          StringView& outView, StringView& outLook)
 {
     size_t first = tuple.find(" / ");
-    if (first == std::string_view::npos)
+    if (first == StringView::npos)
         return false;
     size_t second = tuple.find(" / ", first + 3);
-    if (second == std::string_view::npos)
+    if (second == StringView::npos)
         return false;
 
-    std::string_view kind = Trim(tuple.substr(0, first));
+    StringView kind = Trim(tuple.substr(0, first));
     if (kind != expectedKind)
         return false;
 
@@ -74,8 +73,8 @@ void LoadFoundationColorManagementExtension(cgltf_data const* data, FSceneGlobal
     if (colorManagement.has_post_exposure)
         result.postExposure = colorManagement.post_exposure;
 
-    std::string_view view;
-    std::string_view look;
+    StringView view;
+    StringView look;
     if (colorManagement.sdr && ParseLUTTuple(colorManagement.sdr, "SDR", view, look))
         result.viewLutSdrIndex = Postprocess::MatchViewLUTIndex(Postprocess::ViewLUTDomain::SDR, view, look,
                                                                 Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::SDR));

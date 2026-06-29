@@ -38,14 +38,14 @@ constexpr const char* format_as(LogLevel level)
 // NOLINTEND
 
 
-extern void Foundation_LogImpl(LogLevel level, const char* tag, std::string_view formatted);
+extern void Foundation_LogImpl(LogLevel level, const char* tag, const char* formatted);
 template<typename ...Args>
 void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...> format, Args&&... args)
 {
     constexpr size_t kN = sizeof...(Args);
     if constexpr (kN > 0)
     {
-        Foundation_LogImpl(level, tag, fmt::format(format, std::forward<Args>(args)...));
+        Foundation_LogImpl(level, tag, fmt::format(format, std::forward<Args>(args)...).c_str());
     } else
     {
         Foundation_LogImpl(level, tag, format.str.data());

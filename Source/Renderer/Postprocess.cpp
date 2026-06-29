@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <string_view>
 #include "Tables/ViewLUTs.hpp"
 
 namespace Postprocess
@@ -18,7 +17,7 @@ constexpr std::array<ViewLUTEntry, N> ConvertEntries(::ViewLUTEntry const (&src)
     return dst;
 }
 
-std::string_view Trim(std::string_view value)
+StringView Trim(StringView value)
 {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
         value.remove_prefix(1);
@@ -27,16 +26,16 @@ std::string_view Trim(std::string_view value)
     return value;
 }
 
-Pair<std::string_view, std::string_view> SplitViewLUTLabel(std::string_view label)
+Pair<StringView, StringView> SplitViewLUTLabel(StringView label)
 {
     size_t split = label.find(" / ");
-    if (split == std::string_view::npos)
-        return {Trim(label), std::string_view{}};
+    if (split == StringView::npos)
+        return {Trim(label), StringView{}};
     return {Trim(label.substr(0, split)), Trim(label.substr(split + 3))};
 }
 
-bool ViewLUTLabelGreaterEqual(Pair<std::string_view, std::string_view> const& lhs,
-                              Pair<std::string_view, std::string_view> const& rhs)
+bool ViewLUTLabelGreaterEqual(Pair<StringView, StringView> const& lhs,
+                              Pair<StringView, StringView> const& rhs)
 {
     int viewCompare = lhs.first.compare(rhs.first);
     if (viewCompare != 0)
@@ -44,8 +43,8 @@ bool ViewLUTLabelGreaterEqual(Pair<std::string_view, std::string_view> const& lh
     return lhs.second.compare(rhs.second) >= 0;
 }
 
-bool ViewLUTLabelLess(Pair<std::string_view, std::string_view> const& lhs,
-                      Pair<std::string_view, std::string_view> const& rhs)
+bool ViewLUTLabelLess(Pair<StringView, StringView> const& lhs,
+                      Pair<StringView, StringView> const& rhs)
 {
     int viewCompare = lhs.first.compare(rhs.first);
     if (viewCompare != 0)
@@ -82,12 +81,12 @@ uint32_t MatchViewLUTIndex(ViewLUTDomain domain, StringView view, StringView loo
     Span<ViewLUTEntry const> entries = EnumerateViewLUTEntries(domain);
     Optional<uint32_t> viewNoLook;
     Optional<uint32_t> lexicographic;
-    Pair<std::string_view, std::string_view> lexicographicLabel;
-    Pair<std::string_view, std::string_view> target{view, look};
+    Pair<StringView, StringView> lexicographicLabel;
+    Pair<StringView, StringView> target{view, look};
 
     for (uint32_t i = 0; i < entries.size(); ++i)
     {
-        Pair<std::string_view, std::string_view> candidate = SplitViewLUTLabel(entries[i].label);
+        Pair<StringView, StringView> candidate = SplitViewLUTLabel(entries[i].label);
         if (candidate.first == view && candidate.second == look)
             return i;
         if (candidate.first == view && candidate.second == "No Look")
