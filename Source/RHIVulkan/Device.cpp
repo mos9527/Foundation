@@ -568,6 +568,10 @@ Span<RHISwapchainPresentMode const> VulkanDevice::GetSwapchainSupportedPresentMo
 
 RHIDeviceScopedHandle<RHISwapchain> VulkanDevice::CreateSwapchain(RHISwapchain::SwapchainDesc const& desc)
 {
+    CHECK_MSG(mSurface != nullptr,
+              "Cannot create a swapchain on a device without a presentation surface. "
+              "This device was created headlessly (no SDL window / Vulkan WSI). "
+              "Use a present-enabled device, or render headlessly into an explicit texture.");
     return {this, mStorage.CreateObject<VulkanSwapchain>(*this, desc)};
 }
 

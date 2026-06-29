@@ -1,5 +1,6 @@
 #include <Renderer/GPUScene.hpp>
 #include <Editor/Scene/Mesh.hpp>
+#include <Editor/Camera.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 #include "Examples.hpp"
 using namespace RenderUtils;
@@ -120,11 +121,20 @@ int main(int argc, char** argv)
     renderer->EndSetup();
     SDL_Event event;
     ExampleFpsCounter fps;
-    ExamplesArcballCamera camera{.center = {0, 0.5f, 0}, .radius = 2.0f};
+    FArcballCamera camera{.center = {0, 0.5f, 0},
+                          .radius = 2.0f,
+                          .rot = quat(1.0f, 0.0f, 0.0f, 0.0f),
+                          .zNear = 0.01f,
+                          .fovY = radians(45.0f)};
+    uint64_t lastTicks = SDL_GetTicksNS();
     while (!Examples_ShouldClose(window, renderer, swapchain, &event))
     {
+        uint64_t now = SDL_GetTicksNS();
+        float dt = static_cast<float>(now - lastTicks) / 1e9f;
+        lastTicks = now;
+
         lines[0].x = 16, lines[0].y = 16, lines[0].SetText(fmt::format("Mesh Shader - Hierarchical LOD FPS: {}", fps.Update()));
-        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format(ExamplesArcballCamera::kControlsText));
+        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format(FArcballCamera::kControlsText));
         lines[2].x = 16, lines[2].y = 64, lines[2].SetText(fmt::format("Q,E | LOD Threshold: {}", ubo.threshold));
         if (event.type == SDL_EVENT_KEY_DOWN)
         {
@@ -133,7 +143,33 @@ int main(int argc, char** argv)
             else if (event.key.scancode == SDL_SCANCODE_E)
                 ubo.threshold += 0.01f;
         }
-        camera.aspect = swapchain->GetAspectRatio(), camera.fovY = radians(45.0f), camera.zNear = 0.01f;
+        if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
+        {
+            bool pressed = event.type == SDL_EVENT_KEY_DOWN;
+            switch (event.key.key)
+            {
+            case SDLK_W:
+                camera.keyW = pressed;
+                break;
+            case SDLK_A:
+                camera.keyA = pressed;
+                break;
+            case SDLK_S:
+                camera.keyS = pressed;
+                break;
+            case SDLK_D:
+                camera.keyD = pressed;
+                break;
+            case SDLK_LSHIFT:
+            case SDLK_RSHIFT:
+                camera.keyShift = pressed;
+                break;
+            default:
+                break;
+            }
+        }
+        camera.aspect = swapchain->GetAspectRatio();
+        camera.UpdateMovement(dt);
         camera.Update(event);
         ubo.view = camera.view, ubo.proj = camera.proj, ubo.zNear = camera.zNear;
         Examples_NewFrame(renderer);

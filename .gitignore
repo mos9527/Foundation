@@ -14,3 +14,5 @@ docs/
 *.pyc
 dist/
 cmake-build-*/
+# Headless example image dumps
+render.png

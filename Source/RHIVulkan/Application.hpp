@@ -22,7 +22,7 @@ namespace Foundation::RHI {
         const vk::raii::Context mContext;
         const uint32_t mVulkanApiVersion;
 
-        VulkanApplication(Allocator* allocator, const char* appName = "Vulkan RHI", const char* engineName = "Foundation", uint32_t apiVersion = VK_API_VERSION_1_3);
+        VulkanApplication(Allocator* allocator, bool headless = false, const char* appName = "Vulkan RHI", const char* engineName = "Foundation", uint32_t apiVersion = VK_API_VERSION_1_3);
         ~VulkanApplication() override;
         Span<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
 
@@ -38,5 +38,14 @@ namespace Foundation::RHI {
         auto const& GetVkInstance() const { return mInstance; }
         [[nodiscard]] vk::AllocationCallbacks const* GetVkAllocationCallbacks() const { return mVkAllocationCallbacks.Get(); }
         [[nodiscard]] VkAllocationCallbacks const* GetVkAllocationCallbacksNative() const { return mVkAllocationCallbacks.GetNative(); }
+        /**
+         * @brief Whether this instance was created without Vulkan WSI (window/surface) extensions.
+         *
+         * Headless instances cannot create a hardware presentation surface or swapchain; they are intended
+         * for offscreen rendering (e.g. software rasterizers such as Lavapipe that do not expose WSI).
+         */
+        [[nodiscard]] bool IsHeadless() const { return mHeadless; }
+    private:
+        bool mHeadless{false};
     };
 }

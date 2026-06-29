@@ -2,8 +2,8 @@ using namespace Foundation;
 using namespace Core;
 using namespace RHI;
 const char* kVulkanDesiredInstanceExtensions[] = {
-    VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-    VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME
+    VK_EXT_DEBUG_UTILS_EXTENSION_NAME,  // Shader printfs
+    VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME // For non-sRGB color spaces
 };
 static VKAPI_ATTR vk::Bool32 VKAPI_CALL
 VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT,
@@ -13,20 +13,26 @@ VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::Debu
     LOG(VkDebugLayer, kLevels[std::countr_zero(static_cast<uint32_t>(severity)) >> 2 & 3], "{}", pCallbackData->pMessage);
     return vk::False;
 }
-VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName,
+VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const char* appName, const char* engineName,
                                      const uint32_t apiVersion) :
     mAllocator(allocator), mVkAllocationCallbacks(nullptr /* NOTE: Many drivers do not like this roundtrip to our own code. Disabled for sanity. */),
-    mDevices(allocator), mStorage(allocator), mName(appName), mVulkanApiVersion(apiVersion)
+    mDevices(allocator), mStorage(allocator), mName(appName), mVulkanApiVersion(apiVersion), mHeadless(headless)
 {
     auto vkAppInfo = vk::ApplicationInfo{
         .pApplicationName = appName,
         .pEngineName = engineName,
         .apiVersion = apiVersion,
     };
+    // SDL-provided WSI instance extensions are only required when presenting to a window.
+    // Headless instances (e.g. Lavapipe without WSI) skip them entirely.
     uint32_t sdlExtensionCount = 0;
-    if (!SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount))
-        sdlExtensionCount = 0;
-    char const* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
+    char const* const* sdlExtensions = nullptr;
+    if (!mHeadless)
+    {
+        if (!SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount))
+            sdlExtensionCount = 0;
+        sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
+    }
     Vector<const char*> desiredLayers(mAllocator);
 #if FOUNDATION_RHIVULKAN_VVL
     desiredLayers.push_back("VK_LAYER_KHRONOS_validation");

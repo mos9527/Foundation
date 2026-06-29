@@ -1,20 +1,4 @@
 // Example: CPU-updateable dynamic geometry in GPUScene (BLAS refit / rebuild).
-//
-// A tessellated grid is uploaded once as *dynamic* geometry (GPUScene::UploadDynamic). Its
-// topology is fixed; every frame the host rewrites only the quantized vertex positions of the
-// current ring slot (a sine "ripple" deformation), marks it dirty, and the render graph's
-// "Dynamic BLAS Refit" pass refits the single AllowUpdate BLAS in place before the TLAS update.
-// A static floor + the immutable streaming path are left untouched, demonstrating that dynamic
-// geo is purely additive.
-//
-// What to look for:
-//   - The grid ripples every frame in both renderers. In the path tracer the deformed surface is
-//     traced (BLAS refit feeds the TLAS); in raster it is drawn through a dedicated indexed
-//     multi-draw (no meshlets/DAG) and, with RT shadows on, also refits for the shadow trace.
-//   - The HUD shows refit vs. rebuild counts. R toggles between refit-only and a periodic
-//     rebuild cadence; B forces a full rebuild every frame (the quality-vs-cost trade-off).
-//
-// Controls: TAB renderer; R refit-only/periodic; B rebuild-every-frame; P pause; WASD + drag camera.
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp>
 #include <Renderer/Mesh.hpp>      // FVertex / FQVertex
@@ -197,7 +181,7 @@ int main(int argc, char** argv)
         const uint32_t matGrid = static_cast<uint32_t>(palette.size());
         { GSMaterial m = BaseMat(); m.baseColorFactor = float4(0.25f, 0.55f, 0.9f, 1.0f); m.roughnessFactor = 0.3f; m.metallicFactor = 0.4f; palette.push_back(m); }
 
-        RendererUBO ubo{};
+        RendererUBO ubo { .adaptiveThreshold = 0.10f };
 
         ubo.ptSamplesPerPixel = 1;
 
@@ -232,8 +216,6 @@ int main(int argc, char** argv)
             gpu.BuildUBO(ubo);
         };
         AuthorFrame();
-        TextureHandle viewLUTSdrHandle{};
-        TextureHandle viewLUTHdrHandle{};
         {
             ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
             auto* cmd = ctx.Get();
@@ -248,7 +230,6 @@ int main(int argc, char** argv)
         Mode mode = Mode::PathTracer;
         bool renderPaused = false;
         RendererConfig cfg{};
-        PostprocessUBO postprocessGlobals{};
         RendererOutputs handles{};
         RHIExtent2D renderExtent{};
 
@@ -267,8 +248,7 @@ int main(int argc, char** argv)
                 BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
             else
                 BuildRasterRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
-            Examples_InsertBasicTonemapPasses(
-                renderer.get(), gpu, handles, cfg, &postprocessGlobals, viewLUTSdrHandle, viewLUTHdrHandle);
+            Examples_InsertBasicTonemapPasses(renderer.get(), handles, mode == Mode::PathTracer);
             createCSDebugTextPassBackBuffer(renderer.get(), "Debug Text", hud);
             renderer->EndSetup();
             renderExtent = extent;
@@ -369,12 +349,6 @@ int main(int argc, char** argv)
             ubo.fbHeight = static_cast<float>(renderExtent.y);
             ubo.dbgViewFlags = cfg.viewFlags;
             ubo.dbgMaterialFlags = cfg.materialFlags;
-            postprocessGlobals.camEV = ubo.camEV;
-            postprocessGlobals.dbgShowOutline = 0u;
-            postprocessGlobals.ptAccumulatedFrames = ubo.ptAccumulatedFrames;
-
-            postprocessGlobals.fbWidth = ubo.fbWidth;
-            postprocessGlobals.fbHeight = ubo.fbHeight;
 
             const char* refitMode = rebuildEveryFrame ? "rebuild/frame" : (cadence == 0u ? "refit-only" : "periodic(64)");
             hud[2].SetText(fmt::format("refit {}  rebuild {}  mode {}", gpu.GetDynamicRefitCount(),

@@ -38,9 +38,24 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> dev
             "queues (timestampValidBits == 0). Disabling profilePasses.");
         mDesc.profilePasses = false;
     }
+    // Validate presentation mode against the swapchain handle.
+    if (mDesc.present)
+    {
+        CHECK_MSG(mSwapchain.IsValid(),
+                  "Renderer created with present=true but no swapchain was provided. "
+                  "For headless rendering, construct with present=false and an explicit renderExtent.");
+    }
+    else
+    {
+        CHECK_MSG(!mSwapchain.IsValid(),
+                  "Renderer created with present=false but a swapchain was provided. "
+                  "Headless rendering does not use a swapchain.");
+    }
     LOG(Renderer, LogDebug, "** Renderer Init **");
     LOG(Renderer, LogDebug, "Async Compute:\t{}", mDesc.asyncCompute);
     LOG(Renderer, LogDebug, "Presentation:\t{}", mDesc.present);
+    if (!mDesc.present)
+        LOG(Renderer, LogDebug, "Headless extent:\t{}x{}", mDesc.renderExtent.x, mDesc.renderExtent.y);
     LOG(Renderer, LogDebug, "Threads:\t{}", mDesc.threadCount);
     LOG(Renderer, LogDebug, "PSO Cache:\t{:x}", reinterpret_cast<uintptr_t>(mDesc.pipelineCache));
 }
@@ -53,7 +68,11 @@ void Renderer::BeginSetup()
     if (mDesc.present)
         SetSwapchain(mSwapchain);
     else
+    {
+        // Headless: frames-in-flight come from the desc, not a swapchain.
+        mFrameSwaps = std::max<uint32_t>(mDesc.framesInFlight, 1u);
         SetFrameSyncObjects();
+    }
 }
 
 void Renderer::MakePassUncullable(PassHandle pass) const
@@ -313,6 +332,9 @@ void Renderer::BindBackbufferRTV(PassHandle pass,
                                  RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending) const
 {
     CHECK(mState == State::Setup);
+    CHECK_MSG(mDesc.present,
+              "BindBackbufferRTV is not available in a headless Renderer (present=false). "
+              "Render into an explicit texture via BindTextureRTV instead.");
     auto& tpass = mSetup->trackedPasses[pass];
     tpass.backbufferRTV = blending;
     if (mSetup->lastBackbufferProducer != kInvalidHandle)
@@ -323,6 +345,9 @@ void Renderer::BindBackbufferRTV(PassHandle pass,
 void Renderer::BindBackbufferUAV(PassHandle pass, int set_index) const
 {
     CHECK(mState == State::Setup);
+    CHECK_MSG(mDesc.present,
+              "BindBackbufferUAV is not available in a headless Renderer (present=false). "
+              "Write to an explicit texture via BindTextureUAV instead.");
     auto& tpass = mSetup->trackedPasses[pass];
     tpass.backbufferUAV = set_index;
     if (mSetup->lastBackbufferProducer != kInvalidHandle)
@@ -1303,8 +1328,12 @@ void Renderer::SetFrameSyncObjects()
     {
         mSwaps[i].render = mDevice->CreateSemaphore(false);
         mSwaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
-        mSwaps[i].present = mDevice->CreateSemaphore(false);
-        mSwaps[i].present->DebugSetObjectName(fmt::format("Present Semaphore of Swap {}", i).c_str());
+        // The present (acquire) semaphore is only needed for WSI presentation.
+        if (mDesc.present)
+        {
+            mSwaps[i].present = mDevice->CreateSemaphore(false);
+            mSwaps[i].present->DebugSetObjectName(fmt::format("Present Semaphore of Swap {}", i).c_str());
+        }
         mSwaps[i].graphicsFence = mDevice->CreateFence(true);
         mSwaps[i].graphicsFence->DebugSetObjectName(fmt::format("Graphics Fence of Swap {}", i).c_str());
         mSwaps[i].computeFence = mDevice->CreateFence(true);

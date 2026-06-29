@@ -35,6 +35,11 @@ namespace Foundation::RenderCore
          *
          * @note Enabling this implies a valid @ref RHISwapchain handle is provided to the @ref Renderer
          *       on creation (see @ref Renderer::Renderer), otherwise an exception is thrown.
+         *
+         * @note When disabled, the Renderer runs headlessly: no @ref RHISwapchain is required, the
+         *       backbuffer is not acquired or presented, and passes that bind the backbuffer
+         *       (@ref BindBackbufferRTV / @ref BindBackbufferUAV) will throw at setup time. The render
+         *       graph must instead write to explicit textures created via @ref CreateResource.
          */
         bool present{true};
         /**
@@ -42,6 +47,23 @@ namespace Foundation::RenderCore
          * @note Set this to 0 to disable multithreaded command recording.
          */
         uint32_t threadCount{4u};
+        /**
+         * @brief Number of frames that may be simultaneously in-flight when running headlessly
+         *        (@ref present == false).
+         *
+         * @note Ignored when @ref present is true; in that case the frame count is derived from the
+         *       swapchain image count. Headless multi-buffering governs sync slots only — callers are
+         *       responsible for per-frame output resources or calling @ref WaitForPreviousFrame() before
+         *       consuming GPU-written data (e.g. readback).
+         */
+        uint32_t framesInFlight{2u};
+        /**
+         * @brief Fixed render extent used when running headlessly (@ref present == false).
+         *
+         * @note Ignored when @ref present is true; queried via @ref GetSwapchainExtent() in that case.
+         *       Headless callers should read it back through @ref GetRenderExtent().
+         */
+        RHIExtent2D renderExtent{};
         /**
          * @brief Optional PSO cache to potentially speed up pipeline state recompilation
          *        in Setup time.
@@ -697,7 +719,31 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] RHIDevice* GetDevice() const { return mDevice.Get(); }
         /**
+         * @brief Get the extents the renderer is rendering at.
+         *
+         * When presentation is enabled, this is the current swapchain extent. When running headlessly,
+         * this is the fixed @ref RendererDesc::renderExtent provided at construction.
+         */
+        [[nodiscard]] RHIExtent2D GetRenderExtent() const
+        {
+            if (mDesc.present)
+            {
+                CHECK(mSwapchain && "Swapchain not initialized");
+                return mSwapchain->mDesc.extents;
+            }
+            return mDesc.renderExtent;
+        }
+        /**
+         * @brief Get the render extents as a 3D extent with depth 1.
+         */
+        [[nodiscard]] RHIExtent3D GetRenderExtent3D() const
+        {
+            auto xy = GetRenderExtent();
+            return {xy.x, xy.y, 1};
+        }
+        /**
          * @brief Get the current swapchain extents.
+         * @note Only valid when presentation is enabled. Prefer @ref GetRenderExtent() for headless-safe code.
          */
         [[nodiscard]] RHIExtent2D GetSwapchainExtent() const
         {
@@ -706,6 +752,7 @@ namespace Foundation::RenderCore
         }
         /**
          * @brief Get the current swapchain extents as a 3D extent with depth 1.
+         * @note Only valid when presentation is enabled. Prefer @ref GetRenderExtent3D() for headless-safe code.
          */
         [[nodiscard]] RHIExtent3D GetSwapchainExtent3D() const
         {
@@ -912,7 +959,8 @@ namespace Foundation::RenderCore
          * @brief Returns whether the swapchain is enabled.
          *
          * If this returns false, no backbuffer will be acquired or presented,
-         * and any passes that write to the backbuffer will throw at EndSetup() time.
+         * and any passes that attempt to bind the backbuffer (@ref BindBackbufferRTV /
+         * @ref BindBackbufferUAV) will throw at setup time.
          */
         [[nodiscard]] bool IsPresentEnabled() const { return mDesc.present; }
         /**
