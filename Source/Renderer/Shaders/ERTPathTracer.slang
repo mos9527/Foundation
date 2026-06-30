@@ -321,6 +321,28 @@ HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
     return GetHitState(meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, InvalidRayDifferential());
 }
 
+float2 GetHitUV(ByteAddressBuffer prims, uint meshOffset, uint primitive, float2 bary)
+{
+    const float3 barycentrics = float3(1.0 - bary.x - bary.y, bary.x, bary.y);
+    GSMesh mesh = prims.Load<GSMesh>(meshOffset);
+    uint i0 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 0) * sizeof(uint32_t));
+    uint i1 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 1) * sizeof(uint32_t));
+    uint i2 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 2) * sizeof(uint32_t));
+
+    float2 u0 = float2(prims.Load<FQVertex>(mesh.vtxOffset + i0 * sizeof(FQVertex)).uv);
+    float2 u1 = float2(prims.Load<FQVertex>(mesh.vtxOffset + i1 * sizeof(FQVertex)).uv);
+    float2 u2 = float2(prims.Load<FQVertex>(mesh.vtxOffset + i2 * sizeof(FQVertex)).uv);
+    
+    return u0 * barycentrics.x + u1 * barycentrics.y + u2 * barycentrics.z;
+}
+
+float2 GetHitUV(uint meshOffset, uint primitive, float2 bary, GSInstance inst)
+{
+    if (GSInstanceIsDynamic(inst))
+        return GetHitUV(dynamicPrimitives, meshOffset, primitive, bary);
+    return GetHitUV(primitives, meshOffset, primitive, bary);
+}
+
 float4 LoadCurveControl(GSCurveSet curve, uint32_t pointIndex)
 {
     GSCurvePoint p = primitives.Load<GSCurvePoint>(curve.pointOffset + pointIndex * sizeof(GSCurvePoint));
@@ -508,10 +530,7 @@ HitRecord MakeHitRecord(HitPayload payload, RayDesc ray)
 }
 
 // Hit Payload helpers
-struct ShadowPayload
-{
-    bool hit;
-};
+
 
 struct Payload
 {
@@ -541,12 +560,7 @@ struct Payload
     float hairAlpha;
 };
 
-struct BSSRDFQueryPayload
-{
-    uint32_t targetInstance;
-    uint32_t targetMaterial;
-    WeightedReservoir<BSSRDFSurfaceCandidate> reservoir;
-};
+
 struct BSSRDFSurfaceSample
 {
     bool valid;
@@ -1050,17 +1064,63 @@ uint BuildSERCoherenceHint(HitObject hitObj, uint bounce)
 
 // -- Light Sampling
 
-bool TraceShadowRay(float3 origin, float3 direction, float tMax = INF)
+bool TraceShadowRay<S : ISampler>(float3 origin, float3 direction, float tMax, inout S rng)
 {
     RayDesc ray;
     ray.Origin = origin;
     ray.Direction = direction;
     ray.TMin = EPS_TMin;
     ray.TMax = tMax;
-    ShadowPayload payload;
-    TraceRay(AS, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
-             kMeshMask | kCurveMask, kRayTypeShadow, 1, 1, ray, payload);
-    return payload.hit;
+
+    RayQuery<RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+    q.TraceRayInline(AS, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, kMeshMask | kCurveMask, ray);
+
+    while (q.Proceed())
+    {
+        if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+        {
+            uint instance = q.CandidateInstanceID();
+            if (IsLightInstance(instance))
+                continue;
+
+            uint primitive = q.CandidatePrimitiveIndex();
+            float2 bary = q.CandidateTriangleBarycentrics();
+            
+            GSInstance inst = LoadSceneInstance(instance);
+            GSMaterial material = LoadMaterial(inst.materialIndex);
+            
+            float opacity = 1.0f;
+            if (material.baseColorTexture != ~0u) {
+                float2 uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
+                float4 baseColor = material.baseColorFactor * textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
+                opacity = baseColor.a;
+            } else {
+                opacity = material.baseColorFactor.a;
+            }
+
+            if (opacity == 1.0f || rng.sample() >= 1.0f - opacity) {
+                q.CommitNonOpaqueTriangleHit();
+            }
+        }
+        else
+        {
+            uint instance = q.CandidateInstanceID();
+            if (IsCurveInstance(instance))
+            {
+                uint primitive = q.CandidatePrimitiveIndex();
+                GSInstance inst = LoadSceneInstance(instance);
+                float3 objRo = inst.rotation.conjugate().rotate(ray.Origin - inst.transform) / inst.scale;
+                float3 objRd = inst.rotation.conjugate().rotate(ray.Direction) / inst.scale;
+                
+                float hitT, hitU, hitV;
+                if (EvaluateCurveIntersection(instance, primitive, objRo, objRd, q.RayTMin(), q.CommittedRayT(), hitT, hitU, hitV))
+                {
+                    q.CommitProceduralPrimitiveHit(hitT);
+                }
+            }
+        }
+    }
+    return q.CommittedStatus() != 0;
 }
 
 BSSRDFSurfaceInteraction MakeBSSRDFPo(HitState hit)
@@ -1094,16 +1154,50 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
     queryRay.TMin = 0.0f;
     queryRay.TMax = segment.tMax;
 
-    BSSRDFQueryPayload queryPayload;
-    queryPayload.targetInstance = sourceInstance;
-    queryPayload.targetMaterial = surface.materialID;
-    queryPayload.reservoir = WeightedReservoir<BSSRDFSurfaceCandidate>();
-    TraceRay(AS, 0, 0x01, kRayTypeBSSRDFQuery, 1, 2, queryRay, queryPayload);
+    WeightedReservoir<BSSRDFSurfaceCandidate> reservoir = WeightedReservoir<BSSRDFSurfaceCandidate>();
+    RayQuery<RAY_FLAG_FORCE_NON_OPAQUE> q;
+    q.TraceRayInline(AS, RAY_FLAG_FORCE_NON_OPAQUE, 0x01, queryRay);
 
-    if (!queryPayload.reservoir.HasSample())
+    while (q.Proceed())
+    {
+        if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+        {
+            uint instance = q.CandidateInstanceID();
+            if (IsLightInstance(instance))
+                continue;
+
+            uint primitive = q.CandidatePrimitiveIndex();
+            float2 bary = q.CandidateTriangleBarycentrics();
+
+            PCG prng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber,
+                           hash(uint3(instance, primitive, reservoir.sampleCount)));
+
+            GSInstance inst = LoadSceneInstance(instance);
+            
+            if (instance == sourceInstance && inst.materialIndex == surface.materialID)
+            {
+                GSMaterial material = LoadMaterial(inst.materialIndex);
+                float opacity = 1.0f;
+                if (material.baseColorTexture != ~0u) {
+                    float2 uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
+                    float4 baseColor = material.baseColorFactor * textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
+                    opacity = baseColor.a;
+                } else {
+                    opacity = material.baseColorFactor.a;
+                }
+
+                if (opacity == 1.0f || prng.sample() >= 1.0f - opacity) {
+                    BSSRDFSurfaceCandidate candidate = BSSRDFSurfaceCandidate(instance, primitive, bary, q.CandidateTriangleRayT());
+                    reservoir.Add(candidate, 1.0f, prng.sample());
+                }
+            }
+        }
+    }
+
+    if (!reservoir.HasSample())
         return false;
 
-    BSSRDFSurfaceCandidate selected = queryPayload.reservoir.selected;
+    BSSRDFSurfaceCandidate selected = reservoir.selected;
     HitPayload selectedHit;
     selectedHit.instance = selected.instance;
     selectedHit.primitive = selected.primitive;
@@ -1111,7 +1205,7 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
     selectedHit.hitT = selected.hitT;
 
     Payload pi = SamplePayload(selectedHit, queryRay);
-    float selectionPdf = queryPayload.reservoir.SelectionPDF();
+    float selectionPdf = reservoir.SelectionPDF();
     BSSRDFSurfaceInteraction piBSSRDF = MakeBSSRDFPi(pi.hit);
     float pdfSp = bssrdf.Pdf_Sp(poBSSRDF, piBSSRDF) * selectionPdf;
     float3 Sp = bssrdf.Sp(poBSSRDF, piBSSRDF);
@@ -1226,7 +1320,7 @@ bool SampleVisibleSceneLight<S : ISampler>(
 
     float3 shadowNormalFF = dot(Li.wi, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
     float3 shadowOrigin = OffsetRay(hit.position, shadowNormalFF);
-    if (TraceShadowRay(shadowOrigin, Li.wi, Li.dist))
+    if (TraceShadowRay(shadowOrigin, Li.wi, Li.dist, rng))
         Li.pdf = 0.0f;
 
     return Li.pdf > EPS;
@@ -1702,8 +1796,8 @@ bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitiv
     GSMaterial material = LoadMaterial(inst.materialIndex);
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u) {
-        HitState hs = GetHitState(inst.resourceOffset, primitive, attr.barycentrics.xy, inst, WorldRayOrigin(), WorldRayDirection(), RayTCurrent());
-        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, hs.uv, 0);
+        float2 uv = GetHitUV(inst.resourceOffset, primitive, attr.barycentrics.xy, inst);
+        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
     }
     float opacity = baseColor.a;
     if (opacity == 1.0f)
@@ -1775,9 +1869,9 @@ void FillProceduralLightHit(inout HitPayload payload, ProceduralHitAttributes at
     payload.hitT = RayTCurrent();
 }
 
-bool TryUpdateCurveHit(float t, float u, float v, inout float bestT, inout float bestU, inout float bestV)
+bool TryUpdateCurveHit(float t, float u, float v, float rayTMin, float rayTMax, inout float bestT, inout float bestU, inout float bestV)
 {
-    if (t < RayTMin() || t > RayTCurrent() || t >= bestT)
+    if (t < rayTMin || t > rayTMax || t >= bestT)
         return false;
     bestT = t;
     bestU = u;
@@ -1831,7 +1925,7 @@ void ExtractCubicBezierInterval(float4 q0, float4 q1, float4 q2, float4 q3, floa
 }
 
 void TryIntersectFlatCurveLeaf(float3 ro, float3 rd, float4 q0, float4 q1, float4 q2, float4 q3,
-                               float u0, float u1, inout float bestT, inout float bestU, inout float bestV)
+                               float u0, float u1, float rayTMin, float rayTMax, inout float bestT, inout float bestU, inout float bestV)
 {
     if (max(max(q0.w, q1.w), max(q2.w, q3.w)) <= 0.0f)
         return;
@@ -1865,14 +1959,14 @@ void TryIntersectFlatCurveLeaf(float3 ro, float3 rd, float4 q0, float4 q1, float
     float t = dot(q.xyz - ro, rd) / max(dot(rd, rd), 1e-12f);
     float side = p.x * segment.y - p.y * segment.x;
     float v = 0.5f + (side > 0.0f ? 0.5f : -0.5f) * sqrt(dist2) / max(q.w, 1e-7f);
-    TryUpdateCurveHit(t, lerp(u0, u1, clampedW), saturate(v), bestT, bestU, bestV);
+    TryUpdateCurveHit(t, lerp(u0, u1, clampedW), saturate(v), rayTMin, rayTMax, bestT, bestU, bestV);
 }
 
 void TryIntersectFlatCurveSegment(float3 ro, float3 rd, float4 q0, float4 q1, float u0, float u1,
-                                  inout float bestT, inout float bestU, inout float bestV)
+                                  float rayTMin, float rayTMax, inout float bestT, inout float bestU, inout float bestV)
 {
     TryIntersectFlatCurveLeaf(ro, rd, q0, lerp(q0, q1, 1.0f / 3.0f), lerp(q0, q1, 2.0f / 3.0f), q1,
-                              u0, u1, bestT, bestU, bestV);
+                              u0, u1, rayTMin, rayTMax, bestT, bestU, bestV);
 }
 
 int GetBezierSubdivisionDepth(float4 q0, float4 q1, float4 q2, float4 q3, float3 rd)
@@ -1898,7 +1992,7 @@ int GetBezierSubdivisionDepth(float4 q0, float4 q1, float4 q2, float4 q3, float3
 
 void TryIntersectBezierCurve(float3 ro, float3 rd, GSCurveSegment segment,
                              float4 q0, float4 q1, float4 q2, float4 q3,
-                             inout float bestT, inout float bestU, inout float bestV)
+                             float rayTMin, float rayTMax, inout float bestT, inout float bestU, inout float bestV)
 {
     float maxRadius = max(max(q0.w, q1.w), max(q2.w, q3.w));
     if (maxRadius <= 0.0f)
@@ -1917,22 +2011,19 @@ void TryIntersectBezierCurve(float3 ro, float3 rd, GSCurveSegment segment,
         ExtractCubicBezierInterval(q0, q1, q2, q3, t0, t1, l0, l1, l2, l3);
         float u0 = lerp(segment.u0, segment.u1, t0);
         float u1 = lerp(segment.u0, segment.u1, t1);
-        TryIntersectFlatCurveLeaf(ro, rd, l0, l1, l2, l3, u0, u1, bestT, bestU, bestV);
+        TryIntersectFlatCurveLeaf(ro, rd, l0, l1, l2, l3, u0, u1, rayTMin, rayTMax, bestT, bestU, bestV);
     }
 }
 
-[shader("intersection")]
-void CurveIntersection()
+bool EvaluateCurveIntersection(uint instance, uint primitive, float3 ro, float3 rd, float rayTMin, float rayTMax, out float hitT, out float hitU, out float hitV)
 {
-    GSInstance inst = LoadSceneInstance(InstanceID());
+    GSInstance inst = LoadSceneInstance(instance);
     GSCurveSet curve = primitives.Load<GSCurveSet>(inst.resourceOffset);
-    GSCurveSegment segment = primitives.Load<GSCurveSegment>(curve.segmentOffset + PrimitiveIndex() * sizeof(GSCurveSegment));
+    GSCurveSegment segment = primitives.Load<GSCurveSegment>(curve.segmentOffset + primitive * sizeof(GSCurveSegment));
     GSCurvePoint p0 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p0 * sizeof(GSCurvePoint));
     GSCurvePoint p1 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p1 * sizeof(GSCurvePoint));
 
-    float3 ro = ObjectRayOrigin();
-    float3 rd = ObjectRayDirection();
-    float bestT = RayTCurrent();
+    float bestT = rayTMax;
     float bestU = segment.u0;
     float bestV = 0.5f;
 
@@ -1942,21 +2033,35 @@ void CurveIntersection()
         float4 q1 = LoadCurveControl(curve, segment.p0 + 1);
         float4 q2 = LoadCurveControl(curve, segment.p0 + 2);
         float4 q3 = float4(p1.position, p1.radius);
-        TryIntersectBezierCurve(ro, rd, segment, q0, q1, q2, q3, bestT, bestU, bestV);
+        TryIntersectBezierCurve(ro, rd, segment, q0, q1, q2, q3, rayTMin, rayTMax, bestT, bestU, bestV);
     }
     else
     {
         TryIntersectFlatCurveSegment(ro, rd,
                                      float4(p0.position, p0.radius),
                                      float4(p1.position, p1.radius),
-                                     segment.u0, segment.u1, bestT, bestU, bestV);
+                                     segment.u0, segment.u1, rayTMin, rayTMax, bestT, bestU, bestV);
     }
 
-    if (bestT < RayTCurrent())
+    if (bestT < rayTMax)
+    {
+        hitT = bestT;
+        hitU = bestU;
+        hitV = bestV;
+        return true;
+    }
+    return false;
+}
+
+[shader("intersection")]
+void CurveIntersection()
+{
+    float hitT, hitU, hitV;
+    if (EvaluateCurveIntersection(InstanceID(), PrimitiveIndex(), ObjectRayOrigin(), ObjectRayDirection(), RayTMin(), RayTCurrent(), hitT, hitU, hitV))
     {
         ProceduralHitAttributes attr;
-        attr.localPosition = float2(bestU, bestV);
-        ReportHit(bestT, 0, attr);
+        attr.localPosition = float2(hitU, hitV);
+        ReportHit(hitT, 0, attr);
     }
 }
 
@@ -1981,12 +2086,7 @@ void CurveClosestHit(inout HitPayload payload, in ProceduralHitAttributes attr)
     payload.hitT = RayTCurrent();
 }
 
-[shader("anyhit")]
-void CurveShadowAnyHit(inout ShadowPayload payload, in ProceduralHitAttributes attr)
-{
-    payload.hit = true;
-    AcceptHitAndEndSearch();
-}
+
 
 [shader("anyhit")] // Hit Group 0
 void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
@@ -1998,41 +2098,9 @@ void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
         return IgnoreHit();
 }
 
-[shader("anyhit")] // Hit Group 1
-void ShadowRayAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersectionAttributes attr)
-{
-    uint instance = InstanceID();
-    uint primitive = PrimitiveIndex();
-    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
-    if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
-        return IgnoreHit();
-    payload.hit = true;
-    AcceptHitAndEndSearch();
-}
 
-[shader("anyhit")] // Hit Group 2
-void BSSRDFQueryAnyHit(inout BSSRDFQueryPayload payload, in BuiltInTriangleIntersectionAttributes attr)
-{
-    uint instance = InstanceID();
-    uint primitive = PrimitiveIndex();
-    if (IsLightInstance(instance))
-        return IgnoreHit();
 
-    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber,
-                  hash(uint3(instance, primitive, payload.reservoir.sampleCount)));
-    if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
-        return IgnoreHit();
 
-    GSInstance inst = LoadSceneInstance(instance);
-    if (instance == payload.targetInstance && inst.materialIndex == payload.targetMaterial)
-    {
-        BSSRDFSurfaceCandidate candidate =
-            BSSRDFSurfaceCandidate(instance, primitive, attr.barycentrics.xy, RayTCurrent());
-        payload.reservoir.Add(candidate, 1.0f, rng.sample());
-    }
-
-    return IgnoreHit();
-}
 
 [shader("closesthit")] // Hit Group 0
 void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attr)
@@ -2050,13 +2118,5 @@ void RayMiss(inout HitPayload payload)
     payload.instance = INSTANCE_NO_HIT;
 }
 
-[shader("miss")] // Miss 1
-void ShadowRayMiss(inout ShadowPayload payload)
-{
-    payload.hit = false;
-}
 
-[shader("miss")] // Miss 2
-void BSSRDFQueryMiss(inout BSSRDFQueryPayload payload)
-{
-}
+

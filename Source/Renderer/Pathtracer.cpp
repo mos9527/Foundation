@@ -111,14 +111,6 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
                       shader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 0);
         r->BindShader(self, RHIShaderStageBits::RayMiss, "RayMiss",
                       shader, AsBytes(AsSpan(ptCompileOptions)));
-        r->BindShader(self, RHIShaderStageBits::RayAnyHit, "ShadowRayAnyHit",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 1);
-        r->BindShader(self, RHIShaderStageBits::RayMiss, "ShadowRayMiss",
-                      shader, AsBytes(AsSpan(ptCompileOptions)));
-        r->BindShader(self, RHIShaderStageBits::RayAnyHit, "BSSRDFQueryAnyHit",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 2);
-        r->BindShader(self, RHIShaderStageBits::RayMiss, "BSSRDFQueryMiss",
-                      shader, AsBytes(AsSpan(ptCompileOptions)));
         r->BindShader(self, RHIShaderStageBits::RayIntersection, "RectLightIntersection",
                       shader, AsBytes(AsSpan(ptCompileOptions)), kRectLightSBTOffset,
                       RTHitGroupType::Procedural);
@@ -138,9 +130,6 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
                       shader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset,
                       RTHitGroupType::Procedural);
         r->BindShader(self, RHIShaderStageBits::RayIntersection, "CurveIntersection",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset + 1u,
-                      RTHitGroupType::Procedural);
-        r->BindShader(self, RHIShaderStageBits::RayAnyHit, "CurveShadowAnyHit",
                       shader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset + 1u,
                       RTHitGroupType::Procedural);
         r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitives");
