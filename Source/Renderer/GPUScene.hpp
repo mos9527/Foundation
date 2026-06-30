@@ -247,7 +247,7 @@ public:
         Uniform,
         Importance
     };
-    LightSamplerType mLightSamplerType = LightSamplerType::Importance;
+    LightSamplerType mLightSamplerType = LightSamplerType::Uniform;
 
     [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FSerializedMesh const& src);
     [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FSerializedCurve const& src);

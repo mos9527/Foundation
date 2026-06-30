@@ -717,7 +717,7 @@ static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBy
 
     outBudgetBytes = GPUSceneBudgetBytes(estimatedBudget);
 
-    auto lightSamplerType = GPUScene::LightSamplerType::Importance;
+    auto lightSamplerType = GPUScene::LightSamplerType::Uniform;
     if (GContext->gpuScene)
         lightSamplerType = GContext->gpuScene->mLightSamplerType;
 
