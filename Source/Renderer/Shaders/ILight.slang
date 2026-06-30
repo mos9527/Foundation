@@ -607,3 +607,98 @@ public struct RectLight : ILight {
         return LightLiSample(Lemit, wi, pdf, false, dist);
     }
 };
+
+public struct TriangleLight : ILight {
+    SampledSpectrum Lemit;
+    float3 v0;
+    float3 edge1;
+    float3 edge2;
+    float3 normal;
+    float area;
+    bool twoSided;
+
+    public __init(SampledSpectrum Lemit, float3 v0, float3 edge1, float3 edge2, bool twoSided = false) {
+        this.Lemit = Lemit;
+        this.v0 = v0;
+        this.edge1 = edge1;
+        this.edge2 = edge2;
+        float3 n = cross(edge1, edge2);
+        float nLen = length(n);
+        this.normal = nLen > 0.0f ? n / nLen : float3(0.0f);
+        this.area = 0.5f * nLen;
+        this.twoSided = twoSided;
+    }
+
+    public LightType Type() {
+        return LightType::Area;
+    }
+
+    public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
+        if (!twoSided && dot(n, w) < 0.0f) return SampledSpectrum(0.0f);
+        return Lemit;
+    }
+
+    public SampledSpectrum Le(float3 w) {
+        return SampledSpectrum(0.0f);
+    }
+
+    public void PDF_Le(LightSampleContext ctx, float3 wi, out float pdfPos, out float pdfDir) {
+        pdfPos = 0.0f;
+        pdfDir = 0.0f;
+    }
+
+    bool ContainsPoint(float3 p) {
+        float3 d = p - v0;
+        float d00 = dot(edge1, edge1);
+        float d01 = dot(edge1, edge2);
+        float d11 = dot(edge2, edge2);
+        float d20 = dot(d, edge1);
+        float d21 = dot(d, edge2);
+        float denom = d00 * d11 - d01 * d01;
+        if (abs(denom) <= 1e-12f) return false;
+
+        float invDenom = 1.0f / denom;
+        float b1 = (d11 * d20 - d01 * d21) * invDenom;
+        float b2 = (d00 * d21 - d01 * d20) * invDenom;
+        return b1 >= 0.0f && b2 >= 0.0f && (b1 + b2) <= 1.0f;
+    }
+
+    public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
+        if (area <= 0.0f) return 0.0f;
+
+        float cosTheta = dot(normal, wi);
+        if (cosTheta == 0.0f) return 0.0f;
+        if (!twoSided && cosTheta > 0.0f) return 0.0f;
+
+        float t = dot(normal, v0 - ctx.p()) / cosTheta;
+        if (t <= 0.0f) return 0.0f;
+
+        float3 pTriangle = ctx.p() + t * wi;
+        if (!ContainsPoint(pTriangle)) return 0.0f;
+
+        float pdfArea = 1.0f / area;
+        return pdfArea * (t * t) / abs(cosTheta);
+    }
+
+    public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
+        if (area <= 0.0f) return LightLiSample();
+
+        float sqrtU = sqrt(u.x);
+        float b1 = sqrtU * (1.0f - u.y);
+        float b2 = sqrtU * u.y;
+        float3 pLight = v0 + b1 * edge1 + b2 * edge2;
+
+        float3 wi = pLight - ctx.p();
+        float dist2 = dot(wi, wi);
+        if (dist2 == 0.0f) return LightLiSample();
+
+        float dist = sqrt(dist2);
+        wi /= dist;
+
+        float cosTheta = dot(normal, -wi);
+        if (!twoSided && cosTheta <= 0.0f) return LightLiSample();
+
+        float pdf = dist2 / (area * abs(cosTheta));
+        return LightLiSample(Lemit, wi, pdf, false, dist);
+    }
+};
