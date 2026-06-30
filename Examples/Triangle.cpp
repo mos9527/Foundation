@@ -9,7 +9,7 @@ int main(int argc, char** argv)
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {
         .threadCount = 0 /* ST recording */
     });
-    CSDebugTextData lines[5];
+    CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("Triangle, or Hello World in 3 vertices.");
     renderer->BeginSetup();
     renderer->CreatePass(
@@ -22,7 +22,7 @@ int main(int argc, char** argv)
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
             auto const& img_wh = r->GetSwapchainExtent();
-            r->CmdBeginGraphics(self, cmd, img_wh);
+            r->CmdBeginGraphics(self, cmd, img_wh, {{{RHIAttachmentLoadOp::Clear}}});
             r->CmdSetPipeline(self, cmd);
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, Examples_GetTime());
             cmd->SetViewport(0, 0, img_wh.x, img_wh.y)

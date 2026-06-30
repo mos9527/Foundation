@@ -45,6 +45,11 @@ namespace Foundation::Core
     ThreadPool::~ThreadPool()
     {
         Shutdown();
+        for (auto& t : mThreads)
+        {
+            if (t.joinable())
+                t.join();
+        }
     }
     void ThreadPool::ThreadPoolWorker(size_t id)
     {

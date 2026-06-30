@@ -1,18 +1,30 @@
-out/
+.derived/
+.idea/
 .vs/
 .vscode/
 build/
-.derived/
-.idea/
+dist/
 docs/
-# I have no idea why my box wants to put this file here
-127.0.0.1* 
-# No, Visual Studio.
+out/
+*.pyc
+# Visual Studio
 /CMakeSettings.json
+# CLion builds
+cmake-build-*/
+# AI harnesses that I don't quite like
 .claude/
 .codebuddy/
-*.pyc
-dist/
-cmake-build-*/
 # Headless example image dumps
 render.png
+# Gradle (grr)
+.gradle/
+gradle/
+gradlew
+gradlew.bat
+local.properties
+.cxx/
+# Automatiaclly generated
+Android/app/src/main/assets
+Android/app/src/main/org/libsdl
+# I have no idea why my box wants to put this file here
+127.0.0.1* 

@@ -9,8 +9,8 @@ namespace Foundation::Core
     using CondVar = std::condition_variable;
     using Mutex = std::mutex;
     /**
-     * @brief Alias of std::jthread.
-     * @note @ref Thread is joinable by default, and will be joined in the destructor.
+     * @brief Alias of std::thread.
+     * @note Consumers MUST ensure the thread is joined before destruction.
      */
-    using Thread = std::jthread;
+    using Thread = std::thread;
 }

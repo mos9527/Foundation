@@ -20,7 +20,7 @@ VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const&
         .queueFamilyIndex = static_cast<VulkanDeviceQueue*>(desc.queue)->GetVkQueueFamily(),
     };
     mCommandPool = vk::raii::CommandPool(device.GetVkDevice(), pool_info, device.GetVkAllocationCallbacks());
-    CHECK(mCommandPool != nullptr && "failed to create Vulkan command pool");
+    CHECK(*mCommandPool && "failed to create Vulkan command pool");
 }
 
 void VulkanCommandPool::DebugSetObjectName(const char* name)
@@ -57,7 +57,7 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
         .commandBufferCount = 1,
     };
     mCommandBuffer = std::move(vk::raii::CommandBuffers(mCommandPool.GetDevice().GetVkDevice(), alloc_info).front());
-    CHECK(mCommandBuffer != nullptr && "failed to allocate Vulkan command buffer");
+    CHECK(*mCommandBuffer && "failed to allocate Vulkan command buffer");
 }
 
 RHICommandList& VulkanCommandList::Begin(Allocator* scratchAllocator)

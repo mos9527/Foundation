@@ -30,6 +30,9 @@ else ()
     set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
     set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
+    if (ANDROID)
+        set(MI_LOCAL_DYNAMIC_TLS ON CACHE BOOL "" FORCE)
+    endif()
     FetchContent_MakeAvailable(mimalloc)
 
     target_compile_definitions(Foundation_Core PUBLIC "FOUNDATION_CORE_USES_OS_ALLOC=0")
@@ -54,6 +57,8 @@ endif()
 
 if (WIN32)
     target_link_libraries(Foundation_Core PUBLIC ws2_32 dbghelp)
+elseif(ANDROID)
+    target_link_libraries(Foundation_Core PUBLIC log android)
 endif()
 
 # MinGW/GCC needs libatomic for 128-bit CAS used in AtomicPool

@@ -24,8 +24,15 @@ FetchContent_Declare(
 # WASAPI, HIDAPI, OpenGL/EGL/GLX, Media Foundation, ...) are skipped at
 # configure time. Keep VIDEO (mouse/keyboard arrive via video events);
 # SDL_VULKAN is auto-enabled because VIDEO is on.
-set(SDL_SHARED               OFF CACHE BOOL "" FORCE)
-set(SDL_STATIC               ON  CACHE BOOL "" FORCE)
+if (ANDROID)
+    # Android's SDLActivity.java explicitly calls System.loadLibrary("SDL3");
+    # We must build it as a shared library so libSDL3.so is packaged into the APK.
+    set(SDL_SHARED               ON  CACHE BOOL "" FORCE)
+    set(SDL_STATIC               OFF CACHE BOOL "" FORCE)
+else()
+    set(SDL_SHARED               OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC               ON  CACHE BOOL "" FORCE)
+endif()
 set(SDL_TEST_LIBRARY         OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS                OFF CACHE BOOL "" FORCE)
 set(SDL_INSTALL              OFF CACHE BOOL "" FORCE)
@@ -39,7 +46,7 @@ set(SDL_GPU     OFF CACHE BOOL "" FORCE)   # ditto
 set(SDL_CAMERA  OFF CACHE BOOL "" FORCE)
 set(SDL_JOYSTICK OFF CACHE BOOL "" FORCE)
 set(SDL_HAPTIC  OFF CACHE BOOL "" FORCE)
-set(SDL_HIDAPI  OFF CACHE BOOL "" FORCE)
+set(SDL_HIDAPI  ON CACHE BOOL "" FORCE) # Must be ON for Android; SDL3 unconditionally references HIDDeviceManager_tab
 set(SDL_POWER   OFF CACHE BOOL "" FORCE)
 set(SDL_SENSOR  OFF CACHE BOOL "" FORCE)
 set(SDL_DIALOG  OFF CACHE BOOL "" FORCE)   # we use nfd
@@ -51,10 +58,17 @@ set(SDL_OFFSCREEN  OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
     SDL3
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL
-    GIT_TAG release-3.2.26
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG release-3.2.0
     GIT_SHALLOW TRUE
 )
+FetchContent_MakeAvailable(SDL3)
+
+if (ANDROID)
+    # Copy SDL3 Java sources to the Android project so Gradle can find them
+    file(COPY "${sdl3_SOURCE_DIR}/android-project/app/src/main/java/org"
+         DESTINATION "${CMAKE_SOURCE_DIR}/Android/app/src/main/java")
+endif()
 
 FetchContent_Declare(
     glm
@@ -134,12 +148,15 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+# nativefiledialog-extended has no Android backend
+if (NOT ANDROID)
 FetchContent_Declare(
     nativefiledialog-extended
     GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
     GIT_TAG v1.2.1
     GIT_SHALLOW TRUE
 )
+endif()
 
 FetchContent_Declare(
     argh

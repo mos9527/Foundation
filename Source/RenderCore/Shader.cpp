@@ -173,9 +173,7 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
 void Shader::Sort()
 {
     Ranges::sort(mBindings, [](const Binding& lhs, const Binding& rhs) {
-        const Pair k1 = { lhs.descriptorSet, lhs.binding };
-        const Pair k2 = { rhs.descriptorSet, rhs.binding };
-        return k1 < k2;
+        return std::tie(lhs.descriptorSet, lhs.binding) < std::tie(rhs.descriptorSet, rhs.binding);
     });
 }
 

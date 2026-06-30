@@ -92,7 +92,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
                                          .requiredFlags = requiredFlags};
     auto allocator = device.GetVkAllocator();
     VkBuffer buffer;
-    auto res = vmaCreateBufferWithAlignment(allocator, &*bufferInfo, &allocInfo, desc.alignment, &buffer, &mAllocation,
+    auto res = vmaCreateBufferWithAlignment(allocator, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, desc.alignment, &buffer, &mAllocation,
                                             nullptr);
     CHECK(res == VK_SUCCESS && "failed to create Vulkan buffer");
     mBuffer = vk::raii::Buffer(device.GetVkDevice(), vk::Buffer(buffer), device.GetVkAllocationCallbacks());
@@ -106,7 +106,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
 
 VulkanBuffer::~VulkanBuffer()
 {
-    if (mShared && mBuffer != nullptr)
+    if (mShared && *mBuffer)
     {
         // If the buffer is shared (e.g. from a swapchain), we do not destroy it here.
         mBuffer.release();
@@ -175,7 +175,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
                                              desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)};
     auto allocator = device.GetVkAllocator();
     VkImage image;
-    auto res = vmaCreateImage(allocator, &*imageInfo, &allocInfo, &image, &mAllocation, nullptr);
+    auto res = vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &image, &mAllocation, nullptr);
     CHECK_MSG(res == VK_SUCCESS, "failed to create Vulkan image");
     mImage = vk::raii::Image(device.GetVkDevice(), vk::Image(image), device.GetVkAllocationCallbacks());
 }
@@ -189,7 +189,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
 
 VulkanTexture::~VulkanTexture()
 {
-    if (mShared && mImage != nullptr)
+    if (mShared && *mImage)
     {
         // If the image is shared (e.g. from a swapchain), we do not destroy it here.
         mImage.release();
@@ -263,7 +263,7 @@ RHIBufferScopedHandle<RHIBuffer> VulkanBuffer::CreateAliasedBuffer(RHIBufferDesc
 {
     VkBuffer aliased;
     vk::BufferCreateInfo buffer_info = vkBufferCreateInfoFromRHIBufferDesc(desc);
-    vmaCreateAliasingBuffer2(mDevice.GetVkAllocator(), mAllocation, offset, &*buffer_info, &aliased);
+    vmaCreateAliasingBuffer2(mDevice.GetVkAllocator(), mAllocation, offset, reinterpret_cast<const VkBufferCreateInfo*>(&buffer_info), &aliased);
     return {this,
             mAliases.CreateObject<VulkanBuffer>(mDevice, desc,
                                                 vk::raii::Buffer(mDevice.GetVkDevice(), aliased,
@@ -285,7 +285,7 @@ RHITextureScopedHandle<RHITexture> VulkanTexture::CreateAliasedTexture(RHITextur
 {
     VkImage aliased;
     vk::ImageCreateInfo image_info = vkImageCreateInfoFromRHITextureDesc(desc);
-    vmaCreateAliasingImage2(mDevice.GetVkAllocator(), mAllocation, offset, &*image_info, &aliased);
+    vmaCreateAliasingImage2(mDevice.GetVkAllocator(), mAllocation, offset, reinterpret_cast<const VkImageCreateInfo*>(&image_info), &aliased);
     return {this,
             mAliases.CreateObject<VulkanTexture>(mDevice, desc,
                                                  vk::raii::Image(mDevice.GetVkDevice(), aliased,

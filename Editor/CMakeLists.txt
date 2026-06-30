@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.26)
 
 FetchContent_MakeAvailable(stb)
 FetchContent_MakeAvailable(fast_obj)
-FetchContent_MakeAvailable(nativefiledialog-extended)
+if (NOT ANDROID)
+    FetchContent_MakeAvailable(nativefiledialog-extended)
+endif()
 FetchContent_MakeAvailable(cgltf)
 FetchContent_MakeAvailable(lz4)
 FetchContent_MakeAvailable(bc7enc)
@@ -66,36 +68,36 @@ if (FOUNDATION_USE_PCH)
 endif()
 add_subdirectory(Shaders)
 
-add_executable(Editor)
-target_sources(Editor PRIVATE
-        SDLMain.cpp ImGui.cpp
-        EditorState.cpp EditorScene.cpp EditorUI.cpp EditorGizmos.cpp
-)
-if (WIN32)
-    target_sources(Editor PRIVATE Editor.rc)
-endif ()
-target_link_libraries(
-        Editor PRIVATE
-        Editor_Context
-        Foundation_Pathtracer
-        Foundation_Rasterizer
-        Foundation_RHIVulkan
-        ThirdParty_ImGui argh nfd
-)
+if (NOT ANDROID)
+    add_executable(Editor)
+    target_sources(Editor PRIVATE
+            SDLMain.cpp ImGui.cpp
+            EditorState.cpp EditorScene.cpp EditorUI.cpp EditorGizmos.cpp
+    )
+    if (WIN32)
+        target_sources(Editor PRIVATE Editor.rc)
+    endif ()
+    target_link_libraries(
+            Editor PRIVATE
+            Editor_Context
+            Foundation_Pathtracer
+            Foundation_Rasterizer
+            Foundation_RHIVulkan
+            ThirdParty_ImGui argh nfd
+    )
 
+    add_dependencies(
+            Editor
+            Foundation_Shaders
+            Editor_Shaders
+            Editor_Data
+    )
 
-add_dependencies(
-        Editor
-        Foundation_Shaders
-        Editor_Shaders
-        Editor_Data
-)
-
-add_executable(Editor_Util)
-target_sources(Editor_Util PRIVATE Util.cpp)
-target_link_libraries(
-        Editor_Util PRIVATE
-        Editor_Assets
-)
-
-add_custom_target(EditorWithUtil DEPENDS Editor Editor_Util)
+    add_executable(Editor_Util)
+    target_sources(Editor_Util PRIVATE Util.cpp)
+    target_link_libraries(
+            Editor_Util PRIVATE
+            Editor_Assets
+    )
+    add_custom_target(EditorWithUtil DEPENDS Editor Editor_Util)
+endif()

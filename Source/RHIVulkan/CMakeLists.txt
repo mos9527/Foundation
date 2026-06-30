@@ -9,7 +9,30 @@ file(
         "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
 
-find_package(Vulkan REQUIRED)
+# Android NDK provides Vulkan headers in the sysroot and libvulkan.so on-device.
+# find_package may not locate them through the NDK toolchain, so provide a fallback.
+if (ANDROID)
+    # The NDK sysroot provides vulkan.h and libvulkan.so, so find_package(Vulkan) might succeed.
+    # However, it never provides vulkan.hpp. Therefore, we must ALWAYS fetch Vulkan-Headers on Android.
+    include(FetchContent)
+    FetchContent_Declare(
+        VulkanHeaders
+        GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers.git
+        GIT_TAG v1.3.280
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(VulkanHeaders)
+
+    find_package(Vulkan QUIET)
+    if (NOT Vulkan_FOUND)
+        add_library(Vulkan::Vulkan SHARED IMPORTED)
+        set_target_properties(Vulkan::Vulkan PROPERTIES
+            IMPORTED_LOCATION "${CMAKE_SYSROOT}/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/libvulkan.so"
+        )
+    endif()
+else()
+    find_package(Vulkan REQUIRED)
+endif()
 FetchContent_MakeAvailable(VulkanMemoryAllocator)
 
 add_library(Foundation_RHIVulkan ${SOURCES} ${INCLUDES})
@@ -27,6 +50,9 @@ else ()
 endif ()
 
 target_link_libraries(Foundation_RHIVulkan PUBLIC Foundation_RHICore Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator)
+if (ANDROID)
+    target_link_libraries(Foundation_RHIVulkan PUBLIC Vulkan::Headers)
+endif()
 target_include_directories(
         Foundation_RHIVulkan
         PUBLIC

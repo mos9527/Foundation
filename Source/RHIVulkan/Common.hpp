@@ -8,7 +8,7 @@ namespace Foundation::RHI {
     struct VulkanAllocationCallbacks
     {
         Allocator* allocator{nullptr};
-        vk::AllocationCallbacks callbacks{};
+        VkAllocationCallbacks callbacks{};
 
         explicit VulkanAllocationCallbacks(Allocator* allocator = nullptr)
         {
@@ -18,7 +18,7 @@ namespace Foundation::RHI {
         void Reset(Allocator* newAllocator)
         {
             allocator = newAllocator;
-            callbacks = vk::AllocationCallbacks{
+            callbacks = VkAllocationCallbacks{
                 .pUserData = allocator,
                 .pfnAllocation = &VulkanAllocationCallbacks::Allocate,
                 .pfnReallocation = &VulkanAllocationCallbacks::Reallocate,
@@ -28,17 +28,17 @@ namespace Foundation::RHI {
 
         [[nodiscard]] vk::AllocationCallbacks const* Get() const
         {
-            return allocator ? &callbacks : nullptr;
+            return allocator ? reinterpret_cast<vk::AllocationCallbacks const*>(&callbacks) : nullptr;
         }
 
         [[nodiscard]] VkAllocationCallbacks const* GetNative() const
         {
-            return allocator ? &*callbacks : nullptr;
+            return allocator ? &callbacks : nullptr;
         }
 
     private:
         static void* VKAPI_PTR Allocate(void* userData, size_t size, size_t alignment,
-                                        vk::SystemAllocationScope)
+                                        VkSystemAllocationScope)
         {
             if (!userData || size == 0)
                 return nullptr;
@@ -53,7 +53,7 @@ namespace Foundation::RHI {
         }
 
         static void* VKAPI_PTR Reallocate(void* userData, void* original, size_t size, size_t alignment,
-                                          vk::SystemAllocationScope)
+                                          VkSystemAllocationScope)
         {
             if (!userData)
                 return nullptr;

@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <stb_image_write.h>
+#include <SDL3/SDL_main.h>
 #include <vector>
 using namespace Foundation;
 using namespace Core;
@@ -163,6 +164,33 @@ constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_
 //   -g, --gpu <id>    Select GPU device index
 //   -l, --list-gpus   List available GPU devices and exit
 //
+#if defined(__ANDROID__)
+inline void Examples_ExtractAssets(const char* internalDir) {
+    const char* assetsToExtract[] = {
+        "Data/Shaders/Triangle.spv",
+        "Data/Shaders/SDF2D.spv",
+        "Data/Shaders/MandelbrotCompute.spv",
+        "Data/Shaders/CSDebugText.spv",
+        "Data/Shaders/VSFullscreen.spv",
+        "Data/Shaders/PSCopy.spv"
+    };
+    for (const char* asset : assetsToExtract) {
+        size_t size;
+        void* data = SDL_LoadFile(asset, &size);
+        if (data) {
+            std::string outPath = std::string(internalDir) + "/" + asset;
+            std::filesystem::path fsPath(outPath);
+            std::filesystem::create_directories(fsPath.parent_path());
+            std::ofstream file(outPath, std::ios::binary | std::ios::trunc);
+            if (file) {
+                file.write(reinterpret_cast<const char*>(data), size);
+            }
+            SDL_free(data);
+        }
+    }
+}
+#endif
+
 // Pass desc.present = false (with desc.renderExtent set) to initialize headlessly:
 // no SDL window or Vulkan WSI is required, no swapchain is created, and the returned
 // swapchain handle is invalid. This works on software backends (e.g. Lavapipe) without
@@ -193,7 +221,16 @@ inline auto Examples_InitVulkan(SDL_Window* window, int argc, char** argv, Rende
     if (headless)
         PathsInit(argv[0]);
     else
+    {
+#if defined(__ANDROID__)
+        const char* prefPath = SDL_GetPrefPath("foundation", "examples");
+        Examples_ExtractAssets(prefPath);
+        PathsInitFromDir(prefPath);
+        SDL_free((void*)prefPath);
+#else
         PathsInitFromDir(SDL_GetBasePath());
+#endif
+    }
     auto app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
     auto device = headless ? app->CreateDevice({.id = static_cast<uint32_t>(gpuId)})
                            : app->CreateDevice({.id = static_cast<uint32_t>(gpuId)}, window);

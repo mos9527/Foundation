@@ -5,9 +5,9 @@ const char* kVulkanDesiredInstanceExtensions[] = {
     VK_EXT_DEBUG_UTILS_EXTENSION_NAME,  // Shader printfs
     VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME // For non-sRGB color spaces
 };
-static VKAPI_ATTR vk::Bool32 VKAPI_CALL
-VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT,
-                     const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
+static VKAPI_ATTR VkBool32 VKAPI_CALL
+VkDebugLayerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT,
+                     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
 {
     constexpr LogLevel kLevels[] = {LogDebug, LogInfo, LogWarn, LogError};
     LOG(VkDebugLayer, kLevels[std::countr_zero(static_cast<uint32_t>(severity)) >> 2 & 3], "{}", pCallbackData->pMessage);
@@ -124,13 +124,20 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
         mDevices.emplace_back(RHIDevice::DeviceDesc{.id = id, .name = props.deviceName});
     }
     if (isExtensionEnabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
+        VkDebugUtilsMessengerCreateInfoEXT debugInfo{
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            .pNext = nullptr,
+            .flags = 0,
+            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                 VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT,
+            .pfnUserCallback = &VkDebugLayerCallback,
+            .pUserData = nullptr
+        };
         mDebugHandler = mInstance.createDebugUtilsMessengerEXT(
-            {.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-                 vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-                 vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-             .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-                 vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
-             .pfnUserCallback = &VkDebugLayerCallback},
+            reinterpret_cast<const vk::DebugUtilsMessengerCreateInfoEXT&>(debugInfo),
             GetVkAllocationCallbacks());
     }
 }
@@ -138,8 +145,8 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
 VulkanApplication::~VulkanApplication()
 {
     mStorage.Destroy();
-    mDebugHandler = nullptr;
-    mInstance = nullptr;
+    mDebugHandler.clear();
+    mInstance.clear();
 }
 
 Span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const

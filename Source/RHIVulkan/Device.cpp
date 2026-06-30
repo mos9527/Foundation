@@ -14,7 +14,7 @@ const char* kVulkanDesiredDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
                                                 VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
                                                 VK_KHR_RAY_QUERY_EXTENSION_NAME,
                                                 VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-                                                VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME};
+                                                VK_NV_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
@@ -196,7 +196,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     const bool hasAccelerationStructure = isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
     const bool hasRayQuery = isExtensionEnabled(VK_KHR_RAY_QUERY_EXTENSION_NAME);
     const bool hasRayTracingPipeline = isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
-    const bool hasRayTracingInvocationReorder = isExtensionEnabled(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
+    // Q: Why not EXT? A: See below for more SER kerfuffles
+    const bool hasRayTracingInvocationReorder = isExtensionEnabled(VK_NV_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
     #define UNLINK_IF_UNSUPPORTED(FLAG, STRUCT_TYPE) \
         if (!(FLAG)) { \
             featureChain.unlink<STRUCT_TYPE>(); \
@@ -302,7 +303,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                                      .enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
                                      .ppEnabledExtensionNames = enabledExtensions.data()};
     mDevice = vk::raii::Device(mPhysicalDevice, device_info, GetVkAllocationCallbacks());
-    CHECK(mDevice != nullptr && "failed to create Vulkan device");
+    CHECK(*mDevice && "failed to create Vulkan device");
     // Allocate the queues
     mQueues = ConstructUnique<VulkanDeviceQueues>(GetAllocator(), GetAllocator());
     mQueues->graphics = mQueues->storage.CreateObject<VulkanDeviceQueue>(*this, graphics.first, graphics.second);
@@ -317,7 +318,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         .instance = *mApp.GetVkInstance(),
         .vulkanApiVersion = mApp.mVulkanApiVersion};
     CHECK(vmaCreateAllocator(&allocator_info, &mVkAllocator) == VK_SUCCESS && "failed to create VMA for Vulkan device");
-    if (mSurface != nullptr)
+    if (*mSurface)
     {
         // Collect swapchain (surface) info
         auto formats = mPhysicalDevice.getSurfaceFormatsKHR(mSurface);
@@ -436,9 +437,9 @@ VulkanDevice::~VulkanDevice()
         mVkAllocator = nullptr;
     }
     mQueues.reset();
-    mSurface = nullptr;
-    mDevice = nullptr;
-    mPhysicalDevice = nullptr;
+    mSurface.clear();
+    mDevice.clear();
+    mPhysicalDevice.clear();
 }
 
 void VulkanDevice::WaitIdle() const { mDevice.waitIdle(); }
@@ -568,7 +569,7 @@ Span<RHISwapchainPresentMode const> VulkanDevice::GetSwapchainSupportedPresentMo
 
 RHIDeviceScopedHandle<RHISwapchain> VulkanDevice::CreateSwapchain(RHISwapchain::SwapchainDesc const& desc)
 {
-    CHECK_MSG(mSurface != nullptr,
+    CHECK_MSG(*mSurface,
               "Cannot create a swapchain on a device without a presentation surface. "
               "This device was created headlessly (no SDL window / Vulkan WSI). "
               "Use a present-enabled device, or render headlessly into an explicit texture.");
@@ -997,7 +998,7 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
                                           .bindingCount = static_cast<uint32_t>(bindings.size()),
                                           .pBindings = bindings.data()},
         mDevice.GetVkAllocationCallbacks());
-    CHECK_MSG(mLayout != nullptr, "failed to create Vulkan descriptor set layout");
+    CHECK_MSG(*mLayout, "failed to create Vulkan descriptor set layout");
 }
 
 RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout>
@@ -1054,7 +1055,7 @@ VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPo
     }
     mResults.resize(desc.count);
     mQueryPool = vk::raii::QueryPool(mDevice.GetVkDevice(), createInfo, mDevice.GetVkAllocationCallbacks());
-    CHECK_MSG(mQueryPool != nullptr, "failed to create Vulkan query pool");
+    CHECK_MSG(*mQueryPool, "failed to create Vulkan query pool");
 }
 
 void VulkanDeviceQueryPool::Reset() { mQueryPool.reset(0, mDesc.count); }
@@ -1152,7 +1153,7 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
                                   .maxLod = desc.lod.max};
     sampler.setPNext(&reduction);
     mSampler = vk::raii::Sampler(mDevice.GetVkDevice(), sampler, mDevice.GetVkAllocationCallbacks());
-    CHECK_MSG(mSampler != nullptr, "failed to create Vulkan sampler");
+    CHECK_MSG(*mSampler, "failed to create Vulkan sampler");
 }
 
 RHIDeviceScopedHandle<RHIDeviceSampler> VulkanDevice::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc)

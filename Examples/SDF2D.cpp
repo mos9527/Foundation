@@ -8,7 +8,7 @@ int main(int argc, char** argv)
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {
         .threadCount = 0 /* ST recording */
     });
-    CSDebugTextData lines[5];
+    CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("SDF2D - port courtesy of https://iquilezles.org/articles/distfunctions2d/");
     renderer->BeginSetup();
     createPSFullscreenPass(
