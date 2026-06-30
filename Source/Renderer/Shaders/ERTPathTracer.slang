@@ -532,39 +532,10 @@ HitRecord MakeHitRecord(HitPayload payload, RayDesc ray)
 // Hit Payload helpers
 
 
-struct Payload
-{
-    HitState hit;
-    uint materialID;
-    float3 baseColor;
-    float3 emissive;
-    float metallic;
-    float roughness;
-    float transmission;
-    float ior;
-    float specularFactor;
-    float3 specularColorFactor;
-    float anisotropyStrength;
-    float sheenWeight;
-    float sheenRoughness;
-    float3 sheenTint;
-    float clearcoatFactor;
-    float clearcoatRoughness;
-    float subsurface;
-    float subsurfaceScale;
-    float3 subsurfaceColor;
-    float3 subsurfaceRadius;
-    uint shaderBlockID;
-    float hairBetaM;
-    float hairBetaN;
-    float hairAlpha;
-};
-
-
 struct BSSRDFSurfaceSample
 {
     bool valid;
-    Payload surface;
+    HitState surface;
     float3 Sp;
     float pdf;
 
@@ -630,29 +601,48 @@ struct DirectLightingState
 // Material helpers
 // vvvvv TODO More materials? Custom ones?
 //       One uber shader here is surely insufficent. Need to compile ad-hoc shaders _here_.
-IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false, bool foldSubsurfaceToDiffuse = false)
+IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out float3 outBaseColor, bool isCurve = false, bool foldSubsurfaceToDiffuse = false)
 {
-    if (surface.shaderBlockID == kMaterialShaderBlockHair)
+    GSInstance inst = LoadSceneInstance(payload.instance);
+    GSMaterial material = LoadMaterial(inst.materialIndex);
+
+    float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
+    float2 anisotropyDirection;
+    float transmission, specularFactor, anisotropyStrength;
+    float3 specularColorFactor;
+    float sheenWeight, sheenRoughness;
+    float3 sheenTint;
+    float clearcoatFactor, clearcoatRoughness;
+
+    SampleMaterials(material, hit.uv, hit.uvDX, hit.uvDY,
+                    baseColor4, normalTBN, pbrMetalRough, emissive4,
+                    transmission, specularFactor, specularColorFactor,
+                    anisotropyStrength, anisotropyDirection,
+                    sheenWeight, sheenRoughness, sheenTint,
+                    clearcoatFactor, clearcoatRoughness);
+
+    outBaseColor = baseColor4.xyz;
+
+    SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
+    RotateHitTangentFrame(hit, anisotropyDirection);
+
+    if (material.shaderBlockID == kMaterialShaderBlockHair)
     {
-        float h = isCurve ? 2.0f * saturate(surface.hit.uv.y) - 1.0f : 0.0f;
+        float h = isCurve ? 2.0f * saturate(hit.uv.y) - 1.0f : 0.0f;
         return PrincipledHairMaterial(
-            surface.baseColor, surface.hairBetaM, surface.hairBetaN, h, surface.ior, surface.hairAlpha,
-            surface.emissive);
+            baseColor4.xyz, material.hairBetaM, material.hairBetaN, h, material.ior, material.hairAlpha,
+            emissive4.xyz);
     }
-    // Cycles does this: After a diffuse ancestor, use diffuse
-    // instead of another non-local subsurface event to keep paths bounded.
-    // Helps to reduces variance by a lot - this is not in PBRT.    
-    // See also https://projects.blender.org/blender/blender/src/commit/4c7492e2193df4fbd079832798553c8943bbb870/intern/cycles/kernel/closure/bssrdf.h#L314
-    // Do note that this is biased, though visual impact is quite minimal.
-    float subsurface = foldSubsurfaceToDiffuse ? 0.0f : surface.subsurface;
+    
+    float subsurface = foldSubsurfaceToDiffuse ? 0.0f : material.subsurfaceFactor;
     return PrincipledMaterial(
-        surface.baseColor, surface.metallic, surface.roughness,
-        surface.ior, surface.specularFactor, surface.transmission, globalParams.energyCompensation != 0u, wo,
-        subsurface, surface.subsurfaceColor, surface.subsurfaceRadius, surface.subsurfaceScale,
-        surface.anisotropyStrength, surface.specularColorFactor, globalParams.ggxLutEIndex, globalParams.ggxLutEavgIndex, globalParams.ggxLutEIORIndex, globalParams.ggxLutEIORavgIndex, globalParams.ggxLutEIORInvIndex, globalParams.ggxLutEIORInvavgIndex,
-        surface.sheenWeight, surface.sheenRoughness, surface.sheenTint, globalParams.sheenLtcIndex,
-        surface.clearcoatFactor, surface.clearcoatRoughness,
-        surface.emissive);
+        baseColor4.xyz, pbrMetalRough.z, pbrMetalRough.y,
+        material.ior, specularFactor, transmission, globalParams.energyCompensation != 0u, wo,
+        subsurface, material.subsurfaceColor, material.subsurfaceRadius, material.subsurfaceScale,
+        anisotropyStrength, specularColorFactor, globalParams.ggxLutEIndex, globalParams.ggxLutEavgIndex, globalParams.ggxLutEIORIndex, globalParams.ggxLutEIORavgIndex, globalParams.ggxLutEIORInvIndex, globalParams.ggxLutEIORInvavgIndex,
+        sheenWeight, sheenRoughness, sheenTint, globalParams.sheenLtcIndex,
+        clearcoatFactor, clearcoatRoughness,
+        emissive4.xyz);
 }
 
 
@@ -741,83 +731,7 @@ void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
     clearcoatRoughness = saturate(clearcoatRoughness);
 }
 
-Payload SamplePayload(HitPayload payload, RayDesc ray, RayDifferential differential)
-{
-    if (!payload.IsHit()) // Misuse
-        return {};
-    GSInstance inst = LoadSceneInstance(payload.instance);
-    Payload res;
-    res.materialID = inst.materialIndex;
-    res.hit = GetHitState(inst.resourceOffset, payload.primitive, payload.bary, inst, ray.Origin, ray.Direction, payload.hitT, differential);
-    GSMaterial material = LoadMaterial(res.materialID);
-    float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
-    float2 anisotropyDirection;
-    SampleMaterials(material, res.hit.uv, res.hit.uvDX, res.hit.uvDY,
-                    baseColor4, normalTBN, pbrMetalRough, emissive4,
-                    res.transmission, res.specularFactor, res.specularColorFactor,
-                    res.anisotropyStrength, anisotropyDirection,
-                    res.sheenWeight, res.sheenRoughness, res.sheenTint,
-                    res.clearcoatFactor, res.clearcoatRoughness);
-    res.baseColor = baseColor4.xyz;
-    res.emissive = emissive4.xyz;
-    res.roughness = pbrMetalRough.y;
-    res.metallic = pbrMetalRough.z;
-    // Apply normal map in tangent space
-    SetHitShadingNormal(res.hit, res.hit.tangent * normalTBN.x + res.hit.bitangent * normalTBN.y + res.hit.normal * normalTBN.z);
-    RotateHitTangentFrame(res.hit, anisotropyDirection);
-    res.ior = material.ior;
-    res.subsurface = material.subsurfaceFactor;
-    res.subsurfaceScale = material.subsurfaceScale;
-    res.subsurfaceColor = material.subsurfaceColor;
-    res.subsurfaceRadius = material.subsurfaceRadius;
-    res.shaderBlockID = material.shaderBlockID;
-    res.hairBetaM = material.hairBetaM;
-    res.hairBetaN = material.hairBetaN;
-    res.hairAlpha = material.hairAlpha;
-    return res;
-}
 
-Payload SamplePayload(HitPayload payload, RayDesc ray)
-{
-    return SamplePayload(payload, ray, InvalidRayDifferential());
-}
-
-Payload SampleCurvePayload(HitPayload payload, RayDesc ray)
-{
-    if (!payload.IsHit())
-        return {};
-
-    GSInstance inst = LoadSceneInstance(payload.instance);
-    Payload res;
-    res.materialID = inst.materialIndex;
-    res.hit = GetCurveHitState(inst.resourceOffset, payload.primitive, payload.bary, inst,
-                               ray.Origin, ray.Direction, payload.hitT);
-    GSMaterial material = LoadMaterial(res.materialID);
-    float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
-    float2 anisotropyDirection;
-    SampleMaterials(material, res.hit.uv, res.hit.uvDX, res.hit.uvDY,
-                    baseColor4, normalTBN, pbrMetalRough, emissive4,
-                    res.transmission, res.specularFactor, res.specularColorFactor,
-                    res.anisotropyStrength, anisotropyDirection,
-                    res.sheenWeight, res.sheenRoughness, res.sheenTint,
-                    res.clearcoatFactor, res.clearcoatRoughness);
-    res.baseColor = baseColor4.xyz;
-    res.emissive = emissive4.xyz;
-    res.roughness = pbrMetalRough.y;
-    res.metallic = pbrMetalRough.z;
-    SetHitShadingNormal(res.hit, res.hit.tangent * normalTBN.x + res.hit.bitangent * normalTBN.y + res.hit.normal * normalTBN.z);
-    RotateHitTangentFrame(res.hit, anisotropyDirection);
-    res.ior = material.ior;
-    res.subsurface = 0.0f;
-    res.subsurfaceScale = material.subsurfaceScale;
-    res.subsurfaceColor = material.subsurfaceColor;
-    res.subsurfaceRadius = material.subsurfaceRadius;
-    res.shaderBlockID = material.shaderBlockID;
-    res.hairBetaM = material.hairBetaM;
-    res.hairBetaN = material.hairBetaN;
-    res.hairAlpha = material.hairAlpha;
-    return res;
-}
 
 void AddRadiance(inout float3 L, float3 v, bool direct = false)
 {
@@ -943,9 +857,10 @@ CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng, bool debugVi
     return cameraRay;
 }
 
-float3 VisualizeTextureLOD(Payload surface)
+float3 VisualizeTextureLOD(HitPayload payload, float2 uvDX, float2 uvDY)
 {
-    GSMaterial material = LoadMaterial(surface.materialID);
+    GSInstance inst = LoadSceneInstance(payload.instance);
+    GSMaterial material = LoadMaterial(inst.materialIndex);
     if (material.baseColorTexture == ~0u)
         return float3(0.0f);
 
@@ -954,7 +869,7 @@ float3 VisualizeTextureLOD(Payload surface)
 
     uint width, height;
     textures[NonUniformResourceIndex(material.baseColorTexture)].GetDimensions(width, height);
-    float mipLevel = ApproximateMipLevelFromUVGradient(surface.hit.uvDX, surface.hit.uvDY, width, height);
+    float mipLevel = ApproximateMipLevelFromUVGradient(uvDX, uvDY, width, height);
     return VisualizeApproximateMipLevel(mipLevel);
 }
 
@@ -1134,7 +1049,7 @@ BSSRDFSurfaceInteraction MakeBSSRDFPi(HitState hit)
 }
 
 bool SeparableBSSRDF_SampleSp<S : ISampler>(
-    Payload surface,
+    HitState surfaceHit,
     uint32_t sourceInstance,
     IBSSRDF bssrdf,
     inout S rng,
@@ -1142,7 +1057,7 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
 {
     result = BSSRDFSurfaceSample();
 
-    BSSRDFSurfaceInteraction poBSSRDF = MakeBSSRDFPo(surface.hit);
+    BSSRDFSurfaceInteraction poBSSRDF = MakeBSSRDFPo(surfaceHit);
     BSSRDFSampleRaySegment segment =
         bssrdf.Sample_SpRay(poBSSRDF, rng.sample(), rng.sample(), rng.sample(), rng.sample());
     if (!segment.valid)
@@ -1157,6 +1072,8 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
     WeightedReservoir<BSSRDFSurfaceCandidate> reservoir = WeightedReservoir<BSSRDFSurfaceCandidate>();
     RayQuery<RAY_FLAG_FORCE_NON_OPAQUE> q;
     q.TraceRayInline(AS, RAY_FLAG_FORCE_NON_OPAQUE, 0x01, queryRay);
+    
+    GSInstance surfaceInst = LoadSceneInstance(sourceInstance);
 
     while (q.Proceed())
     {
@@ -1174,7 +1091,7 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
 
             GSInstance inst = LoadSceneInstance(instance);
             
-            if (instance == sourceInstance && inst.materialIndex == surface.materialID)
+            if (instance == sourceInstance && inst.materialIndex == surfaceInst.materialIndex)
             {
                 GSMaterial material = LoadMaterial(inst.materialIndex);
                 float opacity = 1.0f;
@@ -1198,22 +1115,19 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
         return false;
 
     BSSRDFSurfaceCandidate selected = reservoir.selected;
-    HitPayload selectedHit;
-    selectedHit.instance = selected.instance;
-    selectedHit.primitive = selected.primitive;
-    selectedHit.bary = selected.bary;
-    selectedHit.hitT = selected.hitT;
+    
+    GSInstance piInst = LoadSceneInstance(selected.instance);
+    HitState piHit = GetHitState(piInst.resourceOffset, selected.primitive, selected.bary, piInst, queryRay.Origin, queryRay.Direction, selected.hitT, InvalidRayDifferential());
 
-    Payload pi = SamplePayload(selectedHit, queryRay);
     float selectionPdf = reservoir.SelectionPDF();
-    BSSRDFSurfaceInteraction piBSSRDF = MakeBSSRDFPi(pi.hit);
+    BSSRDFSurfaceInteraction piBSSRDF = MakeBSSRDFPi(piHit);
     float pdfSp = bssrdf.Pdf_Sp(poBSSRDF, piBSSRDF) * selectionPdf;
     float3 Sp = bssrdf.Sp(poBSSRDF, piBSSRDF);
     if (pdfSp <= EPS || MaxComponent(Sp) <= EPS)
         return false;
 
     result.valid = true;
-    result.surface = pi;
+    result.surface = piHit;
     result.Sp = Sp;
     result.pdf = pdfSp;
     return true;
@@ -1349,7 +1263,7 @@ BSDFSample BSDF_SampleF(IBSDF bsdf, float3 wo, float uc, float2 u, TransportMode
 }
 
 void AddLocalDirectLighting<S : ISampler>(
-    Payload surface,
+    HitState hit,
     IBSDF bsdf,
     float3 wo,
     float3 beta,
@@ -1361,14 +1275,14 @@ void AddLocalDirectLighting<S : ISampler>(
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(surface.hit, rng, lighting.lightTotalImportance, ctx, Li))
+    if (!SampleVisibleSceneLight(hit, rng, lighting.lightTotalImportance, ctx, Li))
     {
         lighting.lastLightCtx = ctx;
         return;
     }
 
     lighting.lastLightCtx = ctx;
-    float3 wi = WorldToShadingLocal(surface.hit, Li.wi);
+    float3 wi = WorldToShadingLocal(hit, Li.wi);
     float bsdfPdf = BSDF_PDF(bsdf, wo, wi, TransportMode::Radiance, BxDFReflTransFlags::All);
     float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, bsdfPdf);
 
@@ -1646,20 +1560,37 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         RayDifferential materialDifferential = InvalidRayDifferential();
         if (bounce == 0 && hit.kind == HitKind::Triangle)
             materialDifferential = cameraRay.differential;
-        Payload surface = hit.kind == HitKind::Curve ? SampleCurvePayload(hit.raw, ray) : SamplePayload(hit.raw, ray, materialDifferential);
+        HitState hitState;
+        if (hit.kind == HitKind::Curve)
+        {
+            GSInstance inst = LoadSceneInstance(hit.raw.instance);
+            hitState = GetCurveHitState(inst.resourceOffset, hit.raw.primitive, hit.raw.bary, inst,
+                               ray.Origin, ray.Direction, hit.raw.hitT);
+        }
+        else
+        {
+            GSInstance inst = LoadSceneInstance(hit.raw.instance);
+            hitState = GetHitState(inst.resourceOffset, hit.raw.primitive, hit.raw.bary, inst, ray.Origin, ray.Direction, hit.raw.hitT, materialDifferential);
+        }
+
+        float3 wo = WorldToShadingLocal(hitState, view);
+        bool foldSubsurfaceToDiffuse = diffuseBounces > 0;
+        float3 baseColorOut;
+        IMaterial material = MakeMaterial(hit.raw, hitState, wo, baseColorOut, hit.kind == HitKind::Curve, foldSubsurfaceToDiffuse);
+
         if (hasAnyDebugView && bounce == 0)
         {
             specular[pix] = diffuse[pix] = float4(0.0f);
             int flag = globalParams.dbgViewFlags;
             if ((flag & kViewBaseColor) != 0)
-                diffuse[pix] = float4(surface.baseColor, 1.0f);
+                diffuse[pix] = float4(baseColorOut, 1.0f);
             if ((flag & kViewNormal) != 0)
-                diffuse[pix] = float4(surface.hit.normal * 0.5f + 0.5f, 1.0f);
+                diffuse[pix] = float4(hitState.normal * 0.5f + 0.5f, 1.0f);
 
             if ((flag & kViewPosition) != 0)
-                diffuse[pix] = float4(surface.hit.position, 1.0f);
+                diffuse[pix] = float4(hitState.position, 1.0f);
             if ((flag & kViewTextureLOD) != 0)
-                diffuse[pix] = float4(VisualizeTextureLOD(surface), 1.0f);            
+                diffuse[pix] = float4(VisualizeTextureLOD(hit.raw, hitState.uvDX, hitState.uvDY), 1.0f);            
             // ...
             WritePrimaryInstanceID(pix, hit.raw.instance);
             return;
@@ -1672,12 +1603,9 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         }
 
         if (bounce == 0)
-            chitNDCDepth = WorldToNDCDepth(surface.hit.position);
+            chitNDCDepth = WorldToNDCDepth(hitState.position);
 
         // Local frame setup
-        float3 wo = WorldToShadingLocal(surface.hit, view);
-        bool foldSubsurfaceToDiffuse = diffuseBounces > 0;
-        IMaterial material = MakeMaterial(surface, wo, hit.kind == HitKind::Curve, foldSubsurfaceToDiffuse);
         // Subsurface events are non-local. The closure picks the event
         // the integrator performs the scene query.
         float pSampleSubsurface = material.ProbSampleSubsurface();
@@ -1690,17 +1618,17 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         {
             BSSRDFSurfaceSample sample;
             IBSSRDF bssrdf = material.GetSubsurface();
-            if (!SeparableBSSRDF_SampleSp(surface, hit.raw.instance, bssrdf, rng, sample))
+            if (!SeparableBSSRDF_SampleSp(hitState, hit.raw.instance, bssrdf, rng, sample))
                 break;
 
             float3 localBeta = beta * sample.Sp / max(pSampleSubsurface * sample.pdf, EPS);
             if (any(isnan(localBeta)) || any(isinf(localBeta)))
                 break;
 
-            Payload exitSurface = sample.surface;
+            HitState exitSurface = sample.surface;
             // Lambertian assumed for subsurface interactions
             const float3 exitF = float3(InvPi);
-            AddDiffuseDirectLighting(exitSurface.hit, exitF, localBeta,
+            AddDiffuseDirectLighting(exitSurface, exitF, localBeta,
                                      bounce, firstBounceCategory, AOVCategory::Diffuse,
                                      rng, lighting, radiance);
 
@@ -1716,7 +1644,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             nextSample.pdf = exitPdf;
             nextSample.flags = BxDFFlags::DiffuseReflection;
             nextSample.category = AOVCategory::Diffuse;
-            nextSample.hit = exitSurface.hit;
+            nextSample.hit = exitSurface;
         }
         else
         {
@@ -1724,7 +1652,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             IBSDF bsdf = material.GetSurface();
             // Dirac surfaces do not get direct light contribution
             if (!bsdf.IsDirac())
-                AddLocalDirectLighting(surface, bsdf, wo, localBeta,
+                AddLocalDirectLighting(hitState, bsdf, wo, localBeta,
                                    bounce, firstBounceCategory, rng, lighting, radiance);
             AddSurfaceEmissive(material, wo, localBeta, bounce, firstBounceCategory, radiance);
 
@@ -1742,7 +1670,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             nextSample.pdf = sample.pdf;
             nextSample.flags = sample.flags;
             nextSample.category = sampleCategory;
-            nextSample.hit = surface.hit;
+            nextSample.hit = hitState;
         }
 
         if (!nextSample.valid)
@@ -2119,4 +2047,4 @@ void RayMiss(inout HitPayload payload)
 }
 
 
-
+
