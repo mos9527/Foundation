@@ -52,10 +52,20 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> dev
                   "Headless rendering does not use a swapchain.");
     }
     LOG(Renderer, LogDebug, "** Renderer Init **");
-    LOG(Renderer, LogDebug, "Async Compute:\t{}", mDesc.asyncCompute);
-    LOG(Renderer, LogDebug, "Presentation:\t{}", mDesc.present);
+    LOG(Renderer, LogDebug, "Async Compute:\t{}", mDesc.asyncCompute ? "Supported" : "No Support");
+    LOG(Renderer, LogDebug, "Presentation:\t{}", mDesc.present ? "Swapchain" : "Headless");
     if (!mDesc.present)
         LOG(Renderer, LogDebug, "Headless extent:\t{}x{}", mDesc.renderExtent.x, mDesc.renderExtent.y);
+    const char* kRaytracingSupportLevels[] = {"No Support", "Inline RT", "RT Pipeline",
+                                              "RT Pipeline w/ Shader Execution Reordering"};
+    auto const& caps = device->GetCapabilities();
+    int raytracingSupportLevel = 0;
+    if (caps.raytracingInline) raytracingSupportLevel = 1;
+    if (caps.raytracingPipeline) raytracingSupportLevel = 2;
+    if (caps.shaderExecutionReordering) raytracingSupportLevel = 3;
+    LOG(Renderer, LogDebug, "Raytracing:\t{}",
+        kRaytracingSupportLevels[raytracingSupportLevel]);
+    LOG(Renderer, LogDebug, "Mesh Shaders:\t{}", caps.meshShaders ? "Supported" : "No Support");
     LOG(Renderer, LogDebug, "Threads:\t{}", mDesc.threadCount);
     LOG(Renderer, LogDebug, "PSO Cache:\t{:x}", reinterpret_cast<uintptr_t>(mDesc.pipelineCache));
 }

@@ -45,7 +45,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
     CHECK(renderer);
     CHECK(globals);
     CHECK(gpu);
-    CHECK(renderer->GetDevice()->GetCapabilities().meshShaders);
+    CHECK_MSG(renderer->GetDevice()->GetCapabilities().meshShaders, "Rasterizer requires Mesh Shader support");
     out = {};
     RHIExtent2D renderExtent = cfg.renderExtent;
     if (renderExtent.x == 0u || renderExtent.y == 0u)

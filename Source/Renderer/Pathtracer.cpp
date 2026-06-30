@@ -10,7 +10,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
     CHECK(renderer);
     CHECK(globals);
     CHECK(gpu);
-    CHECK(renderer->GetDevice()->GetCapabilities().raytracingInline);
+    CHECK_MSG(renderer->GetDevice()->GetCapabilities().raytracingInline, "Pathtracer requires Ray Query support");
     out = {};
     globals->ptAccumulatedFrames = 0u;
     RHIExtent2D renderExtent = cfg.renderExtent;
@@ -91,8 +91,10 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
                                                }});
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
+    const char* passName = shaderExecutionReordering ? "Trace (SER)" : "Trace (Compute)";
+    LOG(Pathtracer, LogInfo, "{} will be used for integration", passName);
     renderer->CreatePass(
-        shaderExecutionReordering ? "Trace (SER)" : "Trace (Compute)", RHIDeviceQueueType::Graphics, 0u,
+        passName, RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
     {
         const auto pipelineStage = shaderExecutionReordering
@@ -104,7 +106,6 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
         const auto shader = PathsResolve(
             !shaderExecutionReordering ? "Data/Shaders/ERTPathTracer.spv" : "Data/Shaders/ERTPathTracer_SER.spv"
         );
-        LOG(PT, LogInfo, "Loading PT Shader: {}", shader);
         if (shaderExecutionReordering)
         {
             r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,
