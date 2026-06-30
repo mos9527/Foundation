@@ -60,17 +60,16 @@ static const uint kCurveMask = 0x04;
 
 
 // Hit state helpers
-struct RayDifferential
+struct RayCone
 {
-    bool valid;
-    RayDesc rayDX;
-    RayDesc rayDY;
+    float width;
+    float spreadAngle;
 };
 
 struct CameraRay
 {
     RayDesc ray;
-    RayDifferential differential;
+    RayCone rayCone;
 };
 
 struct HitState
@@ -85,20 +84,6 @@ struct HitState
     float2 uvDY;
 };
 
-RayDifferential InvalidRayDifferential()
-{
-    RayDesc ray;
-    ray.Origin = float3(0.0f);
-    ray.Direction = float3(0.0f, 0.0f, 1.0f);
-    ray.TMin = 0.0f;
-    ray.TMax = 0.0f;
-
-    RayDifferential differential;
-    differential.valid = false;
-    differential.rayDX = ray;
-    differential.rayDY = ray;
-    return differential;
-}
 
 float3 WorldToShadingLocal(HitState hit, float3 v)
 {
@@ -183,68 +168,47 @@ GSLight LoadSceneLight(uint localLightIndex)
     return lights[NonUniformResourceIndex(globalParams.firstLight + localLightIndex)];
 }
 
-bool IntersectRayDifferentialPlane(RayDesc ray, float3 planePoint, float3 planeNormal, out float3 position)
+void ApplyRayConeAnisotropy(inout HitState hit, GSInstance inst,
+                            float3 p0, float3 p1, float3 p2,
+                            float2 u0, float2 u1, float2 u2,
+                            float3 rayDirection,
+                            float rayConeWidth)
 {
-    position = planePoint;
-    float denom = dot(planeNormal, ray.Direction);
-    if (abs(denom) <= 1e-7f)
-        return false;
+    float3 rayConeDir = rayDirection;
+    float rayConeRadiusAtIntersection = rayConeWidth * 0.5f;
 
-    float t = dot(planePoint - ray.Origin, planeNormal) / denom;
-    if (t <= 0.0f || isnan(t) || isinf(t))
-        return false;
+    float3 ellipseAxis0 = rayConeDir - dot(hit.geometryNormal, rayConeDir) * hit.geometryNormal;
+    float3 rayDirPlaneProjection0 = ellipseAxis0 - dot(rayConeDir, ellipseAxis0) * rayConeDir;
+    float len0 = length(rayDirPlaneProjection0);
+    ellipseAxis0 *= rayConeRadiusAtIntersection / max(0.0001f, len0);
 
-    position = ray.Origin + ray.Direction * t;
-    return !any(isnan(position)) && !any(isinf(position));
-}
+    float3 ellipseAxis1 = cross(hit.geometryNormal, ellipseAxis0);
+    float3 rayDirPlaneProjection1 = ellipseAxis1 - dot(rayConeDir, ellipseAxis1) * rayConeDir;
+    float len1 = length(rayDirPlaneProjection1);
+    ellipseAxis1 *= rayConeRadiusAtIntersection / max(0.0001f, len1);
 
-bool TrySolveTriangleUVDelta(float3 deltaP, float3 dp1, float3 dp2, float2 duv1, float2 duv2, out float2 uvDelta)
-{
-    uvDelta = float2(0.0f);
-    float a00 = dot(dp1, dp1);
-    float a01 = dot(dp1, dp2);
-    float a11 = dot(dp2, dp2);
-    float b0 = dot(deltaP, dp1);
-    float b1 = dot(deltaP, dp2);
-    float det = a00 * a11 - a01 * a01;
-    if (abs(det) <= 1e-12f)
-        return false;
-
-    float invDet = 1.0f / det;
-    float beta = (b0 * a11 - b1 * a01) * invDet;
-    float gamma = (b1 * a00 - b0 * a01) * invDet;
-    uvDelta = beta * duv1 + gamma * duv2;
-    return !any(isnan(uvDelta)) && !any(isinf(uvDelta));
-}
-
-void ApplyPrimaryRayDifferential(inout HitState hit, GSInstance inst,
-                                 float3 p0, float3 p1, float3 p2,
-                                 float2 u0, float2 u1, float2 u2,
-                                 RayDifferential differential)
-{
-    if (!differential.valid)
-        return;
-
-    float3 hitDX, hitDY;
-    if (!IntersectRayDifferentialPlane(differential.rayDX, hit.position, hit.geometryNormal, hitDX) ||
-        !IntersectRayDifferentialPlane(differential.rayDY, hit.position, hit.geometryNormal, hitDY))
-        return;
-
+    // Transform points to world space
     float3 wp0 = inst.transform + inst.rotation.rotate(p0 * inst.scale);
     float3 wp1 = inst.transform + inst.rotation.rotate(p1 * inst.scale);
     float3 wp2 = inst.transform + inst.rotation.rotate(p2 * inst.scale);
-    float3 dp1 = wp1 - wp0;
-    float3 dp2 = wp2 - wp0;
-    float2 duv1 = u1 - u0;
-    float2 duv2 = u2 - u0;
+    
+    float3 d = hit.position - wp0;
+    float3 edge01 = wp1 - wp0;
+    float3 edge02 = wp2 - wp0;
+    float oneOverAreaTriangle = 1.0f / dot(hit.geometryNormal, cross(edge01, edge02));
 
-    float2 uvDX, uvDY;
-    if (!TrySolveTriangleUVDelta(hitDX - hit.position, dp1, dp2, duv1, duv2, uvDX) ||
-        !TrySolveTriangleUVDelta(hitDY - hit.position, dp1, dp2, duv1, duv2, uvDY))
-        return;
+    float3 edgeP;
+    float u, v;
+    
+    edgeP = d + ellipseAxis0;
+    u = dot(hit.geometryNormal, cross(edgeP, edge02)) * oneOverAreaTriangle;
+    v = dot(hit.geometryNormal, cross(edge01, edgeP)) * oneOverAreaTriangle;
+    hit.uvDX = (1.0f - u - v) * u0 + u * u1 + v * u2 - hit.uv;
 
-    hit.uvDX = uvDX;
-    hit.uvDY = uvDY;
+    edgeP = d + ellipseAxis1;
+    u = dot(hit.geometryNormal, cross(edgeP, edge02)) * oneOverAreaTriangle;
+    v = dot(hit.geometryNormal, cross(edge01, edgeP)) * oneOverAreaTriangle;
+    hit.uvDY = (1.0f - u - v) * u0 + u * u1 + v * u2 - hit.uv;
 }
 
 // `prims` selects the static or dynamic primitive buffer (Slang specializes per buffer). The
@@ -252,7 +216,7 @@ void ApplyPrimaryRayDifferential(inout HitState hit, GSInstance inst,
 // current frame slot's absolute header offset (resolved in EndScene).
 HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, float2 bary, GSInstance inst,
                      float3 rayOrigin, float3 rayDirection, float hitT,
-                     RayDifferential differential)
+                     float rayConeWidth)
 {
     HitState hit;
     hit.uvDX = float2(0.0f);
@@ -299,26 +263,28 @@ HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, f
     hit.tangent        = normalize(inst.rotation.rotate(tangent * inst.scale));
     hit.geometryNormal = normalize(inst.rotation.rotate(geoNormal * invScale));
     hit.bitangent      = cross(hit.normal, hit.tangent) * (bitangentSign > 0.0f ? 1 : -1);
-    ApplyPrimaryRayDifferential(hit, inst, p0, p1, p2, u0, u1, u2, differential);
+    
+    if (rayConeWidth > 0.0f)
+        ApplyRayConeAnisotropy(hit, inst, p0, p1, p2, u0, u1, u2, rayDirection, rayConeWidth);
     return hit;
 }
 
 HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT)
 {
-    return GetHitState(prims, meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, InvalidRayDifferential());
+    return GetHitState(prims, meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, 0.0f);
 }
 
 // Buffer-selecting wrappers: dynamic geometry reads from `dynamicPrimitives`, everything else
 // from the immutable `primitives`. The branch picks one statically-specialized instantiation.
-HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT, RayDifferential differential)
+HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT, float rayConeWidth)
 {
     if (GSInstanceIsDynamic(inst))
-        return GetHitState(dynamicPrimitives, meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, differential);
-    return GetHitState(primitives, meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, differential);
+        return GetHitState(dynamicPrimitives, meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, rayConeWidth);
+    return GetHitState(primitives, meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, rayConeWidth);
 }
 HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT)
 {
-    return GetHitState(meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, InvalidRayDifferential());
+    return GetHitState(meshOffset, primitive, bary, inst, rayOrigin, rayDirection, hitT, 0.0f);
 }
 
 float2 GetHitUV(ByteAddressBuffer prims, uint meshOffset, uint primitive, float2 bary)
@@ -846,14 +812,15 @@ CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng, bool debugVi
     }
     CameraRay cameraRay;
     cameraRay.ray = MakeCameraRay(GeneratePrimaryRayDirection(pixelSample), lensSample);
+    cameraRay.rayCone.width = 0.0f;
+    float3 p0 = GeneratePrimaryRayDirection(pixelSample);
+    float3 p1 = GeneratePrimaryRayDirection(pixelSample + float2(1.0f, 0.0f));
+    cameraRay.rayCone.spreadAngle = acos(clamp(dot(p0, p1), -1.0f, 1.0f));
+
     if ((ptCompileOptions & kPTCompileOptionForceTextureLOD0) != 0)
     {
-        cameraRay.differential = InvalidRayDifferential();
-        return cameraRay;
+        cameraRay.rayCone.spreadAngle = 0.0f;
     }
-    cameraRay.differential.valid = true;
-    cameraRay.differential.rayDX = MakeCameraRay(GeneratePrimaryRayDirection(pixelSample + float2(1.0f, 0.0f)), lensSample);
-    cameraRay.differential.rayDY = MakeCameraRay(GeneratePrimaryRayDirection(pixelSample + float2(0.0f, 1.0f)), lensSample);
     return cameraRay;
 }
 
@@ -1117,7 +1084,7 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
     BSSRDFSurfaceCandidate selected = reservoir.selected;
     
     GSInstance piInst = LoadSceneInstance(selected.instance);
-    HitState piHit = GetHitState(piInst.resourceOffset, selected.primitive, selected.bary, piInst, queryRay.Origin, queryRay.Direction, selected.hitT, InvalidRayDifferential());
+    HitState piHit = GetHitState(piInst.resourceOffset, selected.primitive, selected.bary, piInst, queryRay.Origin, queryRay.Direction, selected.hitT, 0.0f);
 
     float selectionPdf = reservoir.SelectionPDF();
     BSSRDFSurfaceInteraction piBSSRDF = MakeBSSRDFPi(piHit);
@@ -1521,6 +1488,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     bool hasAnyDebugView = (globalParams.dbgViewFlags & supportDebugViewFlags) != 0u;
     CameraRay cameraRay = GenerateCameraRay(pix, rng, hasAnyDebugView);
     RayDesc ray = cameraRay.ray;
+    RayCone currentRayCone = cameraRay.rayCone;
     float chitNDCDepth = 0.0f;
     for (uint bounce = 0; ; bounce++) {
         HitPayload payload;
@@ -1534,7 +1502,103 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             // Invoke closest hit / miss to populate the payload
             HitObject::Invoke(AS, hitObj, payload);
         #else
-            TraceRay(AS, 0, 0xFF, kRayTypeSurface, 0, 0, ray, payload);
+            RayQuery<RAY_FLAG_NONE> q;
+            q.TraceRayInline(AS, RAY_FLAG_NONE, 0xFF, ray);
+            float2 bestProceduralBary = float2(0.0f);
+            while (q.Proceed())
+            {
+                if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+                {
+                    uint instance = q.CandidateInstanceID();
+                    if (!IsLightInstance(instance))
+                    {
+                        uint primitive = q.CandidatePrimitiveIndex();
+                        float2 bary = q.CandidateTriangleBarycentrics();
+                        GSInstance inst = LoadSceneInstance(instance);
+                        GSMaterial material = LoadMaterial(inst.materialIndex);
+                        
+                        float opacity = 1.0f;
+                        if (material.baseColorTexture != ~0u) {
+                            float2 uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
+                            float4 baseColor = material.baseColorFactor * textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
+                            opacity = baseColor.a;
+                        } else {
+                            opacity = material.baseColorFactor.a;
+                        }
+
+                        if (opacity == 1.0f || rng.sample() >= 1.0f - opacity) {
+                            q.CommitNonOpaqueTriangleHit();
+                        }
+                    }
+                }
+                else
+                {
+                    uint instance = q.CandidateInstanceID();
+                    uint primitive = q.CandidatePrimitiveIndex();
+                    if (IsCurveInstance(instance))
+                    {
+                        GSInstance inst = LoadSceneInstance(instance);
+                        float3 objRo = inst.rotation.conjugate().rotate(ray.Origin - inst.transform) / inst.scale;
+                        float3 objRd = inst.rotation.conjugate().rotate(ray.Direction) / inst.scale;
+                        
+                        float hitT, hitU, hitV;
+                        if (EvaluateCurveIntersection(instance, primitive, objRo, objRd, q.RayTMin(), q.CommittedRayT(), hitT, hitU, hitV))
+                        {
+                            if (hitT < q.CommittedRayT())
+                            {
+                                bestProceduralBary = float2(hitU, hitV);
+                                q.CommitProceduralPrimitiveHit(hitT);
+                            }
+                        }
+                    }
+                    else if (IsLightInstance(instance))
+                    {
+                        GSLight gl = LoadSceneLight(GetLightIndex(instance));
+                        float3 ro = q.CandidateObjectRayOrigin();
+                        float3 rd = q.CandidateObjectRayDirection();
+                        float t = 0.0f;
+                        float2 localPosition = float2(0.0f);
+                        bool hitLight = false;
+                        if (abs(rd.z) > 1e-7f)
+                        {
+                            t = -ro.z / rd.z;
+                            if (t >= q.RayTMin() && t < q.CommittedRayT())
+                            {
+                                float3 p = ro + rd * t;
+                                localPosition = p.xy;
+                                if (gl.type == 3) // Disk
+                                    hitLight = dot(localPosition, localPosition) <= 1.0f;
+                                else if (gl.type == 4) // Rect
+                                    hitLight = !any(abs(localPosition) > 1.0f);
+                            }
+                        }
+                        if (hitLight)
+                        {
+                            bestProceduralBary = localPosition;
+                            q.CommitProceduralPrimitiveHit(t);
+                        }
+                    }
+                }
+            }
+
+            if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+            {
+                payload.instance = q.CommittedInstanceID();
+                payload.primitive = q.CommittedPrimitiveIndex();
+                payload.bary = q.CommittedTriangleBarycentrics();
+                payload.hitT = q.CommittedRayT();
+            }
+            else if (q.CommittedStatus() == COMMITTED_PROCEDURAL_PRIMITIVE_HIT)
+            {
+                payload.instance = q.CommittedInstanceID();
+                payload.primitive = q.CommittedPrimitiveIndex();
+                payload.bary = bestProceduralBary;
+                payload.hitT = q.CommittedRayT();
+            }
+            else
+            {
+                payload.instance = INSTANCE_NO_HIT;
+            }
         #endif
         // Outgoing direction
         float3 view = -ray.Direction;
@@ -1557,9 +1621,8 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         if (!IsMaterialSurfaceHit(hit.kind))
             break;
 
-        RayDifferential materialDifferential = InvalidRayDifferential();
-        if (bounce == 0 && hit.kind == HitKind::Triangle)
-            materialDifferential = cameraRay.differential;
+        currentRayCone.width += currentRayCone.spreadAngle * hit.raw.hitT;
+
         HitState hitState;
         if (hit.kind == HitKind::Curve)
         {
@@ -1570,7 +1633,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         else
         {
             GSInstance inst = LoadSceneInstance(hit.raw.instance);
-            hitState = GetHitState(inst.resourceOffset, hit.raw.primitive, hit.raw.bary, inst, ray.Origin, ray.Direction, hit.raw.hitT, materialDifferential);
+            hitState = GetHitState(inst.resourceOffset, hit.raw.primitive, hit.raw.bary, inst, ray.Origin, ray.Direction, hit.raw.hitT, currentRayCone.width);
         }
 
         float3 wo = WorldToShadingLocal(hitState, view);
@@ -1700,7 +1763,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
 
         // Russian Roulette (after 2nd bounce)
         if (bounce >= 2) {
-            float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);
+            float rrPCount = min(dot(beta, float3(0.2126f, 0.7152f, 0.0722f)) + 0.01f, 0.95f);
             if (rng.sample() > rrPCount) // Contribution is low, may terminate early
                 break;
             beta /= rrPCount; // Boost non-terminated paths
@@ -1710,30 +1773,6 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         WritePrimaryInstanceID(pix, ~0u);
 
     AccumulatePathRadiance(pix, radiance, chitNDCDepth, frameCount);
-}
-// Naive stochastic opacity map implementation
-// And before you ask - OMM is NV only
-//  - https://devblogs.microsoft.com/directx/omm/
-bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitive,
-    BuiltInTriangleIntersectionAttributes attr)
-{
-    if (IsLightInstance(instance))
-        return false; // Light instance
-
-    GSInstance inst = LoadSceneInstance(instance);
-    GSMaterial material = LoadMaterial(inst.materialIndex);
-    float4 baseColor = material.baseColorFactor;
-    if (material.baseColorTexture != ~0u) {
-        float2 uv = GetHitUV(inst.resourceOffset, primitive, attr.barycentrics.xy, inst);
-        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
-    }
-    float opacity = baseColor.a;
-    if (opacity == 1.0f)
-        return false;
-
-    if (rng.sample() < 1.0f - opacity)
-        return true;
-    return false;
 }
 
 struct ProceduralHitAttributes
@@ -2013,22 +2052,6 @@ void CurveClosestHit(inout HitPayload payload, in ProceduralHitAttributes attr)
     payload.bary = attr.localPosition;
     payload.hitT = RayTCurrent();
 }
-
-
-
-[shader("anyhit")] // Hit Group 0
-void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
-{
-    uint instance = InstanceID();
-    uint primitive = PrimitiveIndex();
-    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
-    if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
-        return IgnoreHit();
-}
-
-
-
-
 
 [shader("closesthit")] // Hit Group 0
 void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attr)

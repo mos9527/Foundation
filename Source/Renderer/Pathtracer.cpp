@@ -107,8 +107,6 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
                       AsBytes(AsSpan(ptCompileOptions)));
         r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit",
                       shader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 0);
-        r->BindShader(self, RHIShaderStageBits::RayAnyHit, "RayOpacityAnyHit",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 0);
         r->BindShader(self, RHIShaderStageBits::RayMiss, "RayMiss",
                       shader, AsBytes(AsSpan(ptCompileOptions)));
         r->BindShader(self, RHIShaderStageBits::RayIntersection, "RectLightIntersection",
