@@ -194,11 +194,8 @@ Path Tracer
 ---
 Sorted by priority (high to low), also w/ future blog post series update on:
 - [ ] Wavefront kernels (https://developer.blender.org/docs/features/cycles/kernel_scheduling/)
-- [ ] Light Tree ([BVH Light Sampling](https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling))
-- [ ] Tracing from surfaces (baking lightmaps, probe generation, etc)
-- [ ] Denoising and error estimate for live viewport
-- [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC) or other spatial hash grid)
-- [ ] ReSTIR DI/PT
+- [ ] Emissive triangles in NEE, ReSTIR DI/PT
+- [ ] Tracing from surfaces (for baking lightmaps, probe generation, etc)
 
 Done, awaiting Blog Update:
 - [x] Adaptive Sampling (https://jo.dreggn.org/home/2009_stopping.pdf)
