@@ -842,14 +842,6 @@ float3 VisualizeTextureLOD(HitPayload payload, float2 uvDX, float2 uvDY)
 
 // -- Main Shader Routines
 
-// TraceRay via HitObject — returns a hit object without invoking closest hit.
-// Used by SER to reorder threads before shading.
-HitObject TraceHitObject(RayDesc ray)
-{
-    HitPayload payload;
-    return HitObject.TraceRay(AS, 0, 0xFF, kRayTypeSurface, 0, 0, ray, payload);
-}
-
 uint SERHashCombine(uint hash, uint value)
 {
     return hash * 31u + value;
@@ -912,12 +904,12 @@ uint BuildSERMaterialKey(uint materialIndex, GSMaterial material, bool isCurve, 
     return hash & 0x3Fu;
 }
 
-uint BuildSERCoherenceHint(HitObject hitObj, uint bounce)
+uint BuildSERCoherenceHint(HitPayload payload, uint bounce)
 {
-    if (!hitObj.IsHit())
+    if (payload.instance == INSTANCE_NO_HIT)
         return 0u;
 
-    uint instanceID = hitObj.GetInstanceID();
+    uint instanceID = payload.instance;
     if (IsLightInstance(instanceID))
     {
         GSLight light = LoadSceneLight(GetLightIndex(instanceID));
@@ -1016,6 +1008,7 @@ BSSRDFSurfaceInteraction MakeBSSRDFPi(HitState hit)
 }
 
 bool SeparableBSSRDF_SampleSp<S : ISampler>(
+    uint2 pix,
     HitState surfaceHit,
     uint32_t sourceInstance,
     IBSSRDF bssrdf,
@@ -1053,7 +1046,7 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
             uint primitive = q.CandidatePrimitiveIndex();
             float2 bary = q.CandidateTriangleBarycentrics();
 
-            PCG prng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber,
+            PCG prng = PCG(pix, globalParams.frameNumber,
                            hash(uint3(instance, primitive, reservoir.sampleCount)));
 
             GSInstance inst = LoadSceneInstance(instance);
@@ -1436,10 +1429,8 @@ void AddEnvironmentMiss(
     AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, false);
 }
 
-[shader("raygeneration")]
-void RayGeneration()
+void RayGenerationImpl(uint2 pix)
 {
-    uint2 pix = DispatchRaysIndex().xy;
     if (pix.x >= uint(globalParams.fbWidth) || pix.y >= uint(globalParams.fbHeight))
         return;
 
@@ -1468,6 +1459,21 @@ void RayGeneration()
     }
 }
 
+#ifdef USE_SER
+[shader("raygeneration")]
+void RayGeneration()
+{
+    RayGenerationImpl(DispatchRaysIndex().xy);
+}
+#else
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void ComputeMain(uint3 tid : SV_DispatchThreadID)
+{
+    RayGenerationImpl(tid.xy);
+}
+#endif
+
 void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
 {
     float3 beta = float3(1);
@@ -1492,82 +1498,78 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     float chitNDCDepth = 0.0f;
     for (uint bounce = 0; ; bounce++) {
         HitPayload payload;
-        #ifdef USE_SER
-            // SER
-            // Beware. AMD treats this as stub even on RDNA4 offerings. This path only becomes active on NV hardware.
-            // Someday. *Actual* Wavefront tracing... let's hope whatever we'd come up with would beat SER
-            HitObject hitObj = TraceHitObject(ray);
-            uint coherenceHint = BuildSERCoherenceHint(hitObj, bounce);
-            ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);
-            // Invoke closest hit / miss to populate the payload
-            HitObject::Invoke(AS, hitObj, payload);
-        #else
-            RayQuery<RAY_FLAG_NONE> q;
-            q.TraceRayInline(AS, RAY_FLAG_NONE, 0xFF, ray);
-            float2 bestProceduralBary = float2(0.0f);
-            while (q.Proceed())
-            {
-                if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
-                {
-                    uint instance = q.CandidateInstanceID();
-                    uint primitive = q.CandidatePrimitiveIndex();
-                    float2 bary = q.CandidateTriangleBarycentrics();
-                    if (!EvaluateOpacityAlphaTest(instance, primitive, bary, rng))
-                    {
-                        q.CommitNonOpaqueTriangleHit();
-                    }
-                }
-                else
-                {
-                    uint instance = q.CandidateInstanceID();
-                    uint primitive = q.CandidatePrimitiveIndex();
-                    if (IsCurveInstance(instance))
-                    {
-                        float3 objRo = q.CandidateObjectRayOrigin();
-                        float3 objRd = q.CandidateObjectRayDirection();
-                        
-                        float hitT, hitU, hitV;
-                        if (EvaluateCurveIntersection(instance, primitive, objRo, objRd, q.RayTMin(), q.CommittedRayT(), hitT, hitU, hitV))
-                        {
-                            bestProceduralBary = float2(hitU, hitV);
-                            q.CommitProceduralPrimitiveHit(hitT);
-                        }
-                    }
-                    else if (IsLightInstance(instance))
-                    {
-                        GSLight gl = LoadSceneLight(GetLightIndex(instance));
-                        float3 ro = q.CandidateObjectRayOrigin();
-                        float3 rd = q.CandidateObjectRayDirection();
-                        float t;
-                        float2 localPos;
-                        if (EvaluateLightIntersection(gl.type, ro, rd, q.RayTMin(), q.CommittedRayT(), t, localPos))
-                        {
-                            bestProceduralBary = localPos;
-                            q.CommitProceduralPrimitiveHit(t);
-                        }
-                    }
-                }
-            }
 
-            if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+        RayQuery<RAY_FLAG_NONE> q;
+        q.TraceRayInline(AS, RAY_FLAG_NONE, 0xFF, ray);
+        float2 bestProceduralBary = float2(0.0f);
+        while (q.Proceed())
+        {
+            if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
             {
-                payload.instance = q.CommittedInstanceID();
-                payload.primitive = q.CommittedPrimitiveIndex();
-                payload.bary = q.CommittedTriangleBarycentrics();
-                payload.hitT = q.CommittedRayT();
-            }
-            else if (q.CommittedStatus() == COMMITTED_PROCEDURAL_PRIMITIVE_HIT)
-            {
-                payload.instance = q.CommittedInstanceID();
-                payload.primitive = q.CommittedPrimitiveIndex();
-                payload.bary = bestProceduralBary;
-                payload.hitT = q.CommittedRayT();
+                uint instance = q.CandidateInstanceID();
+                uint primitive = q.CandidatePrimitiveIndex();
+                float2 bary = q.CandidateTriangleBarycentrics();
+                if (!EvaluateOpacityAlphaTest(instance, primitive, bary, rng))
+                {
+                    q.CommitNonOpaqueTriangleHit();
+                }
             }
             else
             {
-                payload.instance = INSTANCE_NO_HIT;
+                uint instance = q.CandidateInstanceID();
+                uint primitive = q.CandidatePrimitiveIndex();
+                if (IsCurveInstance(instance))
+                {
+                    float3 objRo = q.CandidateObjectRayOrigin();
+                    float3 objRd = q.CandidateObjectRayDirection();
+                    
+                    float hitT, hitU, hitV;
+                    if (EvaluateCurveIntersection(instance, primitive, objRo, objRd, q.RayTMin(), q.CommittedRayT(), hitT, hitU, hitV))
+                    {
+                        bestProceduralBary = float2(hitU, hitV);
+                        q.CommitProceduralPrimitiveHit(hitT);
+                    }
+                }
+                else if (IsLightInstance(instance))
+                {
+                    GSLight gl = LoadSceneLight(GetLightIndex(instance));
+                    float3 ro = q.CandidateObjectRayOrigin();
+                    float3 rd = q.CandidateObjectRayDirection();
+                    float t;
+                    float2 localPos;
+                    if (EvaluateLightIntersection(gl.type, ro, rd, q.RayTMin(), q.CommittedRayT(), t, localPos))
+                    {
+                        bestProceduralBary = localPos;
+                        q.CommitProceduralPrimitiveHit(t);
+                    }
+                }
             }
+        }
+
+        if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+        {
+            payload.instance = q.CommittedInstanceID();
+            payload.primitive = q.CommittedPrimitiveIndex();
+            payload.bary = q.CommittedTriangleBarycentrics();
+            payload.hitT = q.CommittedRayT();
+        }
+        else if (q.CommittedStatus() == COMMITTED_PROCEDURAL_PRIMITIVE_HIT)
+        {
+            payload.instance = q.CommittedInstanceID();
+            payload.primitive = q.CommittedPrimitiveIndex();
+            payload.bary = bestProceduralBary;
+            payload.hitT = q.CommittedRayT();
+        }
+        else
+        {
+            payload.instance = INSTANCE_NO_HIT;
+        }
+
+        #ifdef USE_SER
+            uint coherenceHint = BuildSERCoherenceHint(payload, bounce);
+            ReorderThread(coherenceHint, kSERCoherenceHintBits);
         #endif
+
         // Outgoing direction
         float3 view = -ray.Direction;
         HitRecord hit = MakeHitRecord(payload, ray);
@@ -1649,7 +1651,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         {
             BSSRDFSurfaceSample sample;
             IBSSRDF bssrdf = material.GetSubsurface();
-            if (!SeparableBSSRDF_SampleSp(hitState, hit.raw.instance, bssrdf, rng, sample))
+            if (!SeparableBSSRDF_SampleSp(pix, hitState, hit.raw.instance, bssrdf, rng, sample))
                 break;
 
             float3 localBeta = beta * sample.Sp / max(pSampleSubsurface * sample.pdf, EPS);
@@ -1790,40 +1792,6 @@ struct ProceduralHitAttributes
 {
     float2 localPosition;
 };
-
-[shader("intersection")]
-void RectLightIntersection()
-{
-    float t;
-    float2 p;
-    if (!EvaluateLightIntersection(4, ObjectRayOrigin(), ObjectRayDirection(), RayTMin(), RayTCurrent(), t, p))
-        return;
-
-    ProceduralHitAttributes attr;
-    attr.localPosition = p;
-    ReportHit(t, 0, attr);
-}
-
-[shader("intersection")]
-void DiskLightIntersection()
-{
-    float t;
-    float2 p;
-    if (!EvaluateLightIntersection(3, ObjectRayOrigin(), ObjectRayDirection(), RayTMin(), RayTCurrent(), t, p))
-        return;
-
-    ProceduralHitAttributes attr;
-    attr.localPosition = p;
-    ReportHit(t, 0, attr);
-}
-
-void FillProceduralLightHit(inout HitPayload payload, ProceduralHitAttributes attr)
-{
-    payload.instance = InstanceID();
-    payload.primitive = PrimitiveIndex();
-    payload.bary = attr.localPosition;
-    payload.hitT = RayTCurrent();
-}
 
 bool TryUpdateCurveHit(float t, float u, float v, float rayTMin, float rayTMax, inout float bestT, inout float bestU, inout float bestV)
 {
@@ -2008,65 +1976,9 @@ bool EvaluateCurveIntersection(uint instance, uint primitive, float3 ro, float3 
     }
     return false;
 }
+;
 
-[shader("intersection")]
-void CurveIntersection()
-{
-    float hitT, hitU, hitV;
-    if (EvaluateCurveIntersection(InstanceID(), PrimitiveIndex(), ObjectRayOrigin(), ObjectRayDirection(), RayTMin(), RayTCurrent(), hitT, hitU, hitV))
-    {
-        ProceduralHitAttributes attr;
-        attr.localPosition = float2(hitU, hitV);
-        ReportHit(hitT, 0, attr);
-    }
-}
 
-[shader("closesthit")]
-void RectLightClosestHit(inout HitPayload payload, in ProceduralHitAttributes attr)
-{
-    FillProceduralLightHit(payload, attr);
-}
-
-[shader("closesthit")]
-void DiskLightClosestHit(inout HitPayload payload, in ProceduralHitAttributes attr)
-{
-    FillProceduralLightHit(payload, attr);
-}
-
-[shader("closesthit")]
-void CurveClosestHit(inout HitPayload payload, in ProceduralHitAttributes attr)
-{
-    payload.instance = InstanceID();
-    payload.primitive = PrimitiveIndex();
-    payload.bary = attr.localPosition;
-    payload.hitT = RayTCurrent();
-}
-
-[shader("closesthit")] // Hit Group 0
-void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attr)
-{
-    uint instance = InstanceID();
-    payload.instance = instance;
-    payload.primitive = PrimitiveIndex();
-    payload.bary = attr.barycentrics.xy;
-    payload.hitT = RayTCurrent();
-}
-
-[shader("anyhit")] // Hit Group 0
-void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
-{
-    uint instance = InstanceID();
-    uint primitive = PrimitiveIndex();
-    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
-    if (EvaluateOpacityAlphaTest(instance, primitive, attr.barycentrics, rng))
-        IgnoreHit();
-}
-
-[shader("miss")] // Miss 0
-void RayMiss(inout HitPayload payload)
-{
-    payload.instance = INSTANCE_NO_HIT;
-}
 
 
 

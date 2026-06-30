@@ -10,7 +10,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
     CHECK(renderer);
     CHECK(globals);
     CHECK(gpu);
-    CHECK(renderer->GetDevice()->GetCapabilities().raytracingPipeline);
+    CHECK(renderer->GetDevice()->GetCapabilities().raytracingInline);
     out = {};
     globals->ptAccumulatedFrames = 0u;
     RHIExtent2D renderExtent = cfg.renderExtent;
@@ -89,70 +89,56 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
                                                    .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                    .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                }});
+    const bool shaderExecutionReordering =
+        cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
     renderer->CreatePass(
-        "Trace", RHIDeviceQueueType::Graphics, 0u,
+        shaderExecutionReordering ? "Trace (SER)" : "Trace (Compute)", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
     {
-        using RTHitGroupType = RHIPipelineState::PipelineStateDesc::RayTracingHitGroupType;
-        r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::RayTracingShader, "globalParams");
-        r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::RayTracingShader, "AS");
-        const bool shaderExecutionReordering =
-            cfg.ptShaderExecutionReordering && r->GetDevice()->GetCapabilities().shaderExecutionReordering;
+        const auto pipelineStage = shaderExecutionReordering
+            ? RHIPipelineStageBits::RayTracingShader
+            : RHIPipelineStageBits::ComputeShader;
+        r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
+        r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "AS");
         const uint ptCompileOptions = PTPackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0);
         const auto shader = PathsResolve(
             !shaderExecutionReordering ? "Data/Shaders/ERTPathTracer.spv" : "Data/Shaders/ERTPathTracer_SER.spv"
         );
         LOG(PT, LogInfo, "Loading PT Shader: {}", shader);
-        r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,
-                      AsBytes(AsSpan(ptCompileOptions)));
-        r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 0);
-        r->BindShader(self, RHIShaderStageBits::RayMiss, "RayMiss",
-                      shader, AsBytes(AsSpan(ptCompileOptions)));
-        r->BindShader(self, RHIShaderStageBits::RayIntersection, "RectLightIntersection",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), kRectLightSBTOffset,
-                      RTHitGroupType::Procedural);
-        r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RectLightClosestHit",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), kRectLightSBTOffset,
-                      RTHitGroupType::Procedural);
-        r->BindShader(self, RHIShaderStageBits::RayIntersection, "DiskLightIntersection",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), kDiskLightSBTOffset,
-                      RTHitGroupType::Procedural);
-        r->BindShader(self, RHIShaderStageBits::RayClosestHit, "DiskLightClosestHit",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), kDiskLightSBTOffset,
-                      RTHitGroupType::Procedural);
-        r->BindShader(self, RHIShaderStageBits::RayIntersection, "CurveIntersection",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset,
-                      RTHitGroupType::Procedural);
-        r->BindShader(self, RHIShaderStageBits::RayClosestHit, "CurveClosestHit",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset,
-                      RTHitGroupType::Procedural);
-        r->BindShader(self, RHIShaderStageBits::RayIntersection, "CurveIntersection",
-                      shader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset + 1u,
-                      RTHitGroupType::Procedural);
-        r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitives");
-        r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "dynamicPrimitives");
-        r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
-        r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::ComputeShader, "materials");
-        r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
-        r->BindBufferStorageRead(self, LightAliasTableBuffer, RHIPipelineStageBits::ComputeShader, "lightAliasTable");
-        r->BindBufferStorageRead(self, SobolMatricesBuffer, RHIPipelineStageBits::ComputeShader, "sobolMatrices");
+        if (shaderExecutionReordering)
+        {
+            r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,
+                          AsBytes(AsSpan(ptCompileOptions)));
+        }
+        else
+        {
+            r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", shader,
+                          AsBytes(AsSpan(ptCompileOptions)));
+        }
+
+        r->BindBufferStorageRead(self, PrimitiveBuffer, pipelineStage, "primitives");
+        r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, pipelineStage, "dynamicPrimitives");
+        r->BindBufferStorageRead(self, InstanceBuffer, pipelineStage, "instances");
+        r->BindBufferStorageRead(self, MaterialBuffer, pipelineStage, "materials");
+        r->BindBufferStorageRead(self, LightBuffer, pipelineStage, "lights");
+        r->BindBufferStorageRead(self, LightAliasTableBuffer, pipelineStage, "lightAliasTable");
+        r->BindBufferStorageRead(self, SobolMatricesBuffer, pipelineStage, "sobolMatrices");
         r->BindTextureSampler(self, TexSampler, "textureSampler");
         r->BindTextureSampler(self, LUTSampler, "lutSampler");
         // Accumulation UAVs
-        r->BindTextureUAV(self, Diffuse, "diffuse", RHIPipelineStageBits::RayTracingShader,
+        r->BindTextureUAV(self, Diffuse, "diffuse", pipelineStage,
                           RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                              .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureUAV(self, Specular, "specular", RHIPipelineStageBits::RayTracingShader,
+        r->BindTextureUAV(self, Specular, "specular", pipelineStage,
                           RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                              .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureUAV(self, Depth, "depth", RHIPipelineStageBits::RayTracingShader,
+        r->BindTextureUAV(self, Depth, "depth", pipelineStage,
                           RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                              .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureUAV(self, InstanceIDBuffer, "instanceIDBuffer", RHIPipelineStageBits::RayTracingShader,
+        r->BindTextureUAV(self, InstanceIDBuffer, "instanceIDBuffer", pipelineStage,
                           RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                              .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::RayTracingShader,
+        r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", pipelineStage,
                           RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                              .range = RHITextureSubresourceRange::Create()});
         r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
@@ -167,7 +153,10 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
         bool canTrace = (!cfg.ptRenderPaused || !*cfg.ptRenderPaused);
         if (canTrace)
         {
-            cmd->TraceRays(w, h, 1);
+            if (shaderExecutionReordering)
+                cmd->TraceRays(w, h, 1);
+            else
+                cmd->Dispatch((w - 1) / 8 + 1, (h - 1) / 8 + 1, 1);
         }
     });
 
