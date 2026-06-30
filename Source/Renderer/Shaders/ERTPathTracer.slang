@@ -1510,25 +1510,11 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
                 if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
                 {
                     uint instance = q.CandidateInstanceID();
-                    if (!IsLightInstance(instance))
+                    uint primitive = q.CandidatePrimitiveIndex();
+                    float2 bary = q.CandidateTriangleBarycentrics();
+                    if (!EvaluateOpacityAlphaTest(instance, primitive, bary, rng))
                     {
-                        uint primitive = q.CandidatePrimitiveIndex();
-                        float2 bary = q.CandidateTriangleBarycentrics();
-                        GSInstance inst = LoadSceneInstance(instance);
-                        GSMaterial material = LoadMaterial(inst.materialIndex);
-                        
-                        float opacity = 1.0f;
-                        if (material.baseColorTexture != ~0u) {
-                            float2 uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
-                            float4 baseColor = material.baseColorFactor * textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
-                            opacity = baseColor.a;
-                        } else {
-                            opacity = material.baseColorFactor.a;
-                        }
-
-                        if (opacity == 1.0f || rng.sample() >= 1.0f - opacity) {
-                            q.CommitNonOpaqueTriangleHit();
-                        }
+                        q.CommitNonOpaqueTriangleHit();
                     }
                 }
                 else
@@ -1537,18 +1523,14 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
                     uint primitive = q.CandidatePrimitiveIndex();
                     if (IsCurveInstance(instance))
                     {
-                        GSInstance inst = LoadSceneInstance(instance);
-                        float3 objRo = inst.rotation.conjugate().rotate(ray.Origin - inst.transform) / inst.scale;
-                        float3 objRd = inst.rotation.conjugate().rotate(ray.Direction) / inst.scale;
+                        float3 objRo = q.CandidateObjectRayOrigin();
+                        float3 objRd = q.CandidateObjectRayDirection();
                         
                         float hitT, hitU, hitV;
                         if (EvaluateCurveIntersection(instance, primitive, objRo, objRd, q.RayTMin(), q.CommittedRayT(), hitT, hitU, hitV))
                         {
-                            if (hitT < q.CommittedRayT())
-                            {
-                                bestProceduralBary = float2(hitU, hitV);
-                                q.CommitProceduralPrimitiveHit(hitT);
-                            }
+                            bestProceduralBary = float2(hitU, hitV);
+                            q.CommitProceduralPrimitiveHit(hitT);
                         }
                     }
                     else if (IsLightInstance(instance))
@@ -1556,25 +1538,11 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
                         GSLight gl = LoadSceneLight(GetLightIndex(instance));
                         float3 ro = q.CandidateObjectRayOrigin();
                         float3 rd = q.CandidateObjectRayDirection();
-                        float t = 0.0f;
-                        float2 localPosition = float2(0.0f);
-                        bool hitLight = false;
-                        if (abs(rd.z) > 1e-7f)
+                        float t;
+                        float2 localPos;
+                        if (EvaluateLightIntersection(gl.type, ro, rd, q.RayTMin(), q.CommittedRayT(), t, localPos))
                         {
-                            t = -ro.z / rd.z;
-                            if (t >= q.RayTMin() && t < q.CommittedRayT())
-                            {
-                                float3 p = ro + rd * t;
-                                localPosition = p.xy;
-                                if (gl.type == 3) // Disk
-                                    hitLight = dot(localPosition, localPosition) <= 1.0f;
-                                else if (gl.type == 4) // Rect
-                                    hitLight = !any(abs(localPosition) > 1.0f);
-                            }
-                        }
-                        if (hitLight)
-                        {
-                            bestProceduralBary = localPosition;
+                            bestProceduralBary = localPos;
                             q.CommitProceduralPrimitiveHit(t);
                         }
                     }
@@ -1775,37 +1743,60 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     AccumulatePathRadiance(pix, radiance, chitNDCDepth, frameCount);
 }
 
-struct ProceduralHitAttributes
+bool EvaluateOpacityAlphaTest<S : ISampler>(uint instance, uint primitive, float2 bary, inout S rng)
 {
-    float2 localPosition;
-};
+    if (IsLightInstance(instance)) return false;
+    GSInstance inst = LoadSceneInstance(instance);
+    GSMaterial material = LoadMaterial(inst.materialIndex);
+    
+    float opacity = material.baseColorFactor.a;
+    if (material.baseColorTexture != ~0u) {
+        float2 uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
+        opacity *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0).a;
+    }
+    
+    if (opacity == 1.0f) return false; // opaque, don't ignore
+    return rng.sample() < 1.0f - opacity; // true if we should ignore the hit
+}
 
-bool IntersectUnitLightPlane(out float t, out float2 localPosition)
+bool EvaluateLightIntersection(uint lightType, float3 ro, float3 rd, float rayTMin, float rayTMax, out float hitT, out float2 localPosition)
 {
-    float3 ro = ObjectRayOrigin();
-    float3 rd = ObjectRayDirection();
-    t = 0.0f;
+    hitT = 0.0f;
     localPosition = float2(0.0f);
     if (abs(rd.z) < 1e-7f)
         return false;
 
-    t = -ro.z / rd.z;
-    if (t < RayTMin() || t > RayTCurrent())
+    float t = -ro.z / rd.z;
+    if (t < rayTMin || t > rayTMax)
         return false;
 
-    float3 p = ro + rd * t;
-    localPosition = p.xy;
+    float2 p = (ro + rd * t).xy;
+    if (lightType == 3) // Disk
+    {
+        if (dot(p, p) > 1.0f) return false;
+    }
+    else if (lightType == 4) // Rect
+    {
+        if (any(abs(p) > 1.0f)) return false;
+    }
+    else return false;
+
+    hitT = t;
+    localPosition = p;
     return true;
 }
+
+struct ProceduralHitAttributes
+{
+    float2 localPosition;
+};
 
 [shader("intersection")]
 void RectLightIntersection()
 {
     float t;
     float2 p;
-    if (!IntersectUnitLightPlane(t, p))
-        return;
-    if (any(abs(p) > 1.0f))
+    if (!EvaluateLightIntersection(4, ObjectRayOrigin(), ObjectRayDirection(), RayTMin(), RayTCurrent(), t, p))
         return;
 
     ProceduralHitAttributes attr;
@@ -1818,9 +1809,7 @@ void DiskLightIntersection()
 {
     float t;
     float2 p;
-    if (!IntersectUnitLightPlane(t, p))
-        return;
-    if (dot(p, p) > 1.0f)
+    if (!EvaluateLightIntersection(3, ObjectRayOrigin(), ObjectRayDirection(), RayTMin(), RayTCurrent(), t, p))
         return;
 
     ProceduralHitAttributes attr;
@@ -2061,6 +2050,16 @@ void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttri
     payload.primitive = PrimitiveIndex();
     payload.bary = attr.barycentrics.xy;
     payload.hitT = RayTCurrent();
+}
+
+[shader("anyhit")] // Hit Group 0
+void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
+{
+    uint instance = InstanceID();
+    uint primitive = PrimitiveIndex();
+    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
+    if (EvaluateOpacityAlphaTest(instance, primitive, attr.barycentrics, rng))
+        IgnoreHit();
 }
 
 [shader("miss")] // Miss 0

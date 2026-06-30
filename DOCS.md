@@ -39,7 +39,7 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 - Anamorphic physical lens
 - Area, point, spot, and directional lights
 - Uniform/Power light sampling with alias tables 
-- Runs entirely in your Vulkan GPU :)
+- Runs entirely in your Vulkan GPU (or Lavapipe on CPU if *that* interests you)
 
 ### Rasterizer
 - GPU-driven mesh shader pipeline with hierarchical continuous LOD
@@ -193,7 +193,6 @@ Done
 Path Tracer
 ---
 Sorted by priority (high to low), also w/ future blog post series update on:
-- [ ] Wavefront kernels (https://developer.blender.org/docs/features/cycles/kernel_scheduling/)
 - [ ] Emissive triangles in NEE, ReSTIR DI/PT
 - [ ] Tracing from surfaces (for baking lightmaps, probe generation, etc)
 
