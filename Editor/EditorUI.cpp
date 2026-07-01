@@ -1,7 +1,6 @@
 #include <cmath>
 #include <cfloat>
 #include <algorithm>
-#include <nfd.h>
 #include <Math/Decompose.hpp>
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
@@ -12,6 +11,53 @@
 
 static void DrawLightGizmos();
 static void DrawInstanceGizmos();
+
+namespace
+{
+struct DialogResult
+{
+    SDL_AtomicInt done{};
+    String        path;
+};
+
+void SDLCALL DialogCallback(void* userdata, const char* const* filelist, int)
+{
+    auto* result = static_cast<DialogResult*>(userdata);
+    if (filelist && *filelist)
+        result->path = *filelist;
+    SDL_SetAtomicInt(&result->done, 1);
+}
+
+bool WaitForDialog(DialogResult& result, String& outPath)
+{
+    while (SDL_GetAtomicInt(&result.done) == 0)
+    {
+        SDL_PumpEvents();
+        SDL_Delay(1);
+    }
+
+    if (result.path.empty())
+        return false;
+    outPath = result.path;
+    return true;
+}
+
+bool OpenFile(SDL_DialogFileFilter filter, String& outPath)
+{
+    DialogResult result{};
+    SDL_ShowOpenFileDialog(&DialogCallback, &result, GContext->window,
+                           &filter, 1, nullptr, false);
+    return WaitForDialog(result, outPath);
+}
+
+bool SaveFile(SDL_DialogFileFilter filter, String& outPath)
+{
+    DialogResult result{};
+    SDL_ShowSaveFileDialog(&DialogCallback, &result, GContext->window,
+                           &filter, 1, nullptr);
+    return WaitForDialog(result, outPath);
+}
+} // namespace
 
 static float const* GizmoSnapForOperation(ImGuizmo::OPERATION op)
 {
@@ -220,40 +266,6 @@ static void DrawRHIDeviceMemoryTypeStatsTable(RHIDeviceMemoryStats const& stats)
 
     ImGui::EndTable();
 }
-
-static bool OpenViewLUTDialog(String& outPath)
-{
-    nfdu8filteritem_t filters[] = {{"DDS LUT", "dds"}};
-    nfdopendialogu8args_t args = {0};
-    args.filterList = filters;
-    args.filterCount = 1;
-
-    nfdu8char_t* selectedPath = nullptr;
-    if (NFD_OpenDialogU8_With(&selectedPath, &args) != NFD_OKAY)
-        return false;
-
-    outPath = selectedPath;
-    NFD_FreePathU8(selectedPath);
-    return true;
-}
-
-static bool OpenMatcapDialog(String& outPath)
-{
-    nfdu8filteritem_t filters[] = {{"Matcap Image", "png,jpg,jpeg,tga,bmp,dds"}};
-    nfdopendialogu8args_t args = {0};
-    args.filterList = filters;
-    args.filterCount = 1;
-
-    nfdu8char_t* selectedPath = nullptr;
-    if (NFD_OpenDialogU8_With(&selectedPath, &args) != NFD_OKAY)
-        return false;
-
-    outPath = selectedPath;
-    NFD_FreePathU8(selectedPath);
-    return true;
-}
-
-
 
 static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
 {
@@ -1211,29 +1223,15 @@ void EditorDockSpaceAndMenuBar()
         {
             if (ImGui::MenuItem(PSI_FOLDER_OPEN " Scene"))
             {
-                nfdu8filteritem_t filters[] = {{"Scene Files", "gltf,glb,fscn"}};
-                nfdopendialogu8args_t args = {0};
-                args.filterList = filters;
-                args.filterCount = 1;
-                nfdu8char_t* outPath = nullptr;
-                if (NFD_OpenDialogU8_With(&outPath, &args) == NFD_OKAY)
-                {
-                    RequestLoadScene(outPath);
-                    NFD_FreePathU8(outPath);
-                }
+                String path;
+                if (OpenFile({"Scene Files", "gltf;glb;fscn"}, path))
+                    RequestLoadScene(path);
             }
             if (ImGui::MenuItem(PSI_SUN " HDRI"))
             {
-                nfdu8filteritem_t filters[] = {{"HDR Images", "hdr,hdri"}};
-                nfdopendialogu8args_t args = {0};
-                args.filterList = filters;
-                args.filterCount = 1;
-                nfdu8char_t* outPath = nullptr;
-                if (NFD_OpenDialogU8_With(&outPath, &args) == NFD_OKAY)
-                {
-                    LoadEnvMap(outPath);
-                    NFD_FreePathU8(outPath);
-                }
+                String path;
+                if (OpenFile({"HDR Images", "hdr;hdri"}, path))
+                    LoadEnvMap(path);
             }
             ImGui::EndMenu();
         }
@@ -1244,32 +1242,22 @@ void EditorDockSpaceAndMenuBar()
             {
                 if (ImGui::MenuItem(PSI_PICTURE " HDR Image"))
                 {
-                    nfdu8filteritem_t filters[] = {{"Radiance HDR", "hdr"}};
-                    nfdsavedialogu8args_t args = {0};
-                    args.filterList = filters;
-                    args.filterCount = 1;
-                    nfdu8char_t* outPath = nullptr;
-                    if (NFD_SaveDialogU8_With(&outPath, &args) == NFD_OKAY)
+                    String path;
+                    if (SaveFile({"Radiance HDR", "hdr"}, path))
                     {
-                        GEditor.renderTask.outputPath = outPath;
+                        GEditor.renderTask.outputPath = path;
                         GEditor.renderTask.format = ERenderFormat::HDR;
                         GEditor.renderTask.openRenderPopup = true;
-                        NFD_FreePathU8(outPath);
                     }
                 }
                 if (ImGui::MenuItem(PSI_PICTURE " SDR Image", nullptr, false, !GContext->enableHDR))
                 {
-                    nfdu8filteritem_t filters[] = {{"PNG Image", "png"}};
-                    nfdsavedialogu8args_t args = {0};
-                    args.filterList = filters;
-                    args.filterCount = 1;
-                    nfdu8char_t* outPath = nullptr;
-                    if (NFD_SaveDialogU8_With(&outPath, &args) == NFD_OKAY)
+                    String path;
+                    if (SaveFile({"PNG Image", "png"}, path))
                     {
-                        GEditor.renderTask.outputPath = outPath;
+                        GEditor.renderTask.outputPath = path;
                         GEditor.renderTask.format = ERenderFormat::SDR;
                         GEditor.renderTask.openRenderPopup = true;
-                        NFD_FreePathU8(outPath);
                     }
                 }
                 if (GContext->enableHDR && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -2250,10 +2238,10 @@ void FRunningImGui()
                 const bool isExternalSelected = index == externalIndex;
                 if (ImGui::Selectable(kExternalViewLUTLabel, isExternalSelected))
                 {
-                    String selectedPath;
-                    if (OpenViewLUTDialog(selectedPath))
+                    String path;
+                    if (OpenFile({"DDS LUT", "dds"}, path))
                     {
-                        externalPath = selectedPath;
+                        externalPath = path;
                         index = externalIndex;
                         selected = true;
                     }
@@ -2504,10 +2492,10 @@ void FRunningImGui()
                     bool const selectedExternal = GEditor.matcapIndex == kMatcapCount;
                     if (ImGui::Selectable(kExternalMatcapLabel, selectedExternal))
                     {
-                        String selectedPath;
-                        if (OpenMatcapDialog(selectedPath))
+                        String path;
+                        if (OpenFile({"Matcap Image", "png;jpg;jpeg;tga;bmp;dds"}, path))
                         {
-                            GEditor.matcapExternalPath = selectedPath;
+                            GEditor.matcapExternalPath = path;
                             GEditor.matcapIndex = kMatcapCount;
                             matcapChanged = true;
                         }

@@ -3,7 +3,6 @@
 #include "EditorState.hpp"
 #include <argh.h>
 #include <algorithm>
-#include <nfd.h>
 extern bool EditorProcessEvent(SDL_Event*);
 extern bool EditorOnFrame(FContext*);
 extern void EditorCleanup();
@@ -76,7 +75,6 @@ int main(int argc, char** argv)
                   GLOBAL_ALLOC, RHIDevice::DeviceDesc{.id = static_cast<uint32_t>(gpuId)});
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);
-    NFD_Init();
 
     // Renderer Settings
     // --energy-clamp / -e: specify energy clamp value
@@ -98,7 +96,6 @@ int main(int argc, char** argv)
     while (!mainLoop()) {}
     LOG(SDLMain, LogInfo, "Quitting...");
     ClearMaterialTexturePreviewCache();
-    NFD_Quit();
     EditorCleanup();
     ImGui_ImplFoundation_Shutdown();
     DestroyContext();

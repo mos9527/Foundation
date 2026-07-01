@@ -49,7 +49,7 @@ set(SDL_HAPTIC  OFF CACHE BOOL "" FORCE)
 set(SDL_HIDAPI  ON CACHE BOOL "" FORCE) # Must be ON for Android; SDL3 unconditionally references HIDDeviceManager_tab
 set(SDL_POWER   OFF CACHE BOOL "" FORCE)
 set(SDL_SENSOR  OFF CACHE BOOL "" FORCE)
-set(SDL_DIALOG  OFF CACHE BOOL "" FORCE)   # we use nfd
+set(SDL_DIALOG  ON CACHE BOOL "" FORCE)   # native file open/save dialogs
 set(SDL_OPENGL  OFF CACHE BOOL "" FORCE)
 set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
 set(SDL_DIRECTX OFF CACHE BOOL "" FORCE)   # kills D3D/WASAPI SDK probes on Windows
@@ -147,16 +147,6 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/richgel999/bc7enc
     GIT_SHALLOW TRUE
 )
-
-# nativefiledialog-extended has no Android backend
-if (NOT ANDROID)
-FetchContent_Declare(
-    nativefiledialog-extended
-    GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
-    GIT_TAG v1.2.1
-    GIT_SHALLOW TRUE
-)
-endif()
 
 FetchContent_Declare(
     argh

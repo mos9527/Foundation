@@ -2,9 +2,6 @@ cmake_minimum_required(VERSION 3.26)
 
 FetchContent_MakeAvailable(stb)
 FetchContent_MakeAvailable(fast_obj)
-if (NOT ANDROID)
-    FetchContent_MakeAvailable(nativefiledialog-extended)
-endif()
 FetchContent_MakeAvailable(cgltf)
 FetchContent_MakeAvailable(lz4)
 FetchContent_MakeAvailable(bc7enc)
@@ -83,7 +80,7 @@ if (NOT ANDROID)
             Foundation_Pathtracer
             Foundation_Rasterizer
             Foundation_RHIVulkan
-            ThirdParty_ImGui argh nfd
+            ThirdParty_ImGui argh
     )
 
     add_dependencies(
