@@ -38,9 +38,21 @@ public class MainActivity extends Activity {
         // Buttons for each example currently built
         String[] examples = {
             "Example_Triangle",
+            "Example_HeadlessTriangle",
             "Example_SDF2D",
             "Example_MandelbrotCompute",
-            "Example_GPUScene"
+            "Example_BindlessSimple",
+            "Example_DebugText",
+            "Example_JobGraph",
+            "Example_ImGui",
+            "Example_MipGeneration",
+            "Example_MeshShaderHello",
+            "Example_MeshShaderHierarchicalLOD",
+            "Example_CIEChromacity",
+            "Example_GPUScene",
+            "Example_GPUSceneStreaming",
+            "Example_GPUSceneDeform",
+            "Example_HeadlessPathTracer"
         };
 
         for (final String example : examples) {

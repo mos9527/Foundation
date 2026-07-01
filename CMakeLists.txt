@@ -98,10 +98,10 @@ endif()
 add_subdirectory(ThirdParty)
 add_subdirectory(Source)
 
-# ImGui requires desktop windowing (docking, keyboard/mouse input)
-if (NOT ANDROID)
-    add_subdirectory(ThirdParty/ImGui)
-endif()
+# NOTE: ImGui's SDL3 backend compiles on Android (SDL3 is built as a shared lib
+# for the APK), but docking/keyboard/mouse IO isn't wired up yet. We build the
+# library so Example_ImGui links; on-device IO is handled later.
+add_subdirectory(ThirdParty/ImGui)
 add_subdirectory(Editor)
 if (FOUNDATION_WITH_EXAMPLES)
     add_subdirectory(Examples)

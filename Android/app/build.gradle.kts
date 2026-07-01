@@ -24,7 +24,25 @@ android {
                     "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
                     "-Wno-deprecated"
                 )
-                targets("Example_Triangle", "Example_SDF2D", "Example_MandelbrotCompute", "Example_GPUScene")
+                // XXX: Needs manual update should new examples be added
+                targets(
+                    "Example_Triangle",
+                    "Example_HeadlessTriangle",
+                    "Example_SDF2D",
+                    "Example_MandelbrotCompute",
+                    "Example_BindlessSimple",
+                    "Example_DebugText",
+                    "Example_JobGraph",
+                    "Example_ImGui",
+                    "Example_MipGeneration",
+                    "Example_MeshShaderHello",
+                    "Example_MeshShaderHierarchicalLOD",
+                    "Example_CIEChromacity",
+                    "Example_GPUScene",
+                    "Example_GPUSceneStreaming",
+                    "Example_GPUSceneDeform",
+                    "Example_HeadlessPathTracer"
+                )
             }
         }
         

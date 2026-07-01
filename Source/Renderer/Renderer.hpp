@@ -25,6 +25,7 @@ struct RendererUBO
     float apertureRatio{1.0f};
     uint32_t cameraProjection{0u};
     // -- Framebuffers
+    // Note: ALWAYS updated by Renderers themselves (PT/RASTER)    
     float fbWidth;
     float fbHeight;
     uint32_t hizLevels;

@@ -400,9 +400,7 @@ static void FRunning()
         ? ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm * 1e-3f,
                                   GEditor.camera.fovY)
         : 0.0f;
-    // UBO fbWidth/fbHeight = internal render resolution (used by PT ray gen, raster lighting CS, etc.)
-    GEditor.shaderGlobals.fbWidth = static_cast<float>(renderExtent.x);
-    GEditor.shaderGlobals.fbHeight = static_cast<float>(renderExtent.y);
+    // UBO fbWidth/fbHeight are renderer-owned: stamped from cfg.renderExtent by the PT/RASTER UBO update pass.
     GEditor.shaderGlobals.dbgViewFlags = GEditor.rendererConfig.viewFlags;
     GEditor.shaderGlobals.dbgMaterialFlags = GEditor.rendererConfig.materialFlags;
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;

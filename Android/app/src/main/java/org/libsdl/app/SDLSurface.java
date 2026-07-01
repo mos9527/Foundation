@@ -15,6 +15,7 @@ import android.view.Display;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.PointerIcon;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -276,7 +277,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 int buttonState = (event.getButtonState() >> 4) | (1 << (toolType == MotionEvent.TOOL_TYPE_STYLUS ? 0 : 30));
 
                 SDLActivity.onNativePen(pointerId, buttonState, action, x, y, p);
-            } else if (toolType == MotionEvent.TOOL_TYPE_FINGER) {
+            } else { // MotionEvent.TOOL_TYPE_FINGER or MotionEvent.TOOL_TYPE_UNKNOWN
                 pointerId = event.getPointerId(i);
                 x = getNormalizedX(event.getX(i));
                 y = getNormalizedY(event.getY(i));
@@ -359,6 +360,16 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                                       event.values[2] / SensorManager.GRAVITY_EARTH);
 
 
+        }
+    }
+
+    // Prevent android internal NullPointerException (https://github.com/libsdl-org/SDL/issues/13306)
+    @Override
+    public PointerIcon onResolvePointerIcon(MotionEvent event, int pointerIndex) {
+        try {
+            return super.onResolvePointerIcon(event, pointerIndex);
+        } catch (NullPointerException e) {
+            return null;
         }
     }
 

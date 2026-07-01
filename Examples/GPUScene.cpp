@@ -351,7 +351,7 @@ int main(int argc, char** argv)
         // Builds the active mode's graph on the current (fresh, setup-ready) renderer for `extent`.
         auto BuildGraph = [&](RHIExtent2D extent)
         {
-            cfg.renderExtent = extent;
+            cfg.renderExtent = uint2(float2(extent) * 0.10f);
             cfg.ptRenderPaused = &renderPaused;
             renderer->BeginSetup();
             if (mode == Mode::PathTracer)
@@ -458,8 +458,6 @@ int main(int argc, char** argv)
             ubo.projPlanes = planeSymmetric(camera.proj);
             ubo.camPosition = float4(camera.position, 0.0f);
             ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
-            ubo.fbWidth = static_cast<float>(renderExtent.x);
-            ubo.fbHeight = static_cast<float>(renderExtent.y);
             ubo.dbgViewFlags = cfg.viewFlags;
             ubo.dbgMaterialFlags = cfg.materialFlags;
 

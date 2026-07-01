@@ -307,8 +307,6 @@ int main(int argc, char** argv)
             ubo.projPlanes = planeSymmetric(camera.proj);
             ubo.camPosition = float4(camera.position, 0.0f);
             ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
-            ubo.fbWidth = static_cast<float>(kExtent.x);
-            ubo.fbHeight = static_cast<float>(kExtent.y);
             ubo.dbgViewFlags = cfg.viewFlags;
             ubo.dbgMaterialFlags = cfg.materialFlags;
         };

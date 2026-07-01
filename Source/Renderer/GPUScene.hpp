@@ -67,6 +67,10 @@ struct InstanceDesc
     uint32_t materialIndex{0};
 };
 
+BITMASK_ENUM_BEGIN(GSData, uint8_t)
+Mesh = 1 << 0 
+BITMASK_ENUM_END()
+
 #pragma pack(push, 1)
 struct GSMesh
 {
@@ -160,11 +164,35 @@ struct GSLight
     float importance;
     float envAzimuthOffset;
 };
+struct GSCurveSet
+{
+    uint32_t pointOffset; // GSCurvePoint, in Primitive buffer (bytes)
+    uint32_t pointCount;
+    uint32_t segmentOffset; // GSCurveSegment, in Primitive buffer (bytes)
+    uint32_t segmentCount;
+    uint32_t aabbOffset; // RHIAccelerationStructureAABB, in curve AABB buffer (bytes)
+    uint32_t materialIndex;
+};
+struct GSCurvePoint
+{
+    float3 position;
+    float radius;
+};
+struct GSCurveSegment
+{
+    uint32_t p0;
+    uint32_t p1;
+    float u0;
+    float u1;
+};
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 56);
 static_assert(sizeof(GSMaterial) == 192);
 static_assert(sizeof(GSLight) == 104);
+static_assert(sizeof(GSCurveSet) == 24);
+static_assert(sizeof(GSCurvePoint) == 16);
+static_assert(sizeof(GSCurveSegment) == 16);
 
 struct GPUSceneDesc
 {
@@ -174,25 +202,12 @@ struct GPUSceneDesc
     uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
     uint32_t lightBudget = static_cast<uint32_t>(1e4); // # of lights (ring)
     uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
-    // Max distinct geometries (meshes + curves). The residency/BLAS vectors the renderer
-    // reads are reserved to this so background uploads never reallocate them; uploads beyond
-    // it are rejected rather than risking a concurrent reallocation.
-    uint32_t geometryBudget = static_cast<uint32_t>(1e4);
+    uint32_t geometryBudget = static_cast<uint32_t>(1e4); // # of geometry (ring)
     uint32_t tlasInstanceBudget = static_cast<uint32_t>(1e4); // # of TLAS instances (ring)
     uint32_t tlasBudget = 16 * (1u << 20); // 16MB
     uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
-    // CPU-updateable dynamic geometry (deformation: skinning / sims / morphs). Quantized
-    // primitive bytes (header + verts + indices, no DAG/meshlets) live in a host-coherent ring
-    // sized `dynamicGeometryBudget` per frame slot, replicated across `framesInFlight + 1` slots.
-    // The BLAS is a single AllowUpdate AS refit in place each frame. Default 0 = feature off (no
-    // buffer allocated); examples / the editor opt in by sizing these explicitly.
     uint32_t dynamicGeometryBudget = 0; // bytes per frame slot (0 = dynamic geometry disabled)
-    // The renderer's max frames in flight (its swapchain image count, @ref Renderer::GetFrameSwaps()).
-    // The dynamic ring is sized to framesInFlight + 1 slots and advanced once per frame: the CPU
-    // writes the next frame's slot before that frame's GPU fence, so one slot beyond the in-flight
-    // count keeps the write target clear of every slot the in-flight GPU frames are still reading
-    // (N+1 buffering for a non-blocking producer, mirroring the renderer's per-frame resources).
-    uint32_t framesInFlight = 2;
+    uint32_t framesInFlight = 2; // # of frames in flight, should be conservative (>= N swaps)
 };
 
 /**
@@ -472,9 +487,9 @@ public:
     [[nodiscard]] uint32_t ResolvePickedInstance(uint32_t pickID) const
     {
         // pickID is a TLAS instanceID = index into the last build's written (ready) set.
-        if (pickID >= mPickMap.size())
+        if (pickID >= mTLASInstanceMap.size())
             return UINT32_MAX;
-        return mPickMap[pickID];
+        return mTLASInstanceMap[pickID];
     }
     [[nodiscard]] GSLight GetLight(uint32_t index) const
     {
@@ -538,10 +553,6 @@ public:
     /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const
     {
-        // Returns the allocated TLAS whenever the scene has one, independent of how many
-        // instances are currently resident. This lets ray passes be built into the render
-        // graph up front; BuildTLAS keeps it valid (an empty 0-instance TLAS) while geometry
-        // streams in, so instances appear without a renderer rebuild.
         return mTLAS.IsValid() ? mTLAS.Get() : nullptr;
     }
     /* Samplers */
@@ -551,18 +562,12 @@ public:
 
 private:
     friend struct GPUSceneImpl;
-
-    // Committed table snapshots (filled via BeginScene/EndScene). These are the
-    // authoritative CPU-side scene used by BuildTLAS, picking, and Collect(); they do
-    // not depend on ring memory that may be overwritten by a later commit.
     Vector<GSInstance> mCommittedInstances;
     Vector<GSLight> mCommittedLights;
     Vector<GSMaterial> mCommittedMaterials;
     UpdateResult mLastUpdateResult;
-    // TLAS instanceID -> committed instance index, rebuilt each BuildTLAS. When some
-    // referenced geometry is not yet Ready those instances are skipped, so the TLAS id
-    // is no longer identical to the committed index and picking must go through this map.
-    Vector<uint32_t> mPickMap;
+    // TLAS instanceID -> committed instance index
+    Vector<uint32_t> mTLASInstanceMap;
 
     // Plain handles backing the hot inline getters above; created/managed by GPUSceneImpl.
     RHIDeviceScopedHandle<RHIBuffer> mPrimitiveBuffer;

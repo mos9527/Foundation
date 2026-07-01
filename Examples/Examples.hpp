@@ -10,6 +10,7 @@
 #include <RenderUtils/PSFullscreen.hpp>
 #include <argh.h>
 #include <algorithm>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <stb_image_write.h>
@@ -165,31 +166,38 @@ constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_
 //   -l, --list-gpus   List available GPU devices and exit
 //
 #if defined(__ANDROID__)
-inline void Examples_ExtractAssets(const char* internalDir) {
-    const char* assetsToExtract[] = {
-        "Data/Shaders/Triangle.spv",
-        "Data/Shaders/SDF2D.spv",
-        "Data/Shaders/MandelbrotCompute.spv",
-        "Data/Shaders/CSDebugText.spv",
-        "Data/Shaders/VSFullscreen.spv",
-        "Data/Shaders/PSCopy.spv"
-    };
-    for (const char* asset : assetsToExtract) {
-        size_t size;
-        void* data = SDL_LoadFile(asset, &size);
-        if (data) {
-            std::string outPath = std::string(internalDir) + "/" + asset;
-            std::filesystem::path fsPath(outPath);
-            std::filesystem::create_directories(fsPath.parent_path());
-            std::ofstream file(outPath, std::ios::binary | std::ios::trunc);
-            if (file) {
-                file.write(reinterpret_cast<const char*>(data), size);
-            }
-            SDL_free(data);
-        }
-    }
+// Bridges Foundation::Core::PathsResolve to SDL's APK-asset loader. Registered
+// in Examples_InitVulkan so shaders/bundled assets are lazily materialized out
+// of the APK on first PathsResolve access (see Source/Core/Paths.cpp).
+inline void* Examples_SDLAssetLoader(const char* relPath, size_t* outSize)
+{
+    return SDL_LoadFile(relPath, outSize);
 }
 #endif
+
+// Surface uncaught exceptions instead of dying with a bare SIGABRT. The
+// renderer/PSO layer throws std::runtime_error on failure (missing shader,
+// unsupported feature, etc.); this turns that into a visible prompt plus a
+// logcat line on Android (and a message box elsewhere).
+inline void Examples_TerminateHandler()
+{
+    try
+    {
+        if (auto ep = std::current_exception())
+            std::rethrow_exception(ep);
+    }
+    catch (std::exception const& e)
+    {
+        LOG(Examples, LogError, "Unhandled exception: {}", e.what());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example", e.what(), nullptr);
+    }
+    catch (...)
+    {
+        LOG(Examples, LogError, "Unhandled exception: unknown");
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example", "Unhandled exception", nullptr);
+    }
+    std::abort();
+}
 
 // Pass desc.present = false (with desc.renderExtent set) to initialize headlessly:
 // no SDL window or Vulkan WSI is required, no swapchain is created, and the returned
@@ -222,9 +230,10 @@ inline auto Examples_InitVulkan(SDL_Window* window, int argc, char** argv, Rende
         PathsInit(argv[0]);
     else
     {
+        std::set_terminate(Examples_TerminateHandler);
 #if defined(__ANDROID__)
         const char* prefPath = SDL_GetPrefPath("foundation", "examples");
-        Examples_ExtractAssets(prefPath);
+        PathsRegisterAssetLoader(&Examples_SDLAssetLoader);
         PathsInitFromDir(prefPath);
         SDL_free((void*)prefPath);
 #else

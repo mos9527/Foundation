@@ -16,6 +16,10 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
     RHIExtent2D renderExtent = cfg.renderExtent;
     if (renderExtent.x == 0u || renderExtent.y == 0u)
         renderExtent = renderer->GetSwapchainExtent();
+    // Framebuffer extents are renderer-owned: stamped from the resolved cfg.renderExtent
+    // (matching the actual render-target sizes) so the host UBO and GPU UBO stay in sync.
+    globals->fbWidth = static_cast<float>(renderExtent.x);
+    globals->fbHeight = static_cast<float>(renderExtent.y);
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
