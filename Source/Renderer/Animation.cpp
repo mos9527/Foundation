@@ -188,11 +188,12 @@ void ComputeSkinningMatrices(FSkeleton const& skel, FPose const& pose, Span<mat4
 }
 
 void SkinVertices(Span<const FVertex> bind, Span<const FSkinBinding> binding, Span<const mat4> palette,
-                  Span<FQVertex> out)
+                  Span<FQVertex> out, FSerializedBounds* outBounds)
 {
     CHECK_MSG(binding.size() >= bind.size() && out.size() >= bind.size(),
               "SkinVertices span size mismatch (bind {}, binding {}, out {})", bind.size(), binding.size(), out.size());
     uint32_t paletteCount = static_cast<uint32_t>(palette.size());
+    FSerializedBounds bounds = FSerializedBounds::Empty();
     for (size_t v = 0; v < bind.size(); ++v)
     {
         FVertex const& src = bind[v];
@@ -201,6 +202,7 @@ void SkinVertices(Span<const FVertex> bind, Span<const FSkinBinding> binding, Sp
         if (sumW <= 0.0f)
         {
             out[v] = FQVertex::Pack(src); // unbound vertex: keep the bind pose
+            bounds += src.position;
             continue;
         }
         float inv = 1.0f / sumW;
@@ -220,5 +222,8 @@ void SkinVertices(Span<const FVertex> bind, Span<const FSkinBinding> binding, Sp
         d.normal = normalize(basis * src.normal);
         d.tangent = normalize(basis * src.tangent);
         out[v] = FQVertex::Pack(d);
+        bounds += d.position;
     }
+    if (outBounds)
+        *outBounds = bounds.IsValid() ? bounds : FSerializedBounds{};
 }

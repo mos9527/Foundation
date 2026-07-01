@@ -36,6 +36,31 @@ String LowerExtension(std::filesystem::path const& path)
     return ext;
 }
 
+FSerializedBounds BuildMeshBounds(FImportedMesh const& mesh)
+{
+    if (mesh.vertices.empty())
+        return {};
+
+    FSerializedBounds bounds = FSerializedBounds::Empty();
+    for (FVertex const& vertex : mesh.vertices)
+        bounds += vertex.position;
+    return bounds;
+}
+
+FSerializedBounds BuildCurveBounds(FImportedCurve const& curve)
+{
+    if (curve.points.empty())
+        return {};
+
+    FSerializedBounds bounds = FSerializedBounds::Empty();
+    for (FCurvePoint const& point : curve.points)
+    {
+        bounds += point.position - float3(point.radius);
+        bounds += point.position + float3(point.radius);
+    }
+    return bounds;
+}
+
 StringView Trim(StringView value)
 {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
@@ -1861,6 +1886,7 @@ void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImpor
                        int32_t morphTrack)
 {
     CHECK_MSG(!mesh.verticesQuantized.empty(), "FScene mesh is not quantized");
+    desc.bounds = BuildMeshBounds(mesh);
     desc.vertices = {};
     desc.vertexCount = static_cast<uint32_t>(mesh.verticesQuantized.size());
     desc.lods.clear();
@@ -1905,6 +1931,7 @@ void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImpor
 void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImportedCurve const& curve)
 {
     desc = {};
+    desc.bounds = BuildCurveBounds(curve);
     desc.materialIndex = curve.materialIndex;
     uint32_t segmentCount = CalculateRenderableCurveSegmentCount(curve);
 

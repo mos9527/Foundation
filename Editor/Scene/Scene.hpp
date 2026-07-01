@@ -171,7 +171,7 @@ struct FMorphTrack
 };
 
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 13;
+static constexpr uint32_t kSceneVersion = 14;
 struct FSceneTables
 {
     FSceneGlobals globals;
@@ -199,6 +199,7 @@ struct FSceneTables
 template <>
 inline void FSerialize(FWriter& writer, FSerializedMesh const& mesh)
 {
+    FSerialize(writer, mesh.bounds);
     FSerialize(writer, mesh.vertices);
     FSerialize(writer, mesh.vertexCount);
     FSerialize(writer, mesh.lods);
@@ -216,6 +217,7 @@ inline void FSerialize(FWriter& writer, FSerializedMesh const& mesh)
 template <>
 inline void FDeserialize(FReader& reader, FSerializedMesh& mesh)
 {
+    FDeserialize(reader, mesh.bounds);
     FDeserialize(reader, mesh.vertices);
     FDeserialize(reader, mesh.vertexCount);
     FDeserialize(reader, mesh.lods);

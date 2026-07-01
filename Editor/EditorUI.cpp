@@ -11,6 +11,7 @@
 
 static void DrawLightGizmos();
 static void DrawInstanceGizmos();
+static void DrawViewportSelectionContextMenu();
 
 namespace
 {
@@ -315,6 +316,181 @@ static bool IsSelectedInstanceValid()
 static FInstance& SelectedSceneInstance()
 {
     return GEditor.Scene().GetInstances()[GEditor.selectedInstance];
+}
+
+static bool IsInstanceIndexValid(int index)
+{
+    return GEditor.HasScene() && GContext->gpuScene &&
+           index >= 0 &&
+           index < static_cast<int>(GContext->gpuScene->GetInstanceCount()) &&
+           index < static_cast<int>(GEditor.Scene().GetInstances().size());
+}
+
+static void SelectInstance(uint32_t index, GSInstance const& inst)
+{
+    GEditor.selectedInstance = static_cast<int>(index);
+    GEditor.selectedMaterial = static_cast<int>(inst.materialIndex);
+    GEditor.selectedLight = -1;
+}
+
+static FSerializedBounds const* InstanceResourceBounds(FInstance const& instance)
+{
+    if (!GEditor.HasScene())
+        return nullptr;
+
+    if (instance.type == FInstanceType::Mesh)
+    {
+        auto meshes = GEditor.Scene().GetMeshes();
+        if (instance.resourceIndex < meshes.size())
+            return &meshes[instance.resourceIndex].bounds;
+    }
+    else if (instance.type == FInstanceType::Curve)
+    {
+        auto curves = GEditor.Scene().GetCurves();
+        if (instance.resourceIndex < curves.size())
+            return &curves[instance.resourceIndex].bounds;
+    }
+    return nullptr;
+}
+
+static mat4 InstanceTransformMatrix(FTransform const& transform)
+{
+    return translate(mat4(1.0f), transform.transform) *
+           mat4_cast(transform.rotation) *
+           scale(mat4(1.0f), transform.scale);
+}
+
+static bool GetInstanceWorldBounds(int index, FSerializedBounds& outBounds)
+{
+    if (!IsInstanceIndexValid(index))
+        return false;
+
+    FInstance const& instance = GEditor.Scene().GetInstances()[index];
+    FSerializedBounds const* localBounds = InstanceResourceBounds(instance);
+    if (!localBounds)
+        return false;
+
+    mat4 localToWorld = InstanceTransformMatrix(instance.transform);
+    outBounds = FSerializedBounds::Empty();
+    for (int x = 0; x < 2; ++x)
+    {
+        for (int y = 0; y < 2; ++y)
+        {
+            for (int z = 0; z < 2; ++z)
+            {
+                float3 p{
+                    x ? localBounds->max.x : localBounds->min.x,
+                    y ? localBounds->max.y : localBounds->min.y,
+                    z ? localBounds->max.z : localBounds->min.z
+                };
+                float4 world = localToWorld * float4(p, 1.0f);
+                float3 worldPoint{world.x, world.y, world.z};
+                outBounds += worldPoint;
+            }
+        }
+    }
+    return true;
+}
+
+static void FrameInstance(int index)
+{
+    FSerializedBounds bounds{};
+    if (!GetInstanceWorldBounds(index, bounds))
+        return;
+
+    float3 center = (bounds.min + bounds.max) * 0.5f;
+    float radius = length(bounds.max - center);
+    float halfFovY = GEditor.camera.fovY * 0.5f;
+    float halfFovX = std::atan(std::tan(halfFovY) * std::max(GEditor.camera.aspect, 1e-3f));
+    float halfFov = std::max(std::min(halfFovX, halfFovY), 1e-3f);
+
+    GEditor.camera.center = center;
+    GEditor.camera.radius = std::max(radius / std::sin(halfFov), 1e-3f);
+    GEditor.cameraUpdated = true;
+}
+
+static void MoveInstanceToView(int index)
+{
+    if (!IsInstanceIndexValid(index))
+        return;
+
+    GEditor.Scene().GetInstances()[index].transform.transform = GEditor.camera.position;
+    CommitSceneToGPU(true);
+}
+
+static void AlignInstanceWithView(int index)
+{
+    if (!IsInstanceIndexValid(index))
+        return;
+
+    FTransform& transform = GEditor.Scene().GetInstances()[index].transform;
+    transform.transform = GEditor.camera.position;
+    transform.rotation = GEditor.camera.rot;
+    CommitSceneToGPU(true);
+}
+
+static bool IsLightIndexValid(int index)
+{
+    return GEditor.HasScene() &&
+           index >= 0 &&
+           index < static_cast<int>(GEditor.Scene().GetLights().size());
+}
+
+static bool IsLightTransformable(int index)
+{
+    return IsLightIndexValid(index) &&
+           GEditor.Scene().GetLights()[index].type != FLightType::Environment;
+}
+
+static void MoveLightToView(int index)
+{
+    if (!IsLightTransformable(index))
+        return;
+
+    GEditor.Scene().GetLights()[index].transform.transform = GEditor.camera.position;
+    UpdateSceneLights();
+    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+}
+
+static void AlignLightWithView(int index)
+{
+    if (!IsLightTransformable(index))
+        return;
+
+    FTransform& transform = GEditor.Scene().GetLights()[index].transform;
+    transform.transform = GEditor.camera.position;
+    transform.rotation = GEditor.camera.rot;
+    UpdateSceneLights();
+    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+}
+
+static void AlignViewToLight(int index)
+{
+    if (!IsLightTransformable(index))
+        return;
+
+    FTransform const& transform = GEditor.Scene().GetLights()[index].transform;
+    GEditor.camera.rot = transform.rotation;
+    GEditor.camera.radius = std::max(GEditor.camera.radius, 1e-3f);
+    float3 dir = GEditor.camera.rot * float3(0.0f, 0.0f, 1.0f);
+    GEditor.camera.center = transform.transform - dir * GEditor.camera.radius;
+    GEditor.camera.position = transform.transform;
+    GEditor.cameraUpdated = true;
+}
+
+static void DeleteLight(int index)
+{
+    if (!IsLightTransformable(index))
+        return;
+
+    auto& lights = GEditor.Scene().mTables.lights;
+    lights.erase(lights.begin() + index);
+    if (GEditor.selectedLight == index)
+        GEditor.selectedLight = -1;
+    else if (GEditor.selectedLight > index)
+        --GEditor.selectedLight;
+    UpdateSceneLights();
+    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
 }
 
 static const char* InstanceTypeName(uint32_t type)
@@ -1449,7 +1625,8 @@ void FHierarchyPanel()
             uint32_t instanceCount = gpu->GetInstanceCount();
             ImGui::Text("%u instances", instanceCount);
             ImGui::Separator();
-            for (uint32_t i = 0; i < instanceCount; i++)
+            bool deletedInstance = false;
+            for (uint32_t i = 0; i < instanceCount && !deletedInstance; i++)
             {
                 GSInstance inst = gpu->GetInstance(i);
                 char label[128];
@@ -1458,9 +1635,28 @@ void FHierarchyPanel()
                 bool selected = (GEditor.selectedInstance == static_cast<int>(i));
                 if (ImGui::Selectable(label, selected))
                 {
-                    GEditor.selectedInstance = static_cast<int>(i);
-                    GEditor.selectedMaterial = static_cast<int>(inst.materialIndex);
-                    GEditor.selectedLight = -1; // deselect light when selecting instance
+                    SelectInstance(i, inst);
+                }
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                    FrameInstance(static_cast<int>(i));
+                if (ImGui::BeginPopupContextItem())
+                {
+                    SelectInstance(i, inst);
+                    FSerializedBounds bounds{};
+                    bool const hasBounds = GetInstanceWorldBounds(static_cast<int>(i), bounds);
+                    if (ImGui::MenuItem("Frame Selected", nullptr, false, hasBounds))
+                        FrameInstance(static_cast<int>(i));
+                    if (ImGui::MenuItem("Move to View"))
+                        MoveInstanceToView(static_cast<int>(i));
+                    if (ImGui::MenuItem("Align with View"))
+                        AlignInstanceWithView(static_cast<int>(i));
+                    ImGui::Separator();
+                    if (ImGui::MenuItem(PSI_TRASH " Delete"))
+                    {
+                        DeleteSelectedInstance();
+                        deletedInstance = true;
+                    }
+                    ImGui::EndPopup();
                 }
             }
         }
@@ -1643,10 +1839,6 @@ void FHierarchyPanel()
             ImGui::Text("Resource Offset: %u", inst.resourceOffset);
             ImGui::Text("Material Index: %u", inst.materialIndex);
             ImGui::Text("Resource Index: %u", inst.resourceIndex);
-            ImGui::Separator();
-            // Invalidates inst/pi references; must be the last use this frame.
-            if (ImGui::Button(PSI_TRASH " Delete Instance"))
-                DeleteSelectedInstance();
         }
         else
         {
@@ -1678,8 +1870,6 @@ void FLightingPanel()
         static constexpr int kLightTypeCount = 5;
 
         // ---- Scene Lights ----
-        if (ImGui::CollapsingHeader(PSI_SUN " Scene Lights", ImGuiTreeNodeFlags_DefaultOpen))
-        {
             GEditor.Scene().EnsureEnvironmentLight();
             auto& lights = GEditor.Scene().mTables.lights;
             uint32_t lightCapacity = GContext->gpuScene ? GContext->gpuScene->GetLightCapacity() : 0u;
@@ -1713,18 +1903,41 @@ void FLightingPanel()
             ImGui::Separator();
             static constexpr float kLightHighlightDuration = 1.2f;
 
+            auto selectLight = [&](int i)
+            {
+                GEditor.selectedLight = i;
+                GEditor.selectedInstance = -1;
+                GEditor.selectedMaterial = -1;
+                GEditor.scrollSelectedLightToTop = true;
+                GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
+            };
+            auto removeLight = [&](int i)
+            {
+                DeleteLight(i);
+            };
+            auto moveLightToView = [&](int i)
+            {
+                MoveLightToView(i);
+            };
+            auto alignLightWithView = [&](int i)
+            {
+                AlignLightWithView(i);
+            };
+            auto alignViewToLight = [&](int i)
+            {
+                AlignViewToLight(i);
+            };
+
+            int contextLight = -1;
             for (int i = 0; i < static_cast<int>(lights.size()); i++)
             {
                 auto& light = lights[i];
                 bool const isEnvironment = light.type == FLightType::Environment;
                 ImGui::PushID(i);
 
-                char header[64];
-                snprintf(header, sizeof(header), PSI_BOLT " Light %d (%s)", i, LightTypeName(light.type));
+                char label[64];
+                snprintf(label, sizeof(label), PSI_BOLT " Light %d (%s)", i, LightTypeName(light.type));
                 bool isLightSelected = (GEditor.selectedLight == i);
-                ImGuiTreeNodeFlags headerFlags = ImGuiTreeNodeFlags_DefaultOpen;
-                if (isLightSelected)
-                    headerFlags |= ImGuiTreeNodeFlags_Selected;
 
                 bool pushedHeaderTextColor = false;
                 if (isLightSelected && GEditor.selectedLightHighlightStart >= 0.0f)
@@ -1744,7 +1957,18 @@ void FLightingPanel()
                     }
                 }
 
-                bool headerOpen = ImGui::CollapsingHeader(header, headerFlags);
+                if (ImGui::Selectable(label, isLightSelected))
+                    selectLight(i);
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                {
+                    selectLight(i);
+                    alignViewToLight(i);
+                }
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                {
+                    selectLight(i);
+                    contextLight = i;
+                }
                 if (pushedHeaderTextColor)
                     ImGui::PopStyleColor();
 
@@ -1753,186 +1977,185 @@ void FLightingPanel()
                     ImGui::SetScrollHereY(0.0f);
                     GEditor.scrollSelectedLightToTop = false;
                 }
-                if (ImGui::IsItemClicked())
-                {
-                    GEditor.selectedLight = i;
-                    GEditor.selectedInstance = -1; // deselect instance when selecting light
-                    GEditor.selectedMaterial = -1;
-                    GEditor.scrollSelectedLightToTop = true;
-                    GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
-                }
-                if (headerOpen)
-                {
-                    bool lightChanged = false;
-
-                    // Type selector
-                    if (isEnvironment)
-                    {
-                        ImGui::TextDisabled("Environment light is not removable.");
-                    }
-                    else
-                    {
-                        int typeInt = static_cast<int>(light.type);
-                        if (ImGui::Combo("Type", &typeInt, kLightTypeNames, kLightTypeCount))
-                        {
-                            light.type = static_cast<FLightType>(typeInt);
-                            lightChanged = true;
-                        }
-                    }
-
-                    // Color + Power
-                    lightChanged |= ImHDRColorEdit(isEnvironment ? "Ambient" : "Color", light.color, light.power);
-                    if (GContext->gpuScene && i < static_cast<int>(gpuLightCount))
-                    {
-                        float importance = GContext->gpuScene->GetLight(static_cast<uint32_t>(i)).importance;
-                        float probability = sceneLightImportanceSum > 0.0f ? importance / sceneLightImportanceSum : 0.0f;
-                        ImGui::BeginDisabled();
-                        ImGui::InputFloat("Importance", &importance, 0.0f, 0.0f, "%.6g");
-                        ImGui::InputFloat("Prob", &probability, 0.0f, 0.0f, "%.6g");
-                        ImGui::EndDisabled();
-                    }
-
-                    if (isEnvironment)
-                    {
-                        ImGui::Separator();
-                        bool hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvMap();
-                        ImGui::Text(hasEnv ? PSI_OK " HDRI Loaded" : PSI_WARNING_SIGN " No HDRI");
-                        if (hasEnv)
-                        {
-                            DrawTexturePreview("HDRI", GContext->gpuScene->GetEnvMapIndexOrDefault());
-                            lightChanged |= ImGui::SliderFloat("Azimuth Offset", &light.environmentAzimuthOffset,
-                                                              -180.0f, 180.0f, "%.1f deg");
-                            bool envEnabled = light.environmentMap;
-                            if (ImGui::Checkbox("Enable Env Map", &envEnabled))
-                            {
-                                light.environmentMap = envEnabled;
-                                lightChanged = true;
-                            }
-                        }
-                        ImGui::TextDisabled(PSI_UPLOAD " Drag & drop .hdr/.hdri to load");
-                    }
-
-                    // Direction (Euler angles) for lights with orientation
-                    bool hasDirection = (light.type == FLightType::Directional || light.type == FLightType::Spot ||
-                                         light.type == FLightType::Disk || light.type == FLightType::Rect);
-                    if (hasDirection)
-                    {
-                        // Decompose quaternion → Euler yaw/pitch (YXZ intrinsic order).
-                        // Convention: default forward is (0,0,-1), Y-up.
-                        // rotation = rotateY(yaw) * rotateX(pitch)
-                        // Extract pitch and yaw directly from the quaternion to avoid
-                        // direction-vector round-trip instabilities at the poles.
-                        float sinP = 2.0f *
-                            (light.transform.rotation.w * light.transform.rotation.x -
-                             light.transform.rotation.y * light.transform.rotation.z);
-                        sinP = std::clamp(sinP, -1.0f, 1.0f);
-                        float pitch = degrees(std::asin(sinP));
-
-                        float sinY = 2.0f *
-                            (light.transform.rotation.w * light.transform.rotation.y +
-                             light.transform.rotation.x * light.transform.rotation.z);
-                        float cosY = 1.0f -
-                            2.0f *
-                                (light.transform.rotation.x * light.transform.rotation.x +
-                                 light.transform.rotation.y * light.transform.rotation.y);
-                        float yaw = degrees(std::atan2(sinY, cosY));
-
-                        bool dirChanged = false;
-                        dirChanged |= ImGui::SliderFloat("Pitch", &pitch, -90.0f, 90.0f, "%.1f deg");
-                        dirChanged |= ImGui::SliderFloat("Yaw", &yaw, -180.0f, 180.0f, "%.1f deg");
-                        if (dirChanged)
-                        {
-                            // Reconstruct quaternion directly: rotateY(yaw) * rotateX(pitch)
-                            quat yawQ = angleAxis(radians(yaw), vec3(0, 1, 0));
-                            quat pitchQ = angleAxis(radians(pitch), vec3(1, 0, 0));
-                            light.transform.rotation = normalize(yawQ * pitchQ);
-                            lightChanged = true;
-                        }
-                    }
-
-                    // Position (gizmo anchor; direction is unchanged for directionals)
-                    bool hasPosition = (light.type == FLightType::Directional || light.type == FLightType::Point ||
-                                        light.type == FLightType::Spot || light.type == FLightType::Disk ||
-                                        light.type == FLightType::Rect);
-                    if (hasPosition)
-                    {
-                        lightChanged |= ImGui::DragFloat3("Position", &light.transform.transform.x, 0.1f);
-                    }
-
-                    if (light.type == FLightType::Directional)
-                    {
-                        float angularDiameter = degrees(light.angularDiameter);
-                        ImGui::Separator();
-                        lightChanged |=
-                            ImGui::SliderFloat("Angular Diameter", &angularDiameter, 0.0f, 180.0f, "%.2f deg");
-                        if (lightChanged)
-                            light.angularDiameter = radians(angularDiameter);
-                    }
-                    // Range for Point and Spot
-                    if (light.type == FLightType::Point || light.type == FLightType::Spot)
-                    {
-                        lightChanged |= ImGui::DragFloat("Range", &light.range, 0.1f, 0.0f, 1000.0f, "%.2f (0=inf)");
-                    }
-
-                    // Spot cone angles
-                    if (light.type == FLightType::Spot)
-                    {
-                        float innerDeg = degrees(light.spotInnerConeAngle);
-                        float outerDeg = degrees(light.spotOuterConeAngle);
-                        bool coneChanged = false;
-                        coneChanged |= ImGui::SliderFloat("Inner Cone", &innerDeg, 0.0f, outerDeg, "%.1f deg");
-                        coneChanged |= ImGui::SliderFloat("Outer Cone", &outerDeg, innerDeg, 90.0f, "%.1f deg");
-                        if (coneChanged)
-                        {
-                            light.spotInnerConeAngle = radians(innerDeg);
-                            light.spotOuterConeAngle = radians(outerDeg);
-                            lightChanged = true;
-                        }
-                    }
-
-                    // Disk/Rect extents
-                    if (light.type == FLightType::Disk || light.type == FLightType::Rect)
-                    {
-                        lightChanged |= ImGui::DragFloat("Width", &light.width, 0.01f, 0.001f, 100.0f, "%.3f");
-                        lightChanged |= ImGui::DragFloat("Height", &light.height, 0.01f, 0.001f, 100.0f, "%.3f");
-                    }
-
-                    // Two-sided toggle for area lights
-                    if (light.type == FLightType::Disk || light.type == FLightType::Rect)
-                    {
-                        lightChanged |= ImGui::Checkbox("Two-Sided", &light.twoSided);
-                        ImGui::SameLine();
-                        lightChanged |= ImGui::Checkbox("Normalize", &light.normalize);
-                    }
-
-                    if (lightChanged)
-                        anyChanged = true;
-
-                    if (isEnvironment)
-                        ImGui::BeginDisabled();
-                    bool removeLight = ImGui::Button(PSI_TRASH " Remove Light");
-                    if (isEnvironment)
-                    {
-                        ImGui::EndDisabled();
-                        ImGui::SetItemTooltip("Environment light is required");
-                    }
-                    if (removeLight)
-                    {
-                        lights.erase(lights.begin() + i);
-                        if (GEditor.selectedLight == i)
-                            GEditor.selectedLight = -1;
-                        else if (GEditor.selectedLight > i)
-                            --GEditor.selectedLight;
-                        anyChanged = true;
-                        ImGui::PopID();
-                        break;
-                    }
-
-                    ImGui::Separator();
-                }
                 ImGui::PopID();
             }
-        }
+            if (contextLight >= 0)
+                ImGui::OpenPopup("LightContextMenu");
+            if (ImGui::BeginPopup("LightContextMenu"))
+            {
+                int const i = GEditor.selectedLight;
+                bool const canRemove = i >= 0 &&
+                    i < static_cast<int>(lights.size()) &&
+                    lights[i].type != FLightType::Environment;
+                bool const canTransform = canRemove;
+                if (ImGui::MenuItem("Move to View", nullptr, false, canTransform))
+                    moveLightToView(i);
+                if (ImGui::MenuItem("Align with View", nullptr, false, canTransform))
+                    alignLightWithView(i);
+                if (ImGui::MenuItem("Align View To Selected", nullptr, false, canTransform))
+                    alignViewToLight(i);
+                ImGui::Separator();
+                if (ImGui::MenuItem(PSI_TRASH " Remove Light", nullptr, false, canRemove))
+                    removeLight(i);
+                if (!canTransform && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("Environment light is required");
+                ImGui::EndPopup();
+            }
+
+            if (GEditor.selectedLight >= 0 && GEditor.selectedLight < static_cast<int>(lights.size()))
+            {
+                int const i = GEditor.selectedLight;
+                auto& light = lights[i];
+                bool const isEnvironment = light.type == FLightType::Environment;
+                bool lightChanged = false;
+                ImGui::Separator();
+                ImGui::PushID(i);
+                ImGui::Text("%s %d (%s)", PSI_BOLT " Light", i, LightTypeName(light.type));
+
+                // Type selector
+                if (isEnvironment)
+                {
+                    ImGui::TextDisabled("Environment light is not removable.");
+                }
+                else
+                {
+                    int typeInt = static_cast<int>(light.type);
+                    if (ImGui::Combo("Type", &typeInt, kLightTypeNames, kLightTypeCount))
+                    {
+                        light.type = static_cast<FLightType>(typeInt);
+                        lightChanged = true;
+                    }
+                }
+
+                // Color + Power
+                lightChanged |= ImHDRColorEdit(isEnvironment ? "Ambient" : "Color", light.color, light.power);
+                if (GContext->gpuScene && i < static_cast<int>(gpuLightCount))
+                {
+                    float importance = GContext->gpuScene->GetLight(static_cast<uint32_t>(i)).importance;
+                    float probability = sceneLightImportanceSum > 0.0f ? importance / sceneLightImportanceSum : 0.0f;
+                    ImGui::BeginDisabled();
+                    ImGui::InputFloat("Importance", &importance, 0.0f, 0.0f, "%.6g");
+                    ImGui::InputFloat("Prob", &probability, 0.0f, 0.0f, "%.6g");
+                    ImGui::EndDisabled();
+                }
+
+                if (isEnvironment)
+                {
+                    ImGui::Separator();
+                    bool hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvMap();
+                    ImGui::Text(hasEnv ? PSI_OK " HDRI Loaded" : PSI_WARNING_SIGN " No HDRI");
+                    if (hasEnv)
+                    {
+                        DrawTexturePreview("HDRI", GContext->gpuScene->GetEnvMapIndexOrDefault());
+                        lightChanged |= ImGui::SliderFloat("Azimuth Offset", &light.environmentAzimuthOffset,
+                                                          -180.0f, 180.0f, "%.1f deg");
+                        bool envEnabled = light.environmentMap;
+                        if (ImGui::Checkbox("Enable Env Map", &envEnabled))
+                        {
+                            light.environmentMap = envEnabled;
+                            lightChanged = true;
+                        }
+                    }
+                    ImGui::TextDisabled(PSI_UPLOAD " Drag & drop .hdr/.hdri to load");
+                }
+
+                // Direction (Euler angles) for lights with orientation
+                bool hasDirection = (light.type == FLightType::Directional || light.type == FLightType::Spot ||
+                                     light.type == FLightType::Disk || light.type == FLightType::Rect);
+                if (hasDirection)
+                {
+                    // Decompose quaternion -> Euler yaw/pitch (YXZ intrinsic order).
+                    // Convention: default forward is (0,0,-1), Y-up.
+                    // rotation = rotateY(yaw) * rotateX(pitch)
+                    // Extract pitch and yaw directly from the quaternion to avoid
+                    // direction-vector round-trip instabilities at the poles.
+                    float sinP = 2.0f *
+                        (light.transform.rotation.w * light.transform.rotation.x -
+                         light.transform.rotation.y * light.transform.rotation.z);
+                    sinP = std::clamp(sinP, -1.0f, 1.0f);
+                    float pitch = degrees(std::asin(sinP));
+
+                    float sinY = 2.0f *
+                        (light.transform.rotation.w * light.transform.rotation.y +
+                         light.transform.rotation.x * light.transform.rotation.z);
+                    float cosY = 1.0f -
+                        2.0f *
+                            (light.transform.rotation.x * light.transform.rotation.x +
+                             light.transform.rotation.y * light.transform.rotation.y);
+                    float yaw = degrees(std::atan2(sinY, cosY));
+
+                    bool dirChanged = false;
+                    dirChanged |= ImGui::SliderFloat("Pitch", &pitch, -90.0f, 90.0f, "%.1f deg");
+                    dirChanged |= ImGui::SliderFloat("Yaw", &yaw, -180.0f, 180.0f, "%.1f deg");
+                    if (dirChanged)
+                    {
+                        // Reconstruct quaternion directly: rotateY(yaw) * rotateX(pitch)
+                        quat yawQ = angleAxis(radians(yaw), vec3(0, 1, 0));
+                        quat pitchQ = angleAxis(radians(pitch), vec3(1, 0, 0));
+                        light.transform.rotation = normalize(yawQ * pitchQ);
+                        lightChanged = true;
+                    }
+                }
+
+                // Position (gizmo anchor; direction is unchanged for directionals)
+                bool hasPosition = (light.type == FLightType::Directional || light.type == FLightType::Point ||
+                                    light.type == FLightType::Spot || light.type == FLightType::Disk ||
+                                    light.type == FLightType::Rect);
+                if (hasPosition)
+                {
+                    lightChanged |= ImGui::DragFloat3("Position", &light.transform.transform.x, 0.1f);
+                }
+
+                if (light.type == FLightType::Directional)
+                {
+                    float angularDiameter = degrees(light.angularDiameter);
+                    ImGui::Separator();
+                    lightChanged |=
+                        ImGui::SliderFloat("Angular Diameter", &angularDiameter, 0.0f, 180.0f, "%.2f deg");
+                    if (lightChanged)
+                        light.angularDiameter = radians(angularDiameter);
+                }
+                // Range for Point and Spot
+                if (light.type == FLightType::Point || light.type == FLightType::Spot)
+                {
+                    lightChanged |= ImGui::DragFloat("Range", &light.range, 0.1f, 0.0f, 1000.0f, "%.2f (0=inf)");
+                }
+
+                // Spot cone angles
+                if (light.type == FLightType::Spot)
+                {
+                    float innerDeg = degrees(light.spotInnerConeAngle);
+                    float outerDeg = degrees(light.spotOuterConeAngle);
+                    bool coneChanged = false;
+                    coneChanged |= ImGui::SliderFloat("Inner Cone", &innerDeg, 0.0f, outerDeg, "%.1f deg");
+                    coneChanged |= ImGui::SliderFloat("Outer Cone", &outerDeg, innerDeg, 90.0f, "%.1f deg");
+                    if (coneChanged)
+                    {
+                        light.spotInnerConeAngle = radians(innerDeg);
+                        light.spotOuterConeAngle = radians(outerDeg);
+                        lightChanged = true;
+                    }
+                }
+
+                // Disk/Rect extents
+                if (light.type == FLightType::Disk || light.type == FLightType::Rect)
+                {
+                    lightChanged |= ImGui::DragFloat("Width", &light.width, 0.01f, 0.001f, 100.0f, "%.3f");
+                    lightChanged |= ImGui::DragFloat("Height", &light.height, 0.01f, 0.001f, 100.0f, "%.3f");
+                }
+
+                // Two-sided toggle for area lights
+                if (light.type == FLightType::Disk || light.type == FLightType::Rect)
+                {
+                    lightChanged |= ImGui::Checkbox("Two-Sided", &light.twoSided);
+                    ImGui::SameLine();
+                    lightChanged |= ImGui::Checkbox("Normalize", &light.normalize);
+                }
+
+                if (lightChanged)
+                    anyChanged = true;
+                ImGui::PopID();
+            }
 
         if (anyChanged)
         {
@@ -2185,6 +2408,7 @@ void FRunningImGui()
     FLightingPanel();
     FAnimationPanel();
     DrawInstanceGizmos();
+    DrawViewportSelectionContextMenu();
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Rendering"))
     {
@@ -2749,4 +2973,56 @@ static void DrawLightGizmos()
         UpdateSceneLights();
         GEditor.shaderGlobals.ptAccumulatedFrames = 0;
     }
+}
+
+static void DrawViewportSelectionContextMenu()
+{
+    if (GEditor.applySelectionDoubleClickAction)
+    {
+        GEditor.applySelectionDoubleClickAction = false;
+        if (IsSelectedInstanceValid())
+            FrameInstance(GEditor.selectedInstance);
+        else if (IsLightIndexValid(GEditor.selectedLight))
+            AlignViewToLight(GEditor.selectedLight);
+    }
+
+    if (GEditor.openSelectionContextMenu)
+    {
+        ImGui::OpenPopup("ViewportSelectionContextMenu");
+        GEditor.openSelectionContextMenu = false;
+    }
+
+    ImGui::SetNextWindowPos(ImGui::GetMousePos(), ImGuiCond_Appearing);
+    if (!ImGui::BeginPopup("ViewportSelectionContextMenu"))
+        return;
+
+    if (IsSelectedInstanceValid())
+    {
+        if (ImGui::MenuItem("Frame Selected"))
+            FrameInstance(GEditor.selectedInstance);
+        if (ImGui::MenuItem("Move to View"))
+            MoveInstanceToView(GEditor.selectedInstance);
+        if (ImGui::MenuItem("Align with View"))
+            AlignInstanceWithView(GEditor.selectedInstance);
+        ImGui::Separator();
+        if (ImGui::MenuItem(PSI_TRASH " Delete"))
+            DeleteSelectedInstance();
+    }
+    else if (IsLightIndexValid(GEditor.selectedLight))
+    {
+        bool const canTransform = IsLightTransformable(GEditor.selectedLight);
+        if (ImGui::MenuItem("Align View To Selected", nullptr, false, canTransform))
+            AlignViewToLight(GEditor.selectedLight);
+        if (ImGui::MenuItem("Move to View", nullptr, false, canTransform))
+            MoveLightToView(GEditor.selectedLight);
+        if (ImGui::MenuItem("Align with View", nullptr, false, canTransform))
+            AlignLightWithView(GEditor.selectedLight);
+        ImGui::Separator();
+        if (ImGui::MenuItem(PSI_TRASH " Remove Light", nullptr, false, canTransform))
+            DeleteLight(GEditor.selectedLight);
+        if (!canTransform && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Environment light is required");
+    }
+
+    ImGui::EndPopup();
 }

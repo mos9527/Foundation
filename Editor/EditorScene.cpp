@@ -671,9 +671,11 @@ static void ApplySceneCamera(FImportedScene const& scene, FArcballCamera& camera
         return;
 
     auto& camera = cameras.front();
+    static constexpr float kSceneCameraOrbitRadius = 1.0f;
+    vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
     cameraState.rot = camera.transform.rotation;
-    cameraState.center = camera.transform.transform;
-    cameraState.radius = 0.0f;
+    cameraState.center = camera.transform.transform - dir * kSceneCameraOrbitRadius;
+    cameraState.radius = kSceneCameraOrbitRadius;
     cameraState.fovY = camera.fovY;
     apertureState.dofEnabled = camera.lensEnabled;
     if (camera.lensEnabled)
@@ -970,6 +972,7 @@ namespace
 struct DynamicMeshRuntime
 {
     GeometryHandle handle{};
+    size_t meshIndex{std::numeric_limits<size_t>::max()};
     Vector<FVertex> bind;         // dequantized rest-pose vertices
     // Skin (optional)
     int32_t skeleton{-1};
@@ -1014,6 +1017,17 @@ AnimationRuntime sAnimation;
 bool sAnimateParallel = true;
 
 void ClearAnimationRuntime() { sAnimation = AnimationRuntime{}; }
+
+static FSerializedBounds BoundsFromVertices(Span<const FVertex> vertices)
+{
+    if (vertices.empty())
+        return {};
+
+    FSerializedBounds bounds = FSerializedBounds::Empty();
+    for (FVertex const& vertex : vertices)
+        bounds += vertex.position;
+    return bounds;
+}
 
 // Builds the skinning runtime from the freshly installed scene: dequantizes each skinned mesh's
 // rest pose, reads its per-vertex binding, and allocates per-skeleton pose scratch.
@@ -1077,6 +1091,7 @@ void SetupAnimationRuntime()
             continue;
         DynamicMeshRuntime rt(GLOBAL_ALLOC);
         rt.handle = GEditor.meshGeometry[m];
+        rt.meshIndex = m;
         Vector<FQVertex> quantized = blobs.ReadArray<FQVertex>(mesh.vertices, GLOBAL_ALLOC);
         rt.bind.resize(quantized.size());
         for (size_t i = 0; i < quantized.size(); ++i)
@@ -1207,6 +1222,7 @@ static void DeformMesh(FImportedScene* scene, GPUScene* gpu, DynamicMeshRuntime 
 
     Span<std::byte> dst = gpu->UpdateDynamicGeometry(rt.handle);
     Span<FQVertex> out(reinterpret_cast<FQVertex*>(dst.data()), dst.size() / sizeof(FQVertex));
+    FSerializedBounds deformedBounds{};
     if (rt.skeleton >= 0)
     {
         FSkeleton const& skel = skeletons[rt.skeleton];
@@ -1214,13 +1230,16 @@ static void DeformMesh(FImportedScene* scene, GPUScene* gpu, DynamicMeshRuntime 
         ComputeSkinningMatrices(skel, sAnimation.poses[rt.skeleton], palette);
         SkinVertices(Span<const FVertex>(base, n),
                      Span<const FSkinBinding>(rt.binding.data(), rt.binding.size()),
-                     Span<const mat4>(palette.data(), palette.size()), out);
+                     Span<const mat4>(palette.data(), palette.size()), out, &deformedBounds);
     }
     else
     {
+        deformedBounds = BoundsFromVertices(Span<const FVertex>(base, n));
         for (size_t v = 0; v < n && v < out.size(); ++v)
             out[v] = FQVertex::Pack(base[v]);
     }
+    if (rt.meshIndex < scene->mTables.meshes.size())
+        scene->mTables.meshes[rt.meshIndex].bounds = deformedBounds;
 }
 
 // Builds and submits this frame's animation JobGraph (non-blocking) and advances the clock. The

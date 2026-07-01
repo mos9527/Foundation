@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Container.hpp>
 #include <Math/Math.hpp>
+#include "Metadata.hpp"
 #include "Serialization.hpp"
 using namespace Foundation;
 using namespace Core;
@@ -96,6 +97,7 @@ struct FSerializedMeshLOD
 
 struct FSerializedMesh
 {
+    FSerializedBounds bounds;
     FBlobRef vertices;
     uint32_t vertexCount{0};
     Vector<FSerializedMeshLOD> lods;

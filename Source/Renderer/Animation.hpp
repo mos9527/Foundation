@@ -149,6 +149,7 @@ void ComputeSkinningMatrices(FSkeleton const& skel, FPose const& pose, Span<mat4
  * @param palette Skinning matrices from @ref ComputeSkinningMatrices.
  * @param out     Destination quantized vertices (size == bind.size()); write straight into the
  *                span returned by @ref GPUScene::UpdateDynamicGeometry.
+ * @param outBounds Optional local-space bounds of the skinned output positions.
  */
 void SkinVertices(Span<const FVertex> bind, Span<const FSkinBinding> binding, Span<const mat4> palette,
-                  Span<FQVertex> out);
+                  Span<FQVertex> out, FSerializedBounds* outBounds = nullptr);

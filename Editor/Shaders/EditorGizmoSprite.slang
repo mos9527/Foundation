@@ -16,6 +16,7 @@ struct VertexOutput
     float2 uv : TEXCOORD0;
     nointerpolation uint textureId : TEXCOORD1;
     float viewDepth : TEXCOORD2;
+    nointerpolation float cameraDistance : TEXCOORD3;
 };
 
 float NdcDepthToViewDepth(float ndcDepth)
@@ -52,6 +53,7 @@ VertexOutput vertMain(float3 center : POSITION, float2 corner : TEXCOORD0, float
     output.textureId = textureId;
     float4 viewPos = mul(globalParams.view, float4(center, 1.0f));
     output.viewDepth = -viewPos.z;
+    output.cameraDistance = length(center - globalParams.camPosition);
     return output;
 }
 
@@ -62,8 +64,11 @@ float4 fragMain(VertexOutput input) : SV_TARGET
     float2 uv = float2(input.uv.x, 1.0f - input.uv.y); // Vulkan UV coords
     float4 sample = input.color * textures[NonUniformResourceIndex(input.textureId)].Sample(linSampler, uv);
 
+    float closeFade = smoothstep(globalParams.iconWorldHalfExtent * 3.0f,
+                                 globalParams.iconWorldHalfExtent * 8.0f,
+                                 input.cameraDistance);
     float visibility = GizmoVisibility(input.viewDepth, input.svPosition.xy);
-    sample.a *= lerp(globalParams.occludedAlpha, 1.0f, visibility);
+    sample.a *= closeFade * lerp(globalParams.occludedAlpha, 1.0f, visibility);
 
     TonemapInfo info;
     if ((flags & kFlagsOutputSt2084) != 0)

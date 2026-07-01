@@ -195,6 +195,28 @@ static void AppendLine(Vector<GizmoVertex>& vertices, float3 a, float3 b, float4
     vertices.push_back({b, color});
 }
 
+static void AppendWireBounds(Vector<GizmoVertex>& vertices, FSerializedBounds const& bounds, float4 color)
+{
+    float3 const corners[8] = {
+        {bounds.min.x, bounds.min.y, bounds.min.z},
+        {bounds.max.x, bounds.min.y, bounds.min.z},
+        {bounds.max.x, bounds.max.y, bounds.min.z},
+        {bounds.min.x, bounds.max.y, bounds.min.z},
+        {bounds.min.x, bounds.min.y, bounds.max.z},
+        {bounds.max.x, bounds.min.y, bounds.max.z},
+        {bounds.max.x, bounds.max.y, bounds.max.z},
+        {bounds.min.x, bounds.max.y, bounds.max.z},
+    };
+
+    static constexpr int edges[12][2] = {
+        {0, 1}, {1, 2}, {2, 3}, {3, 0},
+        {4, 5}, {5, 6}, {6, 7}, {7, 4},
+        {0, 4}, {1, 5}, {2, 6}, {3, 7},
+    };
+    for (auto const& edge : edges)
+        AppendLine(vertices, corners[edge[0]], corners[edge[1]], color);
+}
+
 static float4 GridLineColor(float worldCoord, float4 axisColor, float4 majorColor, float4 minorColor)
 {
     if (std::abs(worldCoord) < kGridCellSize * 0.5f)
@@ -375,6 +397,78 @@ static bool WorldToRenderPixel(float3 world, mat4 const& viewProj, float2 render
     outPixel.x = (ndc.x * 0.5f + 0.5f) * renderSize.x;
     outPixel.y = (1.0f - ndc.y * 0.5f - 0.5f) * renderSize.y;
     return true;
+}
+
+static bool IsSelectedInstanceValid()
+{
+    return GEditor.HasScene() && GContext->gpuScene &&
+           GEditor.selectedInstance >= 0 &&
+           GEditor.selectedInstance < static_cast<int>(GContext->gpuScene->GetInstanceCount()) &&
+           GEditor.selectedInstance < static_cast<int>(GEditor.Scene().GetInstances().size());
+}
+
+static FSerializedBounds const* InstanceResourceBounds(FInstance const& instance)
+{
+    if (instance.type == FInstanceType::Mesh)
+    {
+        auto meshes = GEditor.Scene().GetMeshes();
+        if (instance.resourceIndex < meshes.size())
+            return &meshes[instance.resourceIndex].bounds;
+    }
+    else if (instance.type == FInstanceType::Curve)
+    {
+        auto curves = GEditor.Scene().GetCurves();
+        if (instance.resourceIndex < curves.size())
+            return &curves[instance.resourceIndex].bounds;
+    }
+    return nullptr;
+}
+
+static mat4 InstanceTransformMatrix(FTransform const& transform)
+{
+    return translate(mat4(1.0f), transform.transform) *
+           mat4_cast(transform.rotation) *
+           scale(mat4(1.0f), transform.scale);
+}
+
+static bool GetSelectedInstanceWorldBounds(FSerializedBounds& outBounds)
+{
+    if (!IsSelectedInstanceValid())
+        return false;
+
+    FInstance const& instance = GEditor.Scene().GetInstances()[GEditor.selectedInstance];
+    FSerializedBounds const* localBounds = InstanceResourceBounds(instance);
+    if (!localBounds)
+        return false;
+
+    mat4 const localToWorld = InstanceTransformMatrix(instance.transform);
+    outBounds = FSerializedBounds::Empty();
+    for (int x = 0; x < 2; ++x)
+    {
+        for (int y = 0; y < 2; ++y)
+        {
+            for (int z = 0; z < 2; ++z)
+            {
+                float3 const p{
+                    x ? localBounds->max.x : localBounds->min.x,
+                    y ? localBounds->max.y : localBounds->min.y,
+                    z ? localBounds->max.z : localBounds->min.z
+                };
+                float4 const world = localToWorld * float4(p, 1.0f);
+                outBounds += float3{world.x, world.y, world.z};
+            }
+        }
+    }
+    return outBounds.IsValid();
+}
+
+static void AppendSelectedInstanceBounds(Vector<GizmoVertex>& vertices)
+{
+    FSerializedBounds bounds{};
+    if (!GetSelectedInstanceWorldBounds(bounds))
+        return;
+
+    AppendWireBounds(vertices, bounds, float4{1.0f, 0.72f, 0.18f, 0.95f});
 }
 } // namespace
 
@@ -586,6 +680,8 @@ void BuildLightGizmos()
             AppendSpriteBillboard(sGizmo.spriteVertices, sGizmo.spriteIndices, pos, spriteColor, textureId);
         }
     }
+
+    AppendSelectedInstanceBounds(sGizmo.vertices);
 
     sGizmo.vertexCount = static_cast<uint32_t>(sGizmo.vertices.size());
     sGizmo.spriteIndexCount = static_cast<uint32_t>(sGizmo.spriteIndices.size());

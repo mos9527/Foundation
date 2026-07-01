@@ -128,6 +128,8 @@ struct EditorState
     int                selectedLight    = -1;
     bool               scrollSelectedLightToTop = false;
     float              selectedLightHighlightStart = -1.0f;
+    bool               openSelectionContextMenu = false;
+    bool               applySelectionDoubleClickAction = false;
     RenderWorkflow  renderTask;
     GizmoState      gizmo;
     CameraApertureState aperture;

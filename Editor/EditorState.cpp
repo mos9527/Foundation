@@ -13,6 +13,7 @@ EditorState GEditor;
 static ResourceHandle sPickResultBuffer;
 static RendererOutputs sRenderOutputs;
 static int2 sPickingPixel;
+static bool sPickingDoubleClick = false;
 
 static RHIExtent2D ClampViewportExtent(RHIExtent2D extent)
 {
@@ -342,6 +343,7 @@ static void FRunningEnter()
 {
     sPickResultBuffer = kInvalidHandle;
     sPickingPixel = {-1, -1};
+    sPickingDoubleClick = false;
     // The old renderer owns views into the current swapchain; release them before recreating the swapchain.
     DestroyEditorRenderer(GContext);
     UpdateSwapchain(GContext);
@@ -436,34 +438,76 @@ static void FRunning()
     {
         renderer->WaitForPreviousFrame();
 
+        int const previousLight = GEditor.selectedLight;
         int const lightPick = EditorGizmos::PickLightAtRenderPixel(sPickingPixel);
-        if (lightPick >= 0)
+
+        auto* pPickResultBuffer = renderer->DerefResource(sPickResultBuffer).Get<RHIBuffer*>();
+        uint32_t id = *pPickResultBuffer->Map<uint32_t>();
+        // The pick id is a TLAS instanceID, which equals the committed instance index
+        // (the editor commits instances 1:1 in scene-row order).
+        uint32_t pickedInstance = (id != ~0u && GContext->gpuScene)
+            ? GContext->gpuScene->ResolvePickedInstance(id)
+            : UINT32_MAX;
+
+        auto selectLight = [&](int light)
         {
-            GEditor.selectedLight = lightPick;
+            GEditor.selectedLight = light;
             GEditor.selectedInstance = -1;
             GEditor.selectedMaterial = -1;
             GEditor.scrollSelectedLightToTop = true;
             GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
+        };
+        auto selectInstance = [&](uint32_t instance)
+        {
+            GEditor.selectedInstance = static_cast<int>(instance);
+            GEditor.selectedMaterial = static_cast<int>(GContext->gpuScene->GetInstance(instance).materialIndex);
+            GEditor.selectedLight = -1;
+        };
+        auto clearSelection = [&]
+        {
+            GEditor.selectedLight = -1;
+            GEditor.selectedInstance = -1;
+            GEditor.selectedMaterial = -1;
+        };
+
+        bool const preferInstance = previousLight >= 0;
+        bool const hasLight = lightPick >= 0;
+        bool const hasInstance = pickedInstance != UINT32_MAX;
+        bool pickedSelection = false;
+        if (preferInstance)
+        {
+            if (hasInstance)
+            {
+                selectInstance(pickedInstance);
+                pickedSelection = true;
+            }
+            else if (hasLight)
+            {
+                selectLight(lightPick);
+                pickedSelection = true;
+            }
+            else
+                clearSelection();
         }
         else
         {
-            auto* pPickResultBuffer = renderer->DerefResource(sPickResultBuffer).Get<RHIBuffer*>();
-            uint32_t id = *pPickResultBuffer->Map<uint32_t>();
-            GEditor.selectedInstance = -1;
-            GEditor.selectedMaterial = -1;
-            // The pick id is a TLAS instanceID, which equals the committed instance index
-            // (the editor commits instances 1:1 in scene-row order).
-            uint32_t picked = (id != ~0u && GContext->gpuScene)
-                ? GContext->gpuScene->ResolvePickedInstance(id)
-                : UINT32_MAX;
-            if (picked != UINT32_MAX)
+            if (hasLight)
             {
-                GEditor.selectedInstance = static_cast<int>(picked);
-                GEditor.selectedMaterial = static_cast<int>(GContext->gpuScene->GetInstance(picked).materialIndex);
-                GEditor.selectedLight = -1;
+                selectLight(lightPick);
+                pickedSelection = true;
             }
+            else if (hasInstance)
+            {
+                selectInstance(pickedInstance);
+                pickedSelection = true;
+            }
+            else
+                clearSelection();
         }
+        if (sPickingDoubleClick && pickedSelection)
+            GEditor.applySelectionDoubleClickAction = true;
         sPickingPixel = {-1, -1};
+        sPickingDoubleClick = false;
     }
     if (!GEditor.renderTask.renderPaused)
         GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
@@ -511,6 +555,13 @@ static bool ViewportAcceptsMouse(SDL_Event const& event)
     if (!GEditor.viewport.visible || !GEditor.viewport.Contains(pos))
         return false;
     return !io.WantCaptureMouse || !GEditor.showImGui;
+}
+
+static bool ViewportContainsMouse(SDL_Event const& event)
+{
+    UpdateBackbufferViewport();
+    ImVec2 pos = EventMousePosition(event);
+    return GEditor.viewport.visible && GEditor.viewport.Contains(pos);
 }
 
 bool EditorProcessEvent(SDL_Event* event)
@@ -575,10 +626,21 @@ bool EditorProcessEvent(SDL_Event* event)
     }
     ImGui_ImplFoundation_ProcessEvent(event);
     auto& io = ImGui::GetIO();
-    bool viewportMouse = ViewportAcceptsMouse(*event);
     bool isRelative = SDL_GetWindowRelativeMouseMode(GContext->window);
-    bool gizmoActive = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
-    if (isRelative || (viewportMouse && !gizmoActive))
+    bool rightMouseEvent =
+        (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_RIGHT) ||
+        (event->type == SDL_EVENT_MOUSE_BUTTON_UP && event->button.button == SDL_BUTTON_RIGHT) ||
+        (event->type == SDL_EVENT_MOUSE_MOTION && (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_RMASK));
+    bool gizmoOver = ImGuizmo::IsOver();
+    bool gizmoUsing = ImGuizmo::IsUsing();
+    bool viewportMouse = ViewportAcceptsMouse(*event) ||
+        (rightMouseEvent && gizmoOver && ViewportContainsMouse(*event));
+    bool gizmoBlocksMouse = gizmoUsing || (gizmoOver && !rightMouseEvent);
+    static bool sViewportRightDown = false;
+    static bool sViewportRightDragged = false;
+    static ImVec2 sViewportRightDownPos{};
+    auto hasSelection = [] { return GEditor.selectedLight >= 0 || GEditor.selectedInstance >= 0; };
+    if (isRelative || (viewportMouse && !gizmoBlocksMouse))
     {
         if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT)
             SDL_SetWindowRelativeMouseMode(GContext->window, true);
@@ -586,14 +648,36 @@ bool EditorProcessEvent(SDL_Event* event)
     }
     if (event->type == SDL_EVENT_MOUSE_BUTTON_UP && event->button.button == SDL_BUTTON_LEFT)
         SDL_SetWindowRelativeMouseMode(GContext->window, false);
+    if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_RIGHT)
+    {
+        sViewportRightDown = viewportMouse && !gizmoUsing && hasSelection();
+        sViewportRightDragged = false;
+        sViewportRightDownPos = EventMousePosition(*event);
+    }
+    if (event->type == SDL_EVENT_MOUSE_MOTION && sViewportRightDown)
+    {
+        ImVec2 pos = EventMousePosition(*event);
+        float dx = pos.x - sViewportRightDownPos.x;
+        float dy = pos.y - sViewportRightDownPos.y;
+        sViewportRightDragged |= dx * dx + dy * dy > 16.0f;
+    }
+    if (event->type == SDL_EVENT_MOUSE_BUTTON_UP && event->button.button == SDL_BUTTON_RIGHT)
+    {
+        if (sViewportRightDown && !sViewportRightDragged && viewportMouse && !gizmoUsing && hasSelection())
+            GEditor.openSelectionContextMenu = true;
+        sViewportRightDown = false;
+    }
     // GPU picking: record click pixel on left mouse button release (not dragging)
-    if (viewportMouse && !gizmoActive)
+    if (viewportMouse && !gizmoBlocksMouse)
     {
         if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT)
         {
             int2 pixel;
             if (GEditor.viewport.WindowPointToRenderPixel(EventMousePosition(*event), pixel))
+            {
                 sPickingPixel = pixel;
+                sPickingDoubleClick = event->button.clicks >= 2;
+            }
         }
     }
     // Always track WASD key state for the camera (only when ImGui does not need the keyboard)

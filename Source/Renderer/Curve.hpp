@@ -1,5 +1,6 @@
 #pragma once
 #include <Math/Math.hpp>
+#include "Metadata.hpp"
 #include "Serialization.hpp"
 using namespace Foundation;
 using namespace Core;
@@ -25,6 +26,7 @@ struct FSerializedCurveAABB
 };
 struct FSerializedCurve
 {
+    FSerializedBounds bounds;
     FBlobRef points;
     FBlobRef segments;
     FBlobRef aabbs;
