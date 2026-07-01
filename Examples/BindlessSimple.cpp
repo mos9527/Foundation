@@ -1,3 +1,5 @@
+// Demonstrates bindless texture sampling with a pool of procedurally generated textures.
+// The fullscreen shader cycles through many sampled images without rebinding descriptors.
 #include "Examples.hpp"
 #include <RenderCore/Bindless.hpp>
 #include <RenderUtils/CSDebugText.hpp>

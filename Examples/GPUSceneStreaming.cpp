@@ -1,5 +1,4 @@
-// Example: show off GPUScene's asynchronous streaming - render a live scene *while* its
-// geometry uploads in the background, with zero CPU stalls in the frame loop.
+// Demonstrates asynchronous streaming with GPUScene
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp> // UBO + Build{PathTracer,Raster}RenderGraph + Renderer{Scene,Config,Handles}
 #include <Editor/Scene/Mesh.hpp> // FImportedMesh / FSerializedMesh / MemoryBlobSerializer

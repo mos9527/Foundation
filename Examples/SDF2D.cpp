@@ -1,3 +1,5 @@
+// Fullscreen 2D signed-distance-field shader demo.
+// Ports Inigo Quilez-style distance functions into a minimal Foundation render pass.
 #include "Examples.hpp"
 #include <RenderUtils/PSFullscreen.hpp>
 #include <RenderUtils/CSDebugText.hpp>

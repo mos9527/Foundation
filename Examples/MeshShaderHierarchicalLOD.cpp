@@ -1,3 +1,5 @@
+// Mesh shader hierarchical LOD demo using clustered bunny geometry.
+// Streams DAG LOD data to the GPU and lets the shader select detail by threshold.
 #include <Renderer/GPUScene.hpp>
 #include <Editor/Scene/Mesh.hpp>
 #include <RenderUtils/CSDebugText.hpp>

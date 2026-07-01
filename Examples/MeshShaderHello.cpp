@@ -1,3 +1,5 @@
+// Smallest mesh-shader pipeline sample: task + mesh + fragment shaders draw one object.
+// Useful for validating mesh shader support and dispatch wiring.
 #include "Examples.hpp"
 #include <RenderUtils/CSDebugText.hpp>
 using namespace RenderUtils;

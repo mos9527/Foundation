@@ -1,3 +1,5 @@
+// Minimal Dear ImGui integration sample using the Foundation backend.
+// Opens the standard ImGui demo window over a rendered frame.
 #include "Examples.hpp"
 #include <Bindings/ImGui.hpp>
 #include <RenderUtils/CSDebugText.hpp>

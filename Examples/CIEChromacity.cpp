@@ -1,3 +1,5 @@
+// Visualizes CIE chromaticity data and common display gamut primaries.
+// Includes an interactive view over spectral locus and XYZ matching curves.
 #include "Examples.hpp"
 #include <RenderCore/ImmediateContext.hpp>
 #include <RenderUtils/CSDebugText.hpp>

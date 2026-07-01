@@ -1,4 +1,4 @@
-// Example: drive GPUScene + the Foundation renderer[s] end-to-end as a light-transport demo.
+// Demonstrates the Pathtracer and materials with minimal GPUScene setup
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp> // UBO + BuildRasterRenderGraph + Renderer{Scene,Config,Handles}
 #include <Editor/Scene/Mesh.hpp> // FImportedMesh / LoadObj

@@ -1,3 +1,5 @@
+// Uses a compute shader to render the fractal directly into the backbuffer!
+// Shows a compact compute pass with time-varying push constants.
 #include "Examples.hpp"
 #include <RenderUtils/CSDebugText.hpp>
 using namespace RenderUtils;

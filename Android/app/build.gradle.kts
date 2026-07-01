@@ -24,25 +24,24 @@ android {
                     "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
                     "-Wno-deprecated"
                 )
-                // XXX: Needs manual update should new examples be added
+                // BEGIN GENERATED ANDROID EXAMPLE TARGETS
                 targets(
-                    "Example_Triangle",
-                    "Example_HeadlessTriangle",
-                    "Example_SDF2D",
-                    "Example_MandelbrotCompute",
-                    "Example_BindlessSimple",
-                    "Example_DebugText",
-                    "Example_JobGraph",
-                    "Example_ImGui",
-                    "Example_MipGeneration",
-                    "Example_MeshShaderHello",
-                    "Example_MeshShaderHierarchicalLOD",
-                    "Example_CIEChromacity",
-                    "Example_GPUScene",
-                    "Example_GPUSceneStreaming",
                     "Example_GPUSceneDeform",
-                    "Example_HeadlessPathTracer"
+                    "Example_GPUSceneStreaming",
+                    "Example_BindlessSimple",
+                    "Example_GPUScene",
+                    "Example_DebugText",
+                    "Example_SDF2D",
+                    "Example_MipGeneration",
+                    "Example_Triangle",
+                    "Example_MeshShaderHierarchicalLOD",
+                    "Example_ImGui",
+                    "Example_MeshShaderHello",
+                    "Example_JobGraph",
+                    "Example_MandelbrotCompute",
+                    "Example_CIEChromacity"
                 )
+                // END GENERATED ANDROID EXAMPLE TARGETS
             }
         }
         

@@ -1,3 +1,5 @@
+// Hello-world graphics example that renders a single animated triangle.
+// Useful as the smallest windowed Renderer + Vulkan setup path.
 #include "Examples.hpp"
 #include "Examples.hpp"
 #include <RenderUtils/PSFullscreen.hpp>

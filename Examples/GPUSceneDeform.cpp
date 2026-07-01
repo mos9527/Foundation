@@ -1,4 +1,4 @@
-// Example: CPU-updateable dynamic geometry in GPUScene (BLAS refit / rebuild).
+// Demonstrates a dynamically updated geometry with GPUScene
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp>
 #include <Renderer/Mesh.hpp>      // FVertex / FQVertex

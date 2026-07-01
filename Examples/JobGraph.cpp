@@ -1,7 +1,7 @@
-// Standalone self-test for Foundation::Core::JobGraph. Links only Foundation_Core; returns non-zero
-// if any expectation fails. Exercises the cases called out in the plan: empty / barrier-only graphs,
-// worker->worker, worker->main, main->worker dependencies, parallel-for fanout, ExecutionPolicy::Seq,
-// a worker-less pool, multi-producer joins, and the Wait() main-thread pump.
+// Standalone self-test for Foundation::Core::JobGraph scheduler behavior.
+// Exercises dependencies, barriers, parallel-for fanout, and main-thread pumping.
+//
+// Links only Foundation_Core and returns non-zero if any expectation fails.
 #include <Core/JobGraph.hpp>
 #include <atomic>
 #include <cstdio>

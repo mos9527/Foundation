@@ -316,6 +316,24 @@ ExampleTouchState* AllocateTouch(ExampleInputState& input, SDL_FingerID fingerId
     return nullptr;
 }
 
+bool IsTouchMouseEvent(SDL_MouseID mouseId)
+{
+#if defined(SDL_TOUCH_MOUSEID)
+    return mouseId == SDL_TOUCH_MOUSEID;
+#else
+    (void)mouseId;
+    return false;
+#endif
+}
+
+bool HasActiveTouches(ExampleInputState const& input)
+{
+    for (ExampleTouchState const& touch : input.touches)
+        if (touch.active)
+            return true;
+    return false;
+}
+
 void RecordKeyPress(SDL_Keycode key, ExampleInputState& input)
 {
     if (input.pressedKeyCount >= ExampleInputState::kMaxPressedKeys)
@@ -373,17 +391,22 @@ void ProcessTouchMotion(ExampleInputState& input, ExampleTouchState& movedTouch)
         ++activeCameraTouches;
     }
 
-    float2 delta = movedTouch.position - movedTouch.previous;
+    const float2 delta = movedTouch.position - movedTouch.previous;
     if (activeCameraTouches <= 1)
     {
         input.orbitDelta += delta;
         return;
     }
 
-    input.panDelta += delta * 0.5f;
     if (first && second)
     {
-        float oldDistance = length(first->previous - second->previous);
+        const float2 oldFirst = first == &movedTouch ? first->previous : first->position;
+        const float2 oldSecond = second == &movedTouch ? second->previous : second->position;
+        const float2 oldCenter = (oldFirst + oldSecond) * 0.5f;
+        const float2 newCenter = (first->position + second->position) * 0.5f;
+        input.panDelta += newCenter - oldCenter;
+
+        float oldDistance = length(oldFirst - oldSecond);
         float newDistance = length(first->position - second->position);
         if (oldDistance > 1e-3f)
             input.zoomDelta += (newDistance - oldDistance) / 120.0f;
@@ -410,6 +433,8 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
         UpdateMovementKey(event.key.key, false, input);
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if (IsTouchMouseEvent(event.button.which))
+            break;
         if (event.button.button == SDL_BUTTON_LEFT)
         {
             input.pointerDown = true;
@@ -425,6 +450,8 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (IsTouchMouseEvent(event.button.which))
+            break;
         if (event.button.button == SDL_BUTTON_LEFT)
         {
             input.pointerDown = false;
@@ -433,6 +460,8 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
         }
         break;
     case SDL_EVENT_MOUSE_MOTION:
+        if (IsTouchMouseEvent(event.motion.which))
+            break;
         input.pointerPosition = float2(event.motion.x, event.motion.y);
         if (!input.mouseCapturedByHud)
         {
@@ -443,6 +472,8 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
         }
         break;
     case SDL_EVENT_MOUSE_WHEEL:
+        if (IsTouchMouseEvent(event.wheel.which))
+            break;
         input.zoomDelta += event.wheel.y;
         break;
     case SDL_EVENT_FINGER_DOWN:
@@ -483,7 +514,7 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
                 input.activeControl = 0u;
             *touch = {};
         }
-        input.pointerDown = false;
+        input.pointerDown = HasActiveTouches(input);
         break;
     }
     default:

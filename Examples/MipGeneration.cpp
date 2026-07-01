@@ -1,3 +1,5 @@
+// Generates a full mip chain for a texture on the GPU and displays the sampled result.
+// Uses the shared cameraman image asset as a simple compute mip-generation test.
 #include <RenderUtils/CSDebugText.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include "Examples.hpp"
