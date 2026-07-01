@@ -3,161 +3,22 @@
 #include <RHIVulkan/Application.hpp>
 #include <RenderCore/Renderer.hpp>
 #include <Renderer/GPUScene.hpp>
+#include <Renderer/Renderer.hpp>
 #include <Renderer/Postprocess.hpp>
 #include <Renderer/Texture.hpp>
 #include <Math/Math.hpp>
 #include <Math/ModelViewProjection.hpp>
+#include <RenderUtils/CSDebugText.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
-#include <argh.h>
-#include <algorithm>
-#include <exception>
-#include <filesystem>
-#include <fstream>
-#include <stb_image_write.h>
 #include <SDL3/SDL_main.h>
+#include <array>
+#include <tuple>
 #include <vector>
 using namespace Foundation;
 using namespace Core;
 using namespace Math;
 using namespace RenderCore;
 
-constexpr RHISurfaceFormat kFormatPreferenceList[] = {
-    {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
-    {RHIResourceFormat::B8G8R8A8Unrom, RHIColorSpace::SrgbNonLinear},
-};
-
-constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
-    RHISwapchainPresentMode::Mailbox, RHISwapchainPresentMode::Tearing, RHISwapchainPresentMode::Fifo};
-
-namespace details
-{
-    inline String PipelineCachePathForDevice(RHIDevice const& device)
-    {
-        auto key = device.GetPipelineCacheKey();
-        return PathsResolve(fmt::format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
-    }
-
-    inline Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)
-    {
-        Vector<unsigned char> data(allocator);
-        if (!std::filesystem::exists(path.data()))
-            return data;
-
-        std::ifstream file(path.data(), std::ios::binary | std::ios::ate);
-        if (!file)
-        {
-            LOG(Examples, LogWarn, "Failed to open pipeline cache file for reading: {}", path);
-            return data;
-        }
-
-        auto fileSize = file.tellg();
-        if (fileSize <= std::streampos(0))
-            return data;
-
-        auto size = static_cast<size_t>(fileSize);
-        data.resize(size);
-        file.seekg(0, std::ios::beg);
-        if (!file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size)))
-        {
-            LOG(Examples, LogWarn, "Failed to read pipeline cache file: {}", path);
-            data.clear();
-        }
-        return data;
-    }
-
-    inline void ClearStalePipelineCaches(StringView activePath)
-    {
-        std::filesystem::path cacheDir = std::filesystem::path(activePath).parent_path();
-        if (!std::filesystem::exists(cacheDir))
-            return;
-
-        std::filesystem::path active(activePath);
-        for (auto const& entry : std::filesystem::directory_iterator(cacheDir))
-        {
-            if (!entry.is_regular_file() || entry.path() == active)
-                continue;
-
-            auto filename = entry.path().filename().string();
-            if (!filename.starts_with("pso-cache-") || !filename.ends_with(".bin"))
-                continue;
-
-            LOG(Examples, LogInfo, "Clearing stale pipeline cache: {}", entry.path().string());
-            std::error_code ec;
-            std::filesystem::remove(entry.path(), ec);
-        }
-    }
-
-    inline void SavePipelineCache(RHIPipelineStateCache const& cache, StringView path, Allocator* allocator)
-    {
-        size_t size = cache.GetSerializedDataSize();
-        if (size == 0)
-            return;
-
-        Vector<unsigned char> data(size, allocator);
-        size_t written = cache.WriteSerializedData(data);
-        if (written == 0)
-            return;
-
-        data.resize(written);
-        std::filesystem::path fsPath(path);
-        std::filesystem::create_directories(fsPath.parent_path());
-        std::ofstream file(fsPath, std::ios::binary | std::ios::trunc);
-        if (!file)
-        {
-            LOG(Examples, LogWarn, "Failed to open pipeline cache file for writing: {}", path);
-            return;
-        }
-
-        file.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
-        if (!file)
-        {
-            LOG(Examples, LogWarn, "Failed to write pipeline cache file: {}", path);
-        }
-        else
-        {
-            LOG(Examples, LogInfo, "Saved pipeline cache: {} ({} bytes)", path, data.size());
-        }
-    }
-
-    struct PipelineCacheContext
-    {
-        Renderer* renderer{};
-        RHIDeviceScopedHandle<RHIPipelineStateCache> cache;
-        String path;
-    };
-
-    inline std::vector<PipelineCacheContext>& PipelineCacheContexts()
-    {
-        static std::vector<PipelineCacheContext> contexts;
-        return contexts;
-    }
-
-    inline void CreateSwapchain(SDL_Window* window, RHIDevice* device,
-                                        RHIDeviceScopedHandle<RHISwapchain>& outSwap)
-    {
-        int w, h;
-        SDL_GetWindowSizeInPixels(window, &w, &h);
-        LOG(RenderApplication, LogDebug, "Creating swapchain ({}x{})", w, h);
-        device->WaitIdle();
-        if (outSwap)
-            outSwap.Reset();
-        auto format = Ranges::FirstOf(Views::all(kFormatPreferenceList) |
-                                      Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedFormats())));
-        auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
-                                       Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedPresentModes())));
-        CHECK_MSG(format.has_value(), "No supported swapchain format found!");
-        LOG(RenderApplication, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format, format.value().colorSpace);
-        CHECK_MSG(present.has_value(), "No supported presentation mode found!");
-        LOG(RenderApplication, LogDebug, "Selected swapchain present mode: {}", present.value());
-        outSwap = device->CreateSwapchain(RHISwapchain::SwapchainDesc{
-            .format = format.value().format,
-            .colorSpace = format.value().colorSpace,
-            .extents = RHIExtent3D{w, h, 1},
-            .minBufferCount = 3,
-            .presentMode = present.value(),
-        });
-    }
-}
 // [renderer, app, device, swapchain]
 constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 // Common command-line options shared by all examples (mirrors Editor::SDLMain):
@@ -165,185 +26,152 @@ constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_
 //   -g, --gpu <id>    Select GPU device index
 //   -l, --list-gpus   List available GPU devices and exit
 //
-#if defined(__ANDROID__)
-// Bridges Foundation::Core::PathsResolve to SDL's APK-asset loader. Registered
-// in Examples_InitVulkan so shaders/bundled assets are lazily materialized out
-// of the APK on first PathsResolve access (see Source/Core/Paths.cpp).
-inline void* Examples_SDLAssetLoader(const char* relPath, size_t* outSize)
-{
-    return SDL_LoadFile(relPath, outSize);
-}
-#endif
+using ExampleVulkanContext =
+    std::tuple<Renderer*, VulkanApplication*, RHIApplicationScopedHandle<RHIDevice>, RHIDeviceScopedHandle<RHISwapchain>>;
 
-// Surface uncaught exceptions instead of dying with a bare SIGABRT. The
-// renderer/PSO layer throws std::runtime_error on failure (missing shader,
-// unsupported feature, etc.); this turns that into a visible prompt plus a
-// logcat line on Android (and a message box elsewhere).
-inline void Examples_TerminateHandler()
+struct ExampleClickableRegion
 {
-    try
+    uint32_t id{};
+    int x{};
+    int y{};
+    int w{};
+    int h{};
+};
+
+struct ExampleTouchState
+{
+    SDL_FingerID fingerId{};
+    float2 position{};
+    float2 previous{};
+    bool active{};
+    bool capturedByHud{};
+};
+
+struct ExampleInputState
+{
+    static constexpr size_t kMaxPressedKeys = 16;
+
+    bool keyForward{};
+    bool keyBack{};
+    bool keyLeft{};
+    bool keyRight{};
+    bool keyFast{};
+    bool mouseCapturedByHud{};
+    bool pointerDown{};
+    float2 orbitDelta{};
+    float2 panDelta{};
+    float2 move{};
+    float zoomDelta{};
+    SDL_Event lastEvent{};
+    uint32_t clickedControl{};
+    uint32_t activeControl{};
+    uint32_t nextControlId = 1u;
+    uint32_t pressedKeyCount{};
+    float2 pointerPosition{};
+    float2 clickPosition{};
+    int uiX = 16;
+    int uiY = 16;
+    int uiStartX = 16;
+    int uiLineHeight = 24;
+    int uiYSpacing = 2;
+    int uiSameLineSpacing = 16;
+    int uiLastItemWidth{};
+    int uiLastItemHeight{};
+    int uiLastItemX{};
+    int uiLastItemY{};
+    bool uiSameLine{};
+    std::array<SDL_Keycode, kMaxPressedKeys> pressedKeys{};
+    std::array<ExampleTouchState, 4> touches{};
+    std::vector<ExampleClickableRegion> clickableRegions;
+    std::vector<ExampleClickableRegion> nextClickableRegions;
+
+    bool KeyPressed(SDL_Keycode key) const
     {
-        if (auto ep = std::current_exception())
-            std::rethrow_exception(ep);
+        for (uint32_t i = 0; i < pressedKeyCount; ++i)
+            if (pressedKeys[i] == key)
+                return true;
+        return false;
     }
-    catch (std::exception const& e)
-    {
-        LOG(Examples, LogError, "Unhandled exception: {}", e.what());
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example", e.what(), nullptr);
-    }
-    catch (...)
-    {
-        LOG(Examples, LogError, "Unhandled exception: unknown");
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example", "Unhandled exception", nullptr);
-    }
-    std::abort();
-}
+};
+
+struct FExampleOrbitCamera
+{
+    static constexpr char kControlsText[] =
+        "Drag orbit | 2-finger/right-drag pan | pinch/wheel zoom | WASD move";
+
+    float3 center{};
+    float3 position{};
+    float radius = 1.0f;
+    quat rot = quat(1.0f, 0.0f, 0.0f, 0.0f);
+    float zNear = 0.01f;
+    float fovY = radians(45.0f);
+    float aspect = 1.0f;
+    mat4 view{};
+    mat4 proj{};
+    float moveSpeed = 2.0f;
+
+    bool Update(ExampleInputState const& input, float dt);
+    void RefreshMatrices();
+};
+
+enum class ExampleGPUSceneRenderMode
+{
+    Raster,
+    PathTracer
+};
+
+struct ExampleGPUSceneRenderState
+{
+    ExampleGPUSceneRenderMode mode = ExampleGPUSceneRenderMode::PathTracer;
+    bool renderPaused = false;
+    float renderScale = 0.10f;
+    RendererConfig config{};
+    RendererOutputs outputs{};
+    RHIExtent2D renderExtent{};
+};
 
 // Pass desc.present = false (with desc.renderExtent set) to initialize headlessly:
 // no SDL window or Vulkan WSI is required, no swapchain is created, and the returned
 // swapchain handle is invalid. This works on software backends (e.g. Lavapipe) without
 // surface extensions. In that case `window` is ignored and may be nullptr.
-inline auto Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc = {})
-{
-    argh::parser cmdl(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);
-    if (cmdl[{"-h", "--help"}])
-    {
-        fmt::println("Usage: {} [options]", argv[0]);
-        fmt::println("Options:");
-        fmt::println("\t-h, --help\t\tShow this help message");
-        fmt::println("\t-g, --gpu <id>\t\tSpecify GPU device index");
-        fmt::println("\t-l, --list-gpus\t\tList available GPU devices");
-        std::exit(0);
-    }
-    const bool headless = !desc.present;
-    if (cmdl[{"-l", "--list-gpus"}])
-    {
-        auto* app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
-        for (auto const& d : app->EnumerateDevices())
-            fmt::println("[{}] {}", d.id, d.name);
-        Destruct(GLOBAL_ALLOC, app);
-        std::exit(0);
-    }
-    int gpuId = 0;
-    cmdl({"-g", "--gpu"}, 0) >> gpuId;
-    if (headless)
-        PathsInit(argv[0]);
-    else
-    {
-        std::set_terminate(Examples_TerminateHandler);
-#if defined(__ANDROID__)
-        const char* prefPath = SDL_GetPrefPath("foundation", "examples");
-        PathsRegisterAssetLoader(&Examples_SDLAssetLoader);
-        PathsInitFromDir(prefPath);
-        SDL_free((void*)prefPath);
-#else
-        PathsInitFromDir(SDL_GetBasePath());
-#endif
-    }
-    auto app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
-    auto device = headless ? app->CreateDevice({.id = static_cast<uint32_t>(gpuId)})
-                           : app->CreateDevice({.id = static_cast<uint32_t>(gpuId)}, window);
-    RHIDeviceScopedHandle<RHISwapchain> swap;
-    if (!headless)
-        details::CreateSwapchain(window, *device, swap);
-    RHIDeviceScopedHandle<RHIPipelineStateCache> psoCache;
-    String psoCachePath;
-    if (!desc.pipelineCache)
-    {
-        psoCachePath = details::PipelineCachePathForDevice(*device.Get());
-        details::ClearStalePipelineCaches(psoCachePath);
-        auto psoCacheBytes = details::LoadPipelineCacheBytes(psoCachePath, GLOBAL_ALLOC);
-        psoCache = device->CreatePipelineCache({
-            .initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())
-        });
-        LOG(Examples, LogInfo, "Pipeline cache {}: {} ({} bytes)",
-            psoCache->GetImportStatus(),
-            psoCachePath,
-            psoCacheBytes.size());
-        desc.pipelineCache = psoCache.Get();
-    }
-    auto renderer = Construct<Renderer>(GLOBAL_ALLOC, desc, device, swap, GLOBAL_ALLOC);
-    if (psoCache)
-    {
-        details::PipelineCacheContexts().push_back({
-            .renderer = renderer,
-            .cache = std::move(psoCache),
-            .path = std::move(psoCachePath),
-        });
-    }
-    return std::make_tuple(renderer, app, std::move(device), std::move(swap));
-}
-// Polls event, possibly resizing the swapchain, and returns true if the window should close.
-inline bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap, SDL_Event* outEvent = nullptr)
-{
-    SDL_Event event{};
-    bool any = SDL_PollEvent(&event);
-    if (outEvent)
-        *outEvent = event;
-    if (!any)
-        return false;
-    if (event.window.windowID != SDL_GetWindowID(window))
-        return false;
-    if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) return true;
-    // Resize swapchain if necessary
-    if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_MAXIMIZED || event.type == SDL_EVENT_WINDOW_RESTORED)
-    {
-        details::CreateSwapchain(window, swap.mFactory,swap);
-        renderer->SetSwapchain(swap);
-    }
-    return false;
-}
-inline void Examples_NewFrame(Renderer* renderer)
-{
-    renderer->BeginExecute();
-    renderer->ExecuteFrame();
-    renderer->EndExecute();
-}
-inline auto Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app, RHIApplicationScopedHandle<RHIDevice>& device, RHIDeviceScopedHandle<RHISwapchain>& swapchain)
-{
-    if (device)
-        device->WaitIdle();
+ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc = {});
 
-    auto& psoCacheContexts = details::PipelineCacheContexts();
-    auto psoCacheIt = std::ranges::find_if(psoCacheContexts,
-        [renderer](details::PipelineCacheContext const& context)
-        {
-            return context.renderer == renderer;
-        });
-    if (psoCacheIt != psoCacheContexts.end())
-    {
-        details::SavePipelineCache(*psoCacheIt->cache.Get(), psoCacheIt->path, GLOBAL_ALLOC);
-    }
+// Drains all pending SDL events into the frame input state, resizing the swapchain as needed.
+bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap,
+                         ExampleInputState& input, SDL_Event* outLastEvent = nullptr);
 
-    Destruct(GLOBAL_ALLOC, renderer);
-    if (psoCacheIt != psoCacheContexts.end())
-        psoCacheContexts.erase(psoCacheIt);
-    swapchain.Reset();
-    device.Reset();
-    Destruct(GLOBAL_ALLOC, app);
-    if (window)
-        SDL_DestroyWindow(window);
-}
+// Compatibility wrapper for simple examples that only need close/resize and optionally the last event.
+bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap,
+                          SDL_Event* outEvent = nullptr);
+
+void Examples_BeginFrameInput(ExampleInputState& input);
+void Examples_BeginControls(ExampleInputState& input, int x = 16, int y = 16);
+void Examples_SameLine(ExampleInputState& input, int spacing = 16);
+void Examples_Text(ExampleInputState& input, RenderUtils::CSDebugTextData& line, StringView text);
+bool Examples_Button(ExampleInputState& input, RenderUtils::CSDebugTextData& line, StringView text);
+// Text stepper: "Label [-][====------][+] value". Only the [-]/[+] ends change the value.
+// Composes [-] / value text / [+] controls. Requires at least 3 debug text lines.
+bool Examples_Slider(ExampleInputState& input, Span<RenderUtils::CSDebugTextData> lines, StringView label,
+                     float& value, float minValue, float maxValue, float step = 0.01f);
+const char* Examples_GPUSceneModeName(ExampleGPUSceneRenderMode mode);
+void Examples_GPUSceneToggleMode(ExampleGPUSceneRenderState& state);
+void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPUScene* gpu,
+                                       ExampleGPUSceneRenderState& state,
+                                       Span<const RenderUtils::CSDebugTextData> hud,
+                                       RHIExtent2D swapchainExtent);
+void Examples_GPUSceneFillCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera const& camera,
+                                    RendererConfig const& config);
+void Examples_NewFrame(Renderer* renderer);
+void Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app,
+                            RHIApplicationScopedHandle<RHIDevice>& device,
+                            RHIDeviceScopedHandle<RHISwapchain>& swapchain);
 
 // Writes an 8-bit-per-channel image (e.g. from a readback buffer) to a PNG at `path`,
 // then opens it with the OS default viewer via SDL_OpenURL. `strideBytes` defaults to
 // width * channels when zero. Link ThirdParty_STB in targets that call this.
 //   channels: 1 (grey), 2 (grey+alpha), 3 (RGB), 4 (RGBA)
-inline void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* data,
-                                      int channels = 4, int strideBytes = 0)
-{
-    const auto outPath = std::filesystem::absolute(std::string(path.data(), path.size())).string();
-    const int stride = strideBytes ? strideBytes : static_cast<int>(extent.x) * channels;
-    if (!stbi_write_png(outPath.c_str(), static_cast<int>(extent.x), static_cast<int>(extent.y),
-                        channels, data, stride))
-    {
-        LOG(Examples, LogError, "stbi_write_png failed for '{}'", outPath);
-        return;
-    }
-    LOG(Examples, LogInfo, "Wrote '{}'", outPath);
-    if (!SDL_OpenURL(outPath.c_str()))
-        LOG(Examples, LogWarn, "SDL_OpenURL failed: {}", SDL_GetError());
-}
+void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* data,
+                               int channels = 4, int strideBytes = 0);
 
 // Simplified example tonemap / postprocess pass.
 //   Raster: samples `outputs.diffuse` as-is.
@@ -353,61 +181,10 @@ inline void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void 
 //           RTV is blitted to the backbuffer so windowed examples display it; the RTV
 //           handle is returned so headless examples can read it back. No view LUTs,
 //           exposure, or debug-AOV branches - this is the minimal display path.
-inline ResourceHandle Examples_InsertBasicTonemapPasses(Renderer* renderer, RendererOutputs const& outputs,
-                                                        bool isPathTracer)
-{
-    CHECK_MSG(outputs.diffuse != kInvalidHandle, "Basic tonemap pass missing diffuse output");
-    RHIExtent2D extent = outputs.extent;
-    if (extent.x == 0u || extent.y == 0u)
-        extent = renderer->GetRenderExtent();
-    const uint32_t w = extent.x;
-    const uint32_t h = extent.y;
-    constexpr RHIResourceFormat kOutputFormat = RHIResourceFormat::R8G8B8A8Unorm;
+ResourceHandle Examples_InsertBasicTonemapPasses(Renderer* renderer, RendererOutputs const& outputs,
+                                                 bool isPathTracer);
 
-    auto postprocess = renderer->CreateResource(
-        "Basic Postprocess",
-        RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                  RHITextureUsageBits::SampledImage |
-                                  RHITextureUsageBits::TransferSource,
-                       .extent = {w, h, 1},
-                       .format = kOutputFormat});
-
-    using namespace RenderUtils;
-    const char* shader = isPathTracer ? "Data/Shaders/PostprocessBasicPT.spv"
-                                      : "Data/Shaders/PostprocessBasic.spv";
-    createPSFullscreenPassRTV(
-        renderer, "Basic Tonemap", postprocess,
-        RHITextureViewDesc{.format = kOutputFormat, .range = RHITextureSubresourceRange::Create()},
-        {w, h},
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve(shader));
-            r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            if (isPathTracer)
-            {
-                const ResourceHandle specular =
-                    outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
-                r->BindTextureSRV(self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                     .range = RHITextureSubresourceRange::Create()});
-            }
-        },
-        [](PassHandle, Renderer*, RHICommandList*) {});
-
-    if (renderer->IsPresentEnabled())
-    {
-        const auto sampler = renderer->CreateSampler({});
-        createPSBackbufferBlitPass(renderer, "Basic Tonemap Blit", sampler, postprocess, kOutputFormat);
-    }
-    return postprocess;
-}
-
-inline float Examples_GetTime()
-{
-    return static_cast<float>(SDL_GetTicks() / 1e3);
-}
+float Examples_GetTime();
 
 
 struct ExampleFpsCounter

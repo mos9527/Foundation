@@ -8,7 +8,6 @@
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp> // RendererUBO + BuildPathTracerRenderGraph
 #include <Editor/Scene/Mesh.hpp> // FImportedMesh / LoadObj
-#include <Editor/Camera.hpp>     // FArcballCamera
 #include <RenderCore/ImmediateContext.hpp>
 #include <Core/Paths.hpp>
 #include "Examples.hpp"
@@ -288,27 +287,17 @@ int main(int argc, char** argv)
         renderer->EndSetup();
 
         // --- Fixed camera: look into the open front of the box from slightly above ----------
-        FArcballCamera camera{.center = {0.0f, 0.9f, 0.0f},
-                              .radius = 5.2f,
-                              .rot = normalize(angleAxis(radians(-6.0f), float3(1, 0, 0))),
-                              .zNear = 0.01f,
-                              .fovY = radians(45.0f)};
+        FExampleOrbitCamera camera{.center = {0.0f, 0.9f, 0.0f},
+                                   .radius = 5.2f,
+                                   .rot = normalize(angleAxis(radians(-6.0f), float3(1, 0, 0))),
+                                   .zNear = 0.01f,
+                                   .fovY = radians(45.0f)};
         camera.aspect = static_cast<float>(kExtent.x) / static_cast<float>(kExtent.y);
-        camera.Update(SDL_Event{}); // no input: just computes view/proj from the state above.
+        camera.RefreshMatrices();
 
         auto UpdateUBO = [&]
         {
-            ubo.frameNumber = renderer->GetFrame();
-            ubo.view = camera.view;
-            ubo.proj = camera.proj;
-            ubo.inverseView = inverse(camera.view);
-            ubo.inverseViewProj = inverse(camera.proj * camera.view);
-            ubo.zNear = camera.zNear;
-            ubo.projPlanes = planeSymmetric(camera.proj);
-            ubo.camPosition = float4(camera.position, 0.0f);
-            ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
-            ubo.dbgViewFlags = cfg.viewFlags;
-            ubo.dbgMaterialFlags = cfg.materialFlags;
+            Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, cfg);
         };
         UpdateUBO();
 

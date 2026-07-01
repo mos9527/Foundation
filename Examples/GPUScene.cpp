@@ -2,7 +2,6 @@
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp> // UBO + BuildRasterRenderGraph + Renderer{Scene,Config,Handles}
 #include <Editor/Scene/Mesh.hpp> // FImportedMesh / LoadObj
-#include <Editor/Camera.hpp>     // FArcballCamera
 #include <RenderUtils/CSDebugText.hpp> // createCSDebugTextPassBackBuffer (on-screen HUD)
 #include <Core/Paths.hpp>
 #include "Examples.hpp"
@@ -327,62 +326,43 @@ int main(int argc, char** argv)
 
         // --- 5. Build the render graph (presents to the backbuffer itself) -------------------
         // TAB toggles between the two renderers GPUScene feeds: meshlet raster and path tracer.
-        enum class Mode
-        {
-            Raster,
-            PathTracer
-        };
-        Mode mode = Mode::PathTracer;
-        bool renderPaused = false; // path tracer accumulation gate (never paused here)
-        RendererConfig cfg{};
-        RendererOutputs handles{};
-        RHIExtent2D renderExtent{};
+        ExampleGPUSceneRenderState renderState{};
         // On-screen HUD: the CSDebugText pass draws over the scene's backbuffer. The array is
         // persistent and the pass captures a view of it, re-reading the current text every frame.
-        CSDebugTextData hud[3]{};
-        hud[0].x = 16;
-        hud[0].y = 16;
-        hud[0].SetText("Material Gallery (Cornell Box)");
-        hud[1].x = 16;
-        hud[1].y = 40;
-        hud[1].SetText("TAB renderer   SPACE pause/converge   WASD + drag camera");
-        hud[2].x = 16;
-        hud[2].y = 64;
-        // Builds the active mode's graph on the current (fresh, setup-ready) renderer for `extent`.
-        auto BuildGraph = [&](RHIExtent2D extent)
-        {
-            cfg.renderExtent = uint2(float2(extent) * 0.10f);
-            cfg.ptRenderPaused = &renderPaused;
-            renderer->BeginSetup();
-            if (mode == Mode::PathTracer)
-                BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
-            else
-                BuildRasterRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
-            Examples_InsertBasicTonemapPasses(renderer.get(), handles, mode == Mode::PathTracer);
-            createCSDebugTextPassBackBuffer(renderer.get(), "Debug Text", hud); // overlay last
-            renderer->EndSetup();
-            renderExtent = extent;
-        };
+        ExampleInputState input{};
+        CSDebugTextData hud[8]{};
+        Examples_BeginControls(input);
+        Examples_Text(input, hud[0], "Material Gallery (Cornell Box)");
+        Examples_Button(input, hud[1], "[Renderer]");
+        Examples_SameLine(input);
+        Examples_Button(input, hud[2], "[Pause]");
+        Examples_Slider(input, Span<CSDebugTextData>(&hud[3], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
+        Examples_Text(input, hud[6], FExampleOrbitCamera::kControlsText);
         // The graph sizes its internal targets to the render extent, so on a resize we tear the
         // renderer down and recreate it against the resized swapchain before rebuilding the graph.
         auto RecreateRenderer = [&]
         { renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, rendererDesc, device, swapchain, GLOBAL_ALLOC); };
+        auto BuildGraph = [&](RHIExtent2D extent)
+        { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, hud, extent); };
         BuildGraph(renderer->GetSwapchainExtent());
 
         // --- 6. Main loop --------------------------------------------------------------------
         // Look into the open front of the box from slightly above the bunnies.
-        FArcballCamera camera{.center = {0.0f, 0.95f, 0.0f},
-                              .radius = 5.2f,
-                              .rot = normalize(angleAxis(radians(-4.0f), float3(1, 0, 0))),
-                              .zNear = 0.01f,
-                              .fovY = radians(45.0f)};
+        FExampleOrbitCamera camera{.center = {0.0f, 0.95f, 0.0f},
+                                   .radius = 5.2f,
+                                   .rot = normalize(angleAxis(radians(-4.0f), float3(1, 0, 0))),
+                                   .zNear = 0.01f,
+                                   .fovY = radians(45.0f)};
         ExampleFpsCounter fps;
-        SDL_Event event{};
         uint64_t lastTicks = SDL_GetTicksNS();
         bool cameraPaused = false; // SPACE: freeze camera + animation so the path tracer converges
         float animTime = 0.0f; // scene clock; only advances while not paused
-        while (!Examples_ShouldClose(window, renderer.get(), swapchain, &event))
+        while (true)
         {
+            Examples_BeginFrameInput(input);
+            if (Examples_PollEvents(window, renderer.get(), swapchain, input))
+                break;
+
             uint64_t now = SDL_GetTicksNS();
             float dt = static_cast<float>(now - lastTicks) / 1e9f;
             lastTicks = now;
@@ -392,82 +372,55 @@ int main(int argc, char** argv)
             RHIExtent2D currentExtent = renderer->GetSwapchainExtent();
             if (currentExtent.x == 0u || currentExtent.y == 0u)
                 continue;
-            if (currentExtent.x != renderExtent.x || currentExtent.y != renderExtent.y)
+            if (currentExtent.x != renderState.renderExtent.x || currentExtent.y != renderState.renderExtent.y)
             {
                 device->WaitIdle();
                 RecreateRenderer();
                 BuildGraph(currentExtent);
             }
 
-            camera.aspect = static_cast<float>(renderExtent.x) / static_cast<float>(renderExtent.y);
-            // WASD fly-through is tracked here; the editor mirrors this key handling.
-            if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
-            {
-                bool pressed = event.type == SDL_EVENT_KEY_DOWN;
-                switch (event.key.key)
-                {
-                case SDLK_W:
-                    camera.keyW = pressed;
-                    break;
-                case SDLK_A:
-                    camera.keyA = pressed;
-                    break;
-                case SDLK_S:
-                    camera.keyS = pressed;
-                    break;
-                case SDLK_D:
-                    camera.keyD = pressed;
-                    break;
-                case SDLK_LSHIFT:
-                case SDLK_RSHIFT:
-                    camera.keyShift = pressed;
-                    break;
-                case SDLK_SPACE:
-                    cameraPaused ^= pressed;
-                    break;
-                default:
-                    break;
-                }
-            }
+            camera.aspect = static_cast<float>(renderState.renderExtent.x) / static_cast<float>(renderState.renderExtent.y);
+            Examples_BeginControls(input);
+            Examples_Text(input, hud[0], "Material Gallery (Cornell Box)");
+            const bool toggleRenderer = Examples_Button(input, hud[1],
+                fmt::format("[{}]", Examples_GPUSceneModeName(renderState.mode))) ||
+                input.KeyPressed(SDLK_TAB);
+            Examples_SameLine(input);
+            const bool togglePause =
+                Examples_Button(input, hud[2], cameraPaused ? "[Resume]" : "[Pause]") ||
+                input.KeyPressed(SDLK_SPACE);
+            const bool resolutionChanged = Examples_Slider(input, Span<CSDebugTextData>(&hud[3], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
+            Examples_Text(input, hud[6], FExampleOrbitCamera::kControlsText);
+            if (togglePause)
+                cameraPaused = !cameraPaused;
             // TAB switches renderer: rebuild the renderer + graph for the new mode.
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_TAB && !event.key.repeat)
+            if (toggleRenderer || resolutionChanged)
             {
-                mode = mode == Mode::Raster ? Mode::PathTracer : Mode::Raster;
+                if (toggleRenderer)
+                    Examples_GPUSceneToggleMode(renderState);
                 device->WaitIdle();
                 RecreateRenderer();
-                BuildGraph(renderExtent);
+                BuildGraph(renderState.renderExtent);
                 ubo.ptAccumulatedFrames = 0u;
             }
             // The bunnies turn slowly; frozen (with the scene clock) while paused so the path tracer
             // can accumulate a still, converged image.
             if (!cameraPaused)
                 animTime += dt;
-            bool cameraMoved = camera.UpdateMovement(dt);
-            cameraMoved |= camera.Update(event);
+            bool cameraMoved = camera.Update(input, dt);
 
             // Re-author the animated scene for this frame. The graph's TLAS-update pass refits
             // against these committed instances, so this is all the per-frame motion needs.
             AuthorFrame(animTime);
 
-            ubo.frameNumber = renderer->GetFrame();
-            ubo.view = camera.view;
-            ubo.proj = camera.proj;
-            ubo.inverseView = inverse(camera.view);
-            ubo.inverseViewProj = inverse(camera.proj * camera.view);
-            ubo.zNear = camera.zNear;
-            ubo.projPlanes = planeSymmetric(camera.proj);
-            ubo.camPosition = float4(camera.position, 0.0f);
-            ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
-            ubo.dbgViewFlags = cfg.viewFlags;
-            ubo.dbgMaterialFlags = cfg.materialFlags;
+            Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);
 
             // Refresh the HUD readout before submitting (the overlay pass reads it this frame).
-            hud[2].SetText(fmt::format("{}   {:.0f} FPS{}", mode == Mode::PathTracer ? "Path Tracer" : "Raster",
-                                       fps.Update(), cameraPaused ? "   [PAUSED]" : ""));
+            Examples_Text(input, hud[7], fmt::format("{:.0f} FPS{}", fps.Update(), cameraPaused ? "   [PAUSED]" : ""));
 
             Examples_NewFrame(renderer.get());
             // Advance path-tracer accumulation after the frame is submitted.
-            if (mode == Mode::PathTracer)
+            if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
             if (!cameraPaused || cameraMoved)
                 ubo.ptAccumulatedFrames = 0;

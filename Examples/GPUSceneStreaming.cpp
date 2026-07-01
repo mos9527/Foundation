@@ -3,7 +3,6 @@
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp> // UBO + Build{PathTracer,Raster}RenderGraph + Renderer{Scene,Config,Handles}
 #include <Editor/Scene/Mesh.hpp> // FImportedMesh / FSerializedMesh / MemoryBlobSerializer
-#include <Editor/Camera.hpp>     // FArcballCamera
 #include <RenderUtils/CSDebugText.hpp> // createCSDebugTextPassBackBuffer (on-screen HUD)
 #include <Core/Paths.hpp>
 #include "Examples.hpp"
@@ -312,55 +311,34 @@ int main(int argc, char** argv)
                 ctx.Submit(), ctx.WaitIdle();
         }
 
-        enum class Mode
-        {
-            Raster,
-            PathTracer
-        };
-        Mode mode = Mode::PathTracer;
-        bool renderPaused = false;
-        RendererConfig cfg{};
-        RendererOutputs handles{};
-        RHIExtent2D renderExtent{};
+        ExampleGPUSceneRenderState renderState{};
 
         // On-screen HUD: the CSDebugText pass draws on top of the scene's backbuffer. The array is
         // persistent and the pass captures a view of it, re-reading the current text every frame.
-        CSDebugTextData hud[4]{};
-        hud[0].x = 16;
-        hud[0].y = 16;
-        hud[0].SetText("GPUScene async streaming");
-        hud[1].x = 16;
-        hud[1].y = 40;
-        hud[1].SetText(fmt::format("SPACE stream +{}   TAB renderer   F pause   WASD + drag camera", kSpawnPerPress));
-        hud[2].x = 16;
-        hud[2].y = 64;
-        hud[3].x = 16;
-        hud[3].y = 88;
+        ExampleInputState input{};
+        CSDebugTextData hud[9]{};
+        Examples_BeginControls(input);
+        Examples_Text(input, hud[0], "GPUScene async streaming");
+        Examples_Button(input, hud[1], fmt::format("[Stream +{}]", kSpawnPerPress));
+        Examples_SameLine(input);
+        Examples_Button(input, hud[2], "[Renderer]");
+        Examples_SameLine(input);
+        Examples_Button(input, hud[3], "[Pause]");
+        Examples_Slider(input, Span<CSDebugTextData>(&hud[4], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
+        Examples_Text(input, hud[7], FExampleOrbitCamera::kControlsText);
 
-        auto BuildGraph = [&](RHIExtent2D extent)
-        {
-            cfg.renderExtent = extent;
-            cfg.ptRenderPaused = &renderPaused;
-            renderer->BeginSetup();
-            if (mode == Mode::PathTracer)
-                BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
-            else
-                BuildRasterRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
-            Examples_InsertBasicTonemapPasses(renderer.get(), handles, mode == Mode::PathTracer);
-            createCSDebugTextPassBackBuffer(renderer.get(), "Debug Text", hud); // overlay last
-            renderer->EndSetup();
-            renderExtent = extent;
-        };
         auto RecreateRenderer = [&]
         { renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, rendererDesc, device, swapchain, GLOBAL_ALLOC); };
+        auto BuildGraph = [&](RHIExtent2D extent)
+        { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, hud, extent); };
         BuildGraph(renderer->GetSwapchainExtent());
 
-        // Arcball fly-cam: mouse drag orbits, WASD dollies. Start looking slightly down at the field.
-        FArcballCamera camera{.center = {0.0f, 0.5f, 0.0f},
-                              .radius = 6.0f,
-                              .rot = normalize(angleAxis(radians(-18.0f), float3(1, 0, 0))),
-                              .zNear = 0.01f,
-                              .fovY = radians(50.0f)};
+        // Example orbit camera: mouse/touch drag orbits, WASD dollies.
+        FExampleOrbitCamera camera{.center = {0.0f, 0.5f, 0.0f},
+                                   .radius = 6.0f,
+                                   .rot = normalize(angleAxis(radians(-18.0f), float3(1, 0, 0))),
+                                   .zNear = 0.01f,
+                                   .fovY = radians(50.0f)};
 
         // Streaming is manual: each SPACE press enqueues a wave of procedural meshes. Generating +
         // uploading them returns immediately (no Join), so the press never stalls - the meshes stream
@@ -395,12 +373,15 @@ int main(int argc, char** argv)
         };
 
         ExampleFpsCounter fps;
-        SDL_Event event{};
         uint64_t lastTicks = SDL_GetTicksNS();
         bool paused = false; // P: freeze the scene (blobs + accumulation) so the path tracer converges
         float animTime = 0.0f;
-        while (!Examples_ShouldClose(window, renderer.get(), swapchain, &event))
+        while (true)
         {
+            Examples_BeginFrameInput(input);
+            if (Examples_PollEvents(window, renderer.get(), swapchain, input))
+                break;
+
             uint64_t now = SDL_GetTicksNS();
             float dt = static_cast<float>(now - lastTicks) / 1e9f;
             lastTicks = now;
@@ -408,7 +389,7 @@ int main(int argc, char** argv)
             RHIExtent2D currentExtent = renderer->GetSwapchainExtent();
             if (currentExtent.x == 0u || currentExtent.y == 0u)
                 continue;
-            if (currentExtent.x != renderExtent.x || currentExtent.y != renderExtent.y)
+            if (currentExtent.x != renderState.renderExtent.x || currentExtent.y != renderState.renderExtent.y)
             {
                 device->WaitIdle();
                 RecreateRenderer();
@@ -418,52 +399,39 @@ int main(int argc, char** argv)
             // Producer side: SPACE enqueues the next wave from inside the render loop. The call
             // returns immediately - the worker drains it concurrently while we keep rendering.
             bool spawnedThisFrame = false;
-            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
+            bool atCap = assets.size() >= static_cast<size_t>(kBlobCount + 1u);
+            Examples_BeginControls(input);
+            Examples_Text(input, hud[0], "GPUScene async streaming");
+            const bool streamPressed = Examples_Button(input, hud[1],
+                atCap ? "[Release]" : fmt::format("[Stream +{}]", kSpawnPerPress)) ||
+                input.KeyPressed(SDLK_SPACE);
+            Examples_SameLine(input);
+            const bool toggleRenderer = Examples_Button(input, hud[2],
+                fmt::format("[{}]", Examples_GPUSceneModeName(renderState.mode))) ||
+                input.KeyPressed(SDLK_TAB);
+            Examples_SameLine(input);
+            const bool togglePause = Examples_Button(input, hud[3], paused ? "[Resume]" : "[Pause]") ||
+                input.KeyPressed(SDLK_F);
+            const bool resolutionChanged = Examples_Slider(input, Span<CSDebugTextData>(&hud[4], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
+            Examples_Text(input, hud[7], FExampleOrbitCamera::kControlsText);
+            if (streamPressed)
             {
-                if (event.key.key == SDLK_SPACE)
-                {
-                    // Stream the next wave, or - once the field is full - release everything and loop.
-                    if (assets.size() >= static_cast<size_t>(kBlobCount + 1u))
-                        ReleaseBlobs();
-                    else
-                        spawnedThisFrame = SpawnWave();
-                }
-                else if (event.key.key == SDLK_F)
-                    paused = !paused;
-                else if (event.key.key == SDLK_TAB)
-                {
-                    mode = mode == Mode::Raster ? Mode::PathTracer : Mode::Raster;
-                    device->WaitIdle();
-                    RecreateRenderer();
-                    BuildGraph(renderExtent);
-                    ubo.ptAccumulatedFrames = 0u;
-                }
+                // Stream the next wave, or - once the field is full - release everything and loop.
+                if (assets.size() >= static_cast<size_t>(kBlobCount + 1u))
+                    ReleaseBlobs();
+                else
+                    spawnedThisFrame = SpawnWave();
             }
-            // WASD + shift drive the fly-cam (tracked across key down/up, independent of the actions).
-            if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
+            if (togglePause)
+                paused = !paused;
+            if (toggleRenderer || resolutionChanged)
             {
-                bool pressed = event.type == SDL_EVENT_KEY_DOWN;
-                switch (event.key.key)
-                {
-                case SDLK_W:
-                    camera.keyW = pressed;
-                    break;
-                case SDLK_A:
-                    camera.keyA = pressed;
-                    break;
-                case SDLK_S:
-                    camera.keyS = pressed;
-                    break;
-                case SDLK_D:
-                    camera.keyD = pressed;
-                    break;
-                case SDLK_LSHIFT:
-                case SDLK_RSHIFT:
-                    camera.keyShift = pressed;
-                    break;
-                default:
-                    break;
-                }
+                if (toggleRenderer)
+                    Examples_GPUSceneToggleMode(renderState);
+                device->WaitIdle();
+                RecreateRenderer();
+                BuildGraph(renderState.renderExtent);
+                ubo.ptAccumulatedFrames = 0u;
             }
 
             // Observe residency (per-resource, lock-free from the caller's view) for the readout.
@@ -475,38 +443,27 @@ int main(int argc, char** argv)
 
             if (!paused)
                 animTime += dt; // blobs spin while not paused
-            camera.aspect = static_cast<float>(renderExtent.x) / static_cast<float>(renderExtent.y);
-            bool cameraMoved = camera.UpdateMovement(dt);
-            cameraMoved |= camera.Update(event);
+            camera.aspect = static_cast<float>(renderState.renderExtent.x) / static_cast<float>(renderState.renderExtent.y);
+            bool cameraMoved = camera.Update(input, dt);
 
             AuthorFrame(animTime);
 
-            ubo.frameNumber = renderer->GetFrame();
-            ubo.view = camera.view;
-            ubo.proj = camera.proj;
-            ubo.inverseView = inverse(camera.view);
-            ubo.inverseViewProj = inverse(camera.proj * camera.view);
-            ubo.zNear = camera.zNear;
-            ubo.projPlanes = planeSymmetric(camera.proj);
-            ubo.camPosition = float4(camera.position, 0.0f);
-            ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
-            ubo.dbgViewFlags = cfg.viewFlags;
-            ubo.dbgMaterialFlags = cfg.materialFlags;
+            Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);
 
             // Refresh the HUD readout before submitting (the overlay pass reads it this frame).
-            bool atCap = assets.size() >= static_cast<size_t>(kBlobCount + 1u);
-            hud[2].SetText(atCap ? fmt::format("resident {} / {}  -  full: SPACE releases + loops", resident,
-                                               static_cast<uint32_t>(assets.size()))
-                                 : fmt::format("resident {} / {}  (max {})", resident, static_cast<uint32_t>(assets.size()),
-                                               kBlobCount + 1u));
-            hud[3].SetText(fmt::format("{}   {:.0f} FPS{}", mode == Mode::PathTracer ? "Path Tracer" : "Raster",
-                                       fps.Update(),
-                                       paused          ? "   [PAUSED]"
-                                           : streaming ? "   [streaming...]"
-                                                       : ""));
+            atCap = assets.size() >= static_cast<size_t>(kBlobCount + 1u);
+            Examples_Text(input, hud[8],
+                          atCap ? fmt::format("resident {} / {}  -  full: stream releases + loops   {:.0f} FPS{}",
+                                              resident, static_cast<uint32_t>(assets.size()), fps.Update(),
+                                              paused ? "   [PAUSED]" : "")
+                                : fmt::format("resident {} / {} (max {})   {:.0f} FPS{}", resident,
+                                              static_cast<uint32_t>(assets.size()), kBlobCount + 1u, fps.Update(),
+                                              paused          ? "   [PAUSED]"
+                                                  : streaming ? "   [streaming...]"
+                                                              : ""));
 
             Examples_NewFrame(renderer.get());
-            if (mode == Mode::PathTracer)
+            if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
             // The scene changes whenever it streams, a wave spawns, the camera moves, or the blobs
             // spin (not paused), so restart accumulation; pause + hold still to let it converge.

@@ -1,8 +1,8 @@
 #include <Renderer/GPUScene.hpp>
 #include <Editor/Scene/Mesh.hpp>
-#include <Editor/Camera.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 #include "Examples.hpp"
+#include <algorithm>
 using namespace RenderUtils;
 #pragma pack(push, 1)
 struct UBO
@@ -18,7 +18,8 @@ int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow("Mesh Shader Hierarchical LOD", 800, 600, Examples_SDLWindowFlagsVulkan);
     UBO ubo{ .threshold = 0.01f};
-    CSDebugTextData lines[3]{};
+    ExampleInputState input{};
+    CSDebugTextData lines[5]{};
     /* Setup */
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {});
     auto meshData = device->CreateBuffer({
@@ -119,61 +120,44 @@ int main(int argc, char** argv)
         });
     createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
     renderer->EndSetup();
-    SDL_Event event;
     ExampleFpsCounter fps;
-    FArcballCamera camera{.center = {0, 0.5f, 0},
-                          .radius = 2.0f,
-                          .rot = quat(1.0f, 0.0f, 0.0f, 0.0f),
-                          .zNear = 0.01f,
-                          .fovY = radians(45.0f)};
+    FExampleOrbitCamera camera{.center = {0, 0.5f, 0},
+                               .radius = 2.0f,
+                               .rot = quat(1.0f, 0.0f, 0.0f, 0.0f),
+                               .zNear = 0.01f,
+                               .fovY = radians(45.0f)};
     uint64_t lastTicks = SDL_GetTicksNS();
-    while (!Examples_ShouldClose(window, renderer, swapchain, &event))
+    Examples_BeginControls(input);
+    Examples_Text(input, lines[0], "Mesh Shader - Hierarchical LOD");
+    Examples_Slider(input, Span<CSDebugTextData>(&lines[1], 3), "LOD Threshold", ubo.threshold, 0.01f, 0.30f, 0.01f);
+    Examples_Text(input, lines[4], FExampleOrbitCamera::kControlsText);
+    while (true)
     {
+        Examples_BeginFrameInput(input);
+        if (Examples_PollEvents(window, renderer, swapchain, input))
+            break;
+
         uint64_t now = SDL_GetTicksNS();
         float dt = static_cast<float>(now - lastTicks) / 1e9f;
         lastTicks = now;
 
-        lines[0].x = 16, lines[0].y = 16, lines[0].SetText(fmt::format("Mesh Shader - Hierarchical LOD FPS: {}", fps.Update()));
-        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format(FArcballCamera::kControlsText));
-        lines[2].x = 16, lines[2].y = 64, lines[2].SetText(fmt::format("Q,E | LOD Threshold: {}", ubo.threshold));
-        if (event.type == SDL_EVENT_KEY_DOWN)
-        {
-            if (event.key.scancode == SDL_SCANCODE_Q && ubo.threshold > 0.01f)
-                ubo.threshold -= 0.01f;
-            else if (event.key.scancode == SDL_SCANCODE_E)
-                ubo.threshold += 0.01f;
-        }
-        if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
-        {
-            bool pressed = event.type == SDL_EVENT_KEY_DOWN;
-            switch (event.key.key)
-            {
-            case SDLK_W:
-                camera.keyW = pressed;
-                break;
-            case SDLK_A:
-                camera.keyA = pressed;
-                break;
-            case SDLK_S:
-                camera.keyS = pressed;
-                break;
-            case SDLK_D:
-                camera.keyD = pressed;
-                break;
-            case SDLK_LSHIFT:
-            case SDLK_RSHIFT:
-                camera.keyShift = pressed;
-                break;
-            default:
-                break;
-            }
-        }
+        Examples_BeginControls(input);
+        Examples_Text(input, lines[0], fmt::format("Mesh Shader - Hierarchical LOD FPS: {}", fps.Update()));
+        Examples_Slider(input, Span<CSDebugTextData>(&lines[1], 3), "LOD Threshold", ubo.threshold, 0.01f, 0.30f, 0.01f);
+        Examples_Text(input, lines[4], FExampleOrbitCamera::kControlsText);
+        const bool decreaseLod = input.KeyPressed(SDLK_Q);
+        const bool increaseLod = input.KeyPressed(SDLK_E);
+        if (decreaseLod && ubo.threshold > 0.01f)
+            ubo.threshold -= 0.01f;
+        if (increaseLod)
+            ubo.threshold += 0.01f;
+        ubo.threshold = std::clamp(ubo.threshold, 0.01f, 0.30f);
         camera.aspect = swapchain->GetAspectRatio();
-        camera.UpdateMovement(dt);
-        camera.Update(event);
+        camera.Update(input, dt);
         ubo.view = camera.view, ubo.proj = camera.proj, ubo.zNear = camera.zNear;
         Examples_NewFrame(renderer);
     }
     meshData.Release(); // Release - destructs with the device
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);
+    return 0;
 }

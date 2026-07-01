@@ -3,10 +3,10 @@
 #include <Renderer/Renderer.hpp>
 #include <Renderer/Mesh.hpp>      // FVertex / FQVertex
 #include <Editor/Scene/Mesh.hpp>  // FImportedMesh / FSerializedMesh / MemoryBlobSerializer
-#include <Editor/Camera.hpp>      // FArcballCamera
 #include <RenderUtils/CSDebugText.hpp>
 #include <Core/Paths.hpp>
 #include "Examples.hpp"
+#include <algorithm>
 #include <cmath>
 
 using namespace RenderUtils;
@@ -226,49 +226,43 @@ int main(int argc, char** argv)
                 ctx.Submit(), ctx.WaitIdle();
         }
 
-        enum class Mode { Raster, PathTracer };
-        Mode mode = Mode::PathTracer;
-        bool renderPaused = false;
-        RendererConfig cfg{};
-        RendererOutputs handles{};
-        RHIExtent2D renderExtent{};
+        ExampleGPUSceneRenderState renderState{};
 
-        CSDebugTextData hud[4]{};
-        hud[0].x = 16; hud[0].y = 16; hud[0].SetText("GPUScene dynamic geometry (BLAS refit)");
-        hud[1].x = 16; hud[1].y = 40; hud[1].SetText("TAB renderer R refit/periodic B rebuild-every-fram F pause WASD+drag");
-        hud[2].x = 16; hud[2].y = 64;
-        hud[3].x = 16; hud[3].y = 88;
+        ExampleInputState input{};
+        CSDebugTextData hud[10]{};
+        Examples_BeginControls(input);
+        Examples_Text(input, hud[0], "GPUScene dynamic geometry (BLAS refit)");
+        Examples_Button(input, hud[1], "[Renderer]");
+        Examples_SameLine(input);
+        Examples_Button(input, hud[2], "[Pause]");
+        Examples_SameLine(input);
+        Examples_Button(input, hud[3], "[Refit/Periodic]");
+        Examples_SameLine(input);
+        Examples_Button(input, hud[4], "[Rebuild/Frame]");
+        Examples_Slider(input, Span<CSDebugTextData>(&hud[5], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
+        Examples_Text(input, hud[8], FExampleOrbitCamera::kControlsText);
 
-        auto BuildGraph = [&](RHIExtent2D extent)
-        {
-            cfg.renderExtent = extent;
-            cfg.ptRenderPaused = &renderPaused;
-            renderer->BeginSetup();
-            if (mode == Mode::PathTracer)
-                BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
-            else
-                BuildRasterRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
-            Examples_InsertBasicTonemapPasses(renderer.get(), handles, mode == Mode::PathTracer);
-            createCSDebugTextPassBackBuffer(renderer.get(), "Debug Text", hud);
-            renderer->EndSetup();
-            renderExtent = extent;
-        };
         auto RecreateRenderer = [&] { renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, rendererDesc, device, swapchain, GLOBAL_ALLOC); };
+        auto BuildGraph = [&](RHIExtent2D extent)
+        { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, hud, extent); };
         BuildGraph(renderer->GetSwapchainExtent());
 
-        FArcballCamera camera{.center = {0.0f, 0.2f, 0.0f}, .radius = 5.0f,
-                              .rot = normalize(angleAxis(radians(-28.0f), float3(1, 0, 0))),
-                              .zNear = 0.01f, .fovY = radians(50.0f)};
+        FExampleOrbitCamera camera{.center = {0.0f, 0.2f, 0.0f}, .radius = 5.0f,
+                                   .rot = normalize(angleAxis(radians(-28.0f), float3(1, 0, 0))),
+                                   .zNear = 0.01f, .fovY = radians(50.0f)};
         ExampleFpsCounter fps;
-        SDL_Event event{};
         uint64_t lastTicks = SDL_GetTicksNS();
         bool paused = false;
         bool rebuildEveryFrame = false;
         uint32_t cadence = 64u; // periodic rebuild cadence (0 = refit only)
         float animTime = 0.0f;
 
-        while (!Examples_ShouldClose(window, renderer.get(), swapchain, &event))
+        while (true)
         {
+            Examples_BeginFrameInput(input);
+            if (Examples_PollEvents(window, renderer.get(), swapchain, input))
+                break;
+
             uint64_t now = SDL_GetTicksNS();
             float dt = static_cast<float>(now - lastTicks) / 1e9f;
             lastTicks = now;
@@ -276,52 +270,54 @@ int main(int argc, char** argv)
             RHIExtent2D currentExtent = renderer->GetSwapchainExtent();
             if (currentExtent.x == 0u || currentExtent.y == 0u)
                 continue;
-            if (currentExtent.x != renderExtent.x || currentExtent.y != renderExtent.y)
+            if (currentExtent.x != renderState.renderExtent.x || currentExtent.y != renderState.renderExtent.y)
             {
                 device->WaitIdle();
                 RecreateRenderer();
                 BuildGraph(currentExtent);
             }
 
-            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
+            Examples_BeginControls(input);
+            Examples_Text(input, hud[0], "GPUScene dynamic geometry (BLAS refit)");
+            const bool toggleRenderer = Examples_Button(input, hud[1],
+                fmt::format("[{}]", Examples_GPUSceneModeName(renderState.mode))) ||
+                input.KeyPressed(SDLK_TAB);
+            Examples_SameLine(input);
+            const bool togglePause = Examples_Button(input, hud[2], paused ? "[Resume]" : "[Pause]") ||
+                input.KeyPressed(SDLK_F);
+            Examples_SameLine(input);
+            const bool toggleCadence =
+                Examples_Button(input, hud[3], cadence == 0u ? "[Periodic Rebuild]" : "[Refit Only]") ||
+                input.KeyPressed(SDLK_R);
+            Examples_SameLine(input);
+            const bool toggleRebuildEveryFrame =
+                Examples_Button(input, hud[4], rebuildEveryFrame ? "[Stop Rebuild/Frame]" : "[Rebuild/Frame]") ||
+                input.KeyPressed(SDLK_B);
+            const bool resolutionChanged = Examples_Slider(input, Span<CSDebugTextData>(&hud[5], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
+            Examples_Text(input, hud[8], FExampleOrbitCamera::kControlsText);
+            if (toggleRenderer || resolutionChanged)
             {
-                if (event.key.key == SDLK_TAB)
-                {
-                    mode = mode == Mode::Raster ? Mode::PathTracer : Mode::Raster;
-                    device->WaitIdle();
-                    RecreateRenderer();
-                    BuildGraph(renderExtent);
-                    ubo.ptAccumulatedFrames = 0u;
-                }
-                else if (event.key.key == SDLK_F)
-                    paused = !paused;
-                else if (event.key.key == SDLK_R)
-                {
-                    cadence = cadence == 0u ? 64u : 0u;
-                    rebuildEveryFrame = false;
-                }
-                else if (event.key.key == SDLK_B)
-                    rebuildEveryFrame = !rebuildEveryFrame;
+                if (toggleRenderer)
+                    Examples_GPUSceneToggleMode(renderState);
+                device->WaitIdle();
+                RecreateRenderer();
+                BuildGraph(renderState.renderExtent);
+                ubo.ptAccumulatedFrames = 0u;
             }
-            if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
+            if (togglePause)
+                paused = !paused;
+            if (toggleCadence)
             {
-                bool pressed = event.type == SDL_EVENT_KEY_DOWN;
-                switch (event.key.key)
-                {
-                case SDLK_W: camera.keyW = pressed; break;
-                case SDLK_A: camera.keyA = pressed; break;
-                case SDLK_S: camera.keyS = pressed; break;
-                case SDLK_D: camera.keyD = pressed; break;
-                case SDLK_LSHIFT: case SDLK_RSHIFT: camera.keyShift = pressed; break;
-                default: break;
-                }
+                cadence = cadence == 0u ? 64u : 0u;
+                rebuildEveryFrame = false;
             }
+            if (toggleRebuildEveryFrame)
+                rebuildEveryFrame = !rebuildEveryFrame;
 
             if (!paused)
                 animTime += dt;
-            camera.aspect = static_cast<float>(renderExtent.x) / static_cast<float>(renderExtent.y);
-            bool cameraMoved = camera.UpdateMovement(dt);
-            cameraMoved |= camera.Update(event);
+            camera.aspect = static_cast<float>(renderState.renderExtent.x) / static_cast<float>(renderState.renderExtent.y);
+            bool cameraMoved = camera.Update(input, dt);
 
             // --- Per-frame dynamic geometry update: open the window (advances the ring slot),
             //     rewrite this slot's quantized vertices (marks dirty), close the window. The graph's
@@ -336,26 +332,15 @@ int main(int argc, char** argv)
 
             AuthorFrame();
 
-            ubo.frameNumber = renderer->GetFrame();
-            ubo.view = camera.view;
-            ubo.proj = camera.proj;
-            ubo.inverseView = inverse(camera.view);
-            ubo.inverseViewProj = inverse(camera.proj * camera.view);
-            ubo.zNear = camera.zNear;
-            ubo.projPlanes = planeSymmetric(camera.proj);
-            ubo.camPosition = float4(camera.position, 0.0f);
-            ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
-            ubo.dbgViewFlags = cfg.viewFlags;
-            ubo.dbgMaterialFlags = cfg.materialFlags;
+            Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);
 
             const char* refitMode = rebuildEveryFrame ? "rebuild/frame" : (cadence == 0u ? "refit-only" : "periodic(64)");
-            hud[2].SetText(fmt::format("refit {}  rebuild {}  mode {}", gpu.GetDynamicRefitCount(),
-                                       gpu.GetDynamicRebuildCount(), refitMode));
-            hud[3].SetText(fmt::format("{}   {:.0f} FPS{}", mode == Mode::PathTracer ? "Path Tracer" : "Raster",
-                                       fps.Update(), paused ? "   [PAUSED]" : ""));
+            Examples_Text(input, hud[9], fmt::format("refit {}  rebuild {}  mode {}   {:.0f} FPS{}",
+                                                     gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount(), refitMode,
+                                                     fps.Update(), paused ? "   [PAUSED]" : ""));
 
             Examples_NewFrame(renderer.get());
-            if (mode == Mode::PathTracer)
+            if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
             if (cameraMoved || !paused)
                 ubo.ptAccumulatedFrames = 0;
