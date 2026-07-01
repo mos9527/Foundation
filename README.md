@@ -3,7 +3,7 @@ Foundation
 
 [![Docs](https://img.shields.io/badge/foundation-docs-orange)](https://mos9527.com/Foundation)
 [![Build](https://github.com/mos9527/Foundation/actions/workflows/build.yml/badge.svg)](https://github.com/mos9527/Foundation/actions/workflows/build.yml)
-[![Nightly Builds](https://img.shields.io/badge/editor-builds-cyan)](https://nightly.link/mos9527/Foundation/workflows/build/dev)
+[![Nightly Builds](https://img.shields.io/badge/editor&example-builds-cyan)](https://nightly.link/mos9527/Foundation/workflows/build/dev)
 
 <img src="https://raw.githubusercontent.com/mos9527/Foundation/refs/heads/dev/Images/watercolor-v1-4096spp.png" alt="WaterColor v1.0" style="width:100%;max-width:100%;display:block;">
 

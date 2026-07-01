@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Android example targets and launcher metadata."""
+"""Generate per-platform example target lists and launcher metadata from Examples/CMakeLists.txt."""
 
 from __future__ import annotations
 
@@ -13,10 +13,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES_CMAKE = REPO_ROOT / "Examples" / "CMakeLists.txt"
 MAIN_ACTIVITY = REPO_ROOT / "Android" / "app" / "src" / "main" / "java" / "foundation" / "examples" / "MainActivity.java"
 BUILD_GRADLE = REPO_ROOT / "Android" / "app" / "build.gradle.kts"
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build.yml"
 
+# Examples excluded from the Android picker/Gradle target list: no window/present
+# (Example_HeadlessTriangle, Example_HeadlessPathTracer) or no render dependencies
+# at all (Example_JobGraph). They still build and are exercised on other platforms.
 ANDROID_EXCLUDED_EXAMPLES = {
     "Example_HeadlessTriangle",
     "Example_HeadlessPathTracer",
+    "Example_JobGraph"
+}
+
+# Windows CI only compiles the examples (never runs them), so nothing needs excluding there.
+CI_EXCLUDED_EXAMPLES = {
     "Example_JobGraph"
 }
 
@@ -37,9 +46,6 @@ def parse_examples(cmake_path: Path) -> list[Example]:
     examples: list[Example] = []
     for match in re.finditer(r"add_example\(\s*(\w+)\s+\"([^\"]+)\"\s*\)", cmake):
         target = match.group(1)
-        if target in ANDROID_EXCLUDED_EXAMPLES:
-            continue
-
         source = cmake_path.parent / match.group(2)
         examples.append(Example(target=target, source=source, description=read_source_description(source)))
 
@@ -106,6 +112,10 @@ def render_gradle_targets(examples: list[Example]) -> str:
     return "\n".join(lines)
 
 
+def render_ci_targets(examples: list[Example]) -> str:
+    return "\n".join(f"          {example.target}" for example in examples)
+
+
 def replace_generated_region(content: str, start_marker: str, end_marker: str, generated: str) -> str:
     pattern = re.compile(
         rf"(?P<indent>[ \t]*){re.escape(start_marker)}\n.*?\n(?P=indent){re.escape(end_marker)}",
@@ -139,13 +149,15 @@ def main() -> int:
     args = parser.parse_args()
 
     examples = parse_examples(EXAMPLES_CMAKE)
+    android_examples = [example for example in examples if example.target not in ANDROID_EXCLUDED_EXAMPLES]
+    ci_examples = [example for example in examples if example.target not in CI_EXCLUDED_EXAMPLES]
 
     main_activity = MAIN_ACTIVITY.read_text(encoding="utf-8")
     main_activity = replace_generated_region(
         main_activity,
         "        // BEGIN GENERATED ANDROID EXAMPLES",
         "        // END GENERATED ANDROID EXAMPLES",
-        render_main_activity_examples(examples),
+        render_main_activity_examples(android_examples),
     )
 
     build_gradle = BUILD_GRADLE.read_text(encoding="utf-8")
@@ -153,12 +165,24 @@ def main() -> int:
         build_gradle,
         "                // BEGIN GENERATED ANDROID EXAMPLE TARGETS",
         "                // END GENERATED ANDROID EXAMPLE TARGETS",
-        render_gradle_targets(examples),
+        render_gradle_targets(android_examples),
+    )
+
+    ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    ci_workflow = replace_generated_region(
+        ci_workflow,
+        "          # BEGIN GENERATED CI EXAMPLE TARGETS",
+        "          # END GENERATED CI EXAMPLE TARGETS",
+        render_ci_targets(ci_examples),
     )
 
     changed = [
         path
-        for path, content in ((MAIN_ACTIVITY, main_activity), (BUILD_GRADLE, build_gradle))
+        for path, content in (
+            (MAIN_ACTIVITY, main_activity),
+            (BUILD_GRADLE, build_gradle),
+            (CI_WORKFLOW, ci_workflow),
+        )
         if update_file(path, content, args.dry_run)
     ]
 

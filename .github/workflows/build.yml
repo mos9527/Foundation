@@ -46,14 +46,40 @@ jobs:
         cmake ..
         -A x64
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-        -DFOUNDATION_WITH_EXAMPLES=OFF
+        -DFOUNDATION_WITH_EXAMPLES=ON
         -DFOUNDATION_WITH_PROFILING=OFF
         -DFOUNDATION_RHIVULKAN_VALIDATION_LAYER=OFF
 
     - name: Build
       working-directory: ${{ github.workspace }}/build
       shell: bash
-      run: cmake --build . --config ${{ env.BUILD_TYPE }} --target EditorWithUtil
+      run: |
+        targets=(
+          EditorWithUtil
+          # BEGIN GENERATED CI EXAMPLE TARGETS
+          Example_GPUSceneDeform
+          Example_GPUSceneStreaming
+          Example_BindlessSimple
+          Example_GPUSceneGLTF
+          Example_GPUScene
+          Example_DebugText
+          Example_SDF2D
+          Example_MipGeneration
+          Example_HeadlessPathTracer
+          Example_HeadlessTriangle
+          Example_Triangle
+          Example_MeshShaderHierarchicalLOD
+          Example_ImGui
+          Example_MeshShaderHello
+          Example_MandelbrotCompute
+          Example_CIEChromacity
+          # END GENERATED CI EXAMPLE TARGETS
+        )
+        args=()
+        for target in "${targets[@]}"; do
+          args+=(--target "$target")
+        done
+        cmake --build . --config ${{ env.BUILD_TYPE }} "${args[@]}"
 
     - name: Stage artifacts
       shell: pwsh

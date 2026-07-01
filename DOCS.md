@@ -108,11 +108,12 @@ cd Android
 # adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Only the `arm64-v8a` ABI is built. `Scripts/GenerateAndroidExamples.py` keeps the example picker (`MainActivity.java`)
-and the Gradle `externalNativeBuild` `targets(...)` list in sync with `Examples/CMakeLists.txt` - re-run it (pass
-`--dry-run` to check first) after adding, removing, or renaming an example:
+Only the `arm64-v8a` ABI is built. `Scripts/GenerateExamples.py` keeps the example picker (`MainActivity.java`),
+the Gradle `externalNativeBuild` `targets(...)` list, and the Windows CI build target list (`.github/workflows/build.yml`)
+in sync with `Examples/CMakeLists.txt` - re-run it (pass `--dry-run` to check first) after adding, removing, or
+renaming an example:
 ```bash
-python Scripts/GenerateAndroidExamples.py
+python Scripts/GenerateExamples.py
 ```
 
 Notes:
@@ -190,7 +191,7 @@ Framework
     - [-] Mobile (Android). See "Building > Android" above for the how-to.
       - [x] Android Studio project (`Android/`) packaging the Examples as an app via Gradle's CMake `externalNativeBuild`, reusing the top-level `CMakeLists.txt` as-is
         - Picker Activity + per-example `SDLActivity`, `arm64-v8a` only for now
-        - `Scripts/GenerateAndroidExamples.py` keeps the picker & Gradle target list in sync with `Examples/CMakeLists.txt`
+        - `Scripts/GenerateExamples.py` keeps the picker, Gradle target list, and Windows CI target list in sync with `Examples/CMakeLists.txt`
       - Almost no device supports the full RT pipeline - Path Tracer examples are unreliable on-device
       - Newer Adrenos support [Mesh Shaders](https://docs.qualcomm.com/doc/80-78185-2/topic/mobile_best_practices.html#panel-1-1-1) - Raster examples fare better
       - [ ] iOS - untried
