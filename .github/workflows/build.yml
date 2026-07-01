@@ -19,6 +19,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # ── Ninja + MSVC  ──
+    - name: Install Ninja
+      shell: pwsh
+      run: choco install ninja -y --no-progress
+
+    - name: Setup MSVC dev environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
     # ── Vulkan SDK ──
     - name: Install Vulkan SDK
       shell: pwsh
@@ -42,9 +52,10 @@ jobs:
 
     - name: Configure CMake
       working-directory: ${{ github.workspace }}/build
+      shell: pwsh
       run: >
         cmake ..
-        -A x64
+        -G Ninja
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
         -DFOUNDATION_WITH_EXAMPLES=ON
         -DFOUNDATION_WITH_PROFILING=OFF
@@ -79,7 +90,7 @@ jobs:
         for target in "${targets[@]}"; do
           args+=(--target "$target")
         done
-        cmake --build . --config ${{ env.BUILD_TYPE }} "${args[@]}"
+        cmake --build . "${args[@]}"
 
     - name: Stage artifacts
       shell: pwsh
@@ -87,6 +98,10 @@ jobs:
         $package = "${{ github.workspace }}/package"
         $bin = "${{ github.workspace }}/build/bin"
         $configBin = Join-Path $bin "${{ env.BUILD_TYPE }}"
+        if (-not (Test-Path $configBin)) {
+          # Single-config generators (e.g. Ninja) don't nest output under a config folder.
+          $configBin = $bin
+        }
 
         if (Test-Path $package) {
           Remove-Item $package -Recurse -Force
@@ -94,7 +109,9 @@ jobs:
 
         New-Item -ItemType Directory -Path $package | Out-Null
         Copy-Item -Path (Join-Path $configBin "*") -Destination $package -Recurse -Force
-        Copy-Item -Path (Join-Path $bin "data") -Destination $package -Recurse -Force
+        if ($configBin -ne $bin) {
+          Copy-Item -Path (Join-Path $bin "data") -Destination $package -Recurse -Force
+        }
 
     # ── Upload ──
     - name: Upload artifacts
