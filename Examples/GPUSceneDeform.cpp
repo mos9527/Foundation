@@ -3,13 +3,11 @@
 #include <Renderer/Renderer.hpp>
 #include <Renderer/Mesh.hpp>      // FVertex / FQVertex
 #include <Editor/Scene/Mesh.hpp>  // FImportedMesh / FSerializedMesh / MemoryBlobSerializer
-#include <RenderUtils/CSDebugText.hpp>
 #include <Core/Paths.hpp>
 #include "Examples.hpp"
 #include <algorithm>
 #include <cmath>
 
-using namespace RenderUtils;
 using Foundation::Core::PathsResolve;
 
 namespace
@@ -229,22 +227,10 @@ int main(int argc, char** argv)
         ExampleGPUSceneRenderState renderState{};
 
         ExampleInputState input{};
-        CSDebugTextData hud[10]{};
-        Examples_BeginControls(input);
-        Examples_Text(input, hud[0], "GPUScene dynamic geometry (BLAS refit)");
-        Examples_Button(input, hud[1], "[Renderer]");
-        Examples_SameLine(input);
-        Examples_Button(input, hud[2], "[Pause]");
-        Examples_SameLine(input);
-        Examples_Button(input, hud[3], "[Refit/Periodic]");
-        Examples_SameLine(input);
-        Examples_Button(input, hud[4], "[Rebuild/Frame]");
-        Examples_Slider(input, Span<CSDebugTextData>(&hud[5], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
-        Examples_Text(input, hud[8], FExampleOrbitCamera::kControlsText);
 
         auto RecreateRenderer = [&] { renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, rendererDesc, device, swapchain, GLOBAL_ALLOC); };
         auto BuildGraph = [&](RHIExtent2D extent)
-        { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, hud, extent); };
+        { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, input, extent); };
         BuildGraph(renderer->GetSwapchainExtent());
 
         FExampleOrbitCamera camera{.center = {0.0f, 0.2f, 0.0f}, .radius = 5.0f,
@@ -278,23 +264,24 @@ int main(int argc, char** argv)
             }
 
             Examples_BeginControls(input);
-            Examples_Text(input, hud[0], "GPUScene dynamic geometry (BLAS refit)");
-            const bool toggleRenderer = Examples_Button(input, hud[1],
+            Examples_Text(input, "GPUScene dynamic geometry (BLAS refit)");
+            const bool toggleRenderer = Examples_Button(input,
                 fmt::format("[{}]", Examples_GPUSceneModeName(renderState.mode))) ||
                 input.KeyPressed(SDLK_TAB);
             Examples_SameLine(input);
-            const bool togglePause = Examples_Button(input, hud[2], paused ? "[Resume]" : "[Pause]") ||
+            const bool togglePause = Examples_Button(input, paused ? "[Resume]" : "[Pause]") ||
                 input.KeyPressed(SDLK_F);
             Examples_SameLine(input);
             const bool toggleCadence =
-                Examples_Button(input, hud[3], cadence == 0u ? "[Periodic Rebuild]" : "[Refit Only]") ||
+                Examples_Button(input, cadence == 0u ? "[Periodic Rebuild]" : "[Refit Only]") ||
                 input.KeyPressed(SDLK_R);
             Examples_SameLine(input);
             const bool toggleRebuildEveryFrame =
-                Examples_Button(input, hud[4], rebuildEveryFrame ? "[Stop Rebuild/Frame]" : "[Rebuild/Frame]") ||
+                Examples_Button(input, rebuildEveryFrame ? "[Stop Rebuild/Frame]" : "[Rebuild/Frame]") ||
                 input.KeyPressed(SDLK_B);
-            const bool resolutionChanged = Examples_Slider(input, Span<CSDebugTextData>(&hud[5], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
-            Examples_Text(input, hud[8], FExampleOrbitCamera::kControlsText);
+            const bool resolutionChanged =
+                Examples_Slider(input, "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f, "x", false);
+            Examples_Text(input, FExampleOrbitCamera::kControlsText);
             if (toggleRenderer || resolutionChanged)
             {
                 if (toggleRenderer)
@@ -335,9 +322,9 @@ int main(int argc, char** argv)
             Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);
 
             const char* refitMode = rebuildEveryFrame ? "rebuild/frame" : (cadence == 0u ? "refit-only" : "periodic(64)");
-            Examples_Text(input, hud[9], fmt::format("refit {}  rebuild {}  mode {}   {:.0f} FPS{}",
-                                                     gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount(), refitMode,
-                                                     fps.Update(), paused ? "   [PAUSED]" : ""));
+            Examples_Text(input, fmt::format("refit {}  rebuild {}  mode {}   {:.0f} FPS{}",
+                                             gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount(), refitMode,
+                                             fps.Update(), paused ? "   [PAUSED]" : ""));
 
             Examples_NewFrame(renderer.get());
             if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)

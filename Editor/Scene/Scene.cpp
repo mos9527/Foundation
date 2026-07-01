@@ -1041,7 +1041,8 @@ FSkeleton BuildSceneNodeSkeleton(cgltf_data* data, Vector<int32_t>& outNodeToJoi
     return skel;
 }
 
-void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc)
+void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc,
+                              FSceneBuildOptions const& buildOptions)
 {
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
     CHECK(scene.mWriting);
@@ -1224,7 +1225,10 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                             loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Srgb)
                         {
                             loaded->GenerateMips();
-                            texture = loaded->EncodeBC7(scratchAlloc);
+                            if (buildOptions.textureCompression == FSceneTextureCompression::BC7)
+                                texture = loaded->EncodeBC7(scratchAlloc);
+                            else
+                                texture = std::move(loaded.value());
                         }
                         else
                             texture = loaded.value();
@@ -2117,11 +2121,12 @@ FImportedScene::~FImportedScene()
         FinalizeSceneWriter(*this);
 }
 
-void LoadGLTF(StringView path, FImportedScene& scene, Allocator* scratchAlloc)
+void LoadGLTF(StringView path, FImportedScene& scene, Allocator* scratchAlloc,
+              FSceneBuildOptions const& buildOptions)
 {
     CHECK(scene.mWriting);
     CHECK(scratchAlloc != nullptr);
-    BuildGLTFSerializedScene(path, scene, scratchAlloc);
+    BuildGLTFSerializedScene(path, scene, scratchAlloc, buildOptions);
 }
 
 void LoadFSCN(FImportedScene& scene)
@@ -2142,7 +2147,8 @@ void LoadFSCN(FImportedScene& scene)
     ValidateSceneTables(scene.mHeader, scene.mTables);
 }
 
-String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc)
+String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc,
+                 FSceneBuildOptions const& buildOptions)
 {
     CHECK(scratchAlloc != nullptr);
     auto ext = LowerExtension(std::filesystem::path(path.data()));
@@ -2155,6 +2161,6 @@ String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc
     }
 
     CHECK(scene.mWriting);
-    LoadGLTF(path, scene, scratchAlloc);
+    LoadGLTF(path, scene, scratchAlloc, buildOptions);
     return String(path);
 }

@@ -90,6 +90,41 @@ Install the official [Vulkan SDK](https://vulkan.lunarg.com/).
 The Editor will build but not run on this platform, due to our extensive usage of Shader Binding Tables and Mesh Shaders,
 which are not supported.
 
+### Android
+An Android Studio project lives under `Android/`, packaging <a href="examples.html">the Examples</a> as a single app
+with a picker screen that launches each example in its own `SDLActivity`. It drives the same top-level `CMakeLists.txt` via Gradle's
+[CMake `externalNativeBuild`](https://developer.android.com/studio/projects/configure-cmake) integration - there is no
+separate Android-specific CMake configuration to maintain.
+
+Requirements:
+- Android Studio, with the NDK and CMake components installed via its SDK Manager.
+- A **physical device** with Vulkan support is strongly recommended over an emulator - see the caveats below.
+
+Open `Android/` as a project in Android Studio, let Gradle sync, then Run the `app` configuration onto a connected
+device. From the command line, the equivalent is:
+```bash
+cd Android
+./gradlew assembleDebug
+# adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Only the `arm64-v8a` ABI is built. `Scripts/GenerateAndroidExamples.py` keeps the example picker (`MainActivity.java`)
+and the Gradle `externalNativeBuild` `targets(...)` list in sync with `Examples/CMakeLists.txt` - re-run it (pass
+`--dry-run` to check first) after adding, removing, or renaming an example:
+```bash
+python Scripts/GenerateAndroidExamples.py
+```
+
+Notes:
+- The Editor itself is not built for Android - only the Examples, same restriction as macOS.
+- Examples with no window/present (`Example_HeadlessTriangle`, `Example_HeadlessPathTracer`) or no render dependencies
+  at all (`Example_JobGraph`) are excluded from the Android build; see `ANDROID_EXCLUDED_EXAMPLES` in the script above.
+- Mobile GPU support is a work in progress. Raster-only examples run fine, but the Path Tracer needs Ray Tracing
+  Pipelines/SBTs, which almost no mobile GPU implements, and the meshlet rasterizer needs Mesh Shaders, only supported
+  on newer Adreno chips - expect the `GPUScene*` examples to only partially work depending on your device.
+- Dear ImGui's SDL3 backend builds for the APK (`Example_ImGui` links), but on-device docking/touch input isn't wired
+  up yet.
+
 ### Building from command line
 The following commands will create a build directory, generate the build system files, and build all targets with 8 parallel jobs.
 Binary artifacts will be located in `build/bin/`.
@@ -152,10 +187,13 @@ Framework
 - RHI Backends
   - [x] Vulkan
     - [x] Desktop (Windows & Linux) Probably the only platform we truly care about
-    - [ ] Mobile.
-      - _Try_ getting examples to work there. Seems (very much not) fun...
-      - Almost no device supports the full RT pipeline
-      - Newer Adrenos support [Mesh Shaders](https://docs.qualcomm.com/doc/80-78185-2/topic/mobile_best_practices.html#panel-1-1-1)
+    - [-] Mobile (Android). See "Building > Android" above for the how-to.
+      - [x] Android Studio project (`Android/`) packaging the Examples as an app via Gradle's CMake `externalNativeBuild`, reusing the top-level `CMakeLists.txt` as-is
+        - Picker Activity + per-example `SDLActivity`, `arm64-v8a` only for now
+        - `Scripts/GenerateAndroidExamples.py` keeps the picker & Gradle target list in sync with `Examples/CMakeLists.txt`
+      - Almost no device supports the full RT pipeline - Path Tracer examples are unreliable on-device
+      - Newer Adrenos support [Mesh Shaders](https://docs.qualcomm.com/doc/80-78185-2/topic/mobile_best_practices.html#panel-1-1-1) - Raster examples fare better
+      - [ ] iOS - untried
   - [-] Metal
     - Loosely speaking - Apple GPUs are all tilers. So they are all categorically mobile.
     - There are Vulkan-on-Metal layers, which we do work with - albeit with lots of limitations.

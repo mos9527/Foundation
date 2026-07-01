@@ -283,6 +283,12 @@ float PointerFractionForLine(ExampleInputState const& input, RenderUtils::CSDebu
     return std::clamp((input.pointerPosition.x - static_cast<float>(line.x)) / width, 0.0f, 1.0f);
 }
 
+RenderUtils::CSDebugTextData& NextHudLine(ExampleInputState& input)
+{
+    CHECK_MSG(input.hudCount < input.hud.size(), "Exceeded ExampleInputState::kMaxHudLines");
+    return input.hud[input.hudCount++];
+}
+
 float2 TouchPositionPixels(SDL_Window* window, SDL_TouchFingerEvent const& event)
 {
     int w = 1;
@@ -669,6 +675,8 @@ void Examples_BeginControls(ExampleInputState& input, int x, int y)
     input.uiLastItemX = x;
     input.uiLastItemY = y;
     input.uiSameLine = false;
+    input.hud = {};
+    input.hudCount = 0;
 }
 
 void Examples_SameLine(ExampleInputState& input, int spacing)
@@ -677,16 +685,18 @@ void Examples_SameLine(ExampleInputState& input, int spacing)
     input.uiSameLineSpacing = spacing;
 }
 
-void Examples_Text(ExampleInputState& input, RenderUtils::CSDebugTextData& line, StringView text)
+void Examples_Text(ExampleInputState& input, StringView text)
 {
+    RenderUtils::CSDebugTextData& line = NextHudLine(input);
     PlaceControl(input, line);
     line.SetText(text);
     line.col32 = kExampleUiDefaultColor;
     AdvanceControl(input, line);
 }
 
-bool Examples_Button(ExampleInputState& input, RenderUtils::CSDebugTextData& line, StringView text)
+bool Examples_Button(ExampleInputState& input, StringView text)
 {
+    RenderUtils::CSDebugTextData& line = NextHudLine(input);
     PlaceControl(input, line);
     line.SetText(fmt::format(" {} ", text));
     const uint32_t id = input.nextControlId++;
@@ -696,37 +706,64 @@ bool Examples_Button(ExampleInputState& input, RenderUtils::CSDebugTextData& lin
     return input.clickedControl == id;
 }
 
-bool Examples_Slider(ExampleInputState& input, Span<RenderUtils::CSDebugTextData> lines, StringView label,
-                     float& value, float minValue, float maxValue, float step)
+bool Examples_Slider(ExampleInputState& input, StringView label, float& value, float minValue, float maxValue,
+                     float step, const char* unit, bool drag)
 {
     constexpr int kBarSegments = 10;
-    CHECK_MSG(lines.size() >= 3, "Examples_Slider requires at least 3 debug text lines");
     if (minValue > maxValue)
         std::swap(minValue, maxValue);
     const float range = std::max(maxValue - minValue, 1e-6f);
     value = std::clamp(value, minValue, maxValue);
 
     bool changed = false;
-    if (Examples_Button(input, lines[0], "[-]"))
+    if (Examples_Button(input, "[-]"))
     {
         value = std::clamp(value - step, minValue, maxValue);
         changed = true;
     }
     Examples_SameLine(input, 8);
 
+    // The bar itself is a clickable/draggable region: while it's the active control, the pointer's
+    // fractional x-position along it sets the value directly (click-to-jump and drag-to-scrub).
     const int filled = static_cast<int>(std::round(((value - minValue) / range) * kBarSegments));
     char bar[kBarSegments + 1]{};
     for (int i = 0; i < kBarSegments; ++i)
         bar[i] = i < filled ? '=' : '-';
-    Examples_Text(input, lines[1], fmt::format("{} [{}] {:.2f}x", label, bar, value));
+    RenderUtils::CSDebugTextData& barLine = NextHudLine(input);
+    auto text = fmt::format(" {} [{}] {:.2f}{}", label, bar, value, unit);
+    if (drag)
+    {
+        PlaceControl(input, barLine);
+        barLine.SetText(text);
+        const uint32_t barId = input.nextControlId++;
+        barLine.col32 = input.activeControl == barId ? kExampleUiActiveColor : kExampleUiDefaultColor;
+        RegisterControl(input, barId, barLine);
+        if (input.activeControl == barId && input.pointerDown)
+        {
+            float scrubbed = minValue + PointerFractionForLine(input, barLine) * range;
+            if (step > 1e-6f)
+                scrubbed = minValue + std::round((scrubbed - minValue) / step) * step;
+            value = std::clamp(scrubbed, minValue, maxValue);
+            changed = true;
+        }
+        AdvanceControl(input, barLine);
+    }
+    else
+    {
+        Examples_Text(input, text);
+    }
     Examples_SameLine(input, 8);
-
-    if (Examples_Button(input, lines[2], "[+]"))
+    if (Examples_Button(input, "[+]"))
     {
         value = std::clamp(value + step, minValue, maxValue);
         changed = true;
     }
     return changed;
+}
+
+Span<const RenderUtils::CSDebugTextData> Examples_HudLines(ExampleInputState const& input)
+{
+    return Span<const RenderUtils::CSDebugTextData>(input.hud.data(), input.hud.size());
 }
 
 const char* Examples_GPUSceneModeName(ExampleGPUSceneRenderMode mode)
@@ -741,8 +778,7 @@ void Examples_GPUSceneToggleMode(ExampleGPUSceneRenderState& state)
 }
 
 void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPUScene* gpu,
-                                       ExampleGPUSceneRenderState& state,
-                                       Span<const RenderUtils::CSDebugTextData> hud,
+                                       ExampleGPUSceneRenderState& state, ExampleInputState const& input,
                                        RHIExtent2D swapchainExtent)
 {
     state.renderScale = std::clamp(state.renderScale, 0.10f, 1.0f);
@@ -758,7 +794,7 @@ void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPU
     else
         BuildRasterRenderGraph(renderer, ubo, gpu, state.config, state.outputs);
     Examples_InsertBasicTonemapPasses(renderer, state.outputs, pathTracer);
-    RenderUtils::createCSDebugTextPassBackBuffer(renderer, "Debug Text", hud);
+    RenderUtils::createCSDebugTextPassBackBuffer(renderer, "Debug Text", Examples_HudLines(input));
     renderer->EndSetup();
     state.renderExtent = swapchainExtent;
 }

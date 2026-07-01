@@ -53,6 +53,7 @@ public class MainActivity extends Activity {
             new Example("Example_GPUSceneDeform", "GPUSceneDeform", "Demonstrates a dynamically updated geometry with GPUScene"),
             new Example("Example_GPUSceneStreaming", "GPUSceneStreaming", "Demonstrates asynchronous streaming with GPUScene"),
             new Example("Example_BindlessSimple", "BindlessSimple", "Demonstrates bindless texture sampling with a pool of procedurally generated textures. The fullscreen shader cycles through many sampled images without rebinding descriptors."),
+            new Example("Example_GPUSceneGLTF", "GPUSceneGLTF", "Demonstrates loading a glTF/GLB/FSCN into GPUScene and plays it!"),
             new Example("Example_GPUScene", "GPUScene", "Demonstrates the Pathtracer and materials with minimal GPUScene setup"),
             new Example("Example_DebugText", "DebugText", "Example showing how to use CSDebugText to get the absolute minimum up and running - with something to display. You can copy-paste this into your own application to get started."),
             new Example("Example_SDF2D", "SDF2D", "Fullscreen 2D signed-distance-field shader demo. Ports Inigo Quilez-style distance functions into a minimal Foundation render pass."),
@@ -61,7 +62,6 @@ public class MainActivity extends Activity {
             new Example("Example_MeshShaderHierarchicalLOD", "MeshShaderHierarchicalLOD", "Mesh shader hierarchical LOD demo using clustered bunny geometry. Streams DAG LOD data to the GPU and lets the shader select detail by threshold."),
             new Example("Example_ImGui", "ImGui", "Minimal Dear ImGui integration sample using the Foundation backend. Opens the standard ImGui demo window over a rendered frame."),
             new Example("Example_MeshShaderHello", "MeshShaderHello", "Smallest mesh-shader pipeline sample: task + mesh + fragment shaders draw one object. Useful for validating mesh shader support and dispatch wiring."),
-            new Example("Example_JobGraph", "JobGraph", "Standalone self-test for Foundation::Core::JobGraph scheduler behavior. Exercises dependencies, barriers, parallel-for fanout, and main-thread pumping."),
             new Example("Example_MandelbrotCompute", "MandelbrotCompute", "Uses a compute shader to render the fractal directly into the backbuffer! Shows a compact compute pass with time-varying push constants."),
             new Example("Example_CIEChromacity", "CIEChromacity", "Visualizes CIE chromaticity data and common display gamut primaries. Includes an interactive view over spectral locus and XYZ matching curves.")
         };

@@ -2,13 +2,11 @@
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp> // UBO + Build{PathTracer,Raster}RenderGraph + Renderer{Scene,Config,Handles}
 #include <Editor/Scene/Mesh.hpp> // FImportedMesh / FSerializedMesh / MemoryBlobSerializer
-#include <RenderUtils/CSDebugText.hpp> // createCSDebugTextPassBackBuffer (on-screen HUD)
 #include <Core/Paths.hpp>
 #include "Examples.hpp"
 #include <algorithm>
 #include <cmath>
 
-using namespace RenderUtils;
 using Foundation::Core::PathsResolve;
 
 namespace
@@ -312,24 +310,14 @@ int main(int argc, char** argv)
 
         ExampleGPUSceneRenderState renderState{};
 
-        // On-screen HUD: the CSDebugText pass draws on top of the scene's backbuffer. The array is
-        // persistent and the pass captures a view of it, re-reading the current text every frame.
+        // On-screen HUD: the CSDebugText pass draws on top of the scene's backbuffer, reading from
+        // input.hud (persistent, re-read every frame) via Examples_GPUSceneBuildRenderGraph.
         ExampleInputState input{};
-        CSDebugTextData hud[9]{};
-        Examples_BeginControls(input);
-        Examples_Text(input, hud[0], "GPUScene async streaming");
-        Examples_Button(input, hud[1], fmt::format("[Stream +{}]", kSpawnPerPress));
-        Examples_SameLine(input);
-        Examples_Button(input, hud[2], "[Renderer]");
-        Examples_SameLine(input);
-        Examples_Button(input, hud[3], "[Pause]");
-        Examples_Slider(input, Span<CSDebugTextData>(&hud[4], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
-        Examples_Text(input, hud[7], FExampleOrbitCamera::kControlsText);
 
         auto RecreateRenderer = [&]
         { renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, rendererDesc, device, swapchain, GLOBAL_ALLOC); };
         auto BuildGraph = [&](RHIExtent2D extent)
-        { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, hud, extent); };
+        { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, input, extent); };
         BuildGraph(renderer->GetSwapchainExtent());
 
         // Example orbit camera: mouse/touch drag orbits, WASD dollies.
@@ -400,19 +388,20 @@ int main(int argc, char** argv)
             bool spawnedThisFrame = false;
             bool atCap = assets.size() >= static_cast<size_t>(kBlobCount + 1u);
             Examples_BeginControls(input);
-            Examples_Text(input, hud[0], "GPUScene async streaming");
-            const bool streamPressed = Examples_Button(input, hud[1],
+            Examples_Text(input, "GPUScene async streaming");
+            const bool streamPressed = Examples_Button(input,
                 atCap ? "[Release]" : fmt::format("[Stream +{}]", kSpawnPerPress)) ||
                 input.KeyPressed(SDLK_SPACE);
             Examples_SameLine(input);
-            const bool toggleRenderer = Examples_Button(input, hud[2],
+            const bool toggleRenderer = Examples_Button(input,
                 fmt::format("[{}]", Examples_GPUSceneModeName(renderState.mode))) ||
                 input.KeyPressed(SDLK_TAB);
             Examples_SameLine(input);
-            const bool togglePause = Examples_Button(input, hud[3], paused ? "[Resume]" : "[Pause]") ||
+            const bool togglePause = Examples_Button(input, paused ? "[Resume]" : "[Pause]") ||
                 input.KeyPressed(SDLK_F);
-            const bool resolutionChanged = Examples_Slider(input, Span<CSDebugTextData>(&hud[4], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
-            Examples_Text(input, hud[7], FExampleOrbitCamera::kControlsText);
+            const bool resolutionChanged =
+                Examples_Slider(input, "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f, "x", false);
+            Examples_Text(input, FExampleOrbitCamera::kControlsText);
             if (streamPressed)
             {
                 // Stream the next wave, or - once the field is full - release everything and loop.
@@ -451,7 +440,7 @@ int main(int argc, char** argv)
 
             // Refresh the HUD readout before submitting (the overlay pass reads it this frame).
             atCap = assets.size() >= static_cast<size_t>(kBlobCount + 1u);
-            Examples_Text(input, hud[8],
+            Examples_Text(input,
                           atCap ? fmt::format("resident {} / {}  -  full: stream releases + loops   {:.0f} FPS{}",
                                               resident, static_cast<uint32_t>(assets.size()), fps.Update(),
                                               paused ? "   [PAUSED]" : "")

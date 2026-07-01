@@ -25,6 +25,7 @@ add_custom_target(
 add_library(Editor_Assets STATIC)
 target_sources(Editor_Assets PUBLIC
         Scene/Mesh.cpp Scene/Scene.cpp
+        Runtime/GPUScene.cpp Runtime/Animation.cpp
 )
 target_link_libraries(
         Editor_Assets PUBLIC

@@ -29,6 +29,7 @@ android {
                     "Example_GPUSceneDeform",
                     "Example_GPUSceneStreaming",
                     "Example_BindlessSimple",
+                    "Example_GPUSceneGLTF",
                     "Example_GPUScene",
                     "Example_DebugText",
                     "Example_SDF2D",
@@ -37,7 +38,6 @@ android {
                     "Example_MeshShaderHierarchicalLOD",
                     "Example_ImGui",
                     "Example_MeshShaderHello",
-                    "Example_JobGraph",
                     "Example_MandelbrotCompute",
                     "Example_CIEChromacity"
                 )

@@ -5,6 +5,8 @@
 #include <Renderer/Postprocess.hpp>
 #include "Camera.hpp"
 #include "Editor.hpp"
+#include "Runtime/Animation.hpp"
+#include "Runtime/GPUScene.hpp"
 #include "Scene/Scene.hpp"
 
 enum class ERendererMode
@@ -115,11 +117,8 @@ struct EditorState
 {
     // GPUScene owns all scene-data residency (geometry, textures) and the committed
     // instance/material/light tables. The editor keeps the bindings needed to refill
-    // those tables from the FSCN scene: resident geometry handles per mesh/curve
-    // resource, and the FSCN texture index -> bindless index remap.
-    Vector<GeometryHandle> meshGeometry{GLOBAL_ALLOC};
-    Vector<GeometryHandle> curveGeometry{GLOBAL_ALLOC};
-    Vector<TextureHandle> textureIDMap{GLOBAL_ALLOC};
+    // those tables from the FSCN scene (resident geometry handles, texture remap).
+    FSceneGPUResources resources;
     Optional<MemoryMappedFile> sceneFile;
     Optional<FImportedScene>     scene;
     String             currentSavePath;

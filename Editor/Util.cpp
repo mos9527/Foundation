@@ -2,12 +2,12 @@
 #include <Renderer/Texture.hpp>
 #include <Core/AllocatorStack.hpp>
 
-int main_scene(StringView srcPath, StringView dstPath)
+int main_scene(StringView srcPath, StringView dstPath, FSceneBuildOptions const& buildOptions)
 {
     MemoryMappedFile file(dstPath, 64ull * 1024ull * 1024ull /* grows on demand */);
     FImportedScene scene(file, GLOBAL_ALLOC);
     LOG(Util, LogDebug, "Saving");
-    LoadGLTF(srcPath, scene, GLOBAL_ALLOC);
+    LoadGLTF(srcPath, scene, GLOBAL_ALLOC, buildOptions);
     return 0;
 }
 int main_texture(StringView srcImagePath, StringView dstDDSPath)
@@ -32,8 +32,25 @@ int main(int argc, const char** argv)
         goto END;
     if (strcmp(argv[1], "scene") == 0)
     {
-        CHECK_MSG(argc - 2 == 2, "usage: util scene [src] [dst]");
-        return main_scene(argv[2], argv[3]);
+        FSceneBuildOptions buildOptions{};
+        const char* srcPath = nullptr;
+        const char* dstPath = nullptr;
+        for (int i = 2; i < argc; ++i)
+        {
+            if (strcmp(argv[i], "--no-texture-compression") == 0)
+            {
+                buildOptions.textureCompression = FSceneTextureCompression::None;
+                continue;
+            }
+            if (!srcPath)
+                srcPath = argv[i];
+            else if (!dstPath)
+                dstPath = argv[i];
+            else
+                CHECK_MSG(false, "usage: util scene [--no-texture-compression] [src] [dst]");
+        }
+        CHECK_MSG(srcPath && dstPath, "usage: util scene [--no-texture-compression] [src] [dst]");
+        return main_scene(srcPath, dstPath, buildOptions);
     }
     if (strcmp(argv[1], "texture") == 0)
     {
@@ -42,7 +59,7 @@ int main(int argc, const char** argv)
     }
 END:
     fmt::println("available tools:");
-    fmt::println("\tscene");
+    fmt::println("\tscene [--no-texture-compression] [src] [dst]");
     fmt::println("\ttexture");
     fmt::println("run 'util [tool name]' for more info");
     return 1;

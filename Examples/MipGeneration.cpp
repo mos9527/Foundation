@@ -13,7 +13,6 @@ int main(int argc, char** argv)
                                                                       .asyncCompute = false, /* Nothing to overlap */
                                                                       .threadCount = 0, /* ST recording */
                                                                   });
-    CSDebugTextData lines[5]{};
     {
         int x, y, n;
         stbi_uc* data = stbi_load(Foundation::Core::PathsResolve("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
@@ -98,11 +97,7 @@ int main(int argc, char** argv)
                 cmd->Draw(3);
                 cmd->EndGraphics();
             });
-        Examples_BeginControls(input);
-        Examples_Text(input, lines[0], "Mip Generation");
-        Examples_Slider(input, Span<CSDebugTextData>(&lines[1], 3), "Preview LOD", previewLod, 0.0f,
-                        maxPreviewLod, 1.0f);
-        createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
+        createCSDebugTextPassBackBuffer(renderer, "Debug Text", Examples_HudLines(input));
         renderer->EndSetup();
         ExampleFpsCounter fps;
         while (true)
@@ -112,9 +107,8 @@ int main(int argc, char** argv)
                 break;
 
             Examples_BeginControls(input);
-            Examples_Text(input, lines[0], fmt::format("Mip Generation FPS: {}", fps.Update()));
-            Examples_Slider(input, Span<CSDebugTextData>(&lines[1], 3), "Preview LOD", previewLod, 0.0f,
-                            maxPreviewLod, 1.0f);
+            Examples_Text(input, fmt::format("Mip Generation FPS: {}", fps.Update()));
+            Examples_Slider(input, "Preview LOD", previewLod, 0.0f, maxPreviewLod, 1.0f);
             previewLod = std::round(previewLod);
             Examples_NewFrame(renderer);
         }

@@ -14,8 +14,9 @@ cmake-build-*/
 # AI harnesses that I don't quite like
 .claude/
 .codebuddy/
-# Headless example image dumps
+# Runtime stuff
 render.png
+imgui.ini
 # Gradle (grr)
 .gradle/
 gradle/

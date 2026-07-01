@@ -1,0 +1,331 @@
+#include "GPUScene.hpp"
+#include <Renderer/Renderer.hpp>
+#include <algorithm>
+#include <cmath>
+#include <numbers>
+
+bool IsSceneEnvironmentTexture(FImportedScene const& scene, size_t textureIndex)
+{
+    FLight const* environment = scene.GetEnvironmentLight();
+    return environment != nullptr && environment->environmentMap &&
+           environment->environmentTexture != kInvalidTexture && textureIndex == environment->environmentTexture;
+}
+
+GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI::RHIDeviceCapabilities const& caps,
+                                   uint32_t minLightBudget)
+{
+    GPUSceneDesc desc = scene.CalculateGPUSceneDesc(caps);
+    desc.lightBudget = std::max(desc.lightBudget, minLightBudget);
+    return desc;
+}
+
+void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources& outResources)
+{
+    FBlobDeserializer blobs = scene.GetBlobDeserializer();
+
+    outResources.meshGeometry.clear();
+    outResources.curveGeometry.clear();
+    outResources.meshGeometry.reserve(scene.GetMeshes().size());
+    outResources.curveGeometry.reserve(scene.GetCurves().size());
+    for (FSerializedMesh const& mesh : scene.GetMeshes())
+    {
+        GeometryHandle handle;
+        // Deforming (skinned/morphed) meshes upload as dynamic geometry (Ready synchronously);
+        // everything else streams in through the upload worker (InProgress).
+        bool const dynamic = mesh.skinBinding.count != 0 || mesh.morphTrack >= 0;
+        GPUScene::Result r = dynamic ? gpu.UploadDynamic(&blobs, mesh, handle) : gpu.Upload(&blobs, mesh, handle);
+        CHECK_MSG(r == GPUScene::Result::InProgress || r == GPUScene::Result::Ready, "Mesh upload rejected ({})",
+                  static_cast<int>(r));
+        outResources.meshGeometry.push_back(handle);
+    }
+    for (FSerializedCurve const& curve : scene.GetCurves())
+    {
+        GeometryHandle handle;
+        GPUScene::Result r = gpu.Upload(&blobs, curve, handle);
+        CHECK_MSG(r == GPUScene::Result::InProgress, "Curve upload rejected ({})", static_cast<int>(r));
+        outResources.curveGeometry.push_back(handle);
+    }
+
+    outResources.textureIDMap.assign(scene.GetTextures().size(), TextureHandle{});
+    for (size_t textureIndex = 0; textureIndex < scene.GetTextures().size(); ++textureIndex)
+    {
+        FSerializedTexture const& srcDesc = scene.GetTextures()[textureIndex];
+        if (!srcDesc.IsValid() || IsSceneEnvironmentTexture(scene, textureIndex))
+            continue;
+        TextureHandle handle;
+        GPUScene::Result r = gpu.Upload(&blobs, srcDesc, handle);
+        CHECK_MSG(r == GPUScene::Result::InProgress, "Texture {} upload rejected ({})", textureIndex,
+                  static_cast<int>(r));
+        outResources.textureIDMap[textureIndex] = handle;
+    }
+}
+
+namespace
+{
+size_t SceneTextureReadBudget(FSerializedTexture const& source)
+{
+    CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
+    size_t budget = static_cast<size_t>(source.GetSize());
+    for (FBlobRef const& blob : source.subresources)
+        if (blob.codec != FBlobCodec::None)
+            budget += static_cast<size_t>(blob.decodedSize);
+    return std::max<size_t>(AlignUp(budget + (1ull << 20), alignof(std::max_align_t)), alignof(std::max_align_t));
+}
+
+FTexture ReadSceneTexture(FImportedScene const& scene, FSerializedTexture const& source, Allocator* alloc)
+{
+    CHECK(alloc != nullptr);
+    CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
+
+    FTexture texture(alloc);
+    texture.magic = source.magic;
+    texture.header = source.header;
+    texture.header10 = source.header10;
+    texture.bytes.resize(texture.GetSize());
+    for (uint32_t layer = 0; layer < source.GetNumLayers(); ++layer)
+    {
+        for (uint32_t mip = 0; mip < source.GetNumMips(); ++mip)
+        {
+            Span<unsigned char> dst = texture.GetSubresource(mip, layer);
+            FBlobRef const& blob = source.GetSubresourceBlob(layer, mip);
+            CHECK_MSG(blob.decodedSize == dst.size_bytes(),
+                      "Serialized texture subresource size mismatch: layer {}, mip {}, blob {}, expected {}", layer,
+                      mip, blob.decodedSize, dst.size_bytes());
+            CHECK(scene.ReadBlob(blob, dst.data(), dst.size_bytes(), alloc));
+        }
+    }
+    return texture;
+}
+} // namespace
+
+void UploadSceneEnvironment(FImportedScene const& scene, GPUScene& gpu)
+{
+    FLight const* environment = scene.GetEnvironmentLight();
+    bool const hasEnvironmentTexture =
+        environment != nullptr && environment->environmentMap && environment->environmentTexture != kInvalidTexture;
+    if (!hasEnvironmentTexture)
+        return;
+
+    CHECK_MSG(environment->environmentTexture < scene.GetTextures().size(),
+              "Scene environment texture index out of range");
+    FSerializedTexture const& environmentTextureDesc = scene.GetTextures()[environment->environmentTexture];
+    ScopedArena environmentArena(GLOBAL_ALLOC, SceneTextureReadBudget(environmentTextureDesc));
+    CHECK(environmentArena);
+    AllocatorStack environmentAlloc(environmentArena);
+    FTexture environmentTexture = ReadSceneTexture(scene, environmentTextureDesc, &environmentAlloc);
+    CHECK_MSG(environmentTexture.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat,
+              "Scene environment texture must be RGBA32F, got {}", environmentTexture.GetFormat());
+    GPUScene::Result r = gpu.UploadEnvMap(environmentTexture);
+    CHECK_MSG(r == GPUScene::Result::Ready, "Environment map upload rejected ({})", static_cast<int>(r));
+}
+
+namespace
+{
+float LightColorImportance(float3 color)
+{
+    return std::max(0.0f, std::max(color.x, std::max(color.y, color.z)));
+}
+
+// Matches the shader's quartic falloff integral over the penumbra.
+float SpotLightImportanceSolidAngle(float cosInner, float cosOuter)
+{
+    float cosFalloffStart = std::clamp(std::max(cosInner, cosOuter), -1.0f, 1.0f);
+    float cosTotalWidth = std::clamp(std::min(cosInner, cosOuter), -1.0f, cosFalloffStart);
+    return 2.0f * std::numbers::pi_v<float> *
+           ((1.0f - cosFalloffStart) + (cosFalloffStart - cosTotalWidth) / 5.0f);
+}
+
+float AreaLightFluxImportance(GSLight const& light)
+{
+    float area = 1.0f;
+    if (light.type == static_cast<uint32_t>(FLightType::Disk))
+        area = std::numbers::pi_v<float> * light.radius.x * light.radius.y;
+    else if (light.type == static_cast<uint32_t>(FLightType::Rect))
+        area = 4.0f * cross(light.dpdu, light.dpdv).length();
+
+    float sides = light.twoSided != 0 ? 2.0f : 1.0f;
+    return light.power * area * std::numbers::pi_v<float> * sides;
+}
+
+void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu, GPUScene::LightSamplerType sampler)
+{
+    dst = GSLight{};
+    dst.type = static_cast<uint32_t>(src.type);
+    dst.color = src.color;
+    dst.power = src.power;
+    dst.range = src.range;
+    dst.position = src.transform.transform;
+    // Default forward is (0,0,-1).
+    dst.direction = normalize(src.transform.rotation * float3(0, 0, -1));
+    dst.angularDiameter = src.angularDiameter;
+    dst.spotInnerCosAngle = std::cos(src.spotInnerConeAngle);
+    dst.spotOuterCosAngle = std::cos(src.spotOuterConeAngle);
+    float areaWidth = std::max(src.width, 1e-6f);
+    float areaHeight = std::max(src.height, 1e-6f);
+    dst.radius = float2(areaWidth, areaHeight);
+    dst.twoSided = src.twoSided ? 1u : 0u;
+    if (src.type == FLightType::Disk || src.type == FLightType::Rect)
+    {
+        float3 n = dst.direction;
+        float3 u, v;
+        CoordinateSystem(n, u, v);
+        if (src.type == FLightType::Disk)
+        {
+            dst.dpdu = u; // Unit tangent; radius is separate.
+            dst.dpdv = v;
+        }
+        else
+        {
+            dst.dpdu = u * areaWidth; // Half-extent along u.
+            dst.dpdv = v * areaHeight; // Half-extent along v.
+        }
+
+        if (src.normalize)
+        {
+            float area = src.type == FLightType::Disk ? std::numbers::pi_v<float> * areaWidth * areaHeight
+                                                        : 4.0f * areaWidth * areaHeight;
+            float totalArea = src.twoSided ? 2.0f * area : area;
+            // Lambertian emitter: total flux Phi = L * A * pi per emitting side.
+            dst.power = src.power / (totalArea * std::numbers::pi_v<float>);
+        }
+    }
+    if (src.type == FLightType::Environment)
+    {
+        bool const hasEnvMap = src.environmentMap && gpu.HasEnvMap();
+        dst.color = hasEnvMap ? float3(1.0f) : src.color;
+        dst.power = src.power;
+        dst.twoSided = hasEnvMap ? 1u : 0u;
+        dst.envAzimuthOffset = src.environmentAzimuthOffset;
+    }
+
+    float importance = 1.0f;
+    if (sampler == GPUScene::LightSamplerType::Importance)
+    {
+        // Light BVH is a someday problem; for now weight these more since they may light most of
+        // the scene.
+        constexpr float kEnvDirectionalImportance = 10.0f;
+        switch (src.type)
+        {
+        case FLightType::Environment:
+            importance = LightColorImportance(dst.color) * dst.power * kEnvDirectionalImportance;
+            break;
+        case FLightType::Directional:
+            importance = dst.power * kEnvDirectionalImportance;
+            break;
+        case FLightType::Point:
+            importance = dst.power * 4.0f * std::numbers::pi_v<float>;
+            break;
+        case FLightType::Spot:
+            importance = dst.power * SpotLightImportanceSolidAngle(dst.spotInnerCosAngle, dst.spotOuterCosAngle);
+            break;
+        case FLightType::Disk:
+        case FLightType::Rect:
+            importance = AreaLightFluxImportance(dst);
+            break;
+        }
+        importance *= LightColorImportance(dst.color);
+    }
+    dst.importance = std::max(0.0f, importance);
+}
+
+void FillGSMaterial(GSMaterial& dst, FMaterial const& src, Vector<TextureHandle> const& textureIDMap,
+                    GPUScene const& gpu)
+{
+    // Textures not yet resident (still streaming) remap to UINT32_MAX (the "no texture" sentinel)
+    // so shaders sample defaults until the real image lands.
+    auto RemapTextureIndex = [&](uint32_t index) -> uint32_t
+    {
+        if (index == UINT32_MAX || index >= textureIDMap.size())
+            return UINT32_MAX;
+        TextureHandle const handle = textureIDMap[index];
+        if (!handle.IsValid() || gpu.Query(handle) != GPUScene::Result::Ready)
+            return UINT32_MAX;
+        return handle.index;
+    };
+    dst.baseColorFactor = src.baseColorFactor;
+    // emissiveFactor.w is the emissive intensity multiplier; bake it into the GPU RGB.
+    dst.emissiveFactor = float3(src.emissiveFactor) * src.emissiveFactor.w;
+    dst.metallicFactor = src.metallicFactor;
+    dst.roughnessFactor = src.roughnessFactor;
+    dst.baseColorTexture = RemapTextureIndex(src.baseColorTexture);
+    dst.emissiveTexture = RemapTextureIndex(src.emissiveTexture);
+    dst.metallicRoughnessTexture = RemapTextureIndex(src.metallicRoughnessTexture);
+    dst.normalTexture = RemapTextureIndex(src.normalTexture);
+    dst.normalScale = src.normalScale;
+    dst.transmissionTexture = RemapTextureIndex(src.transmissionTexture);
+    dst.specularTexture = RemapTextureIndex(src.specularTexture);
+    dst.specularColorTexture = RemapTextureIndex(src.specularColorTexture);
+    dst.anisotropyTexture = RemapTextureIndex(src.anisotropyTexture);
+    dst.sheenColorTexture = RemapTextureIndex(src.sheenColorTexture);
+    dst.sheenRoughnessTexture = RemapTextureIndex(src.sheenRoughnessTexture);
+    dst.clearcoatTexture = RemapTextureIndex(src.clearcoatTexture);
+    dst.clearcoatRoughnessTexture = RemapTextureIndex(src.clearcoatRoughnessTexture);
+    dst.transmissionFactor = src.transmissionFactor;
+    dst.ior = src.ior;
+    dst.specularFactor = src.specularFactor;
+    dst.specularColorFactor = src.specularColorFactor;
+    dst.anisotropyStrength = src.anisotropyStrength;
+    dst.anisotropyRotation = src.anisotropyRotation;
+    dst.sheenColorFactor = src.sheenColorFactor;
+    dst.sheenRoughnessFactor = src.sheenRoughnessFactor;
+    dst.clearcoatFactor = src.clearcoatFactor;
+    dst.clearcoatRoughnessFactor = src.clearcoatRoughnessFactor;
+    dst.subsurfaceFactor = src.subsurfaceFactor;
+    dst.subsurfaceScale = src.subsurfaceScale;
+    dst.subsurfaceColor = src.subsurfaceColor;
+    dst.subsurfaceRadius = src.subsurfaceRadius;
+    dst.shaderBlockID = static_cast<uint32_t>(src.shaderBlockID);
+    dst.hairBetaM = src.hairBetaM;
+    dst.hairBetaN = src.hairBetaN;
+    dst.hairAlpha = src.hairAlpha;
+}
+} // namespace
+
+GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources const& resources,
+                                        RendererUBO& globals, bool resetAccumulation)
+{
+    auto instances = scene.GetInstances();
+    auto materials = scene.GetMaterials();
+    scene.EnsureEnvironmentLight();
+    auto lights = scene.GetLights();
+    CHECK_MSG(instances.size() <= UINT32_MAX && materials.size() <= UINT32_MAX && lights.size() <= UINT32_MAX,
+              "Scene table exceeds uint32_t range");
+    auto tables = gpu.BeginScene(static_cast<uint32_t>(instances.size()), static_cast<uint32_t>(materials.size()),
+                                 static_cast<uint32_t>(lights.size()));
+    for (size_t i = 0; i < instances.size(); ++i)
+    {
+        auto const& src = instances[i];
+        GeometryHandle geometry;
+        if (src.type == FInstanceType::Mesh)
+        {
+            CHECK_MSG(src.resourceIndex < resources.meshGeometry.size(), "Mesh instance references invalid mesh {}",
+                      src.resourceIndex);
+            geometry = resources.meshGeometry[src.resourceIndex];
+        }
+        else if (src.type == FInstanceType::Curve)
+        {
+            CHECK_MSG(src.resourceIndex < resources.curveGeometry.size(),
+                      "Curve instance references invalid curve {}", src.resourceIndex);
+            geometry = resources.curveGeometry[src.resourceIndex];
+        }
+        else
+            CHECK_MSG(false, "Unknown scene instance type {}", static_cast<uint32_t>(src.type));
+        tables.instances[i] = InstanceDesc{
+            .geometry = geometry,
+            .transform = src.transform.transform,
+            .rotation = src.transform.rotation,
+            .scale = src.transform.scale,
+            .materialIndex = src.materialIndex,
+        };
+    }
+    for (size_t i = 0; i < materials.size(); ++i)
+        FillGSMaterial(tables.materials[i], materials[i], resources.textureIDMap, gpu);
+    for (size_t i = 0; i < lights.size(); ++i)
+        FLightToGSLight(lights[i], tables.lights[i], gpu, gpu.mLightSamplerType);
+
+    GPUScene::UpdateResult result = gpu.EndScene(tables);
+    gpu.BuildUBO(globals);
+    if (resetAccumulation)
+        globals.ptAccumulatedFrames = 0;
+    return result;
+}

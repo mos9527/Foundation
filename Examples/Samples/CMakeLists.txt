@@ -13,7 +13,6 @@ foreach (FILE ${SAMPLE_FILES})
     add_custom_command(
         TARGET Examples_SampleFiles POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FILE}" "${OUTPUT_FILE}"
-        COMMENT "Copying sample file: ${FILE_NAME} -> ${OUTPUT_FILE}"
         VERBATIM
     )
 endforeach ()

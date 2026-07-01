@@ -937,12 +937,7 @@ static void DrawTexturePreview(const char* label, uint32_t textureIndex,
 
 static bool IsSceneEnvironmentTextureIndex(size_t textureIndex)
 {
-    if (!GEditor.HasScene())
-        return false;
-    FLight const* environment = GEditor.Scene().GetEnvironmentLight();
-    return environment != nullptr && environment->environmentMap &&
-           environment->environmentTexture != kInvalidTexture &&
-           textureIndex == environment->environmentTexture;
+    return GEditor.HasScene() && IsSceneEnvironmentTexture(GEditor.Scene(), textureIndex);
 }
 
 static bool IsPickableSceneTexture2D(FSerializedTexture const& texture)
@@ -962,9 +957,9 @@ static uint32_t SceneTextureToGpuIndex(uint32_t sceneTextureIndex)
 {
     if (sceneTextureIndex == kInvalidTexture || !GContext || !GContext->gpuScene)
         return UINT32_MAX;
-    if (sceneTextureIndex >= GEditor.textureIDMap.size())
+    if (sceneTextureIndex >= GEditor.resources.textureIDMap.size())
         return UINT32_MAX;
-    TextureHandle const& handle = GEditor.textureIDMap[sceneTextureIndex];
+    TextureHandle const& handle = GEditor.resources.textureIDMap[sceneTextureIndex];
     if (!handle.IsValid() || handle.is3D)
         return UINT32_MAX;
     if (GContext->gpuScene->Query(handle) != GPUScene::Result::Ready)

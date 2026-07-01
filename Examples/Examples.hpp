@@ -50,6 +50,7 @@ struct ExampleTouchState
 struct ExampleInputState
 {
     static constexpr size_t kMaxPressedKeys = 16;
+    static constexpr size_t kMaxHudLines = 32;
 
     bool keyForward{};
     bool keyBack{};
@@ -80,6 +81,10 @@ struct ExampleInputState
     int uiLastItemX{};
     int uiLastItemY{};
     bool uiSameLine{};
+    // Immediate-mode HUD buffer: Examples_Text/Button/Slider claim lines from here in order.
+    // Examples_BeginControls clears it and resets hudCount for the new frame.
+    std::array<RenderUtils::CSDebugTextData, kMaxHudLines> hud{};
+    size_t hudCount{};
     std::array<SDL_Keycode, kMaxPressedKeys> pressedKeys{};
     std::array<ExampleTouchState, 4> touches{};
     std::vector<ExampleClickableRegion> clickableRegions;
@@ -145,19 +150,23 @@ bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScope
                           SDL_Event* outEvent = nullptr);
 
 void Examples_BeginFrameInput(ExampleInputState& input);
+// Resets the layout cursor to (x, y) and clears ExampleInputState::hud for the frame; every
+// Examples_Text/Button/Slider call below this claims the next line automatically.
 void Examples_BeginControls(ExampleInputState& input, int x = 16, int y = 16);
 void Examples_SameLine(ExampleInputState& input, int spacing = 16);
-void Examples_Text(ExampleInputState& input, RenderUtils::CSDebugTextData& line, StringView text);
-bool Examples_Button(ExampleInputState& input, RenderUtils::CSDebugTextData& line, StringView text);
-// Text stepper: "Label [-][====------][+] value". Only the [-]/[+] ends change the value.
-// Composes [-] / value text / [+] controls. Requires at least 3 debug text lines.
-bool Examples_Slider(ExampleInputState& input, Span<RenderUtils::CSDebugTextData> lines, StringView label,
-                     float& value, float minValue, float maxValue, float step = 0.01f);
+void Examples_Text(ExampleInputState& input, StringView text);
+bool Examples_Button(ExampleInputState& input, StringView text);
+// Text stepper: "Label [-][====------][+] value". [-]/[+] step by `step`; the bar itself is also a
+// clickable/draggable control that jumps/scrubs the value to the pointer's position along it.
+bool Examples_Slider(ExampleInputState& input, StringView label, float& value, float minValue, float maxValue,
+                     float step = 0.01f, const char* unit = "x", bool draggable = true);
+// The HUD lines claimed so far this frame; pass to createCSDebugTextPassBackBuffer (or
+// Examples_GPUSceneBuildRenderGraph does this internally).
+Span<const RenderUtils::CSDebugTextData> Examples_HudLines(ExampleInputState const& input);
 const char* Examples_GPUSceneModeName(ExampleGPUSceneRenderMode mode);
 void Examples_GPUSceneToggleMode(ExampleGPUSceneRenderState& state);
 void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPUScene* gpu,
-                                       ExampleGPUSceneRenderState& state,
-                                       Span<const RenderUtils::CSDebugTextData> hud,
+                                       ExampleGPUSceneRenderState& state, ExampleInputState const& input,
                                        RHIExtent2D swapchainExtent);
 void Examples_GPUSceneFillCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera const& camera,
                                     RendererConfig const& config);

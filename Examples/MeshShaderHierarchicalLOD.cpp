@@ -21,7 +21,6 @@ int main(int argc, char** argv)
     SDL_Window* window = SDL_CreateWindow("Mesh Shader Hierarchical LOD", 800, 600, Examples_SDLWindowFlagsVulkan);
     UBO ubo{ .threshold = 0.01f};
     ExampleInputState input{};
-    CSDebugTextData lines[5]{};
     /* Setup */
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {});
     auto meshData = device->CreateBuffer({
@@ -120,7 +119,7 @@ int main(int argc, char** argv)
                 .DrawMeshTasks(ubo.mesh.meshletCount, 1, 1)
                 .EndGraphics();
         });
-    createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
+    createCSDebugTextPassBackBuffer(renderer, "Debug Text", Examples_HudLines(input));
     renderer->EndSetup();
     ExampleFpsCounter fps;
     FExampleOrbitCamera camera{.center = {0, 0.5f, 0},
@@ -129,10 +128,6 @@ int main(int argc, char** argv)
                                .zNear = 0.01f,
                                .fovY = radians(45.0f)};
     uint64_t lastTicks = SDL_GetTicksNS();
-    Examples_BeginControls(input);
-    Examples_Text(input, lines[0], "Mesh Shader - Hierarchical LOD");
-    Examples_Slider(input, Span<CSDebugTextData>(&lines[1], 3), "LOD Threshold", ubo.threshold, 0.01f, 0.30f, 0.01f);
-    Examples_Text(input, lines[4], FExampleOrbitCamera::kControlsText);
     while (true)
     {
         Examples_BeginFrameInput(input);
@@ -144,9 +139,9 @@ int main(int argc, char** argv)
         lastTicks = now;
 
         Examples_BeginControls(input);
-        Examples_Text(input, lines[0], fmt::format("Mesh Shader - Hierarchical LOD FPS: {}", fps.Update()));
-        Examples_Slider(input, Span<CSDebugTextData>(&lines[1], 3), "LOD Threshold", ubo.threshold, 0.01f, 0.30f, 0.01f);
-        Examples_Text(input, lines[4], FExampleOrbitCamera::kControlsText);
+        Examples_Text(input, fmt::format("Mesh Shader - Hierarchical LOD FPS: {}", fps.Update()));
+        Examples_Slider(input, "LOD Threshold", ubo.threshold, 0.01f, 0.30f, 0.01f);
+        Examples_Text(input, FExampleOrbitCamera::kControlsText);
         const bool decreaseLod = input.KeyPressed(SDLK_Q);
         const bool increaseLod = input.KeyPressed(SDLK_E);
         if (decreaseLod && ubo.threshold > 0.01f)

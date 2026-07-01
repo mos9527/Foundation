@@ -2,13 +2,11 @@
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp> // UBO + BuildRasterRenderGraph + Renderer{Scene,Config,Handles}
 #include <Editor/Scene/Mesh.hpp> // FImportedMesh / LoadObj
-#include <RenderUtils/CSDebugText.hpp> // createCSDebugTextPassBackBuffer (on-screen HUD)
 #include <Core/Paths.hpp>
 #include "Examples.hpp"
 #include <algorithm>
 #include <cmath>
 
-using namespace RenderUtils;
 using Foundation::Core::PathsResolve;
 
 int main(int argc, char** argv)
@@ -327,23 +325,15 @@ int main(int argc, char** argv)
         // --- 5. Build the render graph (presents to the backbuffer itself) -------------------
         // TAB toggles between the two renderers GPUScene feeds: meshlet raster and path tracer.
         ExampleGPUSceneRenderState renderState{};
-        // On-screen HUD: the CSDebugText pass draws over the scene's backbuffer. The array is
-        // persistent and the pass captures a view of it, re-reading the current text every frame.
+        // On-screen HUD: the CSDebugText pass draws over the scene's backbuffer, reading from
+        // input.hud (persistent, re-read every frame) via Examples_GPUSceneBuildRenderGraph.
         ExampleInputState input{};
-        CSDebugTextData hud[8]{};
-        Examples_BeginControls(input);
-        Examples_Text(input, hud[0], "Material Gallery (Cornell Box)");
-        Examples_Button(input, hud[1], "[Renderer]");
-        Examples_SameLine(input);
-        Examples_Button(input, hud[2], "[Pause]");
-        Examples_Slider(input, Span<CSDebugTextData>(&hud[3], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
-        Examples_Text(input, hud[6], FExampleOrbitCamera::kControlsText);
         // The graph sizes its internal targets to the render extent, so on a resize we tear the
         // renderer down and recreate it against the resized swapchain before rebuilding the graph.
         auto RecreateRenderer = [&]
         { renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, rendererDesc, device, swapchain, GLOBAL_ALLOC); };
         auto BuildGraph = [&](RHIExtent2D extent)
-        { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, hud, extent); };
+        { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, input, extent); };
         BuildGraph(renderer->GetSwapchainExtent());
 
         // --- 6. Main loop --------------------------------------------------------------------
@@ -381,16 +371,17 @@ int main(int argc, char** argv)
 
             camera.aspect = static_cast<float>(renderState.renderExtent.x) / static_cast<float>(renderState.renderExtent.y);
             Examples_BeginControls(input);
-            Examples_Text(input, hud[0], "Material Gallery (Cornell Box)");
-            const bool toggleRenderer = Examples_Button(input, hud[1],
+            Examples_Text(input, fmt::format("Material Gallery (Cornell Box) [{:.0f}] FPS{}", fps.Update(), cameraPaused ? "   [PAUSED]" : ""));
+            const bool toggleRenderer = Examples_Button(input,
                 fmt::format("[{}]", Examples_GPUSceneModeName(renderState.mode))) ||
                 input.KeyPressed(SDLK_TAB);
             Examples_SameLine(input);
             const bool togglePause =
-                Examples_Button(input, hud[2], cameraPaused ? "[Resume]" : "[Pause]") ||
+                Examples_Button(input, cameraPaused ? "[Resume]" : "[Pause]") ||
                 input.KeyPressed(SDLK_SPACE);
-            const bool resolutionChanged = Examples_Slider(input, Span<CSDebugTextData>(&hud[3], 3), "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f);
-            Examples_Text(input, hud[6], FExampleOrbitCamera::kControlsText);
+            Examples_Text(input, FExampleOrbitCamera::kControlsText);
+            const bool resolutionChanged =
+                Examples_Slider(input, "Resolution", renderState.renderScale, 0.10f, 1.0f, 0.05f, "x", false);
             if (togglePause)
                 cameraPaused = !cameraPaused;
             // TAB switches renderer: rebuild the renderer + graph for the new mode.
@@ -412,12 +403,7 @@ int main(int argc, char** argv)
             // Re-author the animated scene for this frame. The graph's TLAS-update pass refits
             // against these committed instances, so this is all the per-frame motion needs.
             AuthorFrame(animTime);
-
-            Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);
-
-            // Refresh the HUD readout before submitting (the overlay pass reads it this frame).
-            Examples_Text(input, hud[7], fmt::format("{:.0f} FPS{}", fps.Update(), cameraPaused ? "   [PAUSED]" : ""));
-
+            Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);           
             Examples_NewFrame(renderer.get());
             // Advance path-tracer accumulation after the frame is submitted.
             if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)

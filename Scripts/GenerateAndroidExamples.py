@@ -17,7 +17,7 @@ BUILD_GRADLE = REPO_ROOT / "Android" / "app" / "build.gradle.kts"
 ANDROID_EXCLUDED_EXAMPLES = {
     "Example_HeadlessTriangle",
     "Example_HeadlessPathTracer",
-    "Example_GPUSceneGLTF",
+    "Example_JobGraph"
 }
 
 

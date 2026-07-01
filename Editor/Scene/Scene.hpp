@@ -454,11 +454,28 @@ struct FImportedScene
     }
 };
 
-void LoadGLTF(StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC);
+enum class FSceneTextureCompression : uint32_t
+{
+    BC7 = 0,
+    None = 1,
+};
+
+struct FSceneBuildOptions
+{
+#if defined(__ANDROID__)
+    FSceneTextureCompression textureCompression{FSceneTextureCompression::None};
+#else
+    FSceneTextureCompression textureCompression{FSceneTextureCompression::BC7};
+#endif
+};
+
+void LoadGLTF(StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC,
+              FSceneBuildOptions const& buildOptions = FSceneBuildOptions{});
 void LoadFSCN(FImportedScene& scene);
 
 /**
  * Loads a scene from a path, inferring format from extension.
  * Returns the FSCN path that backs payload blob reads.
  */
-String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC);
+String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC,
+                 FSceneBuildOptions const& buildOptions = FSceneBuildOptions{});
