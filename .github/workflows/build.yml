@@ -121,3 +121,5 @@ jobs:
         path: |
           ${{ github.workspace }}/package/
           !${{ github.workspace }}/package/**/*.pdb
+          !${{ github.workspace }}/package/**/*.ilk
+        compression-level: 9
