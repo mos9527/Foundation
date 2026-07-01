@@ -404,6 +404,20 @@ void LoadHDR(FTexture& texture, StringView path)
     const auto* bytes = reinterpret_cast<const unsigned char*>(imgData);
     texture.bytes.assign(bytes, bytes + size);
 }
+void LoadHDR(FTexture& texture, Span<const unsigned char> data)
+{
+    int width = 0, height = 0;
+    int channels = 0;
+    float* imgData =
+        stbi_loadf_from_memory(data.data(), data.size_bytes(), &width, &height, &channels, STBI_rgb_alpha);
+    UniquePtr<float, decltype(&stbi_image_free)> raii(imgData, reinterpret_cast<void(*)(void*)>(&stbi_image_free));
+    CHECK_MSG(imgData != nullptr, "Failed to load HDR image from memory");
+
+    texture.Initialize(RHIResourceFormat::R32G32B32A32SignedFloat, RHITextureDimension::E2D, width, height);
+    const size_t size = width * height * 4 * sizeof(float);
+    const auto* bytes = reinterpret_cast<const unsigned char*>(imgData);
+    texture.bytes.assign(bytes, bytes + size);
+}
 
 void SaveHDR(const float* data, int width, int height, StringView path)
 {

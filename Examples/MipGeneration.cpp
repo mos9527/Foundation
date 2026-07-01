@@ -14,7 +14,6 @@ int main(int argc, char** argv)
                                                                       .threadCount = 0, /* ST recording */
                                                                   });
     CSDebugTextData lines[5]{};
-    lines[0].x = lines[0].y = 16, lines[0].SetText("Mip Generation");
     {
         int x, y, n;
         stbi_uc* data = stbi_load(Foundation::Core::PathsResolve("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
@@ -70,7 +69,9 @@ int main(int argc, char** argv)
                                         RHIResourceFormat::R8G8B8A8Unorm, RHIResourceFormat::R8G8B8A8Unorm,
                                         RHITextureAspectFlagBits::Color, RHITextureAspectFlagBits::Color, sampler,
                                         numMips);
-        float blurAmount = 0.0f; // [0,1]
+        ExampleInputState input{};
+        float previewLod = 0.0f;
+        const float maxPreviewLod = static_cast<float>(numMips - 1u);
         renderer->CreatePass(
             "Draw Blurred", RHIDeviceQueueType::Graphics, 0u,
             [&](PassHandle self, Renderer* r)
@@ -92,25 +93,29 @@ int main(int argc, char** argv)
                                     {RHIAttachmentLoadOp::DontCare});
                 r->CmdSetPipeline(self, cmd);
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0,
-                                      blurAmount * texture->mDesc.mipLevels);
+                                      previewLod);
                 cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
                 cmd->Draw(3);
                 cmd->EndGraphics();
             });
+        Examples_BeginControls(input);
+        Examples_Text(input, lines[0], "Mip Generation");
+        Examples_Slider(input, Span<CSDebugTextData>(&lines[1], 3), "Preview LOD", previewLod, 0.0f,
+                        maxPreviewLod, 1.0f);
         createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
         renderer->EndSetup();
-        SDL_Event event;
         ExampleFpsCounter fps;
-        while (!Examples_ShouldClose(window, renderer, swapchain, &event))
+        while (true)
         {
-            lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
-            if (event.type == SDL_EVENT_MOUSE_WHEEL)
-            {
-                blurAmount = std::clamp(blurAmount + event.wheel.y * 0.05f, 0.0f, 1.0f);
-            }
-            lines[2].x = 16;
-            lines[2].y = 64;
-            lines[2].SetText(fmt::format("Blur (MWHEEL): {:.2f}", blurAmount));
+            Examples_BeginFrameInput(input);
+            if (Examples_PollEvents(window, renderer, swapchain, input))
+                break;
+
+            Examples_BeginControls(input);
+            Examples_Text(input, lines[0], fmt::format("Mip Generation FPS: {}", fps.Update()));
+            Examples_Slider(input, Span<CSDebugTextData>(&lines[1], 3), "Preview LOD", previewLod, 0.0f,
+                            maxPreviewLod, 1.0f);
+            previewLod = std::round(previewLod);
             Examples_NewFrame(renderer);
         }
         texture.Release(); // Release - destructs with the device

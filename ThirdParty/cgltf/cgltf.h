@@ -798,6 +798,7 @@ typedef struct cgltf_foundation_environment {
 	cgltf_float color[3];
 	cgltf_float strength;
 	char* uri;
+	cgltf_buffer_view* buffer_view;
 	cgltf_foundation_environment_projection projection;
 	cgltf_float azimuth_offset;
 } cgltf_foundation_environment;
@@ -6711,6 +6712,13 @@ static int cgltf_parse_json_foundation_environment(cgltf_options* options, jsmnt
 		{
 			i = cgltf_parse_json_string(options, tokens, i + 1, json_chunk, &out_environment->uri);
 		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "bufferView") == 0)
+		{
+			++i;
+			CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_PRIMITIVE);
+			out_environment->buffer_view = CGLTF_PTRINDEX(cgltf_buffer_view, cgltf_json_to_int(tokens + i, json_chunk));
+			++i;
+		}
 		else if (cgltf_json_strcmp(tokens + i, json_chunk, "projection") == 0)
 		{
 			++i;
@@ -7763,6 +7771,10 @@ static int cgltf_fixup_pointers(cgltf_data* data)
 			{
 				return CGLTF_ERROR_JSON;
 			}
+		}
+		if (data->scenes[i].has_foundation_environment)
+		{
+			CGLTF_PTRFIXUP(data->scenes[i].foundation_environment.buffer_view, data->buffer_views, data->buffer_views_count);
 		}
 	}
 

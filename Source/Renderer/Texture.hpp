@@ -125,6 +125,7 @@ void LoadRGBA8(FTexture& texture, Span<const unsigned char> data, bool gamma = t
  * Used for environment maps.
  */
 void LoadHDR(FTexture& texture, StringView path);
+void LoadHDR(FTexture& texture, Span<const unsigned char> data);
 /**
  * Saves float RGBA pixel data as an HDR image.
  * Output format is Radiance HDR (stb_image_write), RGB only (alpha discarded).

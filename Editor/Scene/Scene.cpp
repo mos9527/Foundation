@@ -89,6 +89,17 @@ bool ParseLUTTuple(StringView tuple, StringView expectedKind,
     return !outView.empty() && !outLook.empty();
 }
 
+struct FEnvironmentTextureSource
+{
+    Optional<String> path;
+    cgltf_buffer_view const* bufferView{};
+
+    [[nodiscard]] bool HasValue() const
+    {
+        return path.has_value() || bufferView != nullptr;
+    }
+};
+
 void LoadFoundationColorManagementExtension(cgltf_data const* data, FSceneGlobals& result)
 {
     if (!data->has_foundation_color_management)
@@ -108,7 +119,8 @@ void LoadFoundationColorManagementExtension(cgltf_data const* data, FSceneGlobal
                                                                 Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::HDR));
 }
 
-Optional<String> LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath, FLight& environmentLight)
+FEnvironmentTextureSource LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath,
+                                                            FLight& environmentLight)
 {
     cgltf_scene const* gltfScene = data->scene ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
     if (!gltfScene || !gltfScene->has_foundation_environment)
@@ -128,15 +140,18 @@ Optional<String> LoadFoundationEnvironmentExtension(cgltf_data const* data, Stri
     {
         CHECK_MSG(environment.projection == cgltf_foundation_environment_projection_longlat,
                   "EXT_foundation_environment supports only longlat/equirectangular HDRI projection");
-        CHECK_MSG(environment.uri, "EXT_foundation_environment HDRI requires uri");
+        CHECK_MSG(environment.uri || environment.buffer_view, "EXT_foundation_environment HDRI requires uri or bufferView");
 
-        String uri = DecodeURI(environment.uri);
-        std::filesystem::path hdriPath = std::filesystem::path(scenePath.data()).parent_path() / uri;
         environmentLight = MakeDefaultEnvironmentLight();
         environmentLight.power = environment.strength;
         environmentLight.environmentMap = true;
         environmentLight.environmentAzimuthOffset = environment.azimuth_offset;
-        return hdriPath.string();
+        if (environment.buffer_view)
+            return FEnvironmentTextureSource{.bufferView = environment.buffer_view};
+
+        String uri = DecodeURI(environment.uri);
+        std::filesystem::path hdriPath = std::filesystem::path(scenePath.data()).parent_path() / uri;
+        return FEnvironmentTextureSource{.path = hdriPath.string()};
     }
 
     CHECK_MSG(false, "EXT_foundation_environment has unsupported type");
@@ -1047,7 +1062,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
     LoadFoundationColorManagementExtension(data, globals);
     scene.Set(globals);
     FLight environmentLight = MakeDefaultEnvironmentLight();
-    Optional<String> environmentTexturePath = LoadFoundationEnvironmentExtension(data, path, environmentLight);
+    FEnvironmentTextureSource environmentTextureSource = LoadFoundationEnvironmentExtension(data, path, environmentLight);
 
     /* Materials */
     // NOTE: Material 0 is reserved as the default material:
@@ -1173,10 +1188,10 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
     /* Textures */
     FTexture textureCodecInit(scratchAlloc);
     CHECK_MSG(data->textures_count <= UINT32_MAX, "glTF texture count exceeds uint32_t");
-    CHECK_MSG(!environmentTexturePath.has_value() || data->textures_count < UINT32_MAX,
+    CHECK_MSG(!environmentTextureSource.HasValue() || data->textures_count < UINT32_MAX,
               "glTF texture count leaves no room for environment texture");
-    size_t const sceneTextureCount = data->textures_count + (environmentTexturePath.has_value() ? 1u : 0u);
-    uint32_t const environmentTextureIndex = environmentTexturePath.has_value()
+    size_t const sceneTextureCount = data->textures_count + (environmentTextureSource.HasValue() ? 1u : 0u);
+    uint32_t const environmentTextureIndex = environmentTextureSource.HasValue()
         ? static_cast<uint32_t>(data->textures_count)
         : kInvalidTexture;
     scene.mTables.textures.clear();
@@ -1228,18 +1243,33 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         for (size_t i = 0; i < data->textures_count; ++i)
             AppendResourceBlobJobs(blobJobs, textureBlobJobs[i]);
     }
-    if (environmentTexturePath.has_value())
+    if (environmentTextureSource.HasValue())
     {
         CHECK_MSG(environmentTextureIndex != kInvalidTexture, "Invalid environment texture index");
         FTexture environmentTexture(scratchAlloc);
-        LOG(Scene, LogInfo, "Loading environment HDRI {}", *environmentTexturePath);
-        auto result = LoadTexture(*environmentTexturePath, scratchAlloc, true);
-        if (!result)
+        if (environmentTextureSource.bufferView)
         {
-            LOG(Scene, LogError, "Failed to load environment HDRI {}", *environmentTexturePath);
-            return;
+            cgltf_buffer_view const* view = environmentTextureSource.bufferView;
+            CHECK_MSG(view->buffer && view->buffer->data, "Embedded environment HDRI buffer is not loaded");
+            CHECK_MSG(view->offset <= view->buffer->size && view->size <= view->buffer->size - view->offset,
+                      "Embedded environment HDRI bufferView is out of range");
+            LOG(Scene, LogInfo, "Loading embedded environment HDRI ({} bytes)", view->size);
+            Span<const unsigned char> imgData{
+                static_cast<const unsigned char*>(view->buffer->data) + view->offset,
+                view->size};
+            LoadHDR(environmentTexture, imgData);
         }
-        environmentTexture = std::move(result.value());
+        else
+        {
+            LOG(Scene, LogInfo, "Loading environment HDRI {}", *environmentTextureSource.path);
+            auto result = LoadTexture(*environmentTextureSource.path, scratchAlloc, true);
+            if (!result)
+            {
+                LOG(Scene, LogError, "Failed to load environment HDRI {}", *environmentTextureSource.path);
+                return;
+            }
+            environmentTexture = std::move(result.value());
+        }
         BuildTextureBlobJobs(scene.mTables.textures[environmentTextureIndex],
                              textureBlobJobs[environmentTextureIndex].jobs, std::move(environmentTexture));
         AppendResourceBlobJobs(blobJobs, textureBlobJobs[environmentTextureIndex]);
