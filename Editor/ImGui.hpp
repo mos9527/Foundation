@@ -81,6 +81,56 @@ bool ImBitmaskOptionPicker(unsigned& value, const char* (&labels)[N], const unsi
 }
 bool ImHDRColorEdit(const char* label, float3& color, float& power, float maxScale = 100.0f);
 
+// One row (track) drawn by ImTimeline. `muted` only dims the row visually.
+struct ImTimelineRow
+{
+    const char* label = nullptr;
+    bool muted = false;
+};
+
+// One draggable/resizable [start, end) block placed on an ImTimeline row. Callers own the backing
+// data; ImTimeline mutates `start`/`end` directly while a strip is being dragged/resized, the same
+// way ImGui::DragFloat mutates its target in place.
+struct ImTimelineStrip
+{
+    int row = 0; // index into the ImTimelineRow span this strip is drawn on
+    float start = 0.0f;
+    float end = 0.0f;
+    ImU32 color = 0;
+    const char* label = nullptr;
+    bool selected = false;
+};
+
+// Per-frame interaction result from ImTimeline, so the caller can react (select, mark dirty, open
+// its own context menu popups, ...) without the widget knowing anything about the caller's data
+// model. ImTimeline never opens a popup itself; it only reports where a right-click landed.
+struct ImTimelineResult
+{
+    int clickedRow = -1;    // >= 0 if a row's label area was left-clicked this frame
+    int muteToggledRow = -1; // >= 0 if a row's label was clicked to toggle its mute state this frame
+    int clickedStrip = -1;  // >= 0 if a strip was left-clicked and/or is being interacted with
+    bool stripsChanged = false; // true if `clickedStrip`'s start/end was mutated by a drag this frame
+    bool scrubbed = false;      // true if the ruler was clicked/dragged, updating `playhead`
+    int rightClickedRow = -1;    // >= 0 if a row's label area was right-clicked this frame
+    int rightClickedStrip = -1;  // >= 0 if a strip was right-clicked this frame
+    bool rightClickedBackground = false; // true if empty ruler/canvas space was right-clicked
+};
+
+// A horizontal ruler + N rows of draggable/resizable strips (a minimal NLA/sequencer-style track
+// view), laid out as a 2-column table so the row labels never scroll under the strips and the
+// widget never needs its own vertical scrollbar (it's exactly as tall as its rows).
+//
+// `length` sets the timeline extent in caller units (e.g. seconds). `playhead` is scrubbed in place
+// by clicking/dragging the ruler. `pixelsPerSecond`/`scrollX` are zoom/pan state owned by the caller
+// (persist them across frames); hovering the widget scrolls the wheel to zoom (keeping time under
+// the cursor fixed), and Ctrl+wheel pans horizontally instead.
+//
+// Right-clicks are only reported via `ImTimelineResult`, never turned into a popup here: the caller
+// owns what actions make sense for its data (e.g. "Add Strip", "Remove Track") and should respond
+// with its own plain `ImGui::OpenPopup`/`BeginPopup` calls after this returns.
+ImTimelineResult ImTimeline(const char* strId, Span<const ImTimelineRow> rows, Span<ImTimelineStrip> strips,
+                            float length, float& playhead, float& pixelsPerSecond, float& scrollX);
+
 // Generate linear, monotonous ints of [0, count - 1] at interval of intervalMS
 inline int ImBlink(int intervalMS, int count)
 {

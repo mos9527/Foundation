@@ -812,6 +812,32 @@ typedef struct cgltf_foundation_color_management {
 	char* hdr;
 } cgltf_foundation_color_management;
 
+typedef struct cgltf_animation cgltf_animation;
+
+// EXT_foundation_animation: one NLA strip placing a referenced glTF animation on the timeline.
+typedef struct cgltf_foundation_nla_strip {
+	cgltf_animation* animation;   // resolved from the JSON "animation" index in cgltf_fixup_pointers
+	cgltf_float strip_start;
+	cgltf_float strip_end;
+	cgltf_float clip_start;
+	cgltf_float clip_end;
+	cgltf_float time_scale;
+	cgltf_float influence;
+	cgltf_bool cyclic;
+} cgltf_foundation_nla_strip;
+
+typedef struct cgltf_foundation_nla_track {
+	char* name;
+	cgltf_bool mute;
+	cgltf_foundation_nla_strip* strips;
+	cgltf_size strips_count;
+} cgltf_foundation_nla_track;
+
+typedef struct cgltf_foundation_animation {
+	cgltf_foundation_nla_track* tracks;
+	cgltf_size tracks_count;
+} cgltf_foundation_animation;
+
 struct cgltf_node {
 	char* name;
 	cgltf_node* parent;
@@ -962,6 +988,8 @@ typedef struct cgltf_data
 	cgltf_extension* data_extensions;
 	cgltf_bool has_foundation_color_management;
 	cgltf_foundation_color_management foundation_color_management;
+	cgltf_bool has_foundation_animation;
+	cgltf_foundation_animation foundation_animation;
 
 	char** extensions_used;
 	cgltf_size extensions_used_count;
@@ -2270,6 +2298,13 @@ void cgltf_free(cgltf_data* data)
 
 	data->memory.free_func(data->memory.user_data, data->foundation_color_management.sdr);
 	data->memory.free_func(data->memory.user_data, data->foundation_color_management.hdr);
+
+	for (cgltf_size t = 0; t < data->foundation_animation.tracks_count; ++t)
+	{
+		data->memory.free_func(data->memory.user_data, data->foundation_animation.tracks[t].name);
+		data->memory.free_func(data->memory.user_data, data->foundation_animation.tracks[t].strips);
+	}
+	data->memory.free_func(data->memory.user_data, data->foundation_animation.tracks);
 	cgltf_free_extensions(data, data->data_extensions, data->data_extensions_count);
 	cgltf_free_extras(data, &data->extras);
 
@@ -6682,6 +6717,174 @@ static int cgltf_parse_json_foundation_color_management(cgltf_options* options, 
 	return i;
 }
 
+static int cgltf_parse_json_foundation_nla_strip(cgltf_options* options, jsmntok_t const* tokens, int i, const uint8_t* json_chunk, cgltf_foundation_nla_strip* out_strip)
+{
+	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
+
+	out_strip->time_scale = 1.0f;
+	out_strip->influence = 1.0f;
+
+	int size = tokens[i].size;
+	++i;
+
+	for (int j = 0; j < size; ++j)
+	{
+		CGLTF_CHECK_KEY(tokens[i]);
+
+		if (cgltf_json_strcmp(tokens + i, json_chunk, "animation") == 0)
+		{
+			++i;
+			out_strip->animation = CGLTF_PTRINDEX(cgltf_animation, cgltf_json_to_int(tokens + i, json_chunk));
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "stripStart") == 0)
+		{
+			++i;
+			out_strip->strip_start = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "stripEnd") == 0)
+		{
+			++i;
+			out_strip->strip_end = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "clipStart") == 0)
+		{
+			++i;
+			out_strip->clip_start = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "clipEnd") == 0)
+		{
+			++i;
+			out_strip->clip_end = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "timeScale") == 0)
+		{
+			++i;
+			out_strip->time_scale = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "influence") == 0)
+		{
+			++i;
+			out_strip->influence = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "cyclic") == 0)
+		{
+			++i;
+			out_strip->cyclic = cgltf_json_to_bool(tokens + i, json_chunk);
+			++i;
+		}
+		else
+		{
+			i = cgltf_skip_json(tokens, i + 1);
+		}
+
+		if (i < 0)
+		{
+			return i;
+		}
+	}
+
+	return i;
+}
+
+static int cgltf_parse_json_foundation_nla_track(cgltf_options* options, jsmntok_t const* tokens, int i, const uint8_t* json_chunk, cgltf_foundation_nla_track* out_track)
+{
+	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
+
+	int size = tokens[i].size;
+	++i;
+
+	for (int j = 0; j < size; ++j)
+	{
+		CGLTF_CHECK_KEY(tokens[i]);
+
+		if (cgltf_json_strcmp(tokens + i, json_chunk, "name") == 0)
+		{
+			i = cgltf_parse_json_string(options, tokens, i + 1, json_chunk, &out_track->name);
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "mute") == 0)
+		{
+			++i;
+			out_track->mute = cgltf_json_to_bool(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "strips") == 0)
+		{
+			i = cgltf_parse_json_array(options, tokens, i + 1, json_chunk, sizeof(cgltf_foundation_nla_strip), (void**)&out_track->strips, &out_track->strips_count);
+			if (i < 0)
+			{
+				return i;
+			}
+			for (cgltf_size k = 0; k < out_track->strips_count; ++k)
+			{
+				i = cgltf_parse_json_foundation_nla_strip(options, tokens, i, json_chunk, &out_track->strips[k]);
+				if (i < 0)
+				{
+					return i;
+				}
+			}
+		}
+		else
+		{
+			i = cgltf_skip_json(tokens, i + 1);
+		}
+
+		if (i < 0)
+		{
+			return i;
+		}
+	}
+
+	return i;
+}
+
+static int cgltf_parse_json_foundation_animation(cgltf_options* options, jsmntok_t const* tokens, int i, const uint8_t* json_chunk, cgltf_foundation_animation* out_animation)
+{
+	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
+
+	int size = tokens[i].size;
+	++i;
+
+	for (int j = 0; j < size; ++j)
+	{
+		CGLTF_CHECK_KEY(tokens[i]);
+
+		if (cgltf_json_strcmp(tokens + i, json_chunk, "tracks") == 0)
+		{
+			i = cgltf_parse_json_array(options, tokens, i + 1, json_chunk, sizeof(cgltf_foundation_nla_track), (void**)&out_animation->tracks, &out_animation->tracks_count);
+			if (i < 0)
+			{
+				return i;
+			}
+			for (cgltf_size k = 0; k < out_animation->tracks_count; ++k)
+			{
+				i = cgltf_parse_json_foundation_nla_track(options, tokens, i, json_chunk, &out_animation->tracks[k]);
+				if (i < 0)
+				{
+					return i;
+				}
+			}
+		}
+		else
+		{
+			i = cgltf_skip_json(tokens, i + 1);
+		}
+
+		if (i < 0)
+		{
+			return i;
+		}
+	}
+
+	return i;
+}
+
 static int cgltf_parse_json_foundation_environment(cgltf_options* options, jsmntok_t const* tokens, int i, const uint8_t* json_chunk, cgltf_foundation_environment* out_environment)
 {
 	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
@@ -7472,6 +7675,11 @@ static int cgltf_parse_json_root(cgltf_options* options, jsmntok_t const* tokens
 						}
 					}
 				}
+				else if (cgltf_json_strcmp(tokens+i, json_chunk, "EXT_foundation_animation") == 0)
+				{
+					out_data->has_foundation_animation = 1;
+					i = cgltf_parse_json_foundation_animation(options, tokens, i + 1, json_chunk, &out_data->foundation_animation);
+				}
 				else if (cgltf_json_strcmp(tokens+i, json_chunk, "KHR_materials_variants") == 0)
 				{
 					++i;
@@ -7808,6 +8016,15 @@ static int cgltf_fixup_pointers(cgltf_data* data)
 		{
 			CGLTF_PTRFIXUP_REQ(data->animations[i].channels[j].sampler, data->animations[i].samplers, data->animations[i].samplers_count);
 			CGLTF_PTRFIXUP(data->animations[i].channels[j].target_node, data->nodes, data->nodes_count);
+		}
+	}
+
+	for (cgltf_size t = 0; t < data->foundation_animation.tracks_count; ++t)
+	{
+		cgltf_foundation_nla_track* track = &data->foundation_animation.tracks[t];
+		for (cgltf_size s = 0; s < track->strips_count; ++s)
+		{
+			CGLTF_PTRFIXUP_REQ(track->strips[s].animation, data->animations, data->animations_count);
 		}
 	}
 

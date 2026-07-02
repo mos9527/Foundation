@@ -196,6 +196,46 @@ void LoadFoundationMaterialExtension(cgltf_material const* src, FMaterial& mater
     }
 }
 
+// EXT_foundation_animation: builds scene NLA tracks from the typed cgltf fields. Each strip's
+// `animation` pointer resolves to the interned animation-group name via `animationName`, which the
+// caller built with the same naming used for the clips (so skin + rigid clips of one glTF animation
+// land on the same source). Falls back to clipEnd<=0 -> source duration, timeScale<=0 -> 1.
+void LoadFoundationAnimationExtension(cgltf_data const* data,
+                                      HashMap<cgltf_animation const*, FUUID> const& animationName,
+                                      FImportedScene& scene, Allocator* alloc)
+{
+    if (!data->has_foundation_animation)
+        return;
+    cgltf_foundation_animation const& nla = data->foundation_animation;
+    for (cgltf_size t = 0; t < nla.tracks_count; ++t)
+    {
+        cgltf_foundation_nla_track const& src = nla.tracks[t];
+        FNlaTrack track(alloc);
+        track.id = FUUID::Generate();
+        track.name = scene.InternString(src.name);
+        track.mute = src.mute != 0;
+        for (cgltf_size s = 0; s < src.strips_count; ++s)
+        {
+            cgltf_foundation_nla_strip const& ss = src.strips[s];
+            auto it = animationName.find(ss.animation);
+            if (it == animationName.end())
+                continue; // strip references an animation that produced no Foundation clip
+            FNlaStrip strip{};
+            strip.source = it->second;
+            strip.stripStart = ss.strip_start;
+            strip.stripEnd = ss.strip_end;
+            strip.clipStart = ss.clip_start;
+            strip.clipEnd = ss.clip_end;
+            strip.timeScale = ss.time_scale > 0.0f ? ss.time_scale : 1.0f;
+            strip.influence = ss.influence;
+            strip.cyclic = ss.cyclic != 0;
+            track.strips.push_back(std::move(strip));
+        }
+        if (!track.strips.empty())
+            scene.mTables.nlaTracks.push_back(std::move(track));
+    }
+}
+
 void ValidateSceneHeader(FSceneHeader const& header)
 {
     CHECK_MSG(header.magic == kSceneMagic, "Unsupported FSCN magic");
@@ -444,6 +484,15 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
         for (auto const& channel : clip.channels)
             CHECK_MSG(channel.joint < jointCount, "FScene clip channel joint index out of range");
     }
+
+    for (auto const& track : tables.nlaTracks)
+        for (auto const& strip : track.strips)
+        {
+            CHECK_MSG(!strip.source.IsNil(), "FScene NLA strip has no source");
+            CHECK_MSG(strip.stripEnd >= strip.stripStart, "FScene NLA strip stripEnd < stripStart");
+            CHECK_MSG(strip.clipEnd >= strip.clipStart, "FScene NLA strip clipEnd < clipStart");
+            CHECK_MSG(strip.timeScale > 0.0f, "FScene NLA strip timeScale <= 0");
+        }
 
     bool const hasSceneNodeSkeleton = !tables.sceneNodeSkeleton.IsNil();
     uint32_t const sceneNodeCount =
@@ -1143,6 +1192,16 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
     Vector<FUUID> gltfMaterialIds(data->materials_count, kNilUUID, scratchAlloc);
     // Main-thread only: worker jobs below must not touch the string pool.
     auto internString = [&](const char* s) -> FUUID { return scene.InternString(s); };
+    // A glTF animation's display name; a stable fallback keeps its skin + rigid clips grouped and
+    // gives the UI something to select even when the source animation is unnamed.
+    auto animName = [&](const cgltf_animation* anim, size_t index) -> FUUID
+    {
+        if (anim->name && *anim->name)
+            return scene.InternString(anim->name);
+        return scene.InternString(fmt::format("Animation {}", index).c_str());
+    };
+    // glTF animation pointer -> interned name id, for resolving EXT_foundation_animation strips.
+    HashMap<cgltf_animation const*, FUUID> animationName(scratchAlloc);
     scene.Add(FMaterial{
         .id = kDefaultMaterialUUID,
         .baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f},
@@ -1395,7 +1454,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             const cgltf_animation* anim = &data->animations[a];
             FAnimationClip clip(scratchAlloc);
             clip.id = FUUID::Generate();
-            clip.name = internString(anim->name);
+            clip.name = animName(anim, a);
+            animationName[anim] = clip.name;
             for (size_t c = 0; c < anim->channels_count; c++)
             {
                 const cgltf_animation_channel* ch = &anim->channels[c];
@@ -1824,7 +1884,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
 
         FAnimationClip clip(scratchAlloc);
         clip.id = FUUID::Generate();
-        clip.name = internString(anim->name);
+        clip.name = animName(anim, a);
+        animationName[anim] = clip.name;
         clip.skeleton = skinSkeletonIds[clipSkin];
         for (size_t c = 0; c < anim->channels_count; c++)
         {
@@ -1841,6 +1902,35 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         if (!clip.channels.empty())
             scene.mTables.clips.push_back(std::move(clip));
     }
+
+    /* NLA tracks: from EXT_foundation_animation if present, otherwise one auto-track per glTF
+     * animation (each placing its clip group at t=0 looping for its natural duration). */
+    LoadFoundationAnimationExtension(data, animationName, scene, scratchAlloc);
+    if (scene.mTables.nlaTracks.empty())
+    {
+        // Group clips by name -> duration; a glTF animation may split into skin + rigid clips.
+        HashMap<FUUID, float> groupDuration(scratchAlloc);
+        for (FAnimationClip const& clip : scene.mTables.clips)
+            groupDuration[clip.name] = std::max(groupDuration[clip.name], clip.duration);
+        for (auto const& [name, duration] : groupDuration)
+        {
+            FNlaTrack track(scratchAlloc);
+            track.id = FUUID::Generate();
+            track.name = name;
+            FNlaStrip strip{};
+            strip.source = name;
+            strip.stripStart = 0.0f;
+            strip.stripEnd = duration;
+            strip.clipStart = 0.0f;
+            strip.clipEnd = duration;
+            strip.timeScale = 1.0f;
+            strip.influence = 1.0f;
+            strip.cyclic = true;
+            track.strips.push_back(std::move(strip));
+            scene.mTables.nlaTracks.push_back(std::move(track));
+        }
+    }
+
     scene.mTables.lights.insert(scene.mTables.lights.begin(), environmentLight);
 }
 

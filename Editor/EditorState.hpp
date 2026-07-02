@@ -229,6 +229,7 @@ void ClearSelection();
 void FHierarchyPanel();
 void FLightingPanel();
 void FAnimationPanel();
+bool IsInstanceAnimated(uint32_t index);
 void FRunningImGui();
 void ClearMaterialTexturePreviewCache();
 

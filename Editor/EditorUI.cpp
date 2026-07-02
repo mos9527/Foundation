@@ -1426,7 +1426,10 @@ void EditorDockSpaceAndMenuBar()
         ImGui::DockBuilderSplitNode(dockspaceID, ImGuiDir_Left, 0.25f, &dockLeft, &dockCenter);
         ImGuiID dockRight;
         ImGui::DockBuilderSplitNode(dockCenter, ImGuiDir_Right, 0.25f, &dockRight, &dockCenter);
-            
+
+        ImGuiID dockBottom;
+        ImGui::DockBuilderSplitNode(dockCenter, ImGuiDir_Down, 0.28f, &dockBottom, &dockCenter);
+
         ImGuiID dockLeftTop, dockLeftBottom;
         ImGui::DockBuilderSplitNode(dockLeft, ImGuiDir_Up, 0.25f, &dockLeftTop, &dockLeftBottom);
         ImGui::DockBuilderDockWindow("Hierarchy", dockLeftTop);
@@ -1436,6 +1439,7 @@ void EditorDockSpaceAndMenuBar()
         ImGui::DockBuilderDockWindow("Lighting", dockRight);
         ImGui::DockBuilderDockWindow("Rendering", dockRight);
         ImGui::DockBuilderDockWindow("Profiler", dockRight);
+        ImGui::DockBuilderDockWindow("Animation", dockBottom);
         ImGui::DockBuilderFinish(dockspaceID);
     }
 
@@ -1690,10 +1694,23 @@ void FHierarchyPanel()
                 FormatIndexLabelWithName(label, sizeof(label), InstanceTypeName(inst.type), static_cast<int>(i),
                                          sceneInstances[i].name);
                 bool selected = (GEditor.selectedInstance == instanceId);
+                // Pulse the label of instances the current animation selection drives.
+                bool const animated = IsInstanceAnimated(i);
+                if (animated)
+                {
+                    float const pulse = 0.5f + 0.5f * std::sin(static_cast<float>(ImGui::GetTime()) * 4.0f);
+                    ImVec4 const base = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+                    ImVec4 const accent{0.30f, 0.85f, 1.0f, 1.0f};
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                                          ImVec4(base.x + (accent.x - base.x) * pulse, base.y + (accent.y - base.y) * pulse,
+                                                 base.z + (accent.z - base.z) * pulse, 1.0f));
+                }
                 if (ImGui::Selectable(label, selected))
                 {
                     SelectInstance(i, inst);
                 }
+                if (animated)
+                    ImGui::PopStyleColor();
                 if (ImGui::IsItemHovered())
                     SetUUIDTooltip(instanceId);
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))

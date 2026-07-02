@@ -679,6 +679,22 @@ bool ApplyAnimatedCameraToView()
 
 // Minimal playback panel. Only shown when the installed scene has animation. Scrubbing while paused
 // requests a one-shot pose apply (BeginAnimationUpdate honors `dirty`), so a held frame still updates.
+// Resolves an animation set's display name, falling back to a positional label if the source
+// animation was unnamed (or its name id isn't in the string pool).
+static const char* AnimationSetLabel(uint32_t index)
+{
+    static char fallback[32];
+    if (GEditor.HasScene())
+        if (const char* name = GEditor.Scene().GetName(sAnimation.animations[index].name))
+            return name;
+    snprintf(fallback, sizeof(fallback), "Animation %u", index);
+    return fallback;
+}
+
+// Selected NLA strip for the properties editor; -1 means none. Persists across frames.
+static int sSelectedTrack = -1;
+static int sSelectedStrip = -1;
+
 void FAnimationPanel()
 {
     if (!sAnimation.HasData())
@@ -686,30 +702,356 @@ void FAnimationPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Animation"))
     {
-        if (ImModalButton(sAnimation.playing ? PSI_PAUSE " Pause" : PSI_PLAY " Play", 0, 2))
-            sAnimation.playing = !sAnimation.playing;
-        ImGui::SameLine();
-        if (ImModalButton(PSI_REPEAT " Restart", 1, 2))
+        auto& tables = GEditor.Scene().mTables;
+
+        // Track/strip mutation helpers shared by the visual timeline's context menus and the
+        // numeric list below, so both views offer the same actions.
+        auto addTrack = [&]() -> int
         {
-            sAnimation.time = 0.0f;
+            if (sAnimation.animations.empty())
+                return -1;
+            FNlaTrack track(GLOBAL_ALLOC);
+            track.id = FUUID::Generate();
+            tables.nlaTracks.push_back(std::move(track));
+            sAnimation.RefreshAnimatedInstances(GEditor.Scene());
             sAnimation.dirty = true;
-        }
-        if (sAnimation.duration > 0.0f)
+            return static_cast<int>(tables.nlaTracks.size() - 1);
+        };
+        auto addStrip = [&](int ti, int animIdx)
         {
-            float t = std::fmod(sAnimation.time, sAnimation.duration);
-            if (ImGui::SliderFloat("Time", &t, 0.0f, sAnimation.duration, "%.2f s"))
+            if (ti < 0 || ti >= static_cast<int>(tables.nlaTracks.size()))
+                return;
+            if (animIdx < 0 || animIdx >= static_cast<int>(sAnimation.animations.size()))
+                return;
+            auto const& anim = sAnimation.animations[animIdx];
+            FNlaTrack& track = tables.nlaTracks[ti];
+            FNlaStrip strip{};
+            strip.source = anim.name;
+            float start = 0.0f;
+            for (auto const& s : track.strips)
+                start = std::max(start, s.stripEnd);
+            strip.stripStart = start;
+            strip.stripEnd = start + anim.duration;
+            strip.clipEnd = anim.duration;
+            track.strips.push_back(std::move(strip));
+            sSelectedTrack = ti;
+            sSelectedStrip = static_cast<int>(track.strips.size() - 1);
+            sAnimation.RefreshAnimatedInstances(GEditor.Scene());
+            sAnimation.dirty = true;
+        };
+        auto removeTrack = [&](int ti)
+        {
+            if (ti < 0 || ti >= static_cast<int>(tables.nlaTracks.size()))
+                return;
+            tables.nlaTracks.erase(tables.nlaTracks.begin() + ti);
+            if (sSelectedTrack == ti)
+                sSelectedTrack = sSelectedStrip = -1;
+            else if (sSelectedTrack > ti)
+                --sSelectedTrack;
+            sAnimation.RefreshAnimatedInstances(GEditor.Scene());
+            sAnimation.dirty = true;
+        };
+        auto removeStrip = [&](int ti, int si)
+        {
+            if (ti < 0 || ti >= static_cast<int>(tables.nlaTracks.size()))
+                return;
+            FNlaTrack& track = tables.nlaTracks[ti];
+            if (si < 0 || si >= static_cast<int>(track.strips.size()))
+                return;
+            track.strips.erase(track.strips.begin() + si);
+            if (sSelectedTrack == ti && sSelectedStrip == si)
+                sSelectedStrip = -1;
+            sAnimation.RefreshAnimatedInstances(GEditor.Scene());
+            sAnimation.dirty = true;
+        };
+        auto toggleMute = [&](int ti)
+        {
+            if (ti < 0 || ti >= static_cast<int>(tables.nlaTracks.size()))
+                return;
+            tables.nlaTracks[ti].mute = !tables.nlaTracks[ti].mute;
+            sAnimation.RefreshAnimatedInstances(GEditor.Scene());
+            sAnimation.dirty = true;
+        };
+        // Maps a flat index into a `strips` array built in track-then-strip order (as filled
+        // below) back to (track index, strip-within-track index).
+        auto mapFlatStrip = [&](int flat, int& outTi, int& outSi)
+        {
+            outTi = outSi = -1;
+            for (int ti = 0, flatIdx = 0; ti < static_cast<int>(tables.nlaTracks.size()); ++ti)
+                for (int si = 0; si < static_cast<int>(tables.nlaTracks[ti].strips.size()); ++si, ++flatIdx)
+                    if (flatIdx == flat)
+                        outTi = ti, outSi = si;
+        };
+
+        // Visual timeline: draggable/resizable strips over a shared ruler; selecting a strip drives
+        // the strip editor below. Right-click a strip/track/empty space for actions; there's nothing
+        // to right-click when the scene has no tracks yet, so that bootstrap case gets a plain button.
+        if (tables.nlaTracks.empty())
+        {
+            if (ImGui::Button(PSI_PLUS_SIGN " Add Track"))
+                addTrack();
+        }
+        else
+        {
+            static float sPixelsPerSecond = 40.0f;
+            static float sScrollX = 0.0f;
+
+            Vector<ImTimelineRow> rows(GLOBAL_ALLOC);
+            rows.reserve(tables.nlaTracks.size());
+            for (FNlaTrack const& track : tables.nlaTracks)
+                rows.push_back({GEditor.Scene().GetName(track.name), track.mute});
+
+            Vector<ImTimelineStrip> strips(GLOBAL_ALLOC);
+            for (int ti = 0; ti < static_cast<int>(tables.nlaTracks.size()); ++ti)
             {
-                sAnimation.time = t;
-                sAnimation.dirty = true; // apply this pose now, even while paused
+                FNlaTrack const& track = tables.nlaTracks[ti];
+                for (int si = 0; si < static_cast<int>(track.strips.size()); ++si)
+                {
+                    FNlaStrip const& strip = track.strips[si];
+                    // Deterministic color per source clip, so repeated strips of the same clip
+                    // stay visually recognizable across tracks.
+                    float const hue = static_cast<float>(strip.source.hi % 360ull) / 360.0f;
+                    float r, g, b;
+                    ImGui::ColorConvertHSVtoRGB(hue, 0.55f, track.mute ? 0.35f : 0.75f, r, g, b);
+                    strips.push_back({.row = ti,
+                                       .start = strip.stripStart,
+                                       .end = strip.stripEnd,
+                                       .color = ImGui::GetColorU32(ImVec4(r, g, b, 1.0f)),
+                                       .label = GEditor.Scene().GetName(strip.source),
+                                       .selected = ti == sSelectedTrack && si == sSelectedStrip});
+                }
+            }
+
+            float playhead = sAnimation.duration > 0.0f ? std::fmod(sAnimation.time, sAnimation.duration) : 0.0f;
+            ImTimelineResult const tl =
+                ImTimeline("nla", Span<const ImTimelineRow>(rows.data(), rows.data() + rows.size()),
+                           Span<ImTimelineStrip>(strips.data(), strips.data() + strips.size()), sAnimation.duration,
+                           playhead, sPixelsPerSecond, sScrollX);
+
+            if (tl.scrubbed)
+            {
+                sAnimation.time = playhead;
+                sAnimation.dirty = true;
+            }
+            if (tl.clickedRow >= 0)
+            {
+                sSelectedTrack = tl.clickedRow;
+                sSelectedStrip = -1;
+            }
+            // Clicking a track title in the timeline toggles its mute state.
+            if (tl.muteToggledRow >= 0)
+                toggleMute(tl.muteToggledRow);
+            if (tl.clickedStrip >= 0)
+            {
+                mapFlatStrip(tl.clickedStrip, sSelectedTrack, sSelectedStrip);
+                if (tl.stripsChanged && sSelectedTrack >= 0)
+                {
+                    FNlaStrip& strip = tables.nlaTracks[sSelectedTrack].strips[sSelectedStrip];
+                    strip.stripStart = strips[tl.clickedStrip].start;
+                    strip.stripEnd = strips[tl.clickedStrip].end;
+                    sAnimation.RefreshAnimatedInstances(GEditor.Scene());
+                    sAnimation.dirty = true;
+                }
+            }
+
+            static int sContextTrack = -1;
+            static int sContextStrip = -1;
+            static int sAddStripTrack = -1; // track awaiting a source pick from the Add Strip popup
+            bool openStripPicker = false;
+            if (tl.rightClickedBackground)
+                ImGui::OpenPopup("nla_bg_ctx");
+            if (tl.rightClickedRow >= 0)
+            {
+                sContextTrack = tl.rightClickedRow;
+                ImGui::OpenPopup("nla_track_ctx");
+            }
+            if (tl.rightClickedStrip >= 0)
+            {
+                mapFlatStrip(tl.rightClickedStrip, sContextTrack, sContextStrip);
+                ImGui::OpenPopup("nla_strip_ctx");
+            }
+            if (ImGui::BeginPopup("nla_bg_ctx"))
+            {
+                if (ImGui::MenuItem(PSI_PLUS_SIGN " Add Track"))
+                    addTrack();
+                ImGui::EndPopup();
+            }
+            if (ImGui::BeginPopup("nla_track_ctx"))
+            {
+                if (ImGui::MenuItem(PSI_PLUS_SIGN " Add Track"))
+                    addTrack();
+                if (ImGui::MenuItem(PSI_PLUS_SIGN " Add Strip..."))
+                {
+                    sAddStripTrack = sContextTrack;
+                    openStripPicker = true;
+                }
+                bool const muted = sContextTrack >= 0 && sContextTrack < static_cast<int>(tables.nlaTracks.size()) &&
+                                    tables.nlaTracks[sContextTrack].mute;
+                if (ImGui::MenuItem(muted ? "Unmute Track" : "Mute Track"))
+                    toggleMute(sContextTrack);
+                ImGui::Separator();
+                if (ImGui::MenuItem(PSI_TRASH " Remove Track"))
+                    removeTrack(sContextTrack);
+                ImGui::EndPopup();
+            }
+            if (ImGui::BeginPopup("nla_strip_ctx"))
+            {
+                if (ImGui::MenuItem(PSI_PLUS_SIGN " Add Track"))
+                    addTrack();
+                ImGui::Separator();
+                if (ImGui::MenuItem(PSI_TRASH " Remove Strip"))
+                    removeStrip(sContextTrack, sContextStrip);
+                ImGui::EndPopup();
+            }
+
+            // Add Strip prompts for a source clip rather than assuming one; opened deferred so the
+            // originating context menu has closed first.
+            if (openStripPicker)
+                ImGui::OpenPopup("nla_add_strip");
+            if (ImGui::BeginPopup("nla_add_strip"))
+            {
+                ImGui::TextDisabled("Add strip from clip");
+                ImGui::Separator();
+                for (uint32_t i = 0; i < sAnimation.animations.size(); ++i)
+                {
+                    ImGui::PushID(static_cast<int>(i));
+                    if (ImGui::MenuItem(AnimationSetLabel(i)))
+                        addStrip(sAddStripTrack, static_cast<int>(i));
+                    ImGui::PopID();
+                }
+                ImGui::EndPopup();
             }
         }
-        ImGui::TextDisabled("%zu deforming mesh(es)%s", sAnimation.meshes.size(),
-                            sAnimation.HasRigid() ? ", rigid nodes" : "");
+
+        // Compact transport under the timeline; scrubbing the timeline ruler replaces the old Time
+        // slider, so playback state lives here as small modal buttons plus a narrow Speed control.
+        if (ImModalButton(sAnimation.playing ? PSI_PAUSE " Pause" : PSI_PLAY " Play", 0, 4))
+            sAnimation.playing = !sAnimation.playing;
+        if (ImModalButton(PSI_REPEAT " Restart", 1, 4))
+        {
+            sAnimation.time = 0.0f;
+            sAnimation.playing = true;
+            sAnimation.dirty = true;
+        }
+        if (ImModalButton(sAnimation.loop ? "Loop: On" : "Loop: Off", 2, 4))
+            sAnimation.loop = !sAnimation.loop;
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        ImGui::SliderFloat("##speed", &sAnimation.speed, 0.0f, 3.0f, "%.2fx");
+
+        // Selected strip editor: the strip-clip relationship (Strip Frame Start/End, Clip Start/End,
+        // Timescale, Influence, Cyclic) plus the source animation picker.
+        if (sSelectedTrack >= 0 && sSelectedStrip >= 0 &&
+            sSelectedTrack < static_cast<int>(tables.nlaTracks.size()))
+        {
+            FNlaTrack& track = tables.nlaTracks[sSelectedTrack];
+            if (sSelectedStrip < static_cast<int>(track.strips.size()))
+            {
+                FNlaStrip& strip = track.strips[sSelectedStrip];
+                ImGui::SeparatorText("Strip");
+                const char* cur = GEditor.Scene().GetName(strip.source);
+                if (ImGui::BeginCombo("Source", cur ? cur : "?"))
+                {
+                    for (uint32_t i = 0; i < sAnimation.animations.size(); ++i)
+                    {
+                        bool sel = strip.source == sAnimation.animations[i].name;
+                        if (ImGui::Selectable(AnimationSetLabel(i), sel))
+                        {
+                            strip.source = sAnimation.animations[i].name;
+                            sAnimation.RefreshAnimatedInstances(GEditor.Scene());
+                            sAnimation.dirty = true;
+                        }
+                        if (sel)
+                            ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+                bool changed = false;
+                changed |= ImGui::DragFloat("Strip Start", &strip.stripStart, 0.01f, 0.0f, 1e6f, "%.2f s");
+                changed |= ImGui::DragFloat("Strip End", &strip.stripEnd, 0.01f, 0.0f, 1e6f, "%.2f s");
+                changed |= ImGui::DragFloat("Clip Start", &strip.clipStart, 0.01f, 0.0f, 1e6f, "%.2f s");
+                changed |= ImGui::DragFloat("Clip End", &strip.clipEnd, 0.01f, 0.0f, 1e6f, "%.2f s");
+                changed |= ImGui::DragFloat("Timescale", &strip.timeScale, 0.01f, 0.01f, 100.0f, "%.3f");
+                changed |= ImGui::SliderFloat("Influence", &strip.influence, 0.0f, 1.0f, "%.2f");
+                changed |= ImGui::Checkbox("Cyclic", &strip.cyclic);
+                if (changed)
+                {
+                    if (strip.stripEnd < strip.stripStart)
+                        strip.stripEnd = strip.stripStart;
+                    if (strip.clipEnd < strip.clipStart)
+                        strip.clipEnd = strip.clipStart;
+                    if (strip.timeScale <= 0.0f)
+                        strip.timeScale = 1.0f;
+                    sAnimation.RefreshAnimatedInstances(GEditor.Scene());
+                    sAnimation.dirty = true;
+                }
+            }
+        }
+
+        // Stats aggregated over all strips on non-mute tracks.
+        if (ImGui::CollapsingHeader("Stats", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            uint32_t stripCount = 0, clipCount = 0, channelCount = 0, trackCount = 0;
+            bool skin = false, rigid = false;
+            for (FNlaTrack const& track : tables.nlaTracks)
+            {
+                if (track.mute)
+                    continue;
+                ++trackCount;
+                for (FNlaStrip const& strip : track.strips)
+                {
+                    ++stripCount;
+                    auto it = sAnimation.setByName.find(strip.source);
+                    if (it == sAnimation.setByName.end())
+                        continue;
+                    FAnimationSet const& set = sAnimation.animations[it->second];
+                    clipCount += static_cast<uint32_t>(set.clips.size());
+                    channelCount += set.channelCount;
+                    skin |= set.hasSkin;
+                    rigid |= set.hasRigid;
+                }
+            }
+            const char* kind = skin && rigid ? "skinned + rigid" : skin ? "skinned" : rigid ? "rigid" : "-";
+            ImGui::TextDisabled("Tracks: %u active   Strips: %u", trackCount, stripCount);
+            ImGui::TextDisabled("Timeline: %.2f s", sAnimation.duration);
+            ImGui::TextDisabled("Clips: %u   Channels: %u", clipCount, channelCount);
+            ImGui::TextDisabled("Drives: %s%s", kind, sAnimation.drivesCamera ? " + camera" : "");
+            ImGui::TextDisabled("%zu deforming mesh(es)%s", sAnimation.meshes.size(),
+                                sAnimation.HasRigid() ? ", rigid nodes" : "");
+        }
+
+        // Instances animated by the active NLA strips; click to select one in the Hierarchy.
+        if (!sAnimation.animatedList.empty() &&
+            ImGui::CollapsingHeader("Animated Instances", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            auto instances = GEditor.Scene().GetInstances();
+            for (uint32_t idx : sAnimation.animatedList)
+            {
+                if (idx >= instances.size())
+                    continue;
+                char label[128];
+                if (const char* name = GEditor.Scene().GetName(instances[idx].name))
+                    snprintf(label, sizeof(label), "Instance %u: %s", idx, name);
+                else
+                    snprintf(label, sizeof(label), "Instance %u", idx);
+                ImGui::PushID(static_cast<int>(idx));
+                bool const isSelected = GEditor.selectedInstance == instances[idx].id;
+                if (ImGui::Selectable(label, isSelected) && GContext->gpuScene)
+                    SelectInstance(instances[idx].id,
+                                   GEditor.Scene().GetMaterials()[GContext->gpuScene->GetInstance(idx).materialIndex].id);
+                ImGui::PopID();
+            }
+        }
+
         ImGui::Checkbox("Parallel deformation", &sAnimateParallel);
     }
     ImGui::End();
     ImGui::PopStyleColor();
 }
+
+// Whether scene instance `index` is animated by the Animation window's current NLA tracks; the
+// Hierarchy uses this to pulse-highlight those rows.
+bool IsInstanceAnimated(uint32_t index) { return sAnimation.IsInstanceAnimated(index); }
 
 // Pumped once per editor frame. The scene is already installed and rendering; this advances
 // the background drain, re-committing each frame so geometry/textures pop into the live

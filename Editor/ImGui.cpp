@@ -1,4 +1,5 @@
 #include "ImGui.hpp"
+#include <Fonts/PlexSansIcon.h>
 #include <cstdio>
 // Only useful if you're manipulating the DrawList which has positions
 // that are _NOT_ window local
@@ -289,6 +290,260 @@ bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned*
     }
     return any;
 }
+ImTimelineResult ImTimeline(const char* strId, Span<const ImTimelineRow> rows, Span<ImTimelineStrip> strips,
+                            float length, float& playhead, float& pixelsPerSecond, float& scrollX)
+{
+    ImTimelineResult result;
+    if (rows.empty())
+        return result;
+
+    constexpr float kLabelWidth = 130.0f;
+    constexpr float kRulerHeight = 22.0f;
+    constexpr float kRowHeight = 32.0f;
+    constexpr float kHandleWidth = 7.0f;
+    constexpr float kStripPadY = 4.0f; // vertical inset of the strip block within its row
+
+    ImGui::PushID(strId);
+
+    float const availWidth = ImGui::GetContentRegionAvail().x;
+    float const canvasWidth = std::max(availWidth - kLabelWidth, 1.0f);
+    float const totalHeight = kRulerHeight + static_cast<float>(rows.size()) * kRowHeight;
+    length = std::max(length, 1.0f);
+    pixelsPerSecond = std::clamp(pixelsPerSecond, 4.0f, 400.0f);
+    float const maxScroll = std::max(length * pixelsPerSecond - canvasWidth, 0.0f);
+    scrollX = std::clamp(scrollX, 0.0f, maxScroll);
+
+    // Mouse wheel over the widget: plain wheel zooms (keeping the time under the cursor fixed),
+    // Ctrl+wheel pans horizontally instead.
+    ImVec2 const origin = ImGui::GetCursorScreenPos();
+    ImVec2 const canvasMin(origin.x + kLabelWidth, origin.y);
+    ImVec2 const canvasMax(origin.x + availWidth, origin.y + totalHeight);
+    if (ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(canvasMin, canvasMax))
+    {
+        float const wheel = ImGui::GetIO().MouseWheel;
+        if (wheel != 0.0f)
+        {
+            if (ImGui::GetIO().KeyCtrl)
+            {
+                scrollX = std::clamp(scrollX - wheel * 80.0f, 0.0f, maxScroll);
+            }
+            else
+            {
+                float const cursorX = ImGui::GetIO().MousePos.x - canvasMin.x;
+                float const timeAtCursor = (scrollX + cursorX) / pixelsPerSecond;
+                pixelsPerSecond = std::clamp(pixelsPerSecond * (wheel > 0.0f ? 1.15f : 1.0f / 1.15f), 4.0f, 400.0f);
+                float const newMaxScroll = std::max(length * pixelsPerSecond - canvasWidth, 0.0f);
+                scrollX = std::clamp(timeAtCursor * pixelsPerSecond - cursorX, 0.0f, newMaxScroll);
+            }
+        }
+    }
+
+    // Middle-mouse drag pans horizontally. Gate on the drag's origin (not the current cursor) so a
+    // pan started over the canvas keeps working even as the mouse strays past its edges.
+    ImVec2 const panOrigin = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Middle];
+    bool const panStartedInCanvas = panOrigin.x >= canvasMin.x && panOrigin.x <= canvasMax.x &&
+                                     panOrigin.y >= canvasMin.y && panOrigin.y <= canvasMax.y;
+    if (panStartedInCanvas && ImGui::IsMouseDragging(ImGuiMouseButton_Middle))
+    {
+        float const panMax = std::max(length * pixelsPerSecond - canvasWidth, 0.0f);
+        scrollX = std::clamp(scrollX - ImGui::GetIO().MouseDelta.x, 0.0f, panMax);
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    }
+
+    auto timeToX = [&](float t) { return canvasMin.x + t * pixelsPerSecond - scrollX; };
+
+    // Table just for layout: column 0 (labels) and column 1 (canvas) are always aligned per row,
+    // so strips can never render on top of a label. All actual drawing/dragging happens in a
+    // second overlay pass below, using screen coordinates computed from `origin` (fixed row
+    // heights make this exact); interactive items still live inline here for correct hit ordering.
+    // Cell padding must be zero so each table row is exactly kRulerHeight/kRowHeight tall; otherwise
+    // the rows drift taller than the overlay assumes and strips no longer line up with their labels.
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0.0f, 0.0f));
+    if (ImGui::BeginTable("##table", 2, ImGuiTableFlags_BordersInnerV))
+    {
+        ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, kLabelWidth);
+        ImGui::TableSetupColumn("##canvas", ImGuiTableColumnFlags_WidthStretch);
+
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, kRulerHeight);
+        ImGui::TableSetColumnIndex(0);
+        ImGui::Dummy(ImVec2(kLabelWidth, kRulerHeight));
+        ImGui::TableSetColumnIndex(1);
+        ImGui::InvisibleButton("##scrub", ImVec2(canvasWidth, kRulerHeight));
+        ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY); // wheel over the canvas zooms, never scrolls the window
+        if (ImGui::IsItemActive())
+        {
+            playhead = std::clamp((ImGui::GetIO().MousePos.x - canvasMin.x + scrollX) / pixelsPerSecond, 0.0f, length);
+            result.scrubbed = true;
+        }
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+            result.rightClickedBackground = true;
+
+        for (int ri = 0; ri < static_cast<int>(rows.size()); ++ri)
+        {
+            ImGui::PushID(ri);
+            ImTimelineRow const& row = rows[ri];
+            ImGui::TableNextRow(ImGuiTableRowFlags_None, kRowHeight);
+
+            ImGui::TableSetColumnIndex(0);
+            // A speaker icon reflects mute state; left-clicking the whole title row toggles it.
+            char rowLabel[160];
+            snprintf(rowLabel, sizeof(rowLabel), "%s %s", row.muted ? PSI_VOLUME_OFF : PSI_VOLUME_UP,
+                     row.label ? row.label : "Track");
+            ImGui::PushStyleColor(ImGuiCol_Text,
+                                   ImGui::GetColorU32(row.muted ? ImGuiCol_TextDisabled : ImGuiCol_Text));
+            ImGui::Selectable(rowLabel, false, 0, ImVec2(0, kRowHeight));
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Click to %s", row.muted ? "unmute" : "mute");
+            if (ImGui::IsItemClicked())
+            {
+                result.clickedRow = ri;
+                result.muteToggledRow = ri;
+            }
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                result.rightClickedRow = ri;
+
+            ImGui::TableSetColumnIndex(1);
+            // Allow overlap so the strip buttons drawn on top of this row (submitted later) can win
+            // hover/click; without this the row background swallows every strip interaction.
+            ImGui::SetNextItemAllowOverlap();
+            ImGui::InvisibleButton("##row_bg", ImVec2(canvasWidth, kRowHeight));
+            ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                result.rightClickedRow = ri;
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::PopStyleVar();
+
+    // The overlay pass below repositions the cursor with SetCursorScreenPos for each strip; capture
+    // the correct post-table position now and restore it before returning so following widgets flow
+    // beneath the timeline instead of being drawn on top of it.
+    ImVec2 const cursorBelow = ImGui::GetCursorScreenPos();
+
+    // Overlay pass: ruler ticks, playhead, and strips, drawn/interacted with in absolute screen
+    // coordinates derived from `origin` + fixed row heights (matching the table layout above
+    // exactly), clipped to the canvas so scrolled-off content never bleeds into the label column.
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->PushClipRect(canvasMin, canvasMax, true);
+
+    float const tickStep = pixelsPerSecond >= 30.0f ? 1.0f : (pixelsPerSecond >= 12.0f ? 2.0f : 5.0f);
+    float const firstTick = std::max(std::floor(scrollX / pixelsPerSecond / tickStep) * tickStep, 0.0f);
+    for (float t = firstTick; t <= length; t += tickStep)
+    {
+        float const x = timeToX(t);
+        dl->AddLine(ImVec2(x, canvasMin.y + kRulerHeight * 0.5f), ImVec2(x, canvasMax.y),
+                    ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.35f));
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.0fs", t);
+        dl->AddText(ImVec2(x + 2.0f, canvasMin.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), buf);
+    }
+
+    float const dt = ImGui::GetIO().MouseDelta.x / pixelsPerSecond;
+    for (int si = 0; si < static_cast<int>(strips.size()); ++si)
+    {
+        ImTimelineStrip& strip = strips[si];
+        if (strip.row < 0 || strip.row >= static_cast<int>(rows.size()))
+            continue;
+        float const x0 = timeToX(strip.start);
+        float const x1 = timeToX(strip.end);
+        if (x1 < canvasMin.x || x0 > canvasMax.x) // fully scrolled off-screen; skip entirely
+            continue;
+
+        ImGui::PushID(si + 100000);
+        float const rowY = canvasMin.y + kRulerHeight + static_cast<float>(strip.row) * kRowHeight;
+        ImVec2 const pMin(x0, rowY + kStripPadY), pMax(x1, rowY + kRowHeight - kStripPadY);
+        dl->AddRectFilled(pMin, pMax, strip.color, 4.0f);
+        dl->AddRect(pMin, pMax, strip.selected ? IM_COL32(255, 220, 90, 255) : IM_COL32(0, 0, 0, 120), 4.0f, 0,
+                    strip.selected ? 2.0f : 1.0f);
+        if (strip.label)
+        {
+            // Vertically center the label within the strip and inset it horizontally so it isn't
+            // truncated flush against the rounded corners.
+            float const textY = rowY + (kRowHeight - ImGui::GetTextLineHeight()) * 0.5f;
+            dl->PushClipRect(ImVec2(pMin.x + 4.0f, pMin.y), pMax, true);
+            dl->AddText(ImVec2(pMin.x + 6.0f, textY), IM_COL32(0, 0, 0, 220), strip.label);
+            dl->PopClipRect();
+        }
+
+        auto handleRightClick = [&]
+        {
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                result.rightClickedStrip = si;
+        };
+
+        // Only carve out separate resize handles when the strip is wide enough to comfortably split;
+        // narrow strips get one full-width body hit area so they don't become impossible to grab.
+        float const stripW = x1 - x0;
+        bool const wide = stripW > kHandleWidth * 4.0f;
+
+        // Body: drag to move (start/end translate together, preserving length). Submitted first so
+        // the edge handles below win the overlapping edge pixels for hover/hit priority.
+        float const bodyX = wide ? x0 + kHandleWidth : x0;
+        float const bodyW = std::max(wide ? stripW - kHandleWidth * 2.0f : stripW, 1.0f);
+        ImGui::SetCursorScreenPos(ImVec2(bodyX, rowY));
+        ImGui::SetNextItemAllowOverlap(); // let the edge handles below win their overlapping pixels
+        ImGui::InvisibleButton("##body", ImVec2(bodyW, kRowHeight));
+        ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
+        if (ImGui::IsItemClicked())
+            result.clickedStrip = si;
+        handleRightClick();
+        if (ImGui::IsItemActive() && ImGui::GetIO().MouseDelta.x != 0.0f)
+        {
+            float const len = strip.end - strip.start;
+            strip.start = std::max(0.0f, strip.start + dt);
+            strip.end = strip.start + len;
+            result.clickedStrip = si;
+            result.stripsChanged = true;
+        }
+
+        if (wide)
+        {
+            // Edges: drag to trim start/end independently.
+            ImGui::SetCursorScreenPos(ImVec2(x0 - kHandleWidth * 0.5f, rowY));
+            ImGui::InvisibleButton("##left", ImVec2(kHandleWidth * 2.0f, kRowHeight));
+            ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive())
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            if (ImGui::IsItemClicked())
+                result.clickedStrip = si;
+            handleRightClick();
+            if (ImGui::IsItemActive() && ImGui::GetIO().MouseDelta.x != 0.0f)
+            {
+                strip.start = std::clamp(strip.start + dt, 0.0f, strip.end - 0.05f);
+                result.clickedStrip = si;
+                result.stripsChanged = true;
+            }
+
+            ImGui::SetCursorScreenPos(ImVec2(x1 - kHandleWidth * 1.5f, rowY));
+            ImGui::InvisibleButton("##right", ImVec2(kHandleWidth * 2.0f, kRowHeight));
+            ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive())
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            if (ImGui::IsItemClicked())
+                result.clickedStrip = si;
+            handleRightClick();
+            if (ImGui::IsItemActive() && ImGui::GetIO().MouseDelta.x != 0.0f)
+            {
+                strip.end = std::max(strip.end + dt, strip.start + 0.05f);
+                result.clickedStrip = si;
+                result.stripsChanged = true;
+            }
+        }
+        ImGui::PopID();
+    }
+
+    // Playhead, on top of everything else.
+    float const px = timeToX(std::clamp(playhead, 0.0f, length));
+    dl->AddLine(ImVec2(px, canvasMin.y), ImVec2(px, canvasMax.y), IM_COL32(255, 80, 80, 255), 2.0f);
+
+    dl->PopClipRect();
+    ImGui::SetCursorScreenPos(cursorBelow);
+    ImGui::PopID();
+    return result;
+}
+
 bool ImHDRColorEdit(const char* label, float3& color, float& power, float maxScale)
 {
     bool changed = false;

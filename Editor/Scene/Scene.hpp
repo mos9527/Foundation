@@ -184,7 +184,30 @@ struct FMorphTrack
 };
 
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 19;
+static constexpr uint32_t kSceneVersion = 20;
+
+// One NLA strip: a source clip (referenced by its animation-group name id) placed on the timeline,
+// optionally retimed and looped within a source-clip window. Matches EXT_foundation_animation.
+struct FNlaStrip
+{
+    FUUID source{};        // animation-group name id (the source clip/action)
+    float stripStart{0.0f}; // timeline seconds  (Strip Frame Start)
+    float stripEnd{0.0f};   //                   (Strip Frame End)
+    float clipStart{0.0f};  // source-local secs (Clip Start)
+    float clipEnd{0.0f};    //                   (Clip End)
+    float timeScale{1.0f};  // Clip Timescale (playback scale)
+    float influence{1.0f};  // 0..1; stored/exported, gates on/off at runtime this phase
+    bool cyclic{true};      // loop clip within [clipStart,clipEnd] to fill the strip (restart)
+};
+
+struct FNlaTrack
+{
+    FUUID id{};
+    FUUID name{};
+    Vector<FNlaStrip> strips;
+    bool mute{false};
+    explicit FNlaTrack(Allocator* alloc = GLOBAL_ALLOC) : strips(alloc) {}
+};
 
 // Stringpool entry
 struct FStringEntry
@@ -207,11 +230,12 @@ struct FSceneTables
     Vector<FSkeleton> skeletons;
     Vector<FAnimationClip> clips;
     Vector<FMorphTrack> morphTracks;
+    Vector<FNlaTrack> nlaTracks;
     FUUID sceneNodeSkeleton{}; // kNilUUID when no rigid node hierarchy.
 
     explicit FSceneTables(Allocator* alloc = GLOBAL_ALLOC)
         : strings(alloc), cameras(alloc), lights(alloc), instances(alloc), materials(alloc), meshes(alloc), curves(alloc),
-          textures(alloc), skeletons(alloc), clips(alloc), morphTracks(alloc)
+          textures(alloc), skeletons(alloc), clips(alloc), morphTracks(alloc), nlaTracks(alloc)
     {
     }
 };
@@ -355,6 +379,49 @@ inline void FDeserialize(FReader& reader, FMorphTrack& track)
     FDeserialize(reader, track.values);
 }
 
+// FNlaStrip is trivially copyable (POD), so it bulk-serializes as part of a track's vector.
+template <>
+inline void FSerialize(FWriter& writer, FNlaStrip const& strip)
+{
+    FSerialize(writer, strip.source);
+    FSerialize(writer, strip.stripStart);
+    FSerialize(writer, strip.stripEnd);
+    FSerialize(writer, strip.clipStart);
+    FSerialize(writer, strip.clipEnd);
+    FSerialize(writer, strip.timeScale);
+    FSerialize(writer, strip.influence);
+    FSerialize(writer, strip.cyclic);
+}
+template <>
+inline void FDeserialize(FReader& reader, FNlaStrip& strip)
+{
+    FDeserialize(reader, strip.source);
+    FDeserialize(reader, strip.stripStart);
+    FDeserialize(reader, strip.stripEnd);
+    FDeserialize(reader, strip.clipStart);
+    FDeserialize(reader, strip.clipEnd);
+    FDeserialize(reader, strip.timeScale);
+    FDeserialize(reader, strip.influence);
+    FDeserialize(reader, strip.cyclic);
+}
+
+template <>
+inline void FSerialize(FWriter& writer, FNlaTrack const& track)
+{
+    FSerialize(writer, track.id);
+    FSerialize(writer, track.name);
+    FSerialize(writer, track.strips);
+    FSerialize(writer, track.mute);
+}
+template <>
+inline void FDeserialize(FReader& reader, FNlaTrack& track)
+{
+    FDeserialize(reader, track.id);
+    FDeserialize(reader, track.name);
+    FDeserialize(reader, track.strips);
+    FDeserialize(reader, track.mute);
+}
+
 // FStringEntry: id is FUUID::FromString(value).
 template <>
 inline void FSerialize(FWriter& writer, FStringEntry const& entry)
@@ -384,6 +451,7 @@ inline void FSerialize(FWriter& writer, FSceneTables const& tables)
     FSerialize(writer, tables.skeletons);
     FSerialize(writer, tables.clips);
     FSerialize(writer, tables.morphTracks);
+    FSerialize(writer, tables.nlaTracks);
     FSerialize(writer, tables.sceneNodeSkeleton);
 }
 
@@ -402,6 +470,7 @@ inline void FDeserialize(FReader& reader, FSceneTables& tables)
     FDeserialize(reader, tables.skeletons, tables.skeletons.get_allocator().mResource);
     FDeserialize(reader, tables.clips, tables.clips.get_allocator().mResource);
     FDeserialize(reader, tables.morphTracks, tables.morphTracks.get_allocator().mResource);
+    FDeserialize(reader, tables.nlaTracks, tables.nlaTracks.get_allocator().mResource);
     FDeserialize(reader, tables.sceneNodeSkeleton);
 }
 
