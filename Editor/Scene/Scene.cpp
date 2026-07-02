@@ -2075,8 +2075,7 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     FLight const* environmentLight = GetEnvironmentLight();
     for (size_t textureIndex = 0; textureIndex < GetTextures().size(); ++textureIndex)
     {
-        if (environmentLight && environmentLight->environmentMap &&
-            environmentLight->environmentTexture != kInvalidTexture && textureIndex == environmentLight->environmentTexture)
+        if (environmentLight && environmentLight->HasEnvironmentTexture() && textureIndex == environmentLight->environmentTexture)
             continue;
         FSerializedTexture const& texture = GetTextures()[textureIndex];
         textureBindings += texture.IsValid() ? 1u : 0u;

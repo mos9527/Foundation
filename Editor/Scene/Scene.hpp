@@ -139,6 +139,8 @@ struct FLight
     float environmentAzimuthOffset{0.0f};
     // Scene-node hierarchy index for rigid node animation; -1 when static.
     int32_t node{-1};
+
+    bool HasEnvironmentTexture() const { return environmentMap && environmentTexture != kInvalidTexture; }
 };
 
 inline FLight MakeDefaultEnvironmentLight()

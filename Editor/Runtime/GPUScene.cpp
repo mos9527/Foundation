@@ -7,8 +7,8 @@
 bool IsSceneEnvironmentTexture(FImportedScene const& scene, size_t textureIndex)
 {
     FLight const* environment = scene.GetEnvironmentLight();
-    return environment != nullptr && environment->environmentMap &&
-           environment->environmentTexture != kInvalidTexture && textureIndex == environment->environmentTexture;
+    return environment != nullptr && environment->HasEnvironmentTexture() &&
+           textureIndex == environment->environmentTexture;
 }
 
 GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI::RHIDeviceCapabilities const& caps,
@@ -98,17 +98,13 @@ FTexture ReadSceneTexture(FImportedScene const& scene, FSerializedTexture const&
 }
 } // namespace
 
-void UploadSceneEnvironment(FImportedScene const& scene, GPUScene& gpu)
+void UploadSceneEnvironment(FImportedScene const& scene, FLight const& environment, GPUScene& gpu)
 {
-    FLight const* environment = scene.GetEnvironmentLight();
-    bool const hasEnvironmentTexture =
-        environment != nullptr && environment->environmentMap && environment->environmentTexture != kInvalidTexture;
-    if (!hasEnvironmentTexture)
-        return;
-
-    CHECK_MSG(environment->environmentTexture < scene.GetTextures().size(),
+    CHECK_MSG(environment.type == FLightType::Environment && environment.HasEnvironmentTexture(),
+              "UploadSceneEnvironment requires an Environment light with an environment map texture");
+    CHECK_MSG(environment.environmentTexture < scene.GetTextures().size(),
               "Scene environment texture index out of range");
-    FSerializedTexture const& environmentTextureDesc = scene.GetTextures()[environment->environmentTexture];
+    FSerializedTexture const& environmentTextureDesc = scene.GetTextures()[environment.environmentTexture];
     ScopedArena environmentArena(GLOBAL_ALLOC, SceneTextureReadBudget(environmentTextureDesc));
     CHECK(environmentArena);
     AllocatorStack environmentAlloc(environmentArena);

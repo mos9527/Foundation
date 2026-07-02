@@ -98,7 +98,8 @@ int main(int argc, char** argv)
 
         FSceneGPUResources resources;
         UploadSceneResources(scene, gpu, resources);
-        UploadSceneEnvironment(scene, gpu);
+        if (FLight const* environment = scene.GetEnvironmentLight(); environment && environment->HasEnvironmentTexture())
+            UploadSceneEnvironment(scene, *environment, gpu);
         gpu.Join();
 
         RendererUBO ubo{.adaptiveThreshold = 0.10f};

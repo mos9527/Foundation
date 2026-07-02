@@ -24,9 +24,9 @@ GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI:
 // Drain with gpu.Join() or gpu.Poll().
 void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources& outResources);
 
-// Synchronously uploads the scene's HDRI environment map and its importance-sampling CDFs, if it
-// has one.
-void UploadSceneEnvironment(FImportedScene const& scene, GPUScene& gpu);
+// Synchronously uploads `environment`'s HDRI map and importance-sampling CDFs. Requires
+// environment.HasEnvironmentTexture().
+void UploadSceneEnvironment(FImportedScene const& scene, FLight const& environment, GPUScene& gpu);
 
 // Fills and commits the GPUScene instance/material/light tables from `scene`, resolving instance
 // geometry and material textures through `resources`, then rebuilds the UBO.

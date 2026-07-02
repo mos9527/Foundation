@@ -291,13 +291,9 @@ public:
      * @brief Uploads a mesh as CPU-updateable dynamic geometry (deformation workloads).
      * @details Topology (indices) is fixed; only vertex positions change per frame. The source's
      *          quantized verts + LOD0 indices are reserved in the host-coherent dynamic ring
-     *          (replicated across every frame slot) and a single @ref
-     * RHIAccelerationStructureBuildFlagsBits::AllowUpdate BLAS is built once. Per frame the caller rewrites the current
-     * slot's verts via
-     *          @ref BeginGeometryUpdate / @ref EndGeometryUpdate and the graph's
+     *          (replicated across every frame slot) and a single @ref RHIAccelerationStructureBuildFlagsBits::AllowUpdate
+     *          BLAS is built once. Per frame the caller rewrites the current slot's verts via @ref BeginGeometryUpdate / @ref EndGeometryUpdate and the graph's
      *          "Dynamic BLAS Refit" pass (@ref RefitDynamicGeometry) refits the BLAS in place.
-     *          DAG/meshlet payloads are ignored (dynamic geo is drawn with a plain vertex/index
-     *          path, not the meshlet pipeline). Requires @ref GPUSceneDesc::dynamicGeometryBudget > 0.
      * @note The source's rest-pose verts seed every slot; the handle is @ref Result::Ready once
      *       its bytes are resident and the BLAS is built (synchronous, not via the upload worker).
      */

@@ -542,7 +542,8 @@ static void BeginSceneUpload(FImportedScene& scene, GPUScene* gpu, FSceneGPUReso
 static void PrepareSceneGlobals(FImportedScene& scene, GPUScene* gpu, AllocatorStack& sceneAlloc)
 {
     ApplySceneGlobals(scene);
-    UploadSceneEnvironment(scene, *gpu);
+    if (FLight const* environment = scene.GetEnvironmentLight(); environment && environment->HasEnvironmentTexture())
+        UploadSceneEnvironment(scene, *environment, *gpu);
     {
         FTexture sdr(&sceneAlloc);
         FTexture hdr(&sceneAlloc);
