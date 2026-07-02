@@ -109,9 +109,10 @@ void main(uint2 tid: SV_DispatchThreadID) {
         // TODO: Area lights. That's probably going to be ReSTIR DI if we'd want soft shadows from those...
         for (uint li = 0; li < globalParams.numSceneLights; li++) {
             GSLight gl = lights[globalParams.firstLight + li];
+            uint32_t lightType = GSLightType(gl);
             float3 lightColor = gl.color * gl.power;
             if (!any(lightColor > 0.0f)) continue;
-            if (gl.type == 5) { // Environment: raster uses the synthetic env light as simple ambient.
+            if (lightType == 5) { // Environment: raster uses the synthetic env light as simple ambient.
                 Ld += baseColor * lightColor;
                 continue;
             }
@@ -119,7 +120,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
             float3 l;
             float atten = 1.0f;
             float lightDist = INF;
-            if (gl.type == 0) { // Directional
+            if (lightType == 0) { // Directional
                 l = -gl.direction;
             } else { // Point or Spot
                 float3 toLight = gl.position - p;
@@ -129,13 +130,11 @@ void main(uint2 tid: SV_DispatchThreadID) {
                 l = toLight / dist;
                 lightDist = dist;
                 atten = 1.0f / dist2;
-                if (gl.type == 1 || gl.type == 2)
-                    if (gl.range > 0.0f && dist > gl.range) continue;
-                if (gl.type == 2) { // Spot
+                if (lightType == 2) { // Spot
                     float cosTheta = dot(gl.direction, -l);
-                    if (cosTheta < gl.spotOuterCosAngle) continue;
-                    if (cosTheta < gl.spotInnerCosAngle) {
-                        float delta = (cosTheta - gl.spotOuterCosAngle) / (gl.spotInnerCosAngle - gl.spotOuterCosAngle);
+                    if (cosTheta < gl.params.z) continue;
+                    if (cosTheta < gl.params.y) {
+                        float delta = (cosTheta - gl.params.z) / (gl.params.y - gl.params.z);
                         atten *= (delta * delta) * (delta * delta);
                     }
                 }
@@ -146,8 +145,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
             float3 fs;
             bsdf.f(wo, wi, TransportMode::Radiance, fd, fs);
             float vis = 1.0f;
-            if ((flags & kEnableRasterRTShadows) != 0) {
-                if (gl.type <= 2 /* Anything not area lights */) {
+            if ((flags & kEnableRasterRTShadows) != 0 && GSLightHasFlag(gl, kGSLightFlagUseShadow)) {
+                if (lightType <= 2 /* Anything not area lights */) {
                     float3 shadowNormalFF = dot(l, normalWS) < 0.0f ? -normalWS : normalWS;
                     float3 shadowOrigin = OffsetRay(p, shadowNormalFF);
                     vis = shadow(shadowOrigin, l, lightDist) ? 0.0f : 1.0f;

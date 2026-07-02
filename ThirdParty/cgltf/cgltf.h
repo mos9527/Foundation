@@ -771,6 +771,8 @@ typedef struct cgltf_light {
 	cgltf_extras extras;
 	cgltf_bool has_foundation_lights;
 	cgltf_float angular_diameter;
+	cgltf_float radius;
+	cgltf_bool use_shadow;
 } cgltf_light;
 
 typedef struct cgltf_light_area {
@@ -5986,6 +5988,8 @@ static int cgltf_parse_json_light(cgltf_options* options, jsmntok_t const* token
 
 	out_light->has_foundation_lights = 0;
 	out_light->angular_diameter = 0.f;
+	out_light->radius = 0.f;
+	out_light->use_shadow = 1;
 
 	int size = tokens[i].size;
 	++i;
@@ -6088,6 +6092,18 @@ static int cgltf_parse_json_light(cgltf_options* options, jsmntok_t const* token
 						{
 							++i;
 							out_light->angular_diameter = cgltf_json_to_float(tokens + i, json_chunk);
+							++i;
+						}
+						else if (cgltf_json_strcmp(tokens+i, json_chunk, "radius") == 0)
+						{
+							++i;
+							out_light->radius = cgltf_json_to_float(tokens + i, json_chunk);
+							++i;
+						}
+						else if (cgltf_json_strcmp(tokens+i, json_chunk, "useShadow") == 0)
+						{
+							++i;
+							out_light->use_shadow = cgltf_json_to_bool(tokens + i, json_chunk);
 							++i;
 						}
 						else

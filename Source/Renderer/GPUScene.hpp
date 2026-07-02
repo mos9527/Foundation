@@ -25,6 +25,11 @@ inline constexpr uint32_t kGSInstanceTypeCurve = 1u;
 // so shaders read its primitive data from the dynamic ring instead of the immutable buffer.
 inline constexpr uint32_t kGSInstanceTypeMask = 0xFFu;
 inline constexpr uint32_t kGSInstanceFlagDynamic = 0x100u;
+// GSLight::flags packs FLightType in the low byte and renderer flags above it.
+inline constexpr uint32_t kGSLightTypeMask = 0xFFu;
+inline constexpr uint32_t kGSLightFlagTwoSided = 0x100u;
+inline constexpr uint32_t kGSLightFlagUseShadow = 0x200u;
+inline constexpr uint32_t kGSLightFlagEnvironmentMap = 0x400u;
 
 /**
  * @brief Opaque, generation-tagged reference to GPUScene-owned geometry residency.
@@ -144,25 +149,17 @@ struct GSMaterial
 };
 struct GSLight
 {
-    uint32_t type; // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect, 5=Environment
+    uint32_t flags; // type in low byte; see kGSLightFlag*
     float3 color; // Normalized RGB color
     float power; // Radiant power (type-dependent unit)
     float3 position;
     float3 direction;
-    // Directional
-    float angularDiameter;
-    // Spot/Point
-    float range;
-    // Spot
-    float spotInnerCosAngle;
-    float spotOuterCosAngle;
-    // Area lights (Disk / Rect)
+    // Directional: x=angularDiameter. Point: x=radius. Spot: x=radius, y=innerCos, z=outerCos.
+    // Disk: xy=radius. Environment: x=azimuthOffset.
+    float4 params;
     float3 dpdu; // tangent u-axis (Rect: half-extent u)
     float3 dpdv; // tangent v-axis (Rect: half-extent v)
-    float2 radius; // Disk radius (x, y for ellipse)
-    uint32_t twoSided;
     float importance;
-    float envAzimuthOffset;
 };
 struct GSCurveSet
 {
@@ -188,7 +185,7 @@ struct GSCurveSegment
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 56);
 static_assert(sizeof(GSMaterial) == 192);
-static_assert(sizeof(GSLight) == 104);
+static_assert(sizeof(GSLight) == 88);
 static_assert(sizeof(GSCurveSet) == 20);
 static_assert(sizeof(GSCurvePoint) == 16);
 static_assert(sizeof(GSCurveSegment) == 16);

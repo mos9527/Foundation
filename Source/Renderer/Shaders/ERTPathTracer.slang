@@ -454,9 +454,10 @@ struct HitRecord
 
 HitKind HitKindFromLight(GSLight light)
 {
-    if (light.type == 3)
+    uint32_t type = GSLightType(light);
+    if (type == 3)
         return HitKind::Disk;
-    if (light.type == 4)
+    if (type == 4)
         return HitKind::Rect;
     return HitKind::None;
 }
@@ -913,7 +914,7 @@ uint BuildSERCoherenceHint(HitPayload payload, uint bounce)
     if (IsLightInstance(instanceID))
     {
         GSLight light = LoadSceneLight(GetLightIndex(instanceID));
-        uint hash = SERHashCombine(17u, light.type);
+        uint hash = SERHashCombine(17u, GSLightType(light));
         hash = SERHashCombine(hash, min(bounce, 3u));
         return (1u << 6) | (hash & 0x3Fu);
     }
@@ -1097,8 +1098,8 @@ InfiniteLight MakeEnvironmentLight(GSLight gl)
 {
     return InfiniteLight(
         SampledSpectrum(gl.color * gl.power),
-        gl.twoSided != 0u,
-        gl.envAzimuthOffset,
+        GSLightHasFlag(gl, kGSLightFlagEnvironmentMap),
+        gl.params.x,
         globalParams.envMapTextureIndex,
         globalParams.envMapMarginalCDFIndex,
         globalParams.envMapConditionalCDFIndex
@@ -1108,27 +1109,27 @@ InfiniteLight MakeEnvironmentLight(GSLight gl)
 LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
 {
     SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
-    switch (gl.type) {
+    switch (GSLightType(gl)) {
     case 0: {
-        DistantLight light = DistantLight(Lemit, gl.direction, gl.angularDiameter);
+        DistantLight light = DistantLight(Lemit, gl.direction, gl.params.x);
         return light.Sample_Li(ctx, u);
     }
     case 1: {
-        PointLight light = PointLight(Lemit, gl.position);
+        PointLight light = PointLight(Lemit, gl.position, gl.params.x);
         return light.Sample_Li(ctx, u);
     }
     case 2: {
         SpotLight light = SpotLight(Lemit, gl.position, gl.direction,
-            acos(gl.spotOuterCosAngle), acos(gl.spotInnerCosAngle));
+            acos(gl.params.z), acos(gl.params.y), gl.params.x);
         return light.Sample_Li(ctx, u);
     }
     case 3: {
-        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.radius, gl.twoSided != 0);
+        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.params.xy, GSLightHasFlag(gl, kGSLightFlagTwoSided));
         return light.Sample_Li(ctx, u);
     }
     case 4: {
         RectLight light = RectLight(Lemit, gl.position,
-            gl.dpdu, gl.dpdv, gl.twoSided != 0);
+            gl.dpdu, gl.dpdv, GSLightHasFlag(gl, kGSLightFlagTwoSided));
         return light.Sample_Li(ctx, u);
     }
     case 5: {
@@ -1159,7 +1160,7 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, float uc, float2 u, float
     if (Li.pdf > 0.0f) {
         SampledSpectrum radiance = Li.Li / (Li.pdf * prob);
         float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * prob);
-        return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist);
+        return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist, GSLightHasFlag(gl, kGSLightFlagUseShadow));
     }
 
     return LightLiSample();
@@ -1194,7 +1195,7 @@ bool SampleVisibleSceneLight<S : ISampler>(
 
     float3 shadowNormalFF = dot(Li.wi, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
     float3 shadowOrigin = OffsetRay(hit.position, shadowNormalFF);
-    if (TraceShadowRay(shadowOrigin, Li.wi, Li.dist, rng))
+    if (Li.useShadow && TraceShadowRay(shadowOrigin, Li.wi, Li.dist, rng))
         Li.pdf = 0.0f;
 
     return Li.pdf > EPS;
@@ -1379,14 +1380,14 @@ bool AddAnalyticLightHitEmission(
 
     if (hit.kind == HitKind::Disk)
     {
-        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.radius, gl.twoSided != 0);
+        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.params.xy, GSLightHasFlag(gl, kGSLightFlagTwoSided));
         float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
         Le = light.L(hitPoint, normal, float3(0), view);
         pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
     }
     else if (hit.kind == HitKind::Rect)
     {
-        RectLight light = RectLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.twoSided != 0);
+        RectLight light = RectLight(Lemit, gl.position, gl.dpdu, gl.dpdv, GSLightHasFlag(gl, kGSLightFlagTwoSided));
         float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
         Le = light.L(hitPoint, normal, float3(0), view);
         pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
@@ -1537,7 +1538,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
                     float3 rd = q.CandidateObjectRayDirection();
                     float t;
                     float2 localPos;
-                    if (EvaluateLightIntersection(gl.type, ro, rd, q.RayTMin(), q.CommittedRayT(), t, localPos))
+                    if (EvaluateLightIntersection(GSLightType(gl), ro, rd, q.RayTMin(), q.CommittedRayT(), t, localPos))
                     {
                         bestProceduralBary = localPos;
                         q.CommitProceduralPrimitiveHit(t);

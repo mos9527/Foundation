@@ -2394,7 +2394,8 @@ uint32_t GPUSceneImpl::CountTLASInstances() const
     uint32_t numAreaLights = 0;
     for (const auto& light : owner.mCommittedLights)
     {
-        if (light.type == 3 || light.type == 4)
+        uint32_t type = light.flags & kGSLightTypeMask;
+        if (type == 3 || type == 4)
             numAreaLights++;
     }
     uint32_t numInstances = CountLiveInstances();
@@ -2455,8 +2456,11 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
 
     uint32_t areaLights = 0;
     for (GSLight const& light : owner.mCommittedLights)
-        if (light.type == 3 || light.type == 4)
+    {
+        uint32_t type = light.flags & kGSLightTypeMask;
+        if (type == 3 || type == 4)
             ++areaLights;
+    }
     uint32_t readyInstances = 0;
     for (GSInstance const& inst : owner.mCommittedInstances)
         if (GeometryReady(inst.resourceIndex))
@@ -2498,12 +2502,13 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
             .instanceID = lightIndex | (1u << 23),
             .mask = 0x02, // LIGHT_MASK
         };
+        uint32_t type = src->flags & kGSLightTypeMask;
         float3 u = src->dpdu;
         float3 v = src->dpdv;
-        if (src->type == 3) // Disk
+        if (type == 3) // Disk
         {
-            u *= src->radius.x;
-            v *= src->radius.y;
+            u *= src->params.x;
+            v *= src->params.y;
         }
         float3 crossUV = cross(u, v);
         CHECK_MSG(length(crossUV) > 0.0f, "Area light has zero surface area");
@@ -2515,8 +2520,8 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         res.transformTranslation[0] = src->position.x;
         res.transformTranslation[1] = src->position.y;
         res.transformTranslation[2] = src->position.z;
-        res.blas = (src->type == 3) ? mDiskBLAS.Get() : mRectBLAS.Get();
-        res.shaderBindingTableRecordOffset = (src->type == 3) ? kDiskLightSBTOffset : kRectLightSBTOffset;
+        res.blas = (type == 3) ? mDiskBLAS.Get() : mRectBLAS.Get();
+        res.shaderBindingTableRecordOffset = (type == 3) ? kDiskLightSBTOffset : kRectLightSBTOffset;
         return res;
     };
 
@@ -2541,7 +2546,8 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         for (uint32_t i = 0; i < owner.mCommittedLights.size(); ++i)
         {
             GSLight const& light = owner.mCommittedLights[i];
-            if (light.type == 3 || light.type == 4)
+            uint32_t type = light.flags & kGSLightTypeMask;
+            if (type == 3 || type == 4)
             {
                 auto data = ConvertLight(&light, i);
                 pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);

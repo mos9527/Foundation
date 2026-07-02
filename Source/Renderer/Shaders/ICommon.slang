@@ -91,6 +91,10 @@ public struct MIndex {
 // GSInstance.type packs the geometry kind in the low byte and feature flags above it.
 public static const uint32_t kGSInstanceTypeMask = 0xFFu;
 public static const uint32_t kGSInstanceFlagDynamic = 0x100u; // CPU-updateable geometry: read positions from `dynamicPrimitives`
+public static const uint32_t kGSLightTypeMask = 0xFFu;
+public static const uint32_t kGSLightFlagTwoSided = 0x100u;
+public static const uint32_t kGSLightFlagUseShadow = 0x200u;
+public static const uint32_t kGSLightFlagEnvironmentMap = 0x400u;
 public struct GSInstance
 {
     // TRS
@@ -192,26 +196,24 @@ public struct MeshletTaskWork
 };
 public struct GSLight
 {
-    public uint32_t type;       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect, 5=Environment
+    public uint32_t flags;      // type in low byte; see kGSLightFlag*
     public float3 color;        // Normalized RGB color
     public float power;         // Radiant power (type-dependent unit)
     public float3 position;
     public float3 direction;
-    // Directional
-    public float angularDiameter;
-    // Spot/Point
-    public float range;
-    // Spot
-    public float spotInnerCosAngle;
-    public float spotOuterCosAngle;
-    // Area lights (Disk / Rect)
+    // Directional: x=angularDiameter. Point: x=radius. Spot: x=radius, y=innerCos, z=outerCos.
+    // Disk: xy=radius. Environment: x=azimuthOffset.
+    public float4 params;
     public float3 dpdu;         // tangent u-axis (Rect: half-extent u)
     public float3 dpdv;         // tangent v-axis (Rect: half-extent v)
-    public float2 radius;       // Disk radius (x, y for ellipse)
-    public uint32_t twoSided;
     public float importance;
-    public float envAzimuthOffset;
 };
+public uint32_t GSLightType(GSLight light) {
+    return light.flags & kGSLightTypeMask;
+}
+public bool GSLightHasFlag(GSLight light, uint32_t flag) {
+    return (light.flags & flag) != 0u;
+}
 public struct UBO
 {
     public uint32_t frameNumber;

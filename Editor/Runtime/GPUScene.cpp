@@ -146,32 +146,40 @@ float SpotLightImportanceSolidAngle(float cosInner, float cosOuter)
 float AreaLightFluxImportance(GSLight const& light)
 {
     float area = 1.0f;
-    if (light.type == static_cast<uint32_t>(FLightType::Disk))
-        area = std::numbers::pi_v<float> * light.radius.x * light.radius.y;
-    else if (light.type == static_cast<uint32_t>(FLightType::Rect))
+    FLightType type = static_cast<FLightType>(light.flags & kGSLightTypeMask);
+    if (type == FLightType::Disk)
+        area = std::numbers::pi_v<float> * light.params.x * light.params.y;
+    else if (type == FLightType::Rect)
         area = 4.0f * cross(light.dpdu, light.dpdv).length();
 
-    float sides = light.twoSided != 0 ? 2.0f : 1.0f;
+    float sides = (light.flags & kGSLightFlagTwoSided) != 0 ? 2.0f : 1.0f;
     return light.power * area * std::numbers::pi_v<float> * sides;
 }
 
 void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu, GPUScene::LightSamplerType sampler)
 {
     dst = GSLight{};
-    dst.type = static_cast<uint32_t>(src.type);
+    dst.flags = static_cast<uint32_t>(src.type);
+    if (src.twoSided)
+        dst.flags |= kGSLightFlagTwoSided;
+    if (src.useShadow)
+        dst.flags |= kGSLightFlagUseShadow;
     dst.color = src.color;
     dst.power = src.power;
-    dst.range = src.range;
     dst.position = src.transform.transform;
     // Default forward is (0,0,-1).
     dst.direction = normalize(src.transform.rotation * float3(0, 0, -1));
-    dst.angularDiameter = src.angularDiameter;
-    dst.spotInnerCosAngle = std::cos(src.spotInnerConeAngle);
-    dst.spotOuterCosAngle = std::cos(src.spotOuterConeAngle);
     float areaWidth = std::max(src.width, 1e-6f);
     float areaHeight = std::max(src.height, 1e-6f);
-    dst.radius = float2(areaWidth, areaHeight);
-    dst.twoSided = src.twoSided ? 1u : 0u;
+    if (src.type == FLightType::Directional)
+        dst.params.x = src.angularDiameter;
+    else if (src.type == FLightType::Point)
+        dst.params.x = std::max(src.radius, 0.0f);
+    else if (src.type == FLightType::Spot)
+        dst.params = float4(std::max(src.radius, 0.0f), std::cos(src.spotInnerConeAngle),
+                            std::cos(src.spotOuterConeAngle), 0.0f);
+    else if (src.type == FLightType::Disk)
+        dst.params = float4(areaWidth, areaHeight, 0.0f, 0.0f);
     if (src.type == FLightType::Disk || src.type == FLightType::Rect)
     {
         float3 n = dst.direction;
@@ -202,8 +210,9 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu, GPUSc
         bool const hasEnvMap = src.environmentMap && gpu.HasEnvMap();
         dst.color = hasEnvMap ? float3(1.0f) : src.color;
         dst.power = src.power;
-        dst.twoSided = hasEnvMap ? 1u : 0u;
-        dst.envAzimuthOffset = src.environmentAzimuthOffset;
+        if (hasEnvMap)
+            dst.flags |= kGSLightFlagEnvironmentMap;
+        dst.params.x = src.environmentAzimuthOffset;
     }
 
     float importance = 1.0f;
@@ -224,7 +233,7 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu, GPUSc
             importance = dst.power * 4.0f * std::numbers::pi_v<float>;
             break;
         case FLightType::Spot:
-            importance = dst.power * SpotLightImportanceSolidAngle(dst.spotInnerCosAngle, dst.spotOuterCosAngle);
+            importance = dst.power * SpotLightImportanceSolidAngle(dst.params.y, dst.params.z);
             break;
         case FLightType::Disk:
         case FLightType::Rect:

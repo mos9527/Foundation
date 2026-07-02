@@ -266,11 +266,10 @@ static void AppendWireCircle(Vector<GizmoVertex>& vertices, float3 center, float
     }
 }
 
-static void AppendWireSphere(Vector<GizmoVertex>& vertices, float3 center, float radius, float4 color)
+static void AppendRadiusBillboard(Vector<GizmoVertex>& vertices, float3 center, float radius, float3 camRight,
+                                  float3 camUp, float4 color)
 {
-    AppendWireCircle(vertices, center, float3(1, 0, 0), float3(0, 1, 0), float2(radius), color);
-    AppendWireCircle(vertices, center, float3(1, 0, 0), float3(0, 0, 1), float2(radius), color);
-    AppendWireCircle(vertices, center, float3(0, 1, 0), float3(0, 0, 1), float2(radius), color);
+    AppendWireCircle(vertices, center, camRight, camUp, float2(radius), color);
 }
 
 static void AppendDirectionalGizmo(Vector<GizmoVertex>& vertices, FLight const& light, float4 color)
@@ -308,19 +307,22 @@ static void AppendDirectionalGizmo(Vector<GizmoVertex>& vertices, FLight const& 
     }
 }
 
-static void AppendPointGizmo(Vector<GizmoVertex>& vertices, FLight const& light, float4 color)
+static void AppendPointGizmo(Vector<GizmoVertex>& vertices, FLight const& light, float3 camRight, float3 camUp,
+                             float4 color)
 {
     float3 pos = light.transform.transform;
-    float radius = light.range > 0.0f ? light.range : 0.5f;
-    AppendWireSphere(vertices, pos, radius, color);
-    AppendWireCircle(vertices, pos, float3(1, 0, 0), float3(0, 1, 0), float2(0.05f), color, 12);
+    if (light.radius > 0.0f)
+        AppendRadiusBillboard(vertices, pos, light.radius, camRight, camUp, color);
+    else
+        AppendWireCircle(vertices, pos, float3(1, 0, 0), float3(0, 1, 0), float2(0.05f), color, 12);
 }
 
-static void AppendSpotGizmo(Vector<GizmoVertex>& vertices, FLight const& light, float4 color)
+static void AppendSpotGizmo(Vector<GizmoVertex>& vertices, FLight const& light, float3 camRight, float3 camUp,
+                            float4 color)
 {
     float3 pos = light.transform.transform;
     float3 dir = normalize(light.transform.rotation * float3(0.0f, 0.0f, -1.0f));
-    float coneLen = light.range > 0.0f ? light.range : 3.0f;
+    float coneLen = 3.0f;
     float outerR = coneLen * std::tan(light.spotOuterConeAngle);
 
     float3 u, v;
@@ -328,6 +330,8 @@ static void AppendSpotGizmo(Vector<GizmoVertex>& vertices, FLight const& light, 
     float3 tip = pos + dir * coneLen;
 
     AppendWireCircle(vertices, tip, u, v, float2(outerR), color, 24);
+    if (light.radius > 0.0f)
+        AppendRadiusBillboard(vertices, pos, light.radius, camRight, camUp, color);
     for (int i = 0; i < 4; ++i)
     {
         float a = static_cast<float>(i) * (std::numbers::pi_v<float> * 0.5f);
@@ -633,6 +637,8 @@ void BuildLightGizmos()
 
     if (GEditor.gizmo.showLightGizmos)
     {
+        float3 const camRight = GEditor.camera.rot * float3(1.0f, 0.0f, 0.0f);
+        float3 const camUp = GEditor.camera.rot * float3(0.0f, 1.0f, 0.0f);
         auto lights = GEditor.Scene().GetLights();
         for (int i = 0; i < static_cast<int>(lights.size()); ++i)
         {
@@ -645,8 +651,8 @@ void BuildLightGizmos()
             switch (light.type)
             {
             case FLightType::Directional: AppendDirectionalGizmo(sGizmo.vertices, light, color); break;
-            case FLightType::Point:       AppendPointGizmo(sGizmo.vertices, light, color);       break;
-            case FLightType::Spot:        AppendSpotGizmo(sGizmo.vertices, light, color);        break;
+            case FLightType::Point:       AppendPointGizmo(sGizmo.vertices, light, camRight, camUp, color); break;
+            case FLightType::Spot:        AppendSpotGizmo(sGizmo.vertices, light, camRight, camUp, color);  break;
             case FLightType::Disk:        AppendDiskGizmo(sGizmo.vertices, light, color);        break;
             case FLightType::Rect:        AppendRectGizmo(sGizmo.vertices, light, color);        break;
             default: break;

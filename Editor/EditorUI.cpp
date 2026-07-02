@@ -1960,7 +1960,6 @@ void FLightingPanel()
                 light.transform.rotation = GEditor.camera.rot;
                 light.color = float3{1.0f, 0.92f, 0.78f};
                 light.power = 10.0f;
-                light.range = 10.0f;
                 size_t const insertIndex = !lights.empty() && lights.front().type == FLightType::Environment ? 1u : 0u;
                 lights.insert(lights.begin() + static_cast<std::ptrdiff_t>(insertIndex), light);
                 GEditor.Scene().RebuildIndex();
@@ -2212,10 +2211,9 @@ void FLightingPanel()
                     if (lightChanged)
                         light.angularDiameter = radians(angularDiameter);
                 }
-                // Range for Point and Spot
                 if (light.type == FLightType::Point || light.type == FLightType::Spot)
                 {
-                    lightChanged |= ImGui::DragFloat("Range", &light.range, 0.1f, 0.0f, 1000.0f, "%.2f (0=inf)");
+                    lightChanged |= ImGui::DragFloat("Radius", &light.radius, 0.01f, 0.0f, 100.0f, "%.3f");
                 }
 
                 // Spot cone angles
@@ -2240,6 +2238,9 @@ void FLightingPanel()
                     lightChanged |= ImGui::DragFloat("Width", &light.width, 0.01f, 0.001f, 100.0f, "%.3f");
                     lightChanged |= ImGui::DragFloat("Height", &light.height, 0.01f, 0.001f, 100.0f, "%.3f");
                 }
+
+                if (light.type != FLightType::Environment)
+                    lightChanged |= ImGui::Checkbox("Shadows", &light.useShadow);
 
                 // Two-sided toggle for area lights
                 if (light.type == FLightType::Disk || light.type == FLightType::Rect)

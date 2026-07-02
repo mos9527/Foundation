@@ -31,12 +31,14 @@ public struct LightLiSample {
     public float pdf;          // PDF for this sample
     public bool isDelta;
     public float dist;         // Distance from shading point to sampled light point (INF for infinite/distant)
-    public __init(SampledSpectrum Li = 0, float3 wi = 0, float pdf = 0, bool isDelta = false, float dist = INF) {
+    public bool useShadow;
+    public __init(SampledSpectrum Li = 0, float3 wi = 0, float pdf = 0, bool isDelta = false, float dist = INF, bool useShadow = true) {
         this.Li = Li;
         this.wi = wi;
         this.pdf = pdf;
         this.isDelta = isDelta;
         this.dist = dist;
+        this.useShadow = useShadow;
     }
 };
 // The light interface
@@ -343,14 +345,16 @@ public struct DistantLight : ILight {
 public struct PointLight : ILight {
     SampledSpectrum I;
     float3 position;
+    float radius;
 
-    public __init(SampledSpectrum I, float3 position) {
+    public __init(SampledSpectrum I, float3 position, float radius = 0.0f) {
         this.I = I;
         this.position = position;
+        this.radius = radius;
     }
 
     public LightType Type() {
-        return LightType::DeltaPosition;
+        return radius > 0.0f ? LightType::Area : LightType::DeltaPosition;
     }
 
     public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
@@ -367,16 +371,51 @@ public struct PointLight : ILight {
     }
 
     public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
-        return 0.0f;
+        if (radius <= 0.0f) return 0.0f;
+
+        float3 oc = ctx.p() - position;
+        float b = dot(oc, wi);
+        float c = dot(oc, oc) - radius * radius;
+        float discrim = b * b - c;
+        if (discrim <= 0.0f) return 0.0f;
+
+        float root = sqrt(discrim);
+        float t = -b - root;
+        if (t <= 0.0f) t = -b + root;
+        if (t <= 0.0f) return 0.0f;
+
+        float3 pLight = ctx.p() + t * wi;
+        float3 nLight = (pLight - position) / radius;
+        float cosTheta = dot(nLight, -wi);
+        if (cosTheta <= 0.0f) return 0.0f;
+
+        return (t * t) / (4.0f * Pi * radius * radius * cosTheta);
     }
 
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
-        float3 wi = position - ctx.p();
+        float3 pLight = position;
+        bool isDelta = radius <= 0.0f;
+
+        if (!isDelta) {
+            pLight += radius * SampleUniformSphere(u);
+        }
+
+        float3 wi = pLight - ctx.p();
         float dist2 = dot(wi, wi);
         if (dist2 == 0.0f) return LightLiSample();
         
         float dist = sqrt(dist2);
         wi /= dist;
+
+        if (!isDelta) {
+            float3 nLight = (pLight - position) / radius;
+            float cosTheta = dot(nLight, -wi);
+            if (cosTheta <= 0.0f) return LightLiSample();
+
+            float pdf = dist2 / (4.0f * Pi * radius * radius * cosTheta);
+            SampledSpectrum Li = I / (Pi * radius * radius);
+            return LightLiSample(Li, wi, pdf, false, dist);
+        }
         
         SampledSpectrum Li = I / dist2;
         return LightLiSample(Li, wi, 1.0f, true, dist);
@@ -389,17 +428,19 @@ public struct SpotLight : ILight {
     float3 direction;
     float cosTotalWidth;
     float cosFalloffStart;
+    float radius;
 
-    public __init(SampledSpectrum I, float3 position, float3 direction, float totalWidth, float falloffStart) {
+    public __init(SampledSpectrum I, float3 position, float3 direction, float totalWidth, float falloffStart, float radius = 0.0f) {
         this.I = I;
         this.position = position;
         this.direction = normalize(direction);
         this.cosTotalWidth = cos(totalWidth);
         this.cosFalloffStart = cos(falloffStart);
+        this.radius = radius;
     }
 
     public LightType Type() {
-        return LightType::DeltaPosition;
+        return radius > 0.0f ? LightType::Area : LightType::DeltaPosition;
     }
 
     public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
@@ -416,7 +457,25 @@ public struct SpotLight : ILight {
     }
 
     public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
-        return 0.0f;
+        if (radius <= 0.0f) return 0.0f;
+
+        float3 oc = ctx.p() - position;
+        float b = dot(oc, wi);
+        float c = dot(oc, oc) - radius * radius;
+        float discrim = b * b - c;
+        if (discrim <= 0.0f) return 0.0f;
+
+        float root = sqrt(discrim);
+        float t = -b - root;
+        if (t <= 0.0f) t = -b + root;
+        if (t <= 0.0f) return 0.0f;
+
+        float3 pLight = ctx.p() + t * wi;
+        float3 nLight = (pLight - position) / radius;
+        float cosTheta = dot(nLight, -wi);
+        if (cosTheta <= 0.0f) return 0.0f;
+
+        return (t * t) / (4.0f * Pi * radius * radius * cosTheta);
     }
 
     float Falloff(float3 w) {
@@ -428,12 +487,32 @@ public struct SpotLight : ILight {
     }
 
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
-        float3 wi = position - ctx.p();
+        float3 pLight = position;
+        bool isDelta = radius <= 0.0f;
+
+        if (!isDelta) {
+            pLight += radius * SampleUniformSphere(u);
+        }
+
+        float3 wi = pLight - ctx.p();
         float dist2 = dot(wi, wi);
         if (dist2 == 0.0f) return LightLiSample();
         
         float dist = sqrt(dist2);
         wi /= dist;
+
+        if (!isDelta) {
+            float3 nLight = (pLight - position) / radius;
+            float cosTheta = dot(nLight, -wi);
+            if (cosTheta <= 0.0f) return LightLiSample();
+
+            float falloff = Falloff(-wi);
+            if (falloff == 0.0f) return LightLiSample();
+
+            float pdf = dist2 / (4.0f * Pi * radius * radius * cosTheta);
+            SampledSpectrum Li = I * falloff / (Pi * radius * radius);
+            return LightLiSample(Li, wi, pdf, false, dist);
+        }
         
         float falloff = Falloff(-wi);
         if (falloff == 0.0f) return LightLiSample();

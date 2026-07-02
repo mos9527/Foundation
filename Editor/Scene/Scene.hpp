@@ -133,10 +133,11 @@ struct FLight
     FLightType type{FLightType::Directional};
     float3 color{1,1,1};            // Normalized RGB color
     float power{1.0f};              // Radiant power (type-dependent unit)
-    float range{0.0f};              // 0 = infinite (directional default)
     float angularDiameter{0.0f};    // For directional lights, the apparent size of the light source disk (radians). 0 = punctual. 
+    float radius{0.0f};             // Point/Spot emitter sphere radius. 0 = punctual.
     float spotInnerConeAngle{0.0f}; // radians
     float spotOuterConeAngle{0.7853981f}; // radians, default ~45 deg
+    bool useShadow{true};
     // Disk/Rect light (half-extents)
     float width{1.0f};
     float height{1.0f};
@@ -183,7 +184,7 @@ struct FMorphTrack
 };
 
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 17;
+static constexpr uint32_t kSceneVersion = 19;
 
 // Stringpool entry
 struct FStringEntry
