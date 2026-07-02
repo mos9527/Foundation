@@ -23,6 +23,7 @@ int main(int argc, char** argv)
     ExampleInputState input{};
     /* Setup */
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {});
+    CHECK_MSG(device->GetCapabilities().meshShaders, "Mesh Shader support required, but is unavailable");
     auto meshData = device->CreateBuffer({
         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer,
         .size = 16u * (1u << 20) // 16 MB
@@ -152,7 +153,7 @@ int main(int argc, char** argv)
         camera.aspect = swapchain->GetAspectRatio();
         camera.Update(input, dt);
         ubo.view = camera.view, ubo.proj = camera.proj, ubo.zNear = camera.zNear;
-        Examples_NewFrame(renderer);
+        Examples_NewFrame(window, renderer, swapchain);
     }
     meshData.Release(); // Release - destructs with the device
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);

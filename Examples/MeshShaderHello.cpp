@@ -8,6 +8,7 @@ int main(int argc, char** argv)
     SDL_Window* window = SDL_CreateWindow("Mesh Shader Hello World", 800, 600, Examples_SDLWindowFlagsVulkan);
     CSDebugTextData data{ .x = 16, .y = 16 };
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {});
+    CHECK_MSG(device->GetCapabilities().meshShaders, "Mesh Shader support required, but is unavailable");
     renderer->BeginSetup();
     renderer->CreatePass(
         "Mesh Task", RHIDeviceQueueType::Graphics, 0u,
@@ -36,7 +37,7 @@ int main(int argc, char** argv)
     while (!Examples_ShouldClose(window, renderer, swapchain))
     {
         data.SetText(fmt::format("MeshShader Hello World FPS: {}", fps.Update()));
-        Examples_NewFrame(renderer);
+        Examples_NewFrame(window, renderer, swapchain);
     }
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);
 }

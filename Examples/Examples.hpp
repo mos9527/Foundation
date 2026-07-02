@@ -14,6 +14,29 @@
 #include <array>
 #include <tuple>
 #include <vector>
+
+void Examples_ReportFatalException();
+
+#if defined(__ANDROID__) && !defined(FOUNDATION_EXAMPLES_IMPLEMENTATION)
+#ifdef main
+#undef main
+#endif
+int Foundation_ExampleMain(int argc, char** argv);
+extern "C" int SDL_main(int argc, char** argv)
+{
+    try
+    {
+        return Foundation_ExampleMain(argc, argv);
+    }
+    catch (...)
+    {
+        Examples_ReportFatalException();
+        return 1;
+    }
+}
+#define main Foundation_ExampleMain
+#endif
+
 using namespace Foundation;
 using namespace Core;
 using namespace Math;
@@ -171,6 +194,7 @@ void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPU
 void Examples_GPUSceneFillCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera const& camera,
                                     RendererConfig const& config);
 void Examples_NewFrame(Renderer* renderer);
+bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swapchain);
 void Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app,
                             RHIApplicationScopedHandle<RHIDevice>& device,
                             RHIDeviceScopedHandle<RHISwapchain>& swapchain);

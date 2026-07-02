@@ -144,6 +144,10 @@ namespace Foundation::RHI
         vk::PhysicalDeviceProperties mPhysicalDeviceProperties{};
         RHIPipelineStateCacheKey mPipelineCacheKey{};
         RHIDeviceCapabilities mDeviceCaps{};
+        uint32_t mGraphicsQueueFamilyIndex{};
+
+        void CreatePresentationSurface();
+        void RefreshSwapchainSupport();
     public:
         [[nodiscard]] Mutex& GetQueueSubmitMutex() const { return mQueueSubmitMutex; }
         VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice,
@@ -160,6 +164,7 @@ namespace Foundation::RHI
         RHIDeviceScopedHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
         RHISwapchain* GetSwapchain(Handle handle) const override;
         void DestroySwapchain(Handle handle) override;
+        void RefreshPresentationSurface() override;
 
         RHIDeviceScopedHandle<RHIPipelineStateCache>
         CreatePipelineCache(RHIPipelineStateCache::PipelineStateCacheDesc const& desc) override;

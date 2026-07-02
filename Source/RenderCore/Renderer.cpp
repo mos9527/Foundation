@@ -1460,7 +1460,15 @@ void Renderer::BeginExecute()
     if (mDesc.present && mSetup->executionAnyGraphics)
     {
         ZoneScopedN("Acquire Next Image");
-        mCurrentSwap = mSwapchain->GetNextImage(-1, mSwaps[mCurrentSync].present, {});
+        try
+        {
+            mCurrentSwap = mSwapchain->GetNextImage(-1, mSwaps[mCurrentSync].present, {});
+        }
+        catch (RHISwapchainResizeException&)
+        {
+            mState = State::PostSetup;
+            throw;
+        }
         CHECK_MSG(mCurrentSwap < mFrameSwaps, "Invalid swapchain image index {}", mCurrentSwap);
     }
     {
@@ -2050,8 +2058,16 @@ void Renderer::EndExecute()
     if (mDesc.present && mSetup->executionAnyGraphics)
     {
         ZoneScopedN("Present");
-        mGraphicsQueue->Present(
-            {.imageIndex = GetSwap(), .swapchain = mSwapchain.Get(), .waits = {{mSwaps[GetSwap()].render.Get()}}});
+        try
+        {
+            mGraphicsQueue->Present(
+                {.imageIndex = GetSwap(), .swapchain = mSwapchain.Get(), .waits = {{mSwaps[GetSwap()].render.Get()}}});
+        }
+        catch (RHISwapchainResizeException&)
+        {
+            mState = State::PostSetup;
+            throw;
+        }
         auto p2p = std::chrono::steady_clock::now() - mSwaps[mCurrentSync].dbgSwapLastPresentTick;
         mSwaps[mCurrentSync].dbgSwapLastPresentTick = std::chrono::steady_clock::now();
         mSwaps[mCurrentSync].dbgSwapLastPresentToPresentTicks = p2p.count();

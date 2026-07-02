@@ -262,6 +262,7 @@ namespace Foundation::RHI
         CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) = 0;
         [[nodiscard]] virtual RHISwapchain* GetSwapchain(Handle handle) const = 0;
         virtual void DestroySwapchain(Handle handle) = 0;
+        virtual void RefreshPresentationSurface() {}
 
         [[nodiscard]] virtual RHIDeviceScopedHandle<RHIPipelineStateCache>
         CreatePipelineCache(RHIPipelineStateCache::PipelineStateCacheDesc const& desc) = 0;

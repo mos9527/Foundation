@@ -188,7 +188,7 @@ int main(int argc, char** argv)
         upload.End();
         upload.WaitIdle();
     }
-    CSDebugTextData lines[6]{};
+    ExampleInputState input{};
     CIERenderMode activeMode = CIERenderMode::ChromaticityXY;
     uint32_t activePrimariesOverlay = kReferencePrimariesOverlay;
     ViewPushConstant viewPC[ModeIndex(CIERenderMode::Count)]{
@@ -240,19 +240,23 @@ int main(int argc, char** argv)
             }
             cmd->EndGraphics();
         });
-    createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
+    createCSDebugTextPassBackBuffer(renderer, "Debug Text", Examples_HudLines(input));
     renderer->EndSetup();
 
-    SDL_Event event{};
     ExampleFpsCounter fps;
-    while (!Examples_ShouldClose(window, renderer, swapchain, &event))
+    while (true)
     {
-        if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_SPACE)
+        Examples_BeginFrameInput(input);
+        if (Examples_PollEvents(window, renderer, swapchain, input))
+            break;
+
+        if (input.KeyPressed(SDLK_SPACE) || Examples_Button(input, "Mode"))
         {
             activeMode = activeMode == CIERenderMode::ChromaticityXY ? CIERenderMode::XYZCurves
                                                                      : CIERenderMode::ChromaticityXY;
         }
-        if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_TAB)
+        Examples_SameLine(input);
+        if (input.KeyPressed(SDLK_TAB) || Examples_Button(input, "Overlay"))
         {
             activePrimariesOverlay =
                 activePrimariesOverlay == kReferencePrimariesOverlay
@@ -261,44 +265,39 @@ int main(int argc, char** argv)
             if (activePrimariesOverlay == std::size(kCIEPrimaries))
                 activePrimariesOverlay = kReferencePrimariesOverlay;
         }
-
+        Examples_SameLine(input);
         uint32_t modeIdx = ModeIndex(activeMode);
         ViewPushConstant& activeView = viewPC[modeIdx];
-        if (event.type == SDL_EVENT_MOUSE_MOTION && (event.motion.state & SDL_BUTTON_RMASK))
+        if (input.KeyPressed(SDLK_R) || Examples_Button(input, "Reset"))
+            activeView = ViewPushConstant{0.5f, 0.5f, 1.0f, 1.0f, modeIdx};
+
+        if (glm::dot(input.panDelta, input.panDelta) > 1e-6f)
         {
             auto extent = renderer->GetSwapchainExtent();
-            activeView.centerX -= event.motion.xrel * activeView.rangeX / static_cast<float>(extent.x);
-            activeView.centerY += event.motion.yrel * activeView.rangeY / static_cast<float>(extent.y);
+            activeView.centerX -= input.panDelta.x * activeView.rangeX / static_cast<float>(extent.x);
+            activeView.centerY += input.panDelta.y * activeView.rangeY / static_cast<float>(extent.y);
         }
-        if (event.type == SDL_EVENT_MOUSE_WHEEL)
+        if (std::abs(input.zoomDelta) > 1e-6f)
         {
-            float factor = std::clamp(1.0f - event.wheel.y * 0.1f, 0.25f, 4.0f);
+            float factor = std::clamp(1.0f - input.zoomDelta * 0.1f, 0.25f, 4.0f);
             activeView.rangeX = std::clamp(activeView.rangeX * factor, 0.001f, 8.0f);
             activeView.rangeY = std::clamp(activeView.rangeY * factor, 0.001f, 9.0f);
         }
-        if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_R)
-        {
-            activeView = ViewPushConstant{0.5f, 0.5f, 1.0f, 1.0f, modeIdx};
-        }
 
-        lines[0].x = 16, lines[0].y = 16;
-        lines[0].SetText(activeMode == CIERenderMode::ChromaticityXY
-                             ? "CIE xy chromaticity -> BT.709/sRGB"
-                             : "CIE 1931 XYZ matching curves");
-        lines[1].x = 16, lines[1].y = 40;
-        lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
-        lines[2].x = 16, lines[2].y = 64;
-        lines[2].SetText(activeMode == CIERenderMode::ChromaticityXY
-                             ? activePrimariesOverlay == kReferencePrimariesOverlay
-                                   ? "TAB overlay: reference horseshoe"
-                                   : fmt::format("TAB overlay: {}",
-                                                 kCIEPrimaries[activePrimariesOverlay].name)
-                             : "CPU line raster: X(red), Y(green), Z(blue), normalized");
-        lines[3].x = 16, lines[3].y = 88;
-        lines[3].SetText(fmt::format("center=({:.4f}, {:.4f}) range=({:.4f}, {:.4f})", activeView.centerX,
-                                     activeView.centerY, activeView.rangeX, activeView.rangeY));
-        Examples_NewFrame(renderer);
+        Examples_Text(input, activeMode == CIERenderMode::ChromaticityXY
+                                 ? "CIE xy chromaticity -> BT.709/sRGB"
+                                 : "CIE 1931 XYZ matching curves");
+        Examples_Text(input, fmt::format("FPS: {}", fps.Update()));
+        Examples_Text(input, activeMode == CIERenderMode::ChromaticityXY
+                                 ? activePrimariesOverlay == kReferencePrimariesOverlay
+                                       ? "Overlay: reference horseshoe"
+                                       : fmt::format("Overlay: {}", kCIEPrimaries[activePrimariesOverlay].name)
+                                 : "CPU line raster: X(red), Y(green), Z(blue), normalized");
+        Examples_Text(input, fmt::format("center=({:.4f}, {:.4f}) range=({:.4f}, {:.4f})", activeView.centerX,
+                                         activeView.centerY, activeView.rangeX, activeView.rangeY));
+        Examples_NewFrame(window, renderer, swapchain);
     }
 
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);
+    return 0;
 }

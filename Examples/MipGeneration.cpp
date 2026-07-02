@@ -110,7 +110,7 @@ int main(int argc, char** argv)
             Examples_Text(input, fmt::format("Mip Generation FPS: {}", fps.Update()));
             Examples_Slider(input, "Preview LOD", previewLod, 0.0f, maxPreviewLod, 1.0f);
             previewLod = std::round(previewLod);
-            Examples_NewFrame(renderer);
+            Examples_NewFrame(window, renderer, swapchain);
         }
         texture.Release(); // Release - destructs with the device
     }

@@ -69,6 +69,86 @@ namespace
 
 Allocator* VulkanDevice::GetAllocator() const { return mApp.GetAllocator(); }
 
+void VulkanDevice::CreatePresentationSurface()
+{
+    if (!mWindow)
+        return;
+
+    VkSurfaceKHR surface;
+    CHECK_MSG(SDL_Vulkan_CreateSurface(mWindow, *mApp.GetVkInstance(), mApp.GetVkAllocationCallbacksNative(), &surface),
+              "failed to create window surface: {}", SDL_GetError());
+    mSurface = vk::raii::SurfaceKHR(mApp.GetVkInstance(), surface, mApp.GetVkAllocationCallbacks());
+    CHECK_MSG(mPhysicalDevice.getSurfaceSupportKHR(mGraphicsQueueFamilyIndex, *mSurface),
+              "Graphics queue family does not support the presentation surface");
+}
+
+void VulkanDevice::RefreshSwapchainSupport()
+{
+    mSwapchainFormats.clear();
+    mSwapchainPresentModes.clear();
+    if (!*mSurface)
+        return;
+
+    auto formats = mPhysicalDevice.getSurfaceFormatsKHR(mSurface);
+    for (auto& fmt : formats)
+    {
+        using enum RHIResourceFormat;
+        using enum RHIColorSpace;
+        RHIResourceFormat rhiFormat = Undefined;
+        switch (fmt.format)
+        {
+        case vk::Format::eR8G8B8A8Unorm:
+            rhiFormat = R8G8B8A8Unorm;
+            break;
+        case vk::Format::eR8G8B8A8Srgb:
+            rhiFormat = R8G8B8A8Srgb;
+            break;
+        case vk::Format::eB8G8R8A8Unorm:
+            rhiFormat = B8G8R8A8Unrom;
+            break;
+        case vk::Format::eB8G8R8A8Srgb:
+            rhiFormat = B8G8R8A8Srgb;
+            break;
+        case vk::Format::eA2B10G10R10UnormPack32:
+            rhiFormat = A2B10G10R10Unorm;
+            break;
+        case vk::Format::eA2B10G10R10SnormPack32:
+            rhiFormat = A2B10G10R10Snorm;
+            break;
+        case vk::Format::eA2R10G10B10UnormPack32:
+            rhiFormat = A2R10G10B10Unorm;
+            break;
+        case vk::Format::eA2R10G10B10SnormPack32:
+            rhiFormat = A2R10G10B10Snorm;
+            break;
+        default:
+            break;
+        }
+        if (rhiFormat != Undefined)
+            mSwapchainFormats.emplace_back(RHISurfaceFormat{rhiFormat, rhiColorSpaceFromVkColorSpace(fmt.colorSpace)});
+    }
+
+    auto modes = mPhysicalDevice.getSurfacePresentModesKHR(mSurface);
+    for (auto& mode : modes)
+    {
+        using enum RHISwapchainPresentMode;
+        switch (mode)
+        {
+        case vk::PresentModeKHR::eMailbox:
+            mSwapchainPresentModes.emplace_back(Mailbox);
+            break;
+        case vk::PresentModeKHR::eImmediate:
+            mSwapchainPresentModes.emplace_back(Tearing);
+            break;
+        case vk::PresentModeKHR::eFifo:
+            mSwapchainPresentModes.emplace_back(Fifo);
+            break;
+        default:
+            break;
+        }
+    }
+}
+
 VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, SDL_Window* window) :
     RHIDevice(app), mApp(app), mWindow(window), mPhysicalDevice(std::move(physicalDevice)),
     mSwapchainFormats(GetAllocator()), mSwapchainPresentModes(GetAllocator()), mStorage(GetAllocator())
@@ -132,24 +212,14 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             });
     }
     CHECK(graphics.first != kInvalidQueueIndex);
+    mGraphicsQueueFamilyIndex = graphics.first;
     // Fallback to graphics queue
     if (compute.first == kInvalidQueueIndex)
         compute = graphics;
     if (transfer.first == kInvalidQueueIndex)
         transfer = graphics;
     if (window)
-    {
-        // Check for a present queue
-        VkSurfaceKHR surface;
-        CHECK_MSG(SDL_Vulkan_CreateSurface(window, *mApp.GetVkInstance(),
-                      mApp.GetVkAllocationCallbacksNative(), &surface),
-                  "failed to create window surface: {}", SDL_GetError());
-        mSurface = vk::raii::SurfaceKHR(mApp.GetVkInstance(), surface, mApp.GetVkAllocationCallbacks());
-        // Having present and graphics queues as the same avoids copies and is typically the case
-        // - https://github.com/KhronosGroup/Vulkan-Hpp/blob/main/RAII_Samples/05_InitSwapchain/05_InitSwapchain.cpp#L45
-        // - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/master/src/VulkanSample.cpp#L1850
-        CHECK(mPhysicalDevice.getSurfaceSupportKHR(graphics.first, *mSurface));
-    }
+        CreatePresentationSurface();
     using DeviceFeatureChain = vk::StructureChain<
         vk::PhysicalDeviceFeatures2,
         vk::PhysicalDeviceVulkan11Features,
@@ -318,73 +388,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         .instance = *mApp.GetVkInstance(),
         .vulkanApiVersion = mApp.mVulkanApiVersion};
     CHECK(vmaCreateAllocator(&allocator_info, &mVkAllocator) == VK_SUCCESS && "failed to create VMA for Vulkan device");
-    if (*mSurface)
-    {
-        // Collect swapchain (surface) info
-        auto formats = mPhysicalDevice.getSurfaceFormatsKHR(mSurface);
-        for (auto& fmt : formats)
-        {
-            using enum RHIResourceFormat;
-            using enum RHIColorSpace;
-            RHIResourceFormat rhiFormat = Undefined;
-            switch (fmt.format)
-            {
-            case vk::Format::eR8G8B8A8Unorm:
-                rhiFormat = R8G8B8A8Unorm;
-                break;
-            case vk::Format::eR8G8B8A8Srgb:
-                rhiFormat = R8G8B8A8Srgb;
-                break;
-            case vk::Format::eB8G8R8A8Unorm:
-                rhiFormat = B8G8R8A8Unrom;
-                break;
-            case vk::Format::eB8G8R8A8Srgb:
-                rhiFormat = B8G8R8A8Srgb;
-                break;
-            case vk::Format::eA2B10G10R10UnormPack32:
-                rhiFormat = A2B10G10R10Unorm;
-                break;
-            case vk::Format::eA2B10G10R10SnormPack32:
-                rhiFormat = A2B10G10R10Snorm;
-                break;
-            case vk::Format::eA2R10G10B10UnormPack32:
-                rhiFormat = A2R10G10B10Unorm;
-                break;
-            case vk::Format::eA2R10G10B10SnormPack32:
-                rhiFormat = A2R10G10B10Snorm;
-                break;
-            default:
-                // TODO: More formats?
-                // RGBA8 & RGB10A2 covers most cases (SDR/HDR, sRGB/PQ)
-                // There exists RGBA16F for backbuffer using linear color space but support is sparse,
-                // and can be quite a headache to introduce *another* transfer function. Not supported for now.               
-                break;
-            }
-            if (rhiFormat != Undefined)
-            {
-                mSwapchainFormats.emplace_back(RHISurfaceFormat{rhiFormat, rhiColorSpaceFromVkColorSpace(fmt.colorSpace)});
-            }
-        }
-        auto modes = mPhysicalDevice.getSurfacePresentModesKHR(mSurface);
-        for (auto& mode : modes)
-        {
-            using enum RHISwapchainPresentMode;
-            switch (mode)
-            {
-            case vk::PresentModeKHR::eMailbox:
-                mSwapchainPresentModes.emplace_back(Mailbox);
-                break;
-            case vk::PresentModeKHR::eImmediate:
-                mSwapchainPresentModes.emplace_back(Tearing);
-                break;
-            case vk::PresentModeKHR::eFifo:
-                mSwapchainPresentModes.emplace_back(Fifo);
-                break;
-            default:
-                break;
-            }
-        }
-    }
+    RefreshSwapchainSupport();
     auto properties = mPhysicalDevice.getProperties();
     auto memoryProperties = mPhysicalDevice.getMemoryProperties();
     bool deviceLocalHostVisibleBuffers = false;
@@ -578,6 +582,15 @@ RHIDeviceScopedHandle<RHISwapchain> VulkanDevice::CreateSwapchain(RHISwapchain::
 
 RHISwapchain* VulkanDevice::GetSwapchain(Handle handle) const { return mStorage.GetObjectPtr<RHISwapchain>(handle); };
 void VulkanDevice::DestroySwapchain(Handle handle) { mStorage.DestroyObject(handle); }
+
+void VulkanDevice::RefreshPresentationSurface()
+{
+    CHECK_MSG(mWindow, "Cannot refresh presentation surface on a headless device");
+    WaitIdle();
+    mSurface.clear();
+    CreatePresentationSurface();
+    RefreshSwapchainSupport();
+}
 
 RHIDeviceScopedHandle<RHIPipelineStateCache>
 VulkanDevice::CreatePipelineCache(RHIPipelineStateCache::PipelineStateCacheDesc const& desc)

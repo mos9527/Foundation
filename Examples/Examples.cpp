@@ -1,4 +1,5 @@
 #define SDL_MAIN_HANDLED
+#define FOUNDATION_EXAMPLES_IMPLEMENTATION
 #include "Examples.hpp"
 
 #include <argh.h>
@@ -133,10 +134,12 @@ std::vector<PipelineCacheContext>& PipelineCacheContexts()
     return contexts;
 }
 
-void CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISwapchain>& outSwap)
+bool CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISwapchain>& outSwap)
 {
     int w, h;
     SDL_GetWindowSizeInPixels(window, &w, &h);
+    if (w <= 0 || h <= 0)
+        return false;
     LOG(RenderApplication, LogDebug, "Creating swapchain ({}x{})", w, h);
     device->WaitIdle();
     if (outSwap)
@@ -157,6 +160,7 @@ void CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandl
         .minBufferCount = 3,
         .presentMode = present.value(),
     });
+    return true;
 }
 
 #if defined(__ANDROID__)
@@ -175,21 +179,7 @@ void* Examples_SDLAssetLoader(const char* relPath, size_t* outSize)
 // logcat line on Android (and a message box elsewhere).
 void Examples_TerminateHandler()
 {
-    try
-    {
-        if (auto ep = std::current_exception())
-            std::rethrow_exception(ep);
-    }
-    catch (std::exception const& e)
-    {
-        LOG(Examples, LogError, "Unhandled exception: {}", e.what());
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example", e.what(), nullptr);
-    }
-    catch (...)
-    {
-        LOG(Examples, LogError, "Unhandled exception: unknown");
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example", "Unhandled exception", nullptr);
-    }
+    Examples_ReportFatalException();
     std::abort();
 }
 
@@ -427,8 +417,27 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
     case SDL_EVENT_WINDOW_RESIZED:
     case SDL_EVENT_WINDOW_MAXIMIZED:
     case SDL_EVENT_WINDOW_RESTORED:
-        CreateSwapchain(window, swap.mFactory, swap);
-        renderer->SetSwapchain(swap);
+        try
+        {
+            if (CreateSwapchain(window, swap.mFactory, swap))
+                renderer->SetSwapchain(swap);
+        }
+        catch (std::exception const& e)
+        {
+            LOG(Examples, LogWarn, "Swapchain event recreation failed: {}", e.what());
+            try
+            {
+                RHIDevice* device = swap.mFactory;
+                swap.Reset();
+                device->RefreshPresentationSurface();
+                if (CreateSwapchain(window, device, swap))
+                    renderer->SetSwapchain(swap);
+            }
+            catch (std::exception const& refreshError)
+            {
+                LOG(Examples, LogWarn, "Swapchain event recreation deferred: {}", refreshError.what());
+            }
+        }
         break;
     case SDL_EVENT_KEY_DOWN:
         if (!event.key.repeat)
@@ -528,6 +537,25 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
     }
 }
 } // namespace
+
+void Examples_ReportFatalException()
+{
+    try
+    {
+        if (auto ep = std::current_exception())
+            std::rethrow_exception(ep);
+    }
+    catch (std::exception const& e)
+    {
+        LOG(Examples, LogError, "Unhandled exception: {}", e.what());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example", e.what(), nullptr);
+    }
+    catch (...)
+    {
+        LOG(Examples, LogError, "Unhandled exception: unknown");
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example", "Unhandled exception", nullptr);
+    }
+}
 
 ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc)
 {
@@ -820,6 +848,32 @@ void Examples_NewFrame(Renderer* renderer)
     renderer->BeginExecute();
     renderer->ExecuteFrame();
     renderer->EndExecute();
+}
+
+bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swapchain)
+{
+    try
+    {
+        Examples_NewFrame(renderer);
+        return true;
+    }
+    catch (RHISwapchainResizeException&)
+    {
+        LOG(Examples, LogWarn, "Swapchain invalidated; recreating presentation surface");
+        try
+        {
+            RHIDevice* device = swapchain.mFactory;
+            swapchain.Reset();
+            device->RefreshPresentationSurface();
+            if (CreateSwapchain(window, device, swapchain))
+                renderer->SetSwapchain(swapchain);
+        }
+        catch (std::exception const& e)
+        {
+            LOG(Examples, LogWarn, "Swapchain recreation deferred: {}", e.what());
+        }
+        return false;
+    }
 }
 
 void Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app,

@@ -75,6 +75,7 @@ You can build, and debug the app with [Visual Studio's CMake intergration](https
 The Vulkan SDK installer should take care of most, if not all the setup for you.
 
 CI Builds are provided for this platform. You can get them from [nightly](https://nightly.link/mos9527/Foundation/workflows/build/dev)
+
 ### Linux
 Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html#_linux_2 for setting up the Vulkan SDK on Linux.
 
@@ -85,10 +86,7 @@ sudo pacman -S vulkan-validation-layers vulkan-tools vulkan-radeon vulkan-header
 ```
 
 ### macOS
-Install the official [Vulkan SDK](https://vulkan.lunarg.com/).
-
-The Editor will build but not run on this platform, due to our extensive usage of Shader Binding Tables and Mesh Shaders,
-which are not supported.
+Install the official [Vulkan SDK](https://vulkan.lunarg.com/) PKG, and expect things to just build through CMake as usual.
 
 ### Android
 An Android Studio project lives under `Android/`, packaging <a href="examples.html">the Examples</a> as a single app
@@ -115,16 +113,6 @@ renaming an example:
 ```bash
 python Scripts/GenerateExamples.py
 ```
-
-Notes:
-- The Editor itself is not built for Android - only the Examples, same restriction as macOS.
-- Examples with no window/present (`Example_HeadlessTriangle`, `Example_HeadlessPathTracer`) or no render dependencies
-  at all (`Example_JobGraph`) are excluded from the Android build; see `ANDROID_EXCLUDED_EXAMPLES` in the script above.
-- Mobile GPU support is a work in progress. Raster-only examples run fine, but the Path Tracer needs Ray Tracing
-  Pipelines/SBTs, which almost no mobile GPU implements, and the meshlet rasterizer needs Mesh Shaders, only supported
-  on newer Adreno chips - expect the `GPUScene*` examples to only partially work depending on your device.
-- Dear ImGui's SDL3 backend builds for the APK (`Example_ImGui` links), but on-device docking/touch input isn't wired
-  up yet.
 
 ### Building from command line
 The following commands will create a build directory, generate the build system files, and build all targets with 8 parallel jobs.
@@ -185,33 +173,28 @@ TODOs
 ===
 Framework
 ---
-- RHI Backends
-  - [x] Vulkan
-    - [x] Desktop (Windows & Linux) Probably the only platform we truly care about
-    - [-] Mobile (Android). See "Building > Android" above for the how-to.
-      - [x] Android Studio project (`Android/`) packaging the Examples as an app via Gradle's CMake `externalNativeBuild`, reusing the top-level `CMakeLists.txt` as-is
-        - Picker Activity + per-example `SDLActivity`, `arm64-v8a` only for now
-        - `Scripts/GenerateExamples.py` keeps the picker, Gradle target list, and Windows CI target list in sync with `Examples/CMakeLists.txt`
-      - Almost no device supports the full RT pipeline - Path Tracer examples are unreliable on-device
-      - Newer Adrenos support [Mesh Shaders](https://docs.qualcomm.com/doc/80-78185-2/topic/mobile_best_practices.html#panel-1-1-1) - Raster examples fare better
-      - [ ] iOS - untried
-  - [-] Metal
-    - Loosely speaking - Apple GPUs are all tilers. So they are all categorically mobile.
-    - There are Vulkan-on-Metal layers, which we do work with - albeit with lots of limitations.
-      - Our Examples that don't use unsupported features work OOTB (macOS)
-      - Raster looks good with up-to-date Mesh Shader support. Practically _no_ VK compat layers support them yet. [2026/05/10]
-      - Raytracing - No native SBTs. No SER. Metal can do inline queries only.
-      - [ ] TODO iOS builds?
-  - [x] Lavapipe
-    - https://www.vulkan.org/user/pages/09.events/vulkanised-2025/T5-Lucas-Fryzek-Igalia.pdf
-    - Get your own build.
-      - Windows: https://github.com/pal1000/mesa-dist-win/releases
-      - macOS: Try https://github.com/rerun-io/lavapipe-build script to build from source
-      - Linux: https://docs.mesa3d.org/install.html      
-    - Set `VK_DRIVER_FILES` environ.
-      - Powershell: ` $env:VK_DRIVER_FILES="C:\Users\komahuang\Downloads\mesa3d-26.1.3-release-msvc\x64\lvp_icd.x86_64.json"` - note the full path, change this to your own.
-      - Bash et al: `export VK_DRIVER_FILES="/path/to/lvp_icd.x86_64.json"`
-    - Run stuff from the same shell.
+We use Vulkan exclusively, so portability wise:
+- [x] Desktop (Windows & Linux) is probably the only platform we truly care about
+  - RT & Mesh Shader usage practically means anything DirectX 12 Ultimate Certified will Just Work(tm)
+  - [ ] TODO Fallback path for Raster to invoke MDI when running without Mesh Shader support?
+- [-] Android 
+  - Inline Ray Tracing is surprising solid & widely supported on mobile Androids *nowadays*
+  - As ridiculous as it sounds - GPUScene Examples can run on those devices. Turns out you *can* do HW accelerated Path Tracing on mobile...
+  - Mesh Shaders are mostly amiss. Newer (8Gen3) Adrenos offer support - not sure about other chips.   
+- [-] Metal (iDevices and Macs)  
+  - [MoltenVK](https://github.com/KhronosGroup/MoltenVK), [KosmickKrisp](https://docs.mesa3d.org/drivers/kosmickrisp.html)
+  - Neither supports RT nor Mesh Shaders.
+  - Other examples work on both. That, and Mesa `llvmpipe` (headless)... 
+- [x] Lavapipe
+  - https://www.vulkan.org/user/pages/09.events/vulkanised-2025/T5-Lucas-Fryzek-Igalia.pdf
+  - Get your own build.
+    - Windows: https://github.com/pal1000/mesa-dist-win/releases
+    - macOS: Try https://github.com/rerun-io/lavapipe-build script to build from source
+    - Linux: https://docs.mesa3d.org/install.html      
+  - Set `VK_DRIVER_FILES` environ.
+    - Powershell: ` $env:VK_DRIVER_FILES="C:\Users\komahuang\Downloads\mesa3d-26.1.3-release-msvc\x64\lvp_icd.x86_64.json"` - note the full path, change this to your own.
+    - Bash et al: `export VK_DRIVER_FILES="/path/to/lvp_icd.x86_64.json"`
+  - Run stuff from the same shell.
 
 Editor
 ---

@@ -220,7 +220,7 @@ int main(int argc, char** argv)
             if (anim.End())
                 CommitSceneToGPU(scene, gpu, resources, ubo, /*resetAccumulation*/ true);
 
-            Examples_NewFrame(renderer.get());
+            Examples_NewFrame(window, renderer.get(), swapchain);
             if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
             if (cameraMoved)

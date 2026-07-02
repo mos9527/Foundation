@@ -27,7 +27,7 @@ int main(int argc, char** argv)
         ImGui_ImplFoundation_NewFrame();
         ImGui::NewFrame();
         ImGui::ShowDemoWindow();
-        Examples_NewFrame(renderer);
+        Examples_NewFrame(window, renderer, swapchain);
     }
     ImGui_ImplFoundation_Shutdown();
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);

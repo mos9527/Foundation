@@ -238,21 +238,20 @@ int main(int argc, char** argv)
             // Single soft rectangular overhead area light (1.4 x 1.4 quad facing straight down).
             GSLight& env = tables.lights[0];
             env = GSLight{};
-            env.type = 5u; // Environment light, always present as the first light.
+            env.flags = 5u; // Environment light, always present as the first light.
             env.color = float3(0.0f);
             env.power = 1.0f;
             env.importance = 0.0f;
 
             GSLight& key = tables.lights[1];
             key = GSLight{};
-            key.type = 4u; // Rect
+            key.flags = 4u | kGSLightFlagUseShadow; // Rect
             key.color = float3(1.0f, 0.95f, 0.88f);
             key.power = 10.0f;
             key.position = float3(0.0f, boxH - 0.02f, 0.0f);
             key.dpdu = float3(0.70f, 0.0f, 0.0f);
             key.dpdv = float3(0.0f, 0.0f, 0.70f);
             key.direction = float3(0.0f, -1.0f, 0.0f);
-            key.twoSided = 0u;
             key.importance = key.power;
 
             gpu.EndScene(tables);

@@ -68,3 +68,10 @@ android {
         noCompress.add("spv")
     }
 }
+
+afterEvaluate {
+    tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+        val variantName = name.removePrefix("merge").removeSuffix("Assets")
+        dependsOn("externalNativeBuild$variantName")
+    }
+}

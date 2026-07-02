@@ -80,13 +80,23 @@ RHIExtent2D VulkanSwapchain::GetExtents() const
 }
 uint32_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceHandle<RHIDeviceSemaphore> semaphore, RHIDeviceHandle<RHIDeviceFence> fence)
 {
-    auto [result, index] = mSwapchain.acquireNextImage(
-        timeout_ns,
-        semaphore ? semaphore.Get<VulkanDeviceSemaphore>()->GetVkSemaphore() : vk::Semaphore(),
-        fence ? fence.Get<VulkanDeviceFence>()->GetVkFence() : vk::Fence()
-    );
+    vk::Result result{};
+    uint32_t index{};
+    try
+    {
+        std::tie(result, index) = mSwapchain.acquireNextImage(
+            timeout_ns,
+            semaphore ? semaphore.Get<VulkanDeviceSemaphore>()->GetVkSemaphore() : vk::Semaphore(),
+            fence ? fence.Get<VulkanDeviceFence>()->GetVkFence() : vk::Fence()
+        );
+    }
+    catch (vk::SystemError&)
+    {
+        throw RHISwapchainResizeException();
+    }
     switch (result)
     {
+    case vk::Result::eErrorSurfaceLostKHR:
     case vk::Result::eErrorOutOfDateKHR:
     case vk::Result::eSuboptimalKHR:
         // Swapchain resize        

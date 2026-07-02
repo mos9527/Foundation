@@ -20,7 +20,7 @@ int main(int argc, char** argv)
     while (!Examples_ShouldClose(window, renderer, swapchain))
     {
         lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
-        Examples_NewFrame(renderer);
+        Examples_NewFrame(window, renderer, swapchain);
     }
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);
 }

@@ -274,21 +274,20 @@ int main(int argc, char** argv)
 
             GSLight& env = tables.lights[0];
             env = GSLight{};
-            env.type = 5u; // Environment light, always present as the first light.
+            env.flags = 5u; // Environment light, always present as the first light.
             env.color = float3(0.02f, 0.025f, 0.035f);
             env.power = 1.0f;
             env.importance = 0.035f;
 
             GSLight& key = tables.lights[1];
             key = GSLight{};
-            key.type = 4u; // Rect area light
+            key.flags = 4u | kGSLightFlagUseShadow; // Rect area light
             key.color = float3(1.0f, 0.96f, 0.9f);
             key.power = 12.0f;
             key.position = float3(0.0f, 6.0f, 0.0f);
             key.dpdu = float3(2.2f, 0.0f, 0.0f);
             key.dpdv = float3(0.0f, 0.0f, 2.2f);
             key.direction = float3(0.0f, -1.0f, 0.0f);
-            key.twoSided = 0u;
             key.importance = key.power;
 
             gpu.EndScene(tables);
@@ -450,7 +449,7 @@ int main(int argc, char** argv)
                                                   : streaming ? "   [streaming...]"
                                                               : ""));
 
-            Examples_NewFrame(renderer.get());
+            Examples_NewFrame(window, renderer.get(), swapchain);
             if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
             // The scene changes whenever it streams, a wave spawns, the camera moves, or the blobs

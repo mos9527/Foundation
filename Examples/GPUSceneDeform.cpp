@@ -196,13 +196,13 @@ int main(int argc, char** argv)
                 tables.materials[i] = palette[i];
             GSLight& env = tables.lights[0];
             env = GSLight{};
-            env.type = 5u; // Environment light, always present as the first light.
+            env.flags = 5u; // Environment light, always present as the first light.
             env.color = float3(0.02f, 0.025f, 0.035f);
             env.power = 1.0f;
             env.importance = 0.035f;
             GSLight& key = tables.lights[1];
             key = GSLight{};
-            key.type = 4u; // Rect area light
+            key.flags = 4u | kGSLightFlagUseShadow; // Rect area light
             key.color = float3(1.0f, 0.97f, 0.92f);
             key.power = 14.0f;
             key.position = float3(0.0f, 5.0f, 0.0f);
@@ -326,7 +326,7 @@ int main(int argc, char** argv)
                                              gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount(), refitMode,
                                              fps.Update(), paused ? "   [PAUSED]" : ""));
 
-            Examples_NewFrame(renderer.get());
+            Examples_NewFrame(window, renderer.get(), swapchain);
             if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
             if (cameraMoved || !paused)
