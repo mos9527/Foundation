@@ -171,7 +171,6 @@ struct GSCurveSet
     uint32_t segmentOffset; // GSCurveSegment, in Primitive buffer (bytes)
     uint32_t segmentCount;
     uint32_t aabbOffset; // RHIAccelerationStructureAABB, in curve AABB buffer (bytes)
-    uint32_t materialIndex;
 };
 struct GSCurvePoint
 {
@@ -190,7 +189,7 @@ static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 56);
 static_assert(sizeof(GSMaterial) == 192);
 static_assert(sizeof(GSLight) == 104);
-static_assert(sizeof(GSCurveSet) == 24);
+static_assert(sizeof(GSCurveSet) == 20);
 static_assert(sizeof(GSCurvePoint) == 16);
 static_assert(sizeof(GSCurveSegment) == 16);
 

@@ -4,14 +4,16 @@
 
 namespace Foundation::RHI { struct RHIDeviceCapabilities; }
 
-// Resident GPU handles produced by UploadSceneResources, indexed by scene mesh/curve/texture
-// resource index. Consumed by CommitSceneToGPU. Pure data - own it wherever a scene load lives
-// (EditorState, a pending-load struct, a local in an example, etc).
+// Resident GPU handles and id->table-index maps; rebuilt per UploadSceneResources.
 struct FSceneGPUResources
 {
     Vector<GeometryHandle> meshGeometry{GLOBAL_ALLOC};
     Vector<GeometryHandle> curveGeometry{GLOBAL_ALLOC};
     Vector<TextureHandle> textureIDMap{GLOBAL_ALLOC};
+    HashMap<FUUID, uint32_t> meshById{GLOBAL_ALLOC};
+    HashMap<FUUID, uint32_t> curveById{GLOBAL_ALLOC};
+    HashMap<FUUID, uint32_t> textureById{GLOBAL_ALLOC};
+    HashMap<FUUID, uint32_t> materialById{GLOBAL_ALLOC};
 };
 
 bool IsSceneEnvironmentTexture(FImportedScene const& scene, size_t textureIndex);

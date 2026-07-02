@@ -255,10 +255,18 @@ void ValidateBlobArray(FSceneHeader const& header, FBlobRef const& blob, const c
     CHECK_MSG(blob.count <= SIZE_MAX / sizeof(T), "{} count is too large for this platform", name);
 }
 
-void ValidateTextureIndex(uint32_t index, size_t textureCount, const char* name)
+// Builds a membership set of table ids (non-nil, unique).
+template <typename T>
+HashSet<FUUID> BuildIdSet(Vector<T> const& vec, const char* what)
 {
-    if (index != kInvalidTexture)
-        CHECK_MSG(index < textureCount, "{} references texture {} but only {} textures exist", name, index, textureCount);
+    HashSet<FUUID> ids(GLOBAL_ALLOC);
+    ids.reserve(vec.size());
+    for (size_t i = 0; i < vec.size(); ++i)
+    {
+        CHECK_MSG(!vec[i].id.IsNil(), "{}[{}] has a nil id", what, i);
+        CHECK_MSG(ids.insert(vec[i].id).second, "{} has a duplicate id at index {}", what, i);
+    }
+    return ids;
 }
 
 void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
@@ -270,6 +278,62 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
     CHECK_MSG(tables.meshes.size() <= UINT32_MAX, "FScene mesh table is too large");
     CHECK_MSG(tables.curves.size() <= UINT32_MAX, "FScene curve table is too large");
     CHECK_MSG(tables.textures.size() <= UINT32_MAX, "FScene texture table is too large");
+
+    // String pool: content-addressed ids (id == hash of value).
+    HashSet<FUUID> stringIds(GLOBAL_ALLOC);
+    stringIds.reserve(tables.strings.size());
+    for (size_t i = 0; i < tables.strings.size(); ++i)
+    {
+        FStringEntry const& e = tables.strings[i];
+        CHECK_MSG(!e.id.IsNil(), "FScene string[{}] has a nil id", i);
+        CHECK_MSG(e.id == FUUID::FromString(e.value),
+                  "FScene string[{}] id is not the content hash of its value", i);
+        CHECK_MSG(stringIds.insert(e.id).second, "FScene string has a duplicate id at index {}", i);
+    }
+
+    HashSet<FUUID> const materialIds = BuildIdSet(tables.materials, "FScene material");
+    HashSet<FUUID> const meshIds = BuildIdSet(tables.meshes, "FScene mesh");
+    HashSet<FUUID> const curveIds = BuildIdSet(tables.curves, "FScene curve");
+    HashSet<FUUID> const textureIds = BuildIdSet(tables.textures, "FScene texture");
+    HashSet<FUUID> const morphTrackIds = BuildIdSet(tables.morphTracks, "FScene morphTrack");
+    BuildIdSet(tables.clips, "FScene clip");
+    BuildIdSet(tables.instances, "FScene instance");
+    BuildIdSet(tables.cameras, "FScene camera");
+    BuildIdSet(tables.lights, "FScene light");
+
+    // Skeleton id -> joint count (for clip channel / node validation).
+    HashMap<FUUID, uint32_t> skeletonJointCounts(GLOBAL_ALLOC);
+    skeletonJointCounts.reserve(tables.skeletons.size());
+    for (size_t i = 0; i < tables.skeletons.size(); ++i)
+    {
+        CHECK_MSG(!tables.skeletons[i].id.IsNil(), "FScene skeleton[{}] has a nil id", i);
+        CHECK_MSG(skeletonJointCounts.emplace(tables.skeletons[i].id, tables.skeletons[i].Count()).second,
+                  "FScene skeleton has a duplicate id at index {}", i);
+    }
+
+    auto requireTexture = [&](FUUID id, const char* what)
+    {
+        if (id.IsNil())
+            return;
+        CHECK_MSG(textureIds.contains(id), "{} references unknown texture id", what);
+    };
+    auto requireMaterial = [&](FUUID id, const char* what)
+    {
+        CHECK_MSG(materialIds.contains(id), "{} references unknown material id", what);
+    };
+    auto requireMorphTrack = [&](FUUID id, const char* what)
+    {
+        if (id.IsNil())
+            return;
+        CHECK_MSG(morphTrackIds.contains(id), "{} references unknown morphTrack id", what);
+    };
+    // Returns joint count; callers guard nil ids first.
+    auto requireSkeleton = [&](FUUID id, const char* what) -> uint32_t
+    {
+        auto it = skeletonJointCounts.find(id);
+        CHECK_MSG(it != skeletonJointCounts.end(), "{} references unknown skeleton id", what);
+        return it->second;
+    };
 
     size_t environmentLightCount = 0;
     for (auto const& light : tables.lights)
@@ -286,9 +350,9 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
             environmentLightCount++;
             if (light.environmentMap)
             {
-                CHECK_MSG(light.environmentTexture != kInvalidTexture,
+                CHECK_MSG(!light.environmentTexture.IsNil(),
                           "FScene EnvMap environment light requires environmentTexture");
-                ValidateTextureIndex(light.environmentTexture, tables.textures.size(), "light.environmentTexture");
+                requireTexture(light.environmentTexture, "light.environmentTexture");
             }
             break;
         default:
@@ -313,28 +377,28 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
                       static_cast<uint32_t>(material.shaderBlockID));
             break;
         }
-        ValidateTextureIndex(material.baseColorTexture, tables.textures.size(), "material.baseColorTexture");
-        ValidateTextureIndex(material.emissiveTexture, tables.textures.size(), "material.emissiveTexture");
-        ValidateTextureIndex(material.metallicRoughnessTexture, tables.textures.size(), "material.metallicRoughnessTexture");
-        ValidateTextureIndex(material.normalTexture, tables.textures.size(), "material.normalTexture");
-        ValidateTextureIndex(material.transmissionTexture, tables.textures.size(), "material.transmissionTexture");
-        ValidateTextureIndex(material.specularTexture, tables.textures.size(), "material.specularTexture");
-        ValidateTextureIndex(material.specularColorTexture, tables.textures.size(), "material.specularColorTexture");
-        ValidateTextureIndex(material.anisotropyTexture, tables.textures.size(), "material.anisotropyTexture");
-        ValidateTextureIndex(material.clearcoatTexture, tables.textures.size(), "material.clearcoatTexture");
-        ValidateTextureIndex(material.clearcoatRoughnessTexture, tables.textures.size(), "material.clearcoatRoughnessTexture");
+        requireTexture(material.baseColorTexture, "material.baseColorTexture");
+        requireTexture(material.emissiveTexture, "material.emissiveTexture");
+        requireTexture(material.metallicRoughnessTexture, "material.metallicRoughnessTexture");
+        requireTexture(material.normalTexture, "material.normalTexture");
+        requireTexture(material.transmissionTexture, "material.transmissionTexture");
+        requireTexture(material.specularTexture, "material.specularTexture");
+        requireTexture(material.specularColorTexture, "material.specularColorTexture");
+        requireTexture(material.anisotropyTexture, "material.anisotropyTexture");
+        requireTexture(material.clearcoatTexture, "material.clearcoatTexture");
+        requireTexture(material.clearcoatRoughnessTexture, "material.clearcoatRoughnessTexture");
     }
 
     for (auto const& instance : tables.instances)
     {
-        CHECK_MSG(instance.materialIndex < tables.materials.size(), "FScene instance material index out of range");
+        requireMaterial(instance.material, "FScene instance material");
         switch (instance.type)
         {
         case FInstanceType::Mesh:
-            CHECK_MSG(instance.resourceIndex < tables.meshes.size(), "FScene instance mesh index out of range");
+            CHECK_MSG(meshIds.contains(instance.resource), "FScene instance references unknown mesh id");
             break;
         case FInstanceType::Curve:
-            CHECK_MSG(instance.resourceIndex < tables.curves.size(), "FScene instance curve index out of range");
+            CHECK_MSG(curveIds.contains(instance.resource), "FScene instance references unknown curve id");
             break;
         default:
             CHECK_MSG(false, "FScene instance has unsupported type {}", static_cast<uint32_t>(instance.type));
@@ -361,8 +425,8 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
         {
             ValidateBlobArray<FSkinBinding>(header, mesh.skinBinding, "mesh.skinBinding");
             CHECK_MSG(mesh.skinBinding.count == mesh.vertexCount, "FScene mesh skin binding count mismatch");
-            CHECK_MSG(mesh.skeleton >= 0 && static_cast<size_t>(mesh.skeleton) < tables.skeletons.size(),
-                      "FScene mesh skeleton index out of range");
+            CHECK_MSG(!mesh.skeleton.IsNil(), "FScene skinned mesh has no skeleton");
+            requireSkeleton(mesh.skeleton, "mesh.skeleton");
         }
         if (mesh.morphTargetCount != 0)
         {
@@ -370,27 +434,23 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
             CHECK_MSG(mesh.morphPositions.count == mesh.morphTargetCount * mesh.vertexCount,
                       "FScene mesh morph delta count mismatch");
         }
-        CHECK_MSG(mesh.morphTrack == -1 || static_cast<size_t>(mesh.morphTrack) < tables.morphTracks.size(),
-                  "FScene mesh morph track index out of range");
+        requireMorphTrack(mesh.morphTrack, "mesh.morphTrack");
     }
 
     for (auto const& clip : tables.clips)
     {
-        CHECK_MSG(clip.skeleton >= 0 && static_cast<size_t>(clip.skeleton) < tables.skeletons.size(),
-                  "FScene clip skeleton index out of range");
-        uint32_t jointCount = tables.skeletons[clip.skeleton].Count();
+        CHECK_MSG(!clip.skeleton.IsNil(), "FScene clip has no skeleton");
+        uint32_t jointCount = requireSkeleton(clip.skeleton, "FScene clip skeleton");
         for (auto const& channel : clip.channels)
             CHECK_MSG(channel.joint < jointCount, "FScene clip channel joint index out of range");
     }
 
-    CHECK_MSG(tables.sceneNodeSkeleton == -1 ||
-                  static_cast<size_t>(tables.sceneNodeSkeleton) < tables.skeletons.size(),
-              "FScene scene-node skeleton index out of range");
+    bool const hasSceneNodeSkeleton = !tables.sceneNodeSkeleton.IsNil();
     uint32_t const sceneNodeCount =
-        tables.sceneNodeSkeleton >= 0 ? tables.skeletons[tables.sceneNodeSkeleton].Count() : 0u;
+        hasSceneNodeSkeleton ? requireSkeleton(tables.sceneNodeSkeleton, "FScene scene-node skeleton") : 0u;
     auto validateNode = [&](int32_t node, const char* what)
     {
-        CHECK_MSG(node == -1 || (tables.sceneNodeSkeleton >= 0 && static_cast<uint32_t>(node) < sceneNodeCount),
+        CHECK_MSG(node == -1 || (hasSceneNodeSkeleton && static_cast<uint32_t>(node) < sceneNodeCount),
                   "FScene {} node index out of range", what);
     };
     for (auto const& instance : tables.instances)
@@ -406,7 +466,6 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
         ValidateBlobArray<FSerializedCurveSegment>(header, curve.segments, "curve.segments");
         ValidateBlobArray<FSerializedCurveAABB>(header, curve.aabbs, "curve.aabbs");
         CHECK_MSG(curve.segments.count == curve.aabbs.count, "FScene curve AABB count mismatch");
-        CHECK_MSG(curve.materialIndex < tables.materials.size(), "FScene curve material index out of range");
     }
 
     for (auto const& texture : tables.textures)
@@ -670,7 +729,6 @@ void LoadGLTFCurve(const cgltf_data* data, const cgltf_curve* src, FImportedCurv
     curve.basis = LoadGLTFCurveBasis(src->basis);
     CHECK_MSG(curve.basis == FCurveBasis::Bezier, "EXT_foundation_curves import currently supports only Bezier curves");
     curve.renderMode = FCurveRenderMode::Capsule;
-    curve.materialIndex = src->material ? static_cast<uint32_t>(cgltf_material_index(data, src->material) + 1u) : 0u;
 
     size_t pointCount = src->points->count;
     Vector<float> unpack(pointCount * 4, scratchAlloc);
@@ -868,8 +926,8 @@ void AppendResourceBlobJobs(Vector<FBlobJob>& blobJobs, FResourceBlobJobs& resou
 }
 
 void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, FTexture&& texture);
-void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, int32_t skeleton,
-                       int32_t morphTrack);
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, FUUID skeleton,
+                       FUUID morphTrack);
 void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImportedCurve const& curve);
 
 // Builds a flat, topologically sorted @ref FSkeleton from a glTF skin. @p outRemap maps a
@@ -1065,28 +1123,49 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
     FLight environmentLight = MakeDefaultEnvironmentLight();
     FEnvironmentTextureSource environmentTextureSource = LoadFoundationEnvironmentExtension(data, path, environmentLight);
 
-    /* Materials */
-    // NOTE: Material 0 is reserved as the default material:
-    // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#default-material
+    /* Texture ids are reserved up front so materials can reference textures before payloads load. */
+    CHECK_MSG(data->textures_count <= UINT32_MAX, "glTF texture count exceeds uint32_t");
+    CHECK_MSG(!environmentTextureSource.HasValue() || data->textures_count < UINT32_MAX,
+              "glTF texture count leaves no room for environment texture");
+    size_t const sceneTextureCount = data->textures_count + (environmentTextureSource.HasValue() ? 1u : 0u);
+    uint32_t const environmentTextureIndex = environmentTextureSource.HasValue()
+        ? static_cast<uint32_t>(data->textures_count)
+        : kInvalidTexture;
+    scene.mTables.textures.clear();
+    scene.mTables.textures.reserve(sceneTextureCount);
+    for (size_t i = 0; i < sceneTextureCount; ++i)
+    {
+        scene.mTables.textures.emplace_back(scratchAlloc);
+        scene.mTables.textures.back().id = FUUID::Generate();
+    }
+
+    /* Materials — slot 0 is kDefaultMaterialUUID (glTF default material). */
+    Vector<FUUID> gltfMaterialIds(data->materials_count, kNilUUID, scratchAlloc);
+    // Main-thread only: worker jobs below must not touch the string pool.
+    auto internString = [&](const char* s) -> FUUID { return scene.InternString(s); };
     scene.Add(FMaterial{
+        .id = kDefaultMaterialUUID,
         .baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f},
     });
     // Extra texture flags. Mostly used for sRGB to linear conversion
     constexpr unsigned kTextureInSRGB = 1 << 0;
     Vector<unsigned> textureFlags(data->textures_count, 0, scratchAlloc);
-    auto assignTextureIndex = [&](cgltf_texture_view const& view, unsigned flags = 0u) -> uint32_t
+    auto assignTextureId = [&](cgltf_texture_view const& view, unsigned flags = 0u) -> FUUID
     {
         if (!view.texture)
-            return kInvalidTexture;
+            return kNilUUID;
         size_t index = cgltf_texture_index(data, view.texture);
         CHECK_MSG(index < data->textures_count, "glTF texture index out of range");
         textureFlags[index] |= flags;
-        return static_cast<uint32_t>(index);
+        return scene.mTables.textures[index].id;
     };
     for (size_t i = 0; i < data->materials_count; i++)
     {
         const cgltf_material* mat = &data->materials[i];
         FMaterial material{};
+        material.id = FUUID::Generate();
+        material.name = internString(mat->name);
+        gltfMaterialIds[i] = material.id;
         if (mat->has_pbr_metallic_roughness)
         {
             material.baseColorFactor = {
@@ -1095,9 +1174,9 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             material.metallicFactor = mat->pbr_metallic_roughness.metallic_factor;
             material.roughnessFactor = mat->pbr_metallic_roughness.roughness_factor;
             if (mat->pbr_metallic_roughness.base_color_texture.texture)
-                material.baseColorTexture = assignTextureIndex(mat->pbr_metallic_roughness.base_color_texture, kTextureInSRGB);
+                material.baseColorTexture = assignTextureId(mat->pbr_metallic_roughness.base_color_texture, kTextureInSRGB);
             if (mat->pbr_metallic_roughness.metallic_roughness_texture.texture)
-                material.metallicRoughnessTexture = assignTextureIndex(mat->pbr_metallic_roughness.metallic_roughness_texture);
+                material.metallicRoughnessTexture = assignTextureId(mat->pbr_metallic_roughness.metallic_roughness_texture);
         }
         if (mat->has_pbr_specular_glossiness)
         {
@@ -1108,19 +1187,19 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             constexpr float kDielectricF0 = 0.04f;
             material.metallicFactor = std::clamp((specLuminance - kDielectricF0) / (1.0f - kDielectricF0), 0.0f, 1.0f);
             if (sg.diffuse_texture.texture)
-                material.baseColorTexture = assignTextureIndex(sg.diffuse_texture, kTextureInSRGB);
+                material.baseColorTexture = assignTextureId(sg.diffuse_texture, kTextureInSRGB);
         }
         material.normalScale = mat->normal_texture.scale;
         if (mat->normal_texture.texture)
-            material.normalTexture = assignTextureIndex(mat->normal_texture);
+            material.normalTexture = assignTextureId(mat->normal_texture);
         if (mat->emissive_texture.texture)
-            material.emissiveTexture = assignTextureIndex(mat->emissive_texture, kTextureInSRGB);
+            material.emissiveTexture = assignTextureId(mat->emissive_texture, kTextureInSRGB);
         material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2], 1.0f};
         if (mat->emissive_strength.emissive_strength)
             material.emissiveFactor *= mat->emissive_strength.emissive_strength;
         material.transmissionFactor = mat->has_transmission ? mat->transmission.transmission_factor : 0.0f;
         if (mat->has_transmission && mat->transmission.transmission_texture.texture)
-            material.transmissionTexture = assignTextureIndex(mat->transmission.transmission_texture);
+            material.transmissionTexture = assignTextureId(mat->transmission.transmission_texture);
         material.ior = mat->has_ior ? mat->ior.ior : 1.5f;
         material.specularFactor = mat->has_specular ? mat->specular.specular_factor : 1.0f;
         if (mat->has_specular)
@@ -1131,16 +1210,16 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                 mat->specular.specular_color_factor[2]
             };
             if (mat->specular.specular_texture.texture)
-                material.specularTexture = assignTextureIndex(mat->specular.specular_texture);
+                material.specularTexture = assignTextureId(mat->specular.specular_texture);
             if (mat->specular.specular_color_texture.texture)
-                material.specularColorTexture = assignTextureIndex(mat->specular.specular_color_texture, kTextureInSRGB);
+                material.specularColorTexture = assignTextureId(mat->specular.specular_color_texture, kTextureInSRGB);
         }
         if (mat->has_anisotropy)
         {
             material.anisotropyStrength = std::clamp(mat->anisotropy.anisotropy_strength, 0.0f, 1.0f);
             material.anisotropyRotation = mat->anisotropy.anisotropy_rotation;
             if (mat->anisotropy.anisotropy_texture.texture)
-                material.anisotropyTexture = assignTextureIndex(mat->anisotropy.anisotropy_texture);
+                material.anisotropyTexture = assignTextureId(mat->anisotropy.anisotropy_texture);
         }
         if (mat->has_sheen)
         {
@@ -1151,18 +1230,18 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             };
             material.sheenRoughnessFactor = std::clamp(mat->sheen.sheen_roughness_factor, 0.0f, 1.0f);
             if (mat->sheen.sheen_color_texture.texture)
-                material.sheenColorTexture = assignTextureIndex(mat->sheen.sheen_color_texture, kTextureInSRGB);
+                material.sheenColorTexture = assignTextureId(mat->sheen.sheen_color_texture, kTextureInSRGB);
             if (mat->sheen.sheen_roughness_texture.texture)
-                material.sheenRoughnessTexture = assignTextureIndex(mat->sheen.sheen_roughness_texture);
+                material.sheenRoughnessTexture = assignTextureId(mat->sheen.sheen_roughness_texture);
         }
         if (mat->has_clearcoat)
         {
             material.clearcoatFactor = std::clamp(mat->clearcoat.clearcoat_factor, 0.0f, 1.0f);
             material.clearcoatRoughnessFactor = std::clamp(mat->clearcoat.clearcoat_roughness_factor, 0.0f, 1.0f);
             if (mat->clearcoat.clearcoat_texture.texture)
-                material.clearcoatTexture = assignTextureIndex(mat->clearcoat.clearcoat_texture);
+                material.clearcoatTexture = assignTextureId(mat->clearcoat.clearcoat_texture);
             if (mat->clearcoat.clearcoat_roughness_texture.texture)
-                material.clearcoatRoughnessTexture = assignTextureIndex(mat->clearcoat.clearcoat_roughness_texture);
+                material.clearcoatRoughnessTexture = assignTextureId(mat->clearcoat.clearcoat_roughness_texture);
         }
         material.subsurfaceFactor = 0.0f;
         material.subsurfaceColor = {1.0f, 1.0f, 1.0f};
@@ -1188,17 +1267,6 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
 
     /* Textures */
     FTexture textureCodecInit(scratchAlloc);
-    CHECK_MSG(data->textures_count <= UINT32_MAX, "glTF texture count exceeds uint32_t");
-    CHECK_MSG(!environmentTextureSource.HasValue() || data->textures_count < UINT32_MAX,
-              "glTF texture count leaves no room for environment texture");
-    size_t const sceneTextureCount = data->textures_count + (environmentTextureSource.HasValue() ? 1u : 0u);
-    uint32_t const environmentTextureIndex = environmentTextureSource.HasValue()
-        ? static_cast<uint32_t>(data->textures_count)
-        : kInvalidTexture;
-    scene.mTables.textures.clear();
-    scene.mTables.textures.reserve(sceneTextureCount);
-    for (size_t i = 0; i < sceneTextureCount; i++)
-        scene.mTables.textures.emplace_back(scratchAlloc);
     Vector<FResourceBlobJobs> textureBlobJobs(scratchAlloc);
     textureBlobJobs.reserve(sceneTextureCount);
     for (size_t i = 0; i < sceneTextureCount; i++)
@@ -1210,6 +1278,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         futures.reserve(data->textures_count);
         for (size_t i = 0; i < data->textures_count; i++)
         {
+            // Name interning happens on the main thread (the pool must not mutate the string pool).
+            scene.mTables.textures[i].name = internString(data->textures[i].name);
             futures.push_back(pool.Push(
                 [&, i]
                 {
@@ -1277,17 +1347,21 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         BuildTextureBlobJobs(scene.mTables.textures[environmentTextureIndex],
                              textureBlobJobs[environmentTextureIndex].jobs, std::move(environmentTexture));
         AppendResourceBlobJobs(blobJobs, textureBlobJobs[environmentTextureIndex]);
-        environmentLight.environmentTexture = environmentTextureIndex;
+        environmentLight.environmentTexture = scene.mTables.textures[environmentTextureIndex].id;
     }
 
     /* Skeletons (one per glTF skin) + a glTF-mesh -> skin map for skinned-mesh import */
     Vector<Vector<uint16_t>> skinRemap(scratchAlloc);
     skinRemap.reserve(data->skins_count);
     scene.mTables.skeletons.reserve(data->skins_count);
+    Vector<FUUID> skinSkeletonIds(data->skins_count, kNilUUID, scratchAlloc);
     for (size_t s = 0; s < data->skins_count; s++)
     {
         Vector<uint16_t> remap(scratchAlloc);
-        scene.mTables.skeletons.push_back(BuildSkeletonFromSkin(data, &data->skins[s], remap, scratchAlloc));
+        FSkeleton skel = BuildSkeletonFromSkin(data, &data->skins[s], remap, scratchAlloc);
+        skel.id = FUUID::Generate();
+        skinSkeletonIds[s] = skel.id;
+        scene.mTables.skeletons.push_back(std::move(skel));
         skinRemap.push_back(std::move(remap));
     }
     Vector<int32_t> meshToSkin(data->meshes_count, -1, scratchAlloc);
@@ -1302,12 +1376,11 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
      * instances/lights can record their scene-node index. Skin joints are excluded here (they are
      * driven by the skin clip path), so no node is animated twice. The hierarchy is only kept when
      * at least one rigid clip exists. */
-    int32_t sceneNodeSkeleton = -1;
+    FUUID sceneNodeSkeletonId{};
     Vector<int32_t> nodeToSceneJoint(scratchAlloc);
     if (data->animations_count > 0 && data->nodes_count > 0)
     {
         FSkeleton sceneNodes = BuildSceneNodeSkeleton(data, nodeToSceneJoint, scratchAlloc);
-        int32_t const candidateSkeleton = static_cast<int32_t>(scene.mTables.skeletons.size());
         auto isSkinJoint = [&](cgltf_node* node)
         {
             for (size_t s = 0; s < data->skins_count; s++)
@@ -1321,7 +1394,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         {
             const cgltf_animation* anim = &data->animations[a];
             FAnimationClip clip(scratchAlloc);
-            clip.skeleton = candidateSkeleton;
+            clip.id = FUUID::Generate();
+            clip.name = internString(anim->name);
             for (size_t c = 0; c < anim->channels_count; c++)
             {
                 const cgltf_animation_channel* ch = &anim->channels[c];
@@ -1340,19 +1414,24 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         }
         if (!rigidClips.empty())
         {
+            sceneNodes.id = FUUID::Generate();
+            sceneNodeSkeletonId = sceneNodes.id;
+            // Rigid clips drive the scene-node skeleton; stamp its id now that it's known.
+            for (FAnimationClip& clip : rigidClips)
+                clip.skeleton = sceneNodeSkeletonId;
             scene.mTables.skeletons.push_back(std::move(sceneNodes));
-            sceneNodeSkeleton = candidateSkeleton;
             for (FAnimationClip& clip : rigidClips)
                 scene.mTables.clips.push_back(std::move(clip));
         }
     }
-    scene.mTables.sceneNodeSkeleton = sceneNodeSkeleton;
+    scene.mTables.sceneNodeSkeleton = sceneNodeSkeletonId;
+    bool const hasSceneNodeSkeleton = !sceneNodeSkeletonId.IsNil();
     auto NodeJoint = [&](size_t nodeIndex) -> int32_t
-    { return sceneNodeSkeleton >= 0 ? nodeToSceneJoint[nodeIndex] : -1; };
+    { return hasSceneNodeSkeleton ? nodeToSceneJoint[nodeIndex] : -1; };
 
     /* Morph-target weight tracks: one per glTF mesh that an animation drives via a `weights` channel
      * (first wins). Each mesh's submeshes link to it through FSerializedMesh::morphTrack. */
-    Vector<int32_t> meshToMorphTrack(data->meshes_count, -1, scratchAlloc);
+    Vector<FUUID> meshMorphTrackIds(data->meshes_count, kNilUUID, scratchAlloc);
     for (size_t a = 0; a < data->animations_count; a++)
     {
         const cgltf_animation* anim = &data->animations[a];
@@ -1363,7 +1442,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                 !ch->target_node->mesh || !ch->sampler)
                 continue;
             size_t meshIdx = cgltf_mesh_index(data, ch->target_node->mesh);
-            if (meshToMorphTrack[meshIdx] >= 0)
+            if (!meshMorphTrackIds[meshIdx].IsNil())
                 continue; // first track wins for a given mesh
             const cgltf_primitive* prim0 = ch->target_node->mesh->primitives_count ? &ch->target_node->mesh->primitives[0] : nullptr;
             uint32_t targetCount = prim0 ? static_cast<uint32_t>(prim0->targets_count) : 0u;
@@ -1372,6 +1451,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             if (targetCount == 0 || !input || !output)
                 continue;
             FMorphTrack track(scratchAlloc);
+            track.id = FUUID::Generate();
             track.targetCount = targetCount;
             track.interp = MapAnimInterp(ch->sampler->interpolation);
             track.times.resize(input->count);
@@ -1380,7 +1460,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             cgltf_accessor_unpack_floats(output, track.values.data(), track.values.size());
             if (input->count > 0)
                 track.duration = track.times[input->count - 1];
-            meshToMorphTrack[meshIdx] = static_cast<int32_t>(scene.mTables.morphTracks.size());
+            meshMorphTrackIds[meshIdx] = track.id;
             scene.mTables.morphTracks.push_back(std::move(track));
         }
     }
@@ -1392,6 +1472,10 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
     scene.mTables.meshes.reserve(numSubmeshes);
     for (size_t i = 0; i < numSubmeshes; i++)
         scene.mTables.meshes.emplace_back(scratchAlloc);
+    for (size_t i = 0; i < numSubmeshes; i++)
+    {
+        scene.mTables.meshes[i].id = FUUID::Generate();
+    }
     Vector<FResourceBlobJobs> meshBlobJobs(scratchAlloc);
     meshBlobJobs.reserve(numSubmeshes);
     for (size_t i = 0; i < numSubmeshes; i++)
@@ -1408,7 +1492,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         {
             auto& mesh = data->meshes[i];
             int32_t skinIndex = meshToSkin[i];
-            int32_t morphTrack = meshToMorphTrack[i];
+            FUUID morphTrackId = meshMorphTrackIds[i];
             const Vector<uint16_t>* remap = skinIndex >= 0 ? &skinRemap[skinIndex] : nullptr;
             auto& [mmin, mmax] = submeshIndices.emplace_back(nextSubmesh, nextSubmesh);
             for (size_t p = 0; p < mesh.primitives_count; p++)
@@ -1417,13 +1501,13 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                 CHECK(sub->type == cgltf_primitive_type_triangles);
                 uint32_t meshIndex = nextSubmesh++;
                 futures.push_back(pool.Push(
-                    [&, meshIndex, sub, skinIndex, morphTrack, remap]
+                    [&, meshIndex, sub, skinIndex, morphTrackId, remap]
                     {
-                        FImportedMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc, remap, morphTrack >= 0);
+                        FImportedMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc, remap, !morphTrackId.IsNil());
                         // Deforming meshes (skinned or morph-animated) take the dynamic vertex/index
                         // path: skip vertex reordering (which would desync the per-vertex binding /
                         // morph deltas) and the DAG/meshlet build.
-                        bool const dynamic = !submesh.skin.empty() || morphTrack >= 0;
+                        bool const dynamic = !submesh.skin.empty() || !morphTrackId.IsNil();
                         if (!dynamic)
                         {
                             LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
@@ -1434,7 +1518,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                         }
                         submesh.Quantize();
                         BuildMeshBlobJobs(scene.mTables.meshes[meshIndex], meshBlobJobs[meshIndex].jobs, submesh,
-                                          submesh.skin.empty() ? -1 : skinIndex, morphTrack);
+                                          submesh.skin.empty() ? kNilUUID : skinSkeletonIds[skinIndex], morphTrackId);
                     }));
             }
             mmax = nextSubmesh;
@@ -1454,6 +1538,12 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
 
     /* Curves */
     scene.mTables.curves.resize(data->curves_count);
+    Vector<FUUID> curveIds(data->curves_count, kNilUUID, scratchAlloc);
+    for (size_t i = 0; i < data->curves_count; i++)
+    {
+        curveIds[i] = FUUID::Generate();
+        scene.mTables.curves[i].id = curveIds[i];
+    }
     Vector<FResourceBlobJobs> curveBlobJobs(scratchAlloc);
     curveBlobJobs.reserve(data->curves_count);
     for (size_t i = 0; i < data->curves_count; i++)
@@ -1471,6 +1561,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                     FImportedCurve curve(scratchAlloc);
                     LoadGLTFCurve(data, &data->curves[i], curve, scratchAlloc);
                     BuildCurveBlobJobs(scene.mTables.curves[i], curveBlobJobs[i].jobs, curve);
+                    // BuildCurveBlobJobs resets the desc (desc = {}), so re-stamp the id afterwards.
+                    scene.mTables.curves[i].id = curveIds[i];
                 }));
         }
         pool.Join();
@@ -1548,6 +1640,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
 
             FInstance instance{};
             instance.type = FInstanceType::Mesh;
+            instance.name = internString(node->name);
             instance.node = NodeJoint(i);
 
             for (size_t inst = 0; inst < instCount; ++inst)
@@ -1590,8 +1683,10 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                 for (size_t j = mmin; j < mmax; j++)
                 {
                     auto* sub = node->mesh->primitives + j - mmin;
-                    instance.resourceIndex = static_cast<uint32_t>(j);
-                    instance.materialIndex = sub->material ? cgltf_material_index(data, sub->material) + 1u : 0u;
+                    instance.id = FUUID::Generate();
+                    instance.resource = scene.mTables.meshes[j].id;
+                    instance.material = sub->material ? gltfMaterialIds[cgltf_material_index(data, sub->material)]
+                                                       : kDefaultMaterialUUID;
                     scene.Add(instance);
                 }
             }
@@ -1601,14 +1696,18 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             FInstance instance{};
             getTransform(instance.transform);
             instance.type = FInstanceType::Curve;
+            instance.id = FUUID::Generate();
+            instance.name = internString(node->name);
             instance.node = NodeJoint(i);
-            instance.resourceIndex = static_cast<uint32_t>(cgltf_curve_index(data, node->curve));
-            instance.materialIndex = node->curve->material ? static_cast<uint32_t>(cgltf_material_index(data, node->curve->material) + 1u) : 0u;
+            instance.resource = curveIds[cgltf_curve_index(data, node->curve)];
+            instance.material = node->curve->material ? gltfMaterialIds[cgltf_material_index(data, node->curve->material)]
+                                                       : kDefaultMaterialUUID;
             scene.Add(instance);
         }
         if (node->camera)
         {
             FCamera camera{};
+            camera.id = FUUID::Generate();
             getTransform(camera.transform);
             camera.node = NodeJoint(i);
             camera.fovY = node->camera->data.perspective.yfov;
@@ -1627,6 +1726,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         if (node->light)
         {
             FLight light{};
+            light.id = FUUID::Generate();
+            light.name = internString(node->light->name);
             getTransform(light.transform);
             light.node = NodeJoint(i);
             light.color = float3{node->light->color[0], node->light->color[1], node->light->color[2]};
@@ -1655,6 +1756,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         if (node->light_area)
         {
             FLight light{};
+            light.id = FUUID::Generate();
+            light.name = internString(node->light_area->name);
             getTransform(light.transform);
             light.node = NodeJoint(i);
             float ws = std::max({std::abs(light.transform.scale.x), std::abs(light.transform.scale.y),
@@ -1719,7 +1822,9 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             continue; // no skinned target (rigid articulation is a later step)
 
         FAnimationClip clip(scratchAlloc);
-        clip.skeleton = clipSkin;
+        clip.id = FUUID::Generate();
+        clip.name = internString(anim->name);
+        clip.skeleton = skinSkeletonIds[clipSkin];
         for (size_t c = 0; c < anim->channels_count; c++)
         {
             const cgltf_animation_channel* ch = &anim->channels[c];
@@ -1916,8 +2021,8 @@ void BuildCurveGeometry(FImportedCurve const& curve, Span<FSerializedCurveSegmen
               segments.size(), segmentCursor);
 }
 
-void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, int32_t skeleton,
-                       int32_t morphTrack)
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, FUUID skeleton,
+                       FUUID morphTrack)
 {
     CHECK_MSG(!mesh.verticesQuantized.empty(), "FScene mesh is not quantized");
     desc.bounds = BuildMeshBounds(mesh);
@@ -1966,7 +2071,6 @@ void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImp
 {
     desc = {};
     desc.bounds = BuildCurveBounds(curve);
-    desc.materialIndex = curve.materialIndex;
     uint32_t segmentCount = CalculateRenderableCurveSegmentCount(curve);
 
     Allocator* scratchAlloc = blobJobs.get_allocator().mResource;
@@ -1996,6 +2100,26 @@ FImportedScene::FImportedScene(MemoryMappedFile& file, Allocator* scratchAlloc)
         if (mHeader.payloadOffset > sizeof(mHeader))
             std::memset(file.MutableData() + sizeof(mHeader), 0, static_cast<size_t>(mHeader.payloadOffset - sizeof(mHeader)));
     }
+}
+
+void FImportedScene::RebuildIndex()
+{
+    auto fill = [](HashMap<FUUID, uint32_t>& map, auto const& vec)
+    {
+        map.clear();
+        map.reserve(vec.size());
+        for (uint32_t i = 0; i < static_cast<uint32_t>(vec.size()); ++i)
+            map.emplace(vec[i].id, i);
+    };
+    fill(mIndex.strings, mTables.strings);
+    fill(mIndex.instances, mTables.instances);
+    fill(mIndex.materials, mTables.materials);
+    fill(mIndex.lights, mTables.lights);
+    fill(mIndex.textures, mTables.textures);
+    fill(mIndex.meshes, mTables.meshes);
+    fill(mIndex.curves, mTables.curves);
+    fill(mIndex.skeletons, mTables.skeletons);
+    fill(mIndex.morphTracks, mTables.morphTracks);
 }
 
 Span<const unsigned char> FImportedScene::GetPayloadBytes() const
@@ -2057,7 +2181,7 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     size_t dynamicBytesPerSlot = 0;
     for (auto const& mesh : GetMeshes())
     {
-        if (mesh.skinBinding.count == 0 && mesh.morphTrack < 0)
+        if (mesh.skinBinding.count == 0 && mesh.morphTrack.IsNil())
             continue;
         size_t vtxBytes = static_cast<size_t>(mesh.vertices.decodedSize);
         size_t idxBytes = mesh.lods.empty() ? 0u : static_cast<size_t>(mesh.lods[0].indices.decodedSize);
@@ -2075,7 +2199,8 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     FLight const* environmentLight = GetEnvironmentLight();
     for (size_t textureIndex = 0; textureIndex < GetTextures().size(); ++textureIndex)
     {
-        if (environmentLight && environmentLight->HasEnvironmentTexture() && textureIndex == environmentLight->environmentTexture)
+        if (environmentLight && environmentLight->HasEnvironmentTexture() &&
+            GetTextures()[textureIndex].id == environmentLight->environmentTexture)
             continue;
         FSerializedTexture const& texture = GetTextures()[textureIndex];
         textureBindings += texture.IsValid() ? 1u : 0u;
@@ -2126,6 +2251,7 @@ void LoadGLTF(StringView path, FImportedScene& scene, Allocator* scratchAlloc,
     CHECK(scene.mWriting);
     CHECK(scratchAlloc != nullptr);
     BuildGLTFSerializedScene(path, scene, scratchAlloc, buildOptions);
+    scene.RebuildIndex();
 }
 
 void LoadFSCN(FImportedScene& scene)
@@ -2144,6 +2270,7 @@ void LoadFSCN(FImportedScene& scene)
     FDeserialize(metadataReader, scene.mTables);
     CHECK_MSG(metadataReader.tell() == metadata.size(), "FScene metadata has trailing or unread bytes");
     ValidateSceneTables(scene.mHeader, scene.mTables);
+    scene.RebuildIndex();
 }
 
 String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc,

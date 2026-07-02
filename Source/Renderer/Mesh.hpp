@@ -97,6 +97,7 @@ struct FSerializedMeshLOD
 
 struct FSerializedMesh
 {
+    FUUID id{};
     FSerializedBounds bounds;
     FBlobRef vertices;
     uint32_t vertexCount{0};
@@ -106,16 +107,16 @@ struct FSerializedMesh
     FBlobRef dagMeshletTri;
     FBlobRef dagMeshletVtx;
     // Optional CPU skinning data: per-vertex @ref FSkinBinding (count == vertexCount when present)
-    // plus the index of the bound skeleton in the scene's skeleton table (-1 = not skinned).
+    // plus the id of the bound skeleton (kNilUUID = not skinned).
     // Skinned meshes carry no DAG/meshlets (they take the dynamic vertex/index path).
     FBlobRef skinBinding;
-    int32_t skeleton{-1};
+    FUUID skeleton{};
     // Optional morph-target POSITION deltas (target-major: target t, vertex v at t*vertexCount + v),
-    // the target count, and the index of the driving morph-weight track (-1 = not morph-animated).
+    // the target count, and the id of the driving morph-weight track (kNilUUID = not morph-animated).
     // Morph-animated meshes also take the dynamic vertex/index path.
     FBlobRef morphPositions;
     uint32_t morphTargetCount{0};
-    int32_t morphTrack{-1};
+    FUUID morphTrack{};
 
     explicit FSerializedMesh(Allocator* alloc = GLOBAL_ALLOC)
         : lods(alloc)

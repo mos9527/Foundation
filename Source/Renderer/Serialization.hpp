@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Container.hpp>
 #include <Core/MemoryMapped.hpp>
+#include <Core/UUID.hpp>
 #include <concepts>
 #include <cstdint>
 #include <cstring>
@@ -191,6 +192,23 @@ void FDeserialize(FReader& reader, T& obj)
     requires std::is_trivially_copyable_v<T>
 {
     reader(&obj, sizeof(T));
+}
+// Length-prefixed UTF-8 string.
+inline void FSerialize(FWriter& writer, String const& str)
+{
+    uint64_t count = str.size();
+    writer(&count, sizeof(uint64_t));
+    if (count)
+        writer(str.data(), static_cast<size_t>(count));
+}
+inline void FDeserialize(FReader& reader, String& str)
+{
+    uint64_t count = 0;
+    reader(&count, sizeof(uint64_t));
+    str.clear();
+    str.resize(static_cast<size_t>(count));
+    if (count)
+        CHECK(reader.read(str.data(), static_cast<size_t>(count)) == static_cast<size_t>(count));
 }
 // Custom serialization
 template <typename T>

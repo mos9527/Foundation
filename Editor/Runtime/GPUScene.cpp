@@ -8,7 +8,8 @@ bool IsSceneEnvironmentTexture(FImportedScene const& scene, size_t textureIndex)
 {
     FLight const* environment = scene.GetEnvironmentLight();
     return environment != nullptr && environment->HasEnvironmentTexture() &&
-           textureIndex == environment->environmentTexture;
+           textureIndex < scene.GetTextures().size() &&
+           scene.GetTextures()[textureIndex].id == environment->environmentTexture;
 }
 
 GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI::RHIDeviceCapabilities const& caps,
@@ -27,16 +28,21 @@ void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResourc
     outResources.curveGeometry.clear();
     outResources.meshGeometry.reserve(scene.GetMeshes().size());
     outResources.curveGeometry.reserve(scene.GetCurves().size());
+    outResources.meshById.clear();
+    outResources.curveById.clear();
+    outResources.textureById.clear();
+    outResources.materialById.clear();
     for (FSerializedMesh const& mesh : scene.GetMeshes())
     {
         GeometryHandle handle;
         // Deforming (skinned/morphed) meshes upload as dynamic geometry (Ready synchronously);
         // everything else streams in through the upload worker (InProgress).
-        bool const dynamic = mesh.skinBinding.count != 0 || mesh.morphTrack >= 0;
+        bool const dynamic = mesh.skinBinding.count != 0 || !mesh.morphTrack.IsNil();
         GPUScene::Result r = dynamic ? gpu.UploadDynamic(&blobs, mesh, handle) : gpu.Upload(&blobs, mesh, handle);
         CHECK_MSG(r == GPUScene::Result::InProgress || r == GPUScene::Result::Ready, "Mesh upload rejected ({})",
                   static_cast<int>(r));
         outResources.meshGeometry.push_back(handle);
+        outResources.meshById.emplace(mesh.id, static_cast<uint32_t>(outResources.meshGeometry.size() - 1));
     }
     for (FSerializedCurve const& curve : scene.GetCurves())
     {
@@ -44,12 +50,14 @@ void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResourc
         GPUScene::Result r = gpu.Upload(&blobs, curve, handle);
         CHECK_MSG(r == GPUScene::Result::InProgress, "Curve upload rejected ({})", static_cast<int>(r));
         outResources.curveGeometry.push_back(handle);
+        outResources.curveById.emplace(curve.id, static_cast<uint32_t>(outResources.curveGeometry.size() - 1));
     }
 
     outResources.textureIDMap.assign(scene.GetTextures().size(), TextureHandle{});
     for (size_t textureIndex = 0; textureIndex < scene.GetTextures().size(); ++textureIndex)
     {
         FSerializedTexture const& srcDesc = scene.GetTextures()[textureIndex];
+        outResources.textureById.emplace(srcDesc.id, static_cast<uint32_t>(textureIndex));
         if (!srcDesc.IsValid() || IsSceneEnvironmentTexture(scene, textureIndex))
             continue;
         TextureHandle handle;
@@ -58,6 +66,10 @@ void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResourc
                   static_cast<int>(r));
         outResources.textureIDMap[textureIndex] = handle;
     }
+
+    auto const& materials = scene.GetMaterials();
+    for (size_t i = 0; i < materials.size(); ++i)
+        outResources.materialById.emplace(materials[i].id, static_cast<uint32_t>(i));
 }
 
 namespace
@@ -102,9 +114,9 @@ void UploadSceneEnvironment(FImportedScene const& scene, FLight const& environme
 {
     CHECK_MSG(environment.type == FLightType::Environment && environment.HasEnvironmentTexture(),
               "UploadSceneEnvironment requires an Environment light with an environment map texture");
-    CHECK_MSG(environment.environmentTexture < scene.GetTextures().size(),
-              "Scene environment texture index out of range");
-    FSerializedTexture const& environmentTextureDesc = scene.GetTextures()[environment.environmentTexture];
+    int const envTexIndex = scene.TextureIndex(environment.environmentTexture);
+    CHECK_MSG(envTexIndex >= 0, "Scene environment texture id not found");
+    FSerializedTexture const& environmentTextureDesc = scene.GetTextures()[static_cast<size_t>(envTexIndex)];
     ScopedArena environmentArena(GLOBAL_ALLOC, SceneTextureReadBudget(environmentTextureDesc));
     CHECK(environmentArena);
     AllocatorStack environmentAlloc(environmentArena);
@@ -224,16 +236,20 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu, GPUSc
     dst.importance = std::max(0.0f, importance);
 }
 
-void FillGSMaterial(GSMaterial& dst, FMaterial const& src, Vector<TextureHandle> const& textureIDMap,
+void FillGSMaterial(GSMaterial& dst, FMaterial const& src, FSceneGPUResources const& resources,
                     GPUScene const& gpu)
 {
-    // Textures not yet resident (still streaming) remap to UINT32_MAX (the "no texture" sentinel)
-    // so shaders sample defaults until the real image lands.
-    auto RemapTextureIndex = [&](uint32_t index) -> uint32_t
+    // Nil/unready textures -> UINT32_MAX (shader default).
+    auto resolveTexture = [&](FUUID id) -> uint32_t
     {
-        if (index == UINT32_MAX || index >= textureIDMap.size())
+        if (id.IsNil())
             return UINT32_MAX;
-        TextureHandle const handle = textureIDMap[index];
+        auto it = resources.textureById.find(id);
+        if (it == resources.textureById.end())
+            return UINT32_MAX;
+        if (it->second >= resources.textureIDMap.size())
+            return UINT32_MAX;
+        TextureHandle const handle = resources.textureIDMap[it->second];
         if (!handle.IsValid() || gpu.Query(handle) != GPUScene::Result::Ready)
             return UINT32_MAX;
         return handle.index;
@@ -243,19 +259,19 @@ void FillGSMaterial(GSMaterial& dst, FMaterial const& src, Vector<TextureHandle>
     dst.emissiveFactor = float3(src.emissiveFactor) * src.emissiveFactor.w;
     dst.metallicFactor = src.metallicFactor;
     dst.roughnessFactor = src.roughnessFactor;
-    dst.baseColorTexture = RemapTextureIndex(src.baseColorTexture);
-    dst.emissiveTexture = RemapTextureIndex(src.emissiveTexture);
-    dst.metallicRoughnessTexture = RemapTextureIndex(src.metallicRoughnessTexture);
-    dst.normalTexture = RemapTextureIndex(src.normalTexture);
+    dst.baseColorTexture = resolveTexture(src.baseColorTexture);
+    dst.emissiveTexture = resolveTexture(src.emissiveTexture);
+    dst.metallicRoughnessTexture = resolveTexture(src.metallicRoughnessTexture);
+    dst.normalTexture = resolveTexture(src.normalTexture);
     dst.normalScale = src.normalScale;
-    dst.transmissionTexture = RemapTextureIndex(src.transmissionTexture);
-    dst.specularTexture = RemapTextureIndex(src.specularTexture);
-    dst.specularColorTexture = RemapTextureIndex(src.specularColorTexture);
-    dst.anisotropyTexture = RemapTextureIndex(src.anisotropyTexture);
-    dst.sheenColorTexture = RemapTextureIndex(src.sheenColorTexture);
-    dst.sheenRoughnessTexture = RemapTextureIndex(src.sheenRoughnessTexture);
-    dst.clearcoatTexture = RemapTextureIndex(src.clearcoatTexture);
-    dst.clearcoatRoughnessTexture = RemapTextureIndex(src.clearcoatRoughnessTexture);
+    dst.transmissionTexture = resolveTexture(src.transmissionTexture);
+    dst.specularTexture = resolveTexture(src.specularTexture);
+    dst.specularColorTexture = resolveTexture(src.specularColorTexture);
+    dst.anisotropyTexture = resolveTexture(src.anisotropyTexture);
+    dst.sheenColorTexture = resolveTexture(src.sheenColorTexture);
+    dst.sheenRoughnessTexture = resolveTexture(src.sheenRoughnessTexture);
+    dst.clearcoatTexture = resolveTexture(src.clearcoatTexture);
+    dst.clearcoatRoughnessTexture = resolveTexture(src.clearcoatRoughnessTexture);
     dst.transmissionFactor = src.transmissionFactor;
     dst.ior = src.ior;
     dst.specularFactor = src.specularFactor;
@@ -294,28 +310,34 @@ GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FS
         GeometryHandle geometry;
         if (src.type == FInstanceType::Mesh)
         {
-            CHECK_MSG(src.resourceIndex < resources.meshGeometry.size(), "Mesh instance references invalid mesh {}",
-                      src.resourceIndex);
-            geometry = resources.meshGeometry[src.resourceIndex];
+            auto it = resources.meshById.find(src.resource);
+            CHECK_MSG(it != resources.meshById.end(), "Mesh instance references unknown mesh id");
+            CHECK_MSG(it->second < resources.meshGeometry.size(), "Mesh instance references invalid mesh {}",
+                      it->second);
+            geometry = resources.meshGeometry[it->second];
         }
         else if (src.type == FInstanceType::Curve)
         {
-            CHECK_MSG(src.resourceIndex < resources.curveGeometry.size(),
-                      "Curve instance references invalid curve {}", src.resourceIndex);
-            geometry = resources.curveGeometry[src.resourceIndex];
+            auto it = resources.curveById.find(src.resource);
+            CHECK_MSG(it != resources.curveById.end(), "Curve instance references unknown curve id");
+            CHECK_MSG(it->second < resources.curveGeometry.size(),
+                      "Curve instance references invalid curve {}", it->second);
+            geometry = resources.curveGeometry[it->second];
         }
         else
             CHECK_MSG(false, "Unknown scene instance type {}", static_cast<uint32_t>(src.type));
+        auto matIt = resources.materialById.find(src.material);
+        CHECK_MSG(matIt != resources.materialById.end(), "Instance references unknown material id");
         tables.instances[i] = InstanceDesc{
             .geometry = geometry,
             .transform = src.transform.transform,
             .rotation = src.transform.rotation,
             .scale = src.transform.scale,
-            .materialIndex = src.materialIndex,
+            .materialIndex = matIt->second,
         };
     }
     for (size_t i = 0; i < materials.size(); ++i)
-        FillGSMaterial(tables.materials[i], materials[i], resources.textureIDMap, gpu);
+        FillGSMaterial(tables.materials[i], materials[i], resources, gpu);
     for (size_t i = 0; i < lights.size(); ++i)
         FLightToGSLight(lights[i], tables.lights[i], gpu, gpu.mLightSamplerType);
 

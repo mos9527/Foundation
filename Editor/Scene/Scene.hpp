@@ -25,16 +25,18 @@ struct FInstance
 {
     FTransform transform;
     FInstanceType type{FInstanceType::Mesh};
-    // Index into the serialized table tagged by @ref type. Mesh means @ref FSerializedMesh, Curve means @ref FSceneCurveDesc.
-    uint32_t resourceIndex{0};
-    uint32_t materialIndex{0};
-    // Index into the scene-node hierarchy (@ref FSceneTables::sceneNodeSkeleton) for rigid node
-    // animation; -1 when the instance is static (its baked @ref transform is authoritative).
+    FUUID id{};
+    FUUID name{}; // FStringEntry id; kNilUUID when unnamed.
+    FUUID resource{};
+    FUUID material{}; // kDefaultMaterialUUID for implicit default.
+    // Scene-node joint index for rigid animation; -1 when static.
+    // Joint-local indices stay indices (meaningful only within one skeleton).
     int32_t node{-1};
 };
 struct FCamera
 {
     FTransform transform;
+    FUUID id{};
     float fovY;
     bool lensEnabled{false};
     float sensorHeightMm{36.0f};
@@ -51,6 +53,8 @@ struct FCamera
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#additional-textures
 // Sentinel value for "no texture bound"
 static constexpr uint32_t kInvalidTexture = UINT32_MAX;
+// Well-known default material at materials[0]; replaces legacy "index 0 reserved" + importer +1.
+static constexpr FUUID kDefaultMaterialUUID{ .hi = 0x0f0f0f0f0f0f0f0full, .lo = 0x0000000000000001ull };
 enum class FMaterialShaderBlock : uint32_t
 {
     Principled = 0,
@@ -59,33 +63,35 @@ enum class FMaterialShaderBlock : uint32_t
 
 struct FMaterial
 {
+    FUUID id{};
+    FUUID name{};
     // sRGB.
-    uint32_t baseColorTexture = kInvalidTexture;
+    FUUID baseColorTexture{};
     // sRGB
-    uint32_t emissiveTexture = kInvalidTexture;
+    FUUID emissiveTexture{};
     // Linear. B channel: metallic, G channel: roughness
-    uint32_t metallicRoughnessTexture = kInvalidTexture;
+    FUUID metallicRoughnessTexture{};
     // Linear. Tangent space XYZ, R [0.0 .. 1.0] to X [-1 .. 1], G [0.0 .. 1.0] to Y [-1 .. 1], B (0.5 .. 1.0] maps to Z
     // (0 .. 1]
-    uint32_t normalTexture = kInvalidTexture;
+    FUUID normalTexture{};
     // glTF material.normalTextureInfo.scale; scales normal-map X/Y before TBN application.
     float normalScale = 1.0f;
     // Linear. R channel.
-    uint32_t transmissionTexture = kInvalidTexture;
+    FUUID transmissionTexture{};
     // Linear. A channel.
-    uint32_t specularTexture = kInvalidTexture;
+    FUUID specularTexture{};
     // sRGB. RGB channels.
-    uint32_t specularColorTexture = kInvalidTexture;
+    FUUID specularColorTexture{};
     // Linear. RG direction in tangent space, B strength.
-    uint32_t anisotropyTexture = kInvalidTexture;
+    FUUID anisotropyTexture{};
     // sRGB. RGB channels.
-    uint32_t sheenColorTexture = kInvalidTexture;
+    FUUID sheenColorTexture{};
     // Linear. A channel per KHR_materials_sheen.
-    uint32_t sheenRoughnessTexture = kInvalidTexture;
+    FUUID sheenRoughnessTexture{};
     // Linear. R channel per KHR_materials_clearcoat.
-    uint32_t clearcoatTexture = kInvalidTexture;
+    FUUID clearcoatTexture{};
     // Linear. G channel per KHR_materials_clearcoat.
-    uint32_t clearcoatRoughnessTexture = kInvalidTexture;
+    FUUID clearcoatRoughnessTexture{};
     float4 baseColorFactor;
     float4 emissiveFactor;
     float metallicFactor;
@@ -122,6 +128,8 @@ inline constexpr uint32_t kMaxSceneLights = 1024;
 struct FLight
 {
     FTransform transform;
+    FUUID id{};
+    FUUID name{};
     FLightType type{FLightType::Directional};
     float3 color{1,1,1};            // Normalized RGB color
     float power{1.0f};              // Radiant power (type-dependent unit)
@@ -135,17 +143,18 @@ struct FLight
     bool twoSided{false};
     bool normalize{true};
     bool environmentMap{false};
-    uint32_t environmentTexture{kInvalidTexture};
+    FUUID environmentTexture{};
     float environmentAzimuthOffset{0.0f};
     // Scene-node hierarchy index for rigid node animation; -1 when static.
     int32_t node{-1};
 
-    bool HasEnvironmentTexture() const { return environmentMap && environmentTexture != kInvalidTexture; }
+    bool HasEnvironmentTexture() const { return environmentMap && !environmentTexture.IsNil(); }
 };
 
 inline FLight MakeDefaultEnvironmentLight()
 {
     FLight light{};
+    light.id = FUUID::Generate();
     light.type = FLightType::Environment;
     light.color = float3{0.05f, 0.05f, 0.05f};
     light.power = 1.0f;
@@ -164,6 +173,7 @@ struct FSceneGlobals
 // interpolation as @ref FAnimChannel (cubic keys store 3*targetCount values per key).
 struct FMorphTrack
 {
+    FUUID id{};
     uint32_t targetCount{0};
     FAnimInterp interp{FAnimInterp::Linear};
     float duration{0.0f};
@@ -173,10 +183,19 @@ struct FMorphTrack
 };
 
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 14;
+static constexpr uint32_t kSceneVersion = 17;
+
+// Stringpool entry
+struct FStringEntry
+{
+    FUUID id{};
+    String value;
+};
+
 struct FSceneTables
 {
     FSceneGlobals globals;
+    Vector<FStringEntry> strings;
     Vector<FCamera> cameras;
     Vector<FLight> lights;
     Vector<FInstance> instances;
@@ -187,20 +206,47 @@ struct FSceneTables
     Vector<FSkeleton> skeletons;
     Vector<FAnimationClip> clips;
     Vector<FMorphTrack> morphTracks;
-    // Index into @ref skeletons of the scene-node hierarchy that drives rigid node animation
-    // (@ref FInstance::node / @ref FLight::node reference its joints), or -1 if the scene has none.
-    int32_t sceneNodeSkeleton{-1};
+    FUUID sceneNodeSkeleton{}; // kNilUUID when no rigid node hierarchy.
 
     explicit FSceneTables(Allocator* alloc = GLOBAL_ALLOC)
-        : cameras(alloc), lights(alloc), instances(alloc), materials(alloc), meshes(alloc), curves(alloc),
+        : strings(alloc), cameras(alloc), lights(alloc), instances(alloc), materials(alloc), meshes(alloc), curves(alloc),
           textures(alloc), skeletons(alloc), clips(alloc), morphTracks(alloc)
     {
+    }
+};
+
+// id -> table index; rebuilt via FImportedScene::RebuildIndex.
+struct FSceneIndex
+{
+    HashMap<FUUID, uint32_t> strings;
+    HashMap<FUUID, uint32_t> instances;
+    HashMap<FUUID, uint32_t> materials;
+    HashMap<FUUID, uint32_t> lights;
+    HashMap<FUUID, uint32_t> textures;
+    HashMap<FUUID, uint32_t> meshes;
+    HashMap<FUUID, uint32_t> curves;
+    HashMap<FUUID, uint32_t> skeletons;
+    HashMap<FUUID, uint32_t> morphTracks;
+
+    explicit FSceneIndex(Allocator* alloc = GLOBAL_ALLOC)
+        : strings(alloc), instances(alloc), materials(alloc), lights(alloc), textures(alloc),
+          meshes(alloc), curves(alloc), skeletons(alloc), morphTracks(alloc)
+    {
+    }
+
+    static int Find(HashMap<FUUID, uint32_t> const& map, FUUID id)
+    {
+        if (id.IsNil())
+            return -1;
+        auto it = map.find(id);
+        return it == map.end() ? -1 : static_cast<int>(it->second);
     }
 };
 
 template <>
 inline void FSerialize(FWriter& writer, FSerializedMesh const& mesh)
 {
+    FSerialize(writer, mesh.id);
     FSerialize(writer, mesh.bounds);
     FSerialize(writer, mesh.vertices);
     FSerialize(writer, mesh.vertexCount);
@@ -219,6 +265,7 @@ inline void FSerialize(FWriter& writer, FSerializedMesh const& mesh)
 template <>
 inline void FDeserialize(FReader& reader, FSerializedMesh& mesh)
 {
+    FDeserialize(reader, mesh.id);
     FDeserialize(reader, mesh.bounds);
     FDeserialize(reader, mesh.vertices);
     FDeserialize(reader, mesh.vertexCount);
@@ -238,11 +285,13 @@ inline void FDeserialize(FReader& reader, FSerializedMesh& mesh)
 template <>
 inline void FSerialize(FWriter& writer, FSkeleton const& skel)
 {
+    FSerialize(writer, skel.id);
     FSerialize(writer, skel.joints);
 }
 template <>
 inline void FDeserialize(FReader& reader, FSkeleton& skel)
 {
+    FDeserialize(reader, skel.id);
     FDeserialize(reader, skel.joints);
 }
 
@@ -268,6 +317,8 @@ inline void FDeserialize(FReader& reader, FAnimChannel& channel)
 template <>
 inline void FSerialize(FWriter& writer, FAnimationClip const& clip)
 {
+    FSerialize(writer, clip.id);
+    FSerialize(writer, clip.name);
     FSerialize(writer, clip.skeleton);
     FSerialize(writer, clip.duration);
     FSerialize(writer, clip.channels);
@@ -275,6 +326,8 @@ inline void FSerialize(FWriter& writer, FAnimationClip const& clip)
 template <>
 inline void FDeserialize(FReader& reader, FAnimationClip& clip)
 {
+    FDeserialize(reader, clip.id);
+    FDeserialize(reader, clip.name);
     FDeserialize(reader, clip.skeleton);
     FDeserialize(reader, clip.duration);
     FDeserialize(reader, clip.channels, clip.channels.get_allocator().mResource);
@@ -283,6 +336,7 @@ inline void FDeserialize(FReader& reader, FAnimationClip& clip)
 template <>
 inline void FSerialize(FWriter& writer, FMorphTrack const& track)
 {
+    FSerialize(writer, track.id);
     FSerialize(writer, track.targetCount);
     FSerialize(writer, track.interp);
     FSerialize(writer, track.duration);
@@ -292,6 +346,7 @@ inline void FSerialize(FWriter& writer, FMorphTrack const& track)
 template <>
 inline void FDeserialize(FReader& reader, FMorphTrack& track)
 {
+    FDeserialize(reader, track.id);
     FDeserialize(reader, track.targetCount);
     FDeserialize(reader, track.interp);
     FDeserialize(reader, track.duration);
@@ -299,10 +354,25 @@ inline void FDeserialize(FReader& reader, FMorphTrack& track)
     FDeserialize(reader, track.values);
 }
 
+// FStringEntry: id is FUUID::FromString(value).
+template <>
+inline void FSerialize(FWriter& writer, FStringEntry const& entry)
+{
+    FSerialize(writer, entry.id);
+    FSerialize(writer, entry.value);
+}
+template <>
+inline void FDeserialize(FReader& reader, FStringEntry& entry)
+{
+    FDeserialize(reader, entry.id);
+    FDeserialize(reader, entry.value);
+}
+
 template <>
 inline void FSerialize(FWriter& writer, FSceneTables const& tables)
 {
     FSerialize(writer, tables.globals);
+    FSerialize(writer, tables.strings);
     FSerialize(writer, tables.cameras);
     FSerialize(writer, tables.lights);
     FSerialize(writer, tables.instances);
@@ -320,6 +390,7 @@ template <>
 inline void FDeserialize(FReader& reader, FSceneTables& tables)
 {
     FDeserialize(reader, tables.globals);
+    FDeserialize(reader, tables.strings);
     FDeserialize(reader, tables.cameras);
     FDeserialize(reader, tables.lights);
     FDeserialize(reader, tables.instances);
@@ -350,6 +421,7 @@ struct FImportedScene
     // Resident metadata in memory. Payload blobs stay in the external mapped file.
     FSceneHeader mHeader{};
     FSceneTables mTables;
+    FSceneIndex mIndex{GLOBAL_ALLOC};
     // Non-owning mapped file view where payload blobs are stored. Lifetime is owned by the caller.
     MemoryMappedFile* mFile{nullptr};
     Allocator* mScratchAlloc{GLOBAL_ALLOC};
@@ -429,7 +501,11 @@ struct FImportedScene
     FLight& EnsureEnvironmentLight()
     {
         if (mTables.lights.empty())
+        {
+            // Inserting at the front shifts every light index, so refresh the light lookups.
             mTables.lights.insert(mTables.lights.begin(), MakeDefaultEnvironmentLight());
+            RebuildIndex();
+        }
         CHECK(mTables.lights.front().type == FLightType::Environment);
         return mTables.lights.front();
     }
@@ -443,6 +519,37 @@ struct FImportedScene
     Span<FSerializedMesh const> GetMeshes() const { return {mTables.meshes.data(), mTables.meshes.size()}; }
     Span<FSerializedCurve const> GetCurves() const { return {mTables.curves.data(), mTables.curves.size()}; }
     Span<FSerializedTexture const> GetTextures() const { return {mTables.textures.data(), mTables.textures.size()}; }
+    Span<FStringEntry const> GetStrings() const { return {mTables.strings.data(), mTables.strings.size()}; }
+
+    void RebuildIndex();
+
+    char const* GetName(FUUID id) const
+    {
+        int const i = FSceneIndex::Find(mIndex.strings, id);
+        return i < 0 ? nullptr : mTables.strings[static_cast<size_t>(i)].value.c_str();
+    }
+    int InstanceIndex(FUUID id) const { return FSceneIndex::Find(mIndex.instances, id); }
+    int MaterialIndex(FUUID id) const { return FSceneIndex::Find(mIndex.materials, id); }
+    int LightIndex(FUUID id) const { return FSceneIndex::Find(mIndex.lights, id); }
+    int TextureIndex(FUUID id) const { return FSceneIndex::Find(mIndex.textures, id); }
+    int MeshIndex(FUUID id) const { return FSceneIndex::Find(mIndex.meshes, id); }
+    int CurveIndex(FUUID id) const { return FSceneIndex::Find(mIndex.curves, id); }
+    int SkeletonIndex(FUUID id) const { return FSceneIndex::Find(mIndex.skeletons, id); }
+    int MorphTrackIndex(FUUID id) const { return FSceneIndex::Find(mIndex.morphTracks, id); }
+
+    // Content-addressed string pool; main-thread only during glTF build.
+    FUUID InternString(const char* s)
+    {
+        if (!s || !*s)
+            return kNilUUID;
+        FUUID const id = FUUID::FromString(s);
+        if (mIndex.strings.find(id) == mIndex.strings.end())
+        {
+            mIndex.strings.emplace(id, static_cast<uint32_t>(mTables.strings.size()));
+            mTables.strings.push_back(FStringEntry{id, s});
+        }
+        return id;
+    }
 
     Span<const unsigned char> GetPayloadBytes() const;
     FBlobDeserializer GetBlobDeserializer() const;

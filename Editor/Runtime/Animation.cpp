@@ -100,15 +100,19 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
         maxJoints = std::max(maxJoints, skel.Count());
     poses.resize(skeletons.size());
 
+    // Joint-local indices stay indices; resolve skeleton/morph-track ids via scene index.
+    auto skeletonIndex = [&](FUUID id) { return scene.SkeletonIndex(id); };
+    auto morphTrackIndex = [&](FUUID id) { return scene.MorphTrackIndex(id); };
+
     // Rigid node animation: mark nodes that are animated or descend from an animated node, so the
     // per-frame override only touches moving instances/lights (and a held pose lets PT converge).
-    sceneNodeSkeleton = scene.mTables.sceneNodeSkeleton;
+    sceneNodeSkeleton = skeletonIndex(scene.mTables.sceneNodeSkeleton);
     if (sceneNodeSkeleton >= 0)
     {
         FSkeleton const& nodes = skeletons[sceneNodeSkeleton];
         nodeAffected.assign(nodes.Count(), 0u);
         for (FAnimationClip const& clip : scene.mTables.clips)
-            if (clip.skeleton == sceneNodeSkeleton)
+            if (skeletonIndex(clip.skeleton) == sceneNodeSkeleton)
                 for (FAnimChannel const& channel : clip.channels)
                     if (channel.joint < nodes.Count())
                         nodeAffected[channel.joint] = 1u;
@@ -139,8 +143,10 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
     for (size_t m = 0; m < sceneMeshes.size(); ++m)
     {
         FSerializedMesh const& mesh = sceneMeshes[m];
-        bool const skinned = mesh.skinBinding.count != 0 && mesh.skeleton >= 0;
-        bool const morphed = mesh.morphTrack >= 0 && mesh.morphTargetCount > 0;
+        int32_t const skelIdx = skeletonIndex(mesh.skeleton);
+        int32_t const morphIdx = morphTrackIndex(mesh.morphTrack);
+        bool const skinned = mesh.skinBinding.count != 0 && skelIdx >= 0;
+        bool const morphed = morphIdx >= 0 && mesh.morphTargetCount > 0;
         if ((!skinned && !morphed) || m >= resources.meshGeometry.size())
             continue;
         FDynamicMeshRuntime rt(GLOBAL_ALLOC);
@@ -152,12 +158,12 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
             rt.bind[i] = FQVertex::Unpack(quantized[i]);
         if (skinned)
         {
-            rt.skeleton = mesh.skeleton;
+            rt.skeleton = skelIdx;
             rt.binding = blobs.ReadArray<FSkinBinding>(mesh.skinBinding, GLOBAL_ALLOC);
         }
         if (morphed)
         {
-            rt.morphTrack = mesh.morphTrack;
+            rt.morphTrack = morphIdx;
             rt.morphTargetCount = mesh.morphTargetCount;
             rt.morphDeltas = blobs.ReadArray<float3>(mesh.morphPositions, GLOBAL_ALLOC);
             // Topology is needed to recompute normals from the morphed positions each frame.
@@ -188,7 +194,7 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
     skeletonClips.assign(skeletons.size(), Vector<uint32_t>{GLOBAL_ALLOC});
     for (uint32_t ci = 0; ci < scene.mTables.clips.size(); ++ci)
     {
-        int32_t const sk = scene.mTables.clips[ci].skeleton;
+        int32_t const sk = skeletonIndex(scene.mTables.clips[ci].skeleton);
         if (sk >= 0 && static_cast<size_t>(sk) < skeletons.size())
             skeletonClips[static_cast<size_t>(sk)].push_back(ci);
     }

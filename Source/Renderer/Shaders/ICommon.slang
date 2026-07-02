@@ -113,7 +113,6 @@ public struct GSCurveSet
     public uint32_t segmentOffset;
     public uint32_t segmentCount;
     public uint32_t aabbOffset;
-    public uint32_t materialIndex;
 };
 public struct GSCurvePoint
 {

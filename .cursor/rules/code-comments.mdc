@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+
+# Comment Guidelines
+
+- Be consise. Avoid narrative lines, and not comment on obvious patterns. Assume the readers are astute enough to recognize!
+- Be sparse. Function/struct/class names SHOULD be telling enough! Be descriptive there to avoid comments at all unless it's user-facing APIs.
+- Be short. One line for non-API functions are preferred. Keep it short still otherwise.

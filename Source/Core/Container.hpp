@@ -10,6 +10,8 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <ranges>
 #include <algorithm>
@@ -158,6 +160,22 @@ namespace Foundation::Core {
      */
     template<typename K, typename V, typename Predicate = std::less<K>>
     using Map = std::map<K, V, Predicate, StlAllocator<Pair<const K, V>>>;
+
+    /**
+     * @brief `std::unordered_map` with explicit @ref Foundation::Core::StlAllocator constructor.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename K, typename V, typename Hash = std::hash<K>, typename KeyEq = std::equal_to<K>>
+    using HashMap = std::unordered_map<K, V, Hash, KeyEq, StlAllocator<Pair<const K, V>>>;
+
+    /**
+     * @brief `std::unordered_set` with explicit @ref Foundation::Core::StlAllocator constructor.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename K, typename Hash = std::hash<K>, typename KeyEq = std::equal_to<K>>
+    using HashSet = std::unordered_set<K, Hash, KeyEq, StlAllocator<K>>;
 
     /**
      * @brief `std::multimap` with explicit @ref Foundation::Core::StlAllocator constructor

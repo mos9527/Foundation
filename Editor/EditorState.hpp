@@ -48,7 +48,9 @@ struct GizmoState
     float translateSnap{1.0f};
     float rotateSnap{15.0f};
     float scaleSnap{0.1f};
-    bool enabled{true};
+    bool showBoundingBox{true};
+    bool showLightGizmos{true};
+    bool showImGuizmo{true};
 };
 
 struct CameraApertureState
@@ -122,9 +124,10 @@ struct EditorState
     Optional<MemoryMappedFile> sceneFile;
     Optional<FImportedScene>     scene;
     String             currentSavePath;
-    int                selectedInstance = -1;
-    int                selectedMaterial = -1;
-    int                selectedLight    = -1;
+    // Selection UUIDs; nil == none. Scene index == GPU index (1:1 commit order).
+    FUUID              selectedInstance{};
+    FUUID              selectedMaterial{};
+    FUUID              selectedLight{};
     bool               scrollSelectedLightToTop = false;
     float              selectedLightHighlightStart = -1.0f;
     bool               openSelectionContextMenu = false;
@@ -213,6 +216,16 @@ bool ApplyMatcapSelection();
 void HandleFile(const char* filePath);
 
 void EditorDockSpaceAndMenuBar();
+
+// UUID -> scene-table index (-1 when nil/absent). Same index as GPU tables (1:1 commit order).
+int SceneInstanceIndexFromId(FUUID id);
+int SceneLightIndexFromId(FUUID id);
+int SceneMaterialIndexFromId(FUUID id);
+bool IsSelectedInstanceValid();
+FSerializedBounds const* InstanceResourceBounds(FInstance const& instance);
+void SelectInstance(FUUID instanceId, FUUID materialId);
+void SelectLight(FUUID lightId);
+void ClearSelection();
 void FHierarchyPanel();
 void FLightingPanel();
 void FAnimationPanel();

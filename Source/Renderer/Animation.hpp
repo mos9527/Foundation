@@ -41,6 +41,7 @@ struct FJoint
  */
 struct FSkeleton
 {
+    FUUID id{};
     Vector<FJoint> joints;
     explicit FSkeleton(Allocator* alloc = GLOBAL_ALLOC) : joints(alloc) {}
     [[nodiscard]] uint32_t Count() const { return static_cast<uint32_t>(joints.size()); }
@@ -81,14 +82,17 @@ struct FAnimChannel
 
 /**
  * @brief A clip: a set of channels plus its total duration (seconds).
- * @note @ref skeleton is the index of the skeleton this clip drives in the scene's skeleton
- *       table; every channel's @ref FAnimChannel::joint indexes that skeleton.
+ * @note @ref skeleton is the id of the skeleton this clip drives; every channel's
+ *       @ref FAnimChannel::joint indexes that skeleton's joint array (joint-local indices stay
+ *       indices since they are only meaningful relative to a single skeleton).
  */
 struct FAnimationClip
 {
+    FUUID id{};
+    FUUID name{};
     Vector<FAnimChannel> channels;
     float duration{0.0f};
-    int32_t skeleton{-1};
+    FUUID skeleton{};
     explicit FAnimationClip(Allocator* alloc = GLOBAL_ALLOC) : channels(alloc) {}
 };
 

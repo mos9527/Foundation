@@ -15,6 +15,73 @@ static RendererOutputs sRenderOutputs;
 static int2 sPickingPixel;
 static bool sPickingDoubleClick = false;
 
+int SceneInstanceIndexFromId(FUUID id)
+{
+    return GEditor.HasScene() ? GEditor.Scene().InstanceIndex(id) : -1;
+}
+
+int SceneLightIndexFromId(FUUID id)
+{
+    return GEditor.HasScene() ? GEditor.Scene().LightIndex(id) : -1;
+}
+
+int SceneMaterialIndexFromId(FUUID id)
+{
+    return GEditor.HasScene() ? GEditor.Scene().MaterialIndex(id) : -1;
+}
+
+bool IsSelectedInstanceValid()
+{
+    if (!GEditor.HasScene() || !GContext->gpuScene)
+        return false;
+    int const idx = SceneInstanceIndexFromId(GEditor.selectedInstance);
+    if (idx < 0)
+        return false;
+    return idx < static_cast<int>(GContext->gpuScene->GetInstanceCount());
+}
+
+FSerializedBounds const* InstanceResourceBounds(FInstance const& instance)
+{
+    if (!GEditor.HasScene())
+        return nullptr;
+    if (instance.type == FInstanceType::Mesh)
+    {
+        auto it = GEditor.resources.meshById.find(instance.resource);
+        auto meshes = GEditor.Scene().GetMeshes();
+        if (it != GEditor.resources.meshById.end() && it->second < meshes.size())
+            return &meshes[it->second].bounds;
+    }
+    else if (instance.type == FInstanceType::Curve)
+    {
+        auto it = GEditor.resources.curveById.find(instance.resource);
+        auto curves = GEditor.Scene().GetCurves();
+        if (it != GEditor.resources.curveById.end() && it->second < curves.size())
+            return &curves[it->second].bounds;
+    }
+    return nullptr;
+}
+
+void SelectInstance(FUUID instanceId, FUUID materialId)
+{
+    GEditor.selectedInstance = instanceId;
+    GEditor.selectedMaterial = materialId;
+    GEditor.selectedLight = kNilUUID;
+}
+
+void SelectLight(FUUID lightId)
+{
+    GEditor.selectedLight = lightId;
+    GEditor.selectedInstance = kNilUUID;
+    GEditor.selectedMaterial = kNilUUID;
+}
+
+void ClearSelection()
+{
+    GEditor.selectedLight = kNilUUID;
+    GEditor.selectedInstance = kNilUUID;
+    GEditor.selectedMaterial = kNilUUID;
+}
+
 static RHIExtent2D ClampViewportExtent(RHIExtent2D extent)
 {
     return {std::max(extent.x, 16u), std::max(extent.y, 16u)};
@@ -66,7 +133,8 @@ static void RefreshPostprocessState(RHIExtent2D renderExtent)
 {
     GEditor.postprocessGlobals.camEV = GEditor.shaderGlobals.camEV;
     GEditor.postprocessGlobals.dbgShowOutline = GEditor.showImGui ? 1u : 0u;
-    GEditor.postprocessGlobals.outlineInstanceId = GEditor.selectedInstance;
+    GEditor.postprocessGlobals.outlineInstanceId =
+        static_cast<uint32_t>(SceneInstanceIndexFromId(GEditor.selectedInstance));
     GEditor.postprocessGlobals.ptAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
     // fbWidth/fbHeight = display (output) extent for the blit pass UV mapping
     RHIExtent2D displayExtent = ClampViewportExtent(GEditor.viewport.renderExtent);
@@ -436,7 +504,7 @@ static void FRunning()
     {
         renderer->WaitForPreviousFrame();
 
-        int const previousLight = GEditor.selectedLight;
+        int const previousLight = SceneLightIndexFromId(GEditor.selectedLight);
         int const lightPick = EditorGizmos::PickLightAtRenderPixel(sPickingPixel);
 
         auto* pPickResultBuffer = renderer->DerefResource(sPickResultBuffer).Get<RHIBuffer*>();
@@ -449,24 +517,16 @@ static void FRunning()
 
         auto selectLight = [&](int light)
         {
-            GEditor.selectedLight = light;
-            GEditor.selectedInstance = -1;
-            GEditor.selectedMaterial = -1;
+            SelectLight(GEditor.Scene().GetLights()[light].id);
             GEditor.scrollSelectedLightToTop = true;
             GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
         };
         auto selectInstance = [&](uint32_t instance)
         {
-            GEditor.selectedInstance = static_cast<int>(instance);
-            GEditor.selectedMaterial = static_cast<int>(GContext->gpuScene->GetInstance(instance).materialIndex);
-            GEditor.selectedLight = -1;
+            SelectInstance(GEditor.Scene().GetInstances()[instance].id,
+                           GEditor.Scene().GetMaterials()[GContext->gpuScene->GetInstance(instance).materialIndex].id);
         };
-        auto clearSelection = [&]
-        {
-            GEditor.selectedLight = -1;
-            GEditor.selectedInstance = -1;
-            GEditor.selectedMaterial = -1;
-        };
+        auto clearSelection = [&] { ClearSelection(); };
 
         bool const preferInstance = previousLight >= 0;
         bool const hasLight = lightPick >= 0;
@@ -629,15 +689,15 @@ bool EditorProcessEvent(SDL_Event* event)
         (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_RIGHT) ||
         (event->type == SDL_EVENT_MOUSE_BUTTON_UP && event->button.button == SDL_BUTTON_RIGHT) ||
         (event->type == SDL_EVENT_MOUSE_MOTION && (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_RMASK));
-    bool gizmoOver = ImGuizmo::IsOver();
-    bool gizmoUsing = ImGuizmo::IsUsing();
+    bool gizmoOver = GEditor.gizmo.showImGuizmo && ImGuizmo::IsOver();
+    bool gizmoUsing = GEditor.gizmo.showImGuizmo && ImGuizmo::IsUsing();
     bool viewportMouse = ViewportAcceptsMouse(*event) ||
         (rightMouseEvent && gizmoOver && ViewportContainsMouse(*event));
     bool gizmoBlocksMouse = gizmoUsing || (gizmoOver && !rightMouseEvent);
     static bool sViewportRightDown = false;
     static bool sViewportRightDragged = false;
     static ImVec2 sViewportRightDownPos{};
-    auto hasSelection = [] { return GEditor.selectedLight >= 0 || GEditor.selectedInstance >= 0; };
+    auto hasSelection = [] { return !GEditor.selectedLight.IsNil() || !GEditor.selectedInstance.IsNil(); };
     if (isRelative || (viewportMouse && !gizmoBlocksMouse))
     {
         if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT)

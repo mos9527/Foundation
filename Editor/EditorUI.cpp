@@ -305,17 +305,16 @@ static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
     drawList->AddPolyline(points, pointCount, outline, ImDrawFlags_Closed, 2.0f);
 }
 
-static bool IsSelectedInstanceValid()
-{
-    return GEditor.HasScene() && GContext->gpuScene &&
-           GEditor.selectedInstance >= 0 &&
-           GEditor.selectedInstance < static_cast<int>(GContext->gpuScene->GetInstanceCount()) &&
-           GEditor.selectedInstance < static_cast<int>(GEditor.Scene().GetInstances().size());
-}
-
 static FInstance& SelectedSceneInstance()
 {
-    return GEditor.Scene().GetInstances()[GEditor.selectedInstance];
+    int const idx = SceneInstanceIndexFromId(GEditor.selectedInstance);
+    CHECK(idx >= 0);
+    return GEditor.Scene().GetInstances()[idx];
+}
+
+static int SelectedInstanceIndex()
+{
+    return SceneInstanceIndexFromId(GEditor.selectedInstance);
 }
 
 static bool IsInstanceIndexValid(int index)
@@ -328,29 +327,8 @@ static bool IsInstanceIndexValid(int index)
 
 static void SelectInstance(uint32_t index, GSInstance const& inst)
 {
-    GEditor.selectedInstance = static_cast<int>(index);
-    GEditor.selectedMaterial = static_cast<int>(inst.materialIndex);
-    GEditor.selectedLight = -1;
-}
-
-static FSerializedBounds const* InstanceResourceBounds(FInstance const& instance)
-{
-    if (!GEditor.HasScene())
-        return nullptr;
-
-    if (instance.type == FInstanceType::Mesh)
-    {
-        auto meshes = GEditor.Scene().GetMeshes();
-        if (instance.resourceIndex < meshes.size())
-            return &meshes[instance.resourceIndex].bounds;
-    }
-    else if (instance.type == FInstanceType::Curve)
-    {
-        auto curves = GEditor.Scene().GetCurves();
-        if (instance.resourceIndex < curves.size())
-            return &curves[instance.resourceIndex].bounds;
-    }
-    return nullptr;
+    ::SelectInstance(GEditor.Scene().GetInstances()[index].id,
+                     GEditor.Scene().GetMaterials()[inst.materialIndex].id);
 }
 
 static mat4 InstanceTransformMatrix(FTransform const& transform)
@@ -484,11 +462,11 @@ static void DeleteLight(int index)
         return;
 
     auto& lights = GEditor.Scene().mTables.lights;
+    FUUID const deletedId = lights[index].id;
     lights.erase(lights.begin() + index);
-    if (GEditor.selectedLight == index)
-        GEditor.selectedLight = -1;
-    else if (GEditor.selectedLight > index)
-        --GEditor.selectedLight;
+    GEditor.Scene().RebuildIndex();
+    if (GEditor.selectedLight == deletedId)
+        ClearSelection();
     UpdateSceneLights();
     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
 }
@@ -514,10 +492,12 @@ static const char* LightTypeName(FLightType type)
 
 static int GetSelectedMaterialIndex()
 {
-    if (IsSelectedInstanceValid() && GContext->gpuScene)
+    int const instIdx = SceneInstanceIndexFromId(GEditor.selectedInstance);
+    if (instIdx >= 0 && GContext->gpuScene &&
+        instIdx < static_cast<int>(GContext->gpuScene->GetInstanceCount()))
         return static_cast<int>(GContext->gpuScene->GetInstance(
-            static_cast<uint32_t>(GEditor.selectedInstance)).materialIndex);
-    return GEditor.selectedMaterial;
+            static_cast<uint32_t>(instIdx)).materialIndex);
+    return SceneMaterialIndexFromId(GEditor.selectedMaterial);
 }
 
 static bool IsMaterialIndexValid(int materialIndex)
@@ -940,6 +920,14 @@ static bool IsSceneEnvironmentTextureIndex(size_t textureIndex)
     return GEditor.HasScene() && IsSceneEnvironmentTexture(GEditor.Scene(), textureIndex);
 }
 
+static uint32_t SceneTextureIndexFromId(FUUID id)
+{
+    if (!GEditor.HasScene())
+        return kInvalidTexture;
+    int const i = GEditor.Scene().TextureIndex(id);
+    return i < 0 ? kInvalidTexture : static_cast<uint32_t>(i);
+}
+
 static bool IsPickableSceneTexture2D(FSerializedTexture const& texture)
 {
     if (!texture.IsValid())
@@ -951,6 +939,48 @@ static bool IsPickableSceneTexture2D(FSerializedTexture const& texture)
     if (texture.GetNumLayers() != 1)
         return false;
     return true;
+}
+
+static char const* ResolveSceneName(FUUID nameId)
+{
+    return GEditor.HasScene() ? GEditor.Scene().GetName(nameId) : nullptr;
+}
+
+static char const* NameOr(FUUID nameId, char const* fallback)
+{
+    char const* n = ResolveSceneName(nameId);
+    return (n && n[0] != '\0') ? n : fallback;
+}
+
+static void ImGuiPushUUID(FUUID const& id)
+{
+    char buf[40];
+    ImGui::PushID(id.Format(buf, sizeof(buf)));
+}
+
+static void FormatIndexLabelWithName(char* buf, size_t bufSize, char const* suffix, int index, FUUID nameId)
+{
+    char const* name = ResolveSceneName(nameId);
+    if (name && name[0] != '\0')
+        std::snprintf(buf, bufSize, "%s %d (%s)", name, index, suffix);
+    else
+        std::snprintf(buf, bufSize, "%s %d", suffix, index);
+}
+
+static void DrawUUIDRow(FUUID id)
+{
+    char buf[40];
+    ImGui::TextDisabled("UUID: %s", id.Format(buf, sizeof(buf)));
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s\n(click to copy)", buf);
+    if (ImGui::IsItemClicked())
+        ImGui::SetClipboardText(buf);
+}
+
+static void SetUUIDTooltip(FUUID id)
+{
+    char buf[40];
+    ImGui::SetTooltip("UUID: %s", id.Format(buf, sizeof(buf)));
 }
 
 static uint32_t SceneTextureToGpuIndex(uint32_t sceneTextureIndex)
@@ -971,7 +1001,8 @@ struct MaterialTexturePickerModalState
 {
     bool pendingOpen{};
     char label[128]{};
-    uint32_t* targetSlot{};
+    FUUID materialId{};
+    FUUID FMaterial::*slot{};
     uint32_t pendingSelection{kInvalidTexture};
     ImGui_ImplFoundation_ImageSampler sampler{ImGuiImplFoundationImageSamplerLinear};
 };
@@ -989,19 +1020,23 @@ static void ResetMaterialTexturePickerModal()
     auto& state = MaterialTexturePickerModal();
     state.pendingOpen = false;
     state.label[0] = '\0';
-    state.targetSlot = nullptr;
+    state.materialId = kNilUUID;
+    state.slot = nullptr;
     state.pendingSelection = kInvalidTexture;
     state.sampler = ImGuiImplFoundationImageSamplerLinear;
 }
 
-static void OpenMaterialTexturePickerModal(const char* label, uint32_t* targetSlot,
+static void OpenMaterialTexturePickerModal(const char* label, FUUID materialId, FUUID FMaterial::*slot,
                                            ImGui_ImplFoundation_ImageSampler sampler)
 {
     auto& state = MaterialTexturePickerModal();
     state.pendingOpen = true;
     std::snprintf(state.label, sizeof(state.label), "%s", label);
-    state.targetSlot = targetSlot;
-    state.pendingSelection = *targetSlot;
+    state.materialId = materialId;
+    state.slot = slot;
+    int const matIdx = SceneMaterialIndexFromId(materialId);
+    FUUID const current = (matIdx >= 0) ? GEditor.Scene().GetMaterials()[matIdx].*slot : kNilUUID;
+    state.pendingSelection = SceneTextureIndexFromId(current);
     state.sampler = sampler;
 }
 
@@ -1107,7 +1142,10 @@ static void DrawMaterialTexturePickerGrid(uint32_t& pendingSelection, ImGui_Impl
         if (ImGui::IsItemHovered())
         {
             ImGui::BeginTooltip();
-            ImGui::Text("#%zu  %ux%u", textureIndex, texture.GetWidth(), texture.GetHeight());
+            ImGui::Text("#%zu %s  %ux%u", textureIndex, NameOr(texture.name, "unnamed"),
+                        texture.GetWidth(), texture.GetHeight());
+            char uuidBuf[40];
+            ImGui::TextDisabled("UUID: %s", texture.id.Format(uuidBuf, sizeof(uuidBuf)));
             if (preview.textureID == 0)
                 ImGui::TextUnformatted("Not resident yet");
             else
@@ -1139,7 +1177,7 @@ static bool DrawMaterialTexturePickerModal()
         state.pendingOpen = false;
     }
 
-    if (!state.targetSlot)
+    if (!state.slot)
         return false;
 
     ImGui::SetNextWindowSize(ImVec2(640.0f, 520.0f), ImGuiCond_FirstUseEver);
@@ -1164,10 +1202,18 @@ static bool DrawMaterialTexturePickerModal()
 
     if (ImGui::Button(PSI_OK " OK", ImVec2(120.0f, 0.0f)))
     {
-        if (*state.targetSlot != state.pendingSelection)
+        FUUID const newId = state.pendingSelection == kInvalidTexture
+            ? kNilUUID
+            : GEditor.Scene().GetTextures()[state.pendingSelection].id;
+        int const matIdx = SceneMaterialIndexFromId(state.materialId);
+        if (matIdx >= 0)
         {
-            *state.targetSlot = state.pendingSelection;
-            committed = true;
+            FUUID& slotRef = GEditor.Scene().GetMaterials()[matIdx].*state.slot;
+            if (!(slotRef == newId))
+            {
+                slotRef = newId;
+                committed = true;
+            }
         }
         ResetMaterialTexturePickerModal();
         ImGui::CloseCurrentPopup();
@@ -1187,23 +1233,25 @@ static bool DrawMaterialTexturePickerModal()
 
 static bool IsMaterialTexturePickerOpen()
 {
-    return MaterialTexturePickerModal().targetSlot != nullptr;
+    return MaterialTexturePickerModal().slot != nullptr;
 }
 
-static char const* MaterialTexturePropLabel(char* buf, size_t bufSize, char const* name, uint32_t textureIndex)
+static char const* MaterialTexturePropLabel(char* buf, size_t bufSize, char const* name, FUUID textureId)
 {
-    if (textureIndex != kInvalidTexture)
+    if (!textureId.IsNil())
         std::snprintf(buf, bufSize, "*%s", name);
     else
         std::snprintf(buf, bufSize, "%s", name);
     return buf;
 }
 
-static void DrawMaterialTextureSlot(const char* label, uint32_t& sceneTextureIndex,
+static void DrawMaterialTextureSlot(const char* label, FMaterial& material, FUUID FMaterial::*slot,
                                     ImGui_ImplFoundation_ImageSampler sampler = ImGuiImplFoundationImageSamplerLinear)
 {
     ImGui::PushID(label);
 
+    FUUID& sceneTextureId = material.*slot;
+    uint32_t const sceneTextureIndex = SceneTextureIndexFromId(sceneTextureId);
     ImVec2 const previewSize{48.0f, 48.0f};
     uint32_t const gpuIndex = SceneTextureToGpuIndex(sceneTextureIndex);
     TexturePreviewImage preview = GetTexturePreviewImage(gpuIndex, sampler);
@@ -1217,19 +1265,23 @@ static void DrawMaterialTextureSlot(const char* label, uint32_t& sceneTextureInd
         openPicker = true;
 
     if (openPicker)
-        OpenMaterialTexturePickerModal(label, &sceneTextureIndex, sampler);
+        OpenMaterialTexturePickerModal(label, material.id, slot, sampler);
 
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
-    if (sceneTextureIndex == kInvalidTexture)
+    if (sceneTextureId.IsNil())
         ImGui::Text("%s: none", label);
     else if (sceneTextureIndex < GEditor.Scene().GetTextures().size())
     {
         FSerializedTexture const& texture = GEditor.Scene().GetTextures()[sceneTextureIndex];
-        ImGui::Text("%s: #%u (%ux%u)", label, sceneTextureIndex, texture.GetWidth(), texture.GetHeight());
+        char idxBuf[32];
+        std::snprintf(idxBuf, sizeof(idxBuf), "#%u", sceneTextureIndex);
+        ImGui::Text("%s: %s (%ux%u)", label, NameOr(texture.name, idxBuf), texture.GetWidth(), texture.GetHeight());
+        if (ImGui::IsItemHovered())
+            SetUUIDTooltip(sceneTextureId);
     }
     else if (preview.textureID == 0)
-        ImGui::Text("%s: #%u (unavailable)", label, sceneTextureIndex);
+        ImGui::Text("%s: (unavailable)", label);
     else
         ImGui::Text("%s: #%u", label, sceneTextureIndex);
 
@@ -1447,7 +1499,11 @@ void EditorDockSpaceAndMenuBar()
 
         if (ImGui::BeginMenu(PSI_EYE_OPEN " View"))
         {
-            if (ImGui::MenuItem("Gizmos", nullptr, &GEditor.gizmo.enabled))
+            if (ImGui::MenuItem("Bounding Box", nullptr, &GEditor.gizmo.showBoundingBox))
+                GEditor.state = FERunningEnter;
+            if (ImGui::MenuItem("Light Gizmos", nullptr, &GEditor.gizmo.showLightGizmos))
+                GEditor.state = FERunningEnter;
+            if (ImGui::MenuItem("ImGuizmo", nullptr, &GEditor.gizmo.showImGuizmo))
                 GEditor.state = FERunningEnter;
             ImGui::EndMenu();
         }
@@ -1618,20 +1674,28 @@ void FHierarchyPanel()
         {
             auto* gpu = GContext->gpuScene;
             uint32_t instanceCount = gpu->GetInstanceCount();
+            auto sceneInstances = GEditor.Scene().GetInstances();
             ImGui::Text("%u instances", instanceCount);
             ImGui::Separator();
             bool deletedInstance = false;
             for (uint32_t i = 0; i < instanceCount && !deletedInstance; i++)
             {
                 GSInstance inst = gpu->GetInstance(i);
+                if (i >= sceneInstances.size())
+                    continue;
+                FUUID const& instanceId = sceneInstances[i].id;
+                ImGuiPushUUID(instanceId);
+
                 char label[128];
-                snprintf(label, sizeof(label), "%s %u -- Resource %u, Mat %u",
-                         InstanceTypeName(inst.type), i, inst.resourceIndex, inst.materialIndex);
-                bool selected = (GEditor.selectedInstance == static_cast<int>(i));
+                FormatIndexLabelWithName(label, sizeof(label), InstanceTypeName(inst.type), static_cast<int>(i),
+                                         sceneInstances[i].name);
+                bool selected = (GEditor.selectedInstance == instanceId);
                 if (ImGui::Selectable(label, selected))
                 {
                     SelectInstance(i, inst);
                 }
+                if (ImGui::IsItemHovered())
+                    SetUUIDTooltip(instanceId);
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
                     FrameInstance(static_cast<int>(i));
                 if (ImGui::BeginPopupContextItem())
@@ -1653,6 +1717,7 @@ void FHierarchyPanel()
                     }
                     ImGui::EndPopup();
                 }
+                ImGui::PopID();
             }
         }
     }
@@ -1666,12 +1731,15 @@ void FHierarchyPanel()
         int materialIndex = GetSelectedMaterialIndex();
         if (IsMaterialIndexValid(materialIndex))
         {
-            GEditor.selectedMaterial = materialIndex;
+            GEditor.selectedMaterial = GEditor.Scene().GetMaterials()[materialIndex].id;
 
             auto& material = GEditor.Scene().GetMaterials()[materialIndex];
-            ImGui::TextDisabled("Material %d", materialIndex);
-            if (IsSelectedInstanceValid())
-                ImGui::SameLine(), ImGui::TextDisabled("| From Instance %d", GEditor.selectedInstance);
+            ImGuiPushUUID(material.id);
+
+            char materialLabel[128];
+            FormatIndexLabelWithName(materialLabel, sizeof(materialLabel), "Material", materialIndex, material.name);
+            ImGui::TextDisabled("%s", materialLabel);
+            DrawUUIDRow(material.id);
             ImGui::Separator();
 
             bool changed = false;
@@ -1751,18 +1819,18 @@ void FHierarchyPanel()
                 }
                 if (ImGui::BeginTabItem(PSI_PICTURE " Textures"))
                 {
-                    DrawMaterialTextureSlot("Base Color", material.baseColorTexture);
-                    DrawMaterialTextureSlot("Emissive", material.emissiveTexture);
-                    DrawMaterialTextureSlot("Metallic/Roughness", material.metallicRoughnessTexture);
-                    DrawMaterialTextureSlot("Normal", material.normalTexture, ImGuiImplFoundationImageSamplerNearest);
-                    DrawMaterialTextureSlot("Transmission", material.transmissionTexture);
-                    DrawMaterialTextureSlot("Specular", material.specularTexture);
-                    DrawMaterialTextureSlot("Specular Color", material.specularColorTexture);
-                    DrawMaterialTextureSlot("Anisotropy", material.anisotropyTexture);
-                    DrawMaterialTextureSlot("Sheen Color", material.sheenColorTexture);
-                    DrawMaterialTextureSlot("Sheen Roughness", material.sheenRoughnessTexture);
-                    DrawMaterialTextureSlot("Clearcoat", material.clearcoatTexture);
-                    DrawMaterialTextureSlot("Clearcoat Roughness", material.clearcoatRoughnessTexture);
+                    DrawMaterialTextureSlot("Base Color", material, &FMaterial::baseColorTexture);
+                    DrawMaterialTextureSlot("Emissive", material, &FMaterial::emissiveTexture);
+                    DrawMaterialTextureSlot("Metallic/Roughness", material, &FMaterial::metallicRoughnessTexture);
+                    DrawMaterialTextureSlot("Normal", material, &FMaterial::normalTexture, ImGuiImplFoundationImageSamplerNearest);
+                    DrawMaterialTextureSlot("Transmission", material, &FMaterial::transmissionTexture);
+                    DrawMaterialTextureSlot("Specular", material, &FMaterial::specularTexture);
+                    DrawMaterialTextureSlot("Specular Color", material, &FMaterial::specularColorTexture);
+                    DrawMaterialTextureSlot("Anisotropy", material, &FMaterial::anisotropyTexture);
+                    DrawMaterialTextureSlot("Sheen Color", material, &FMaterial::sheenColorTexture);
+                    DrawMaterialTextureSlot("Sheen Roughness", material, &FMaterial::sheenRoughnessTexture);
+                    DrawMaterialTextureSlot("Clearcoat", material, &FMaterial::clearcoatTexture);
+                    DrawMaterialTextureSlot("Clearcoat Roughness", material, &FMaterial::clearcoatRoughnessTexture);
 
                     ImGui::EndTabItem();
                 }
@@ -1775,6 +1843,7 @@ void FHierarchyPanel()
                 // (with texture remap) from it.
                 CommitSceneToGPU(true);
             }
+            ImGui::PopID();
         }
         else if (IsSelectedInstanceValid())
         {
@@ -1794,9 +1863,15 @@ void FHierarchyPanel()
     {
         if (IsSelectedInstanceValid())
         {
+            int const idx = SelectedInstanceIndex();
             auto& pi = SelectedSceneInstance();
-            GSInstance inst = GContext->gpuScene->GetInstance(static_cast<uint32_t>(GEditor.selectedInstance));
-            ImGui::Text("%s Instance %d", InstanceTypeName(inst.type), GEditor.selectedInstance);
+            ImGuiPushUUID(pi.id);
+
+            GSInstance inst = GContext->gpuScene->GetInstance(static_cast<uint32_t>(idx));
+            char instHeader[128];
+            FormatIndexLabelWithName(instHeader, sizeof(instHeader), InstanceTypeName(inst.type), idx, pi.name);
+            ImGui::TextUnformatted(instHeader);
+            DrawUUIDRow(pi.id);
             ImGui::Separator();
             bool changed = false;
             changed |= ImGui::DragFloat3("Position", &pi.transform.transform.x, 0.01f);
@@ -1827,13 +1902,14 @@ void FHierarchyPanel()
                 // The transform edit lives on the scene instance; recommit refills the
                 // GPU instance table. Reread the snapshot for the readout below.
                 CommitSceneToGPU(true);
-                inst = GContext->gpuScene->GetInstance(static_cast<uint32_t>(GEditor.selectedInstance));
+                inst = GContext->gpuScene->GetInstance(static_cast<uint32_t>(idx));
             }
             ImGui::Separator();
             ImGui::Text("Type: %s", InstanceTypeName(inst.type));
             ImGui::Text("Resource Offset: %u", inst.resourceOffset);
             ImGui::Text("Material Index: %u", inst.materialIndex);
             ImGui::Text("Resource Index: %u", inst.resourceIndex);
+            ImGui::PopID();
         }
         else
         {
@@ -1846,7 +1922,7 @@ void FHierarchyPanel()
 
 void FLightingPanel()
 {
-    if (GEditor.scrollSelectedLightToTop && GEditor.selectedLight >= 0)
+    if (GEditor.scrollSelectedLightToTop && !GEditor.selectedLight.IsNil())
         ImGui::SetWindowFocus("Lighting");
 
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
@@ -1878,6 +1954,7 @@ void FLightingPanel()
             if (ImModalButton(canAddLight ? PSI_PLUS_SIGN " Add Light" : "(Lights Full)"))
             {
                 FLight light{};
+                light.id = FUUID::Generate();
                 light.type = FLightType::Point;
                 light.transform.transform = GEditor.camera.position;
                 light.transform.rotation = GEditor.camera.rot;
@@ -1886,9 +1963,8 @@ void FLightingPanel()
                 light.range = 10.0f;
                 size_t const insertIndex = !lights.empty() && lights.front().type == FLightType::Environment ? 1u : 0u;
                 lights.insert(lights.begin() + static_cast<std::ptrdiff_t>(insertIndex), light);
-                GEditor.selectedLight = static_cast<int>(insertIndex);
-                GEditor.selectedInstance = -1;
-                GEditor.selectedMaterial = -1;
+                GEditor.Scene().RebuildIndex();
+                SelectLight(lights[insertIndex].id);
                 GEditor.scrollSelectedLightToTop = true;
                 GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
                 anyChanged = true;
@@ -1900,9 +1976,7 @@ void FLightingPanel()
 
             auto selectLight = [&](int i)
             {
-                GEditor.selectedLight = i;
-                GEditor.selectedInstance = -1;
-                GEditor.selectedMaterial = -1;
+                SelectLight(lights[i].id);
                 GEditor.scrollSelectedLightToTop = true;
                 GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
             };
@@ -1928,11 +2002,17 @@ void FLightingPanel()
             {
                 auto& light = lights[i];
                 bool const isEnvironment = light.type == FLightType::Environment;
-                ImGui::PushID(i);
+                ImGuiPushUUID(light.id);
 
-                char label[64];
-                snprintf(label, sizeof(label), PSI_BOLT " Light %d (%s)", i, LightTypeName(light.type));
-                bool isLightSelected = (GEditor.selectedLight == i);
+                char label[128];
+                std::snprintf(label, sizeof(label), PSI_BOLT " Light %d (%s)", i, LightTypeName(light.type));
+                char const* lightName = ResolveSceneName(light.name);
+                if (lightName && lightName[0] != '\0')
+                {
+                    size_t const len = std::strlen(label);
+                    std::snprintf(label + len, sizeof(label) - len, " (%s)", lightName);
+                }
+                bool isLightSelected = (GEditor.selectedLight == light.id);
 
                 bool pushedHeaderTextColor = false;
                 if (isLightSelected && GEditor.selectedLightHighlightStart >= 0.0f)
@@ -1978,7 +2058,7 @@ void FLightingPanel()
                 ImGui::OpenPopup("LightContextMenu");
             if (ImGui::BeginPopup("LightContextMenu"))
             {
-                int const i = GEditor.selectedLight;
+                int const i = SceneLightIndexFromId(GEditor.selectedLight);
                 bool const canRemove = i >= 0 &&
                     i < static_cast<int>(lights.size()) &&
                     lights[i].type != FLightType::Environment;
@@ -1997,15 +2077,26 @@ void FLightingPanel()
                 ImGui::EndPopup();
             }
 
-            if (GEditor.selectedLight >= 0 && GEditor.selectedLight < static_cast<int>(lights.size()))
+            int const selectedLightIdx = SceneLightIndexFromId(GEditor.selectedLight);
+            if (selectedLightIdx >= 0 && selectedLightIdx < static_cast<int>(lights.size()))
             {
-                int const i = GEditor.selectedLight;
+                int const i = selectedLightIdx;
                 auto& light = lights[i];
                 bool const isEnvironment = light.type == FLightType::Environment;
                 bool lightChanged = false;
                 ImGui::Separator();
-                ImGui::PushID(i);
-                ImGui::Text("%s %d (%s)", PSI_BOLT " Light", i, LightTypeName(light.type));
+                ImGuiPushUUID(light.id);
+                char lightHeader[128];
+                std::snprintf(lightHeader, sizeof(lightHeader), "%s %d (%s)", PSI_BOLT " Light", i,
+                              LightTypeName(light.type));
+                char const* lightName = ResolveSceneName(light.name);
+                if (lightName && lightName[0] != '\0')
+                {
+                    size_t const len = std::strlen(lightHeader);
+                    std::snprintf(lightHeader + len, sizeof(lightHeader) - len, " (%s)", lightName);
+                }
+                ImGui::TextUnformatted(lightHeader);
+                DrawUUIDRow(light.id);
 
                 // Type selector
                 if (isEnvironment)
@@ -2042,6 +2133,17 @@ void FLightingPanel()
                     if (hasEnv)
                     {
                         DrawTexturePreview("HDRI", GContext->gpuScene->GetEnvMapIndexOrDefault());
+                        if (!light.environmentTexture.IsNil())
+                        {
+                            uint32_t const envTexIdx = SceneTextureIndexFromId(light.environmentTexture);
+                            if (envTexIdx != kInvalidTexture)
+                            {
+                                char const* envTexName = NameOr(GEditor.Scene().GetTextures()[envTexIdx].name, nullptr);
+                                if (envTexName)
+                                    ImGui::TextDisabled("Source: %s", envTexName);
+                            }
+                            DrawUUIDRow(light.environmentTexture);
+                        }
                         lightChanged |= ImGui::SliderFloat("Azimuth Offset", &light.environmentAzimuthOffset,
                                                           -180.0f, 180.0f, "%.1f deg");
                         bool envEnabled = light.environmentMap;
@@ -2179,6 +2281,38 @@ void FRunningImGui()
         ImGui::Separator();
         GEditor.cameraUpdated |= ImGui::SliderFloat3("Cam Center", &GEditor.camera.center.x, -50.0f, 50.0f);
         GEditor.cameraUpdated |= ImGui::SliderFloat("Cam Radius", &GEditor.camera.radius, 0.0f, 100.0f);
+        {
+            // YXZ intrinsic: rotateY(yaw) * rotateX(pitch) * rotateZ(roll)
+            float sinP = 2.0f * (GEditor.camera.rot.w * GEditor.camera.rot.x -
+                                 GEditor.camera.rot.y * GEditor.camera.rot.z);
+            sinP = std::clamp(sinP, -1.0f, 1.0f);
+            float pitch = degrees(std::asin(sinP));
+
+            float sinY = 2.0f * (GEditor.camera.rot.w * GEditor.camera.rot.y +
+                                 GEditor.camera.rot.x * GEditor.camera.rot.z);
+            float cosY = 1.0f - 2.0f * (GEditor.camera.rot.x * GEditor.camera.rot.x +
+                                          GEditor.camera.rot.y * GEditor.camera.rot.y);
+            float yaw = degrees(std::atan2(sinY, cosY));
+
+            float sinR = 2.0f * (GEditor.camera.rot.w * GEditor.camera.rot.z +
+                                 GEditor.camera.rot.x * GEditor.camera.rot.y);
+            float cosR = 1.0f - 2.0f * (GEditor.camera.rot.y * GEditor.camera.rot.y +
+                                          GEditor.camera.rot.z * GEditor.camera.rot.z);
+            float roll = degrees(std::atan2(sinR, cosR));
+
+            bool rotChanged = false;
+            rotChanged |= ImGui::SliderFloat("Pitch", &pitch, -90.0f, 90.0f, "%.1f deg");
+            rotChanged |= ImGui::SliderFloat("Yaw", &yaw, -180.0f, 180.0f, "%.1f deg");
+            rotChanged |= ImGui::SliderFloat("Roll", &roll, -180.0f, 180.0f, "%.1f deg");
+            if (rotChanged)
+            {
+                quat yawQ = angleAxis(radians(yaw), vec3(0, 1, 0));
+                quat pitchQ = angleAxis(radians(pitch), vec3(1, 0, 0));
+                quat rollQ = angleAxis(radians(roll), vec3(0, 0, 1));
+                GEditor.camera.rot = normalize(yawQ * pitchQ * rollQ);
+                GEditor.cameraUpdated = true;
+            }
+        }
         const char* projectionItems[] = {"Perspective", "Panoramic (Equirectangular)"};
         int cameraProjection = static_cast<int>(GEditor.shaderGlobals.cameraProjection);
         if (ImGui::Combo("Projection", &cameraProjection, projectionItems, IM_ARRAYSIZE(projectionItems)))
@@ -2887,11 +3021,11 @@ void FRendering(RendererOutputs const& outputs)
 
 static void DrawInstanceGizmos()
 {
-    if (!GEditor.gizmo.enabled)
+    if (!GEditor.gizmo.showImGuizmo)
         return;
     if (!IsSelectedInstanceValid())
         return;
-    if (GEditor.selectedLight >= 0)
+    if (!GEditor.selectedLight.IsNil())
         return;
     if (!GEditor.viewport.HasRect())
         return;
@@ -2925,7 +3059,7 @@ static void DrawInstanceGizmos()
 
 static void DrawLightGizmos()
 {
-    if (!GEditor.gizmo.enabled)
+    if (!GEditor.gizmo.showImGuizmo)
         return;
     if (!GEditor.HasScene())
         return;
@@ -2933,10 +3067,11 @@ static void DrawLightGizmos()
     if (lights.empty() || !GEditor.viewport.HasRect())
         return;
 
-    if (GEditor.selectedLight < 0 || GEditor.selectedLight >= static_cast<int>(lights.size()))
+    int const selectedIdx = SceneLightIndexFromId(GEditor.selectedLight);
+    if (selectedIdx < 0 || selectedIdx >= static_cast<int>(lights.size()))
         return;
 
-    auto& light = lights[GEditor.selectedLight];
+    auto& light = lights[selectedIdx];
     if (light.type == FLightType::Environment)
         return;
 
@@ -2976,9 +3111,9 @@ static void DrawViewportSelectionContextMenu()
     {
         GEditor.applySelectionDoubleClickAction = false;
         if (IsSelectedInstanceValid())
-            FrameInstance(GEditor.selectedInstance);
-        else if (IsLightIndexValid(GEditor.selectedLight))
-            AlignViewToLight(GEditor.selectedLight);
+            FrameInstance(SelectedInstanceIndex());
+        else if (IsLightIndexValid(SceneLightIndexFromId(GEditor.selectedLight)))
+            AlignViewToLight(SceneLightIndexFromId(GEditor.selectedLight));
     }
 
     if (GEditor.openSelectionContextMenu)
@@ -2993,28 +3128,30 @@ static void DrawViewportSelectionContextMenu()
 
     if (IsSelectedInstanceValid())
     {
+        int const idx = SelectedInstanceIndex();
         if (ImGui::MenuItem("Frame Selected"))
-            FrameInstance(GEditor.selectedInstance);
+            FrameInstance(idx);
         if (ImGui::MenuItem("Move to View"))
-            MoveInstanceToView(GEditor.selectedInstance);
+            MoveInstanceToView(idx);
         if (ImGui::MenuItem("Align with View"))
-            AlignInstanceWithView(GEditor.selectedInstance);
+            AlignInstanceWithView(idx);
         ImGui::Separator();
         if (ImGui::MenuItem(PSI_TRASH " Delete"))
             DeleteSelectedInstance();
     }
-    else if (IsLightIndexValid(GEditor.selectedLight))
+    else if (int const lightIdx = SceneLightIndexFromId(GEditor.selectedLight);
+             IsLightIndexValid(lightIdx))
     {
-        bool const canTransform = IsLightTransformable(GEditor.selectedLight);
+        bool const canTransform = IsLightTransformable(lightIdx);
         if (ImGui::MenuItem("Align View To Selected", nullptr, false, canTransform))
-            AlignViewToLight(GEditor.selectedLight);
+            AlignViewToLight(lightIdx);
         if (ImGui::MenuItem("Move to View", nullptr, false, canTransform))
-            MoveLightToView(GEditor.selectedLight);
+            MoveLightToView(lightIdx);
         if (ImGui::MenuItem("Align with View", nullptr, false, canTransform))
-            AlignLightWithView(GEditor.selectedLight);
+            AlignLightWithView(lightIdx);
         ImGui::Separator();
         if (ImGui::MenuItem(PSI_TRASH " Remove Light", nullptr, false, canTransform))
-            DeleteLight(GEditor.selectedLight);
+            DeleteLight(lightIdx);
         if (!canTransform && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Environment light is required");
     }

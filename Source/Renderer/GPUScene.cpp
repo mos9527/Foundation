@@ -1034,7 +1034,6 @@ GPUScene::Result GPUSceneImpl::ReserveCurve(FSerializedCurve const& src, GSCurve
     outData.pointOffset = outOffset + Skip(static_cast<size_t>(src.points.decodedSize));
     outData.segmentCount = static_cast<uint32_t>(src.segments.count);
     outData.segmentOffset = outOffset + Skip(static_cast<size_t>(src.segments.decodedSize));
-    outData.materialIndex = src.materialIndex;
     outData.aabbOffset = static_cast<uint32_t>(aabbBase);
     CHECK_MSG(cursor == size, "Curve layout mismatch: expected {} got {}", size, cursor);
     return Result::InProgress;

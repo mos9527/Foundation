@@ -44,6 +44,8 @@ struct FTextureHeader
 
 struct FSerializedTexture : FTextureHeader
 {
+    FUUID id{};
+    FUUID name{};
     Vector<FBlobRef> subresources;
 
     explicit FSerializedTexture(Allocator* alloc = GLOBAL_ALLOC)
@@ -147,6 +149,8 @@ void SavePNG(const unsigned char* data, int width, int height, StringView path);
 template <>
 inline void FSerialize(FWriter& w, FSerializedTexture const& obj)
 {
+    FSerialize(w, obj.id);
+    FSerialize(w, obj.name);
     FTextureHeader const& header = obj;
     FSerialize(w, header.magic);
     FSerialize(w, header.header);
@@ -157,6 +161,8 @@ inline void FSerialize(FWriter& w, FSerializedTexture const& obj)
 template <>
 inline void FDeserialize(FReader& r, FSerializedTexture& obj)
 {
+    FDeserialize(r, obj.id);
+    FDeserialize(r, obj.name);
     FTextureHeader& header = obj;
     FDeserialize(r, header.magic);
     FDeserialize(r, header.header);

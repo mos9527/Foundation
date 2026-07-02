@@ -375,14 +375,14 @@ void DeleteSelectedInstance()
 {
     if (!GContext->gpuScene || !GEditor.HasScene())
         return;
-    int const idx = GEditor.selectedInstance;
+    int const idx = SceneInstanceIndexFromId(GEditor.selectedInstance);
     auto& sceneInstances = GEditor.Scene().mTables.instances;
     if (idx < 0 || idx >= static_cast<int>(sceneInstances.size()))
         return;
 
     sceneInstances.erase(sceneInstances.begin() + idx);
-    GEditor.selectedInstance = -1;
-    GEditor.selectedMaterial = -1;
+    GEditor.Scene().RebuildIndex();
+    ClearSelection();
     // Recommit the (now smaller) instance table, then reclaim geometry no longer
     // referenced. Wait for the GPU to finish before reclaiming resident resources.
     CommitSceneToGPU(true);
@@ -573,9 +573,7 @@ static void InstallLoadedScene(String const& scenePayloadPath, GPUScene*& newGPU
     GContext->gpuScene = newGPUScene;
     newGPUScene = nullptr;
     GEditor.OpenSceneFile(scenePayloadPath);
-    GEditor.selectedInstance = -1;
-    GEditor.selectedMaterial = -1;
-    GEditor.selectedLight = -1;
+    ClearSelection();
     GEditor.cameraUpdated = true;
     GEditor.state = FERunningEnter;
 }

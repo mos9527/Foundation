@@ -18,7 +18,6 @@ struct FImportedCurve
     Vector<uint32_t> curveVertexCounts;
     FCurveBasis basis{FCurveBasis::Linear};
     FCurveRenderMode renderMode{FCurveRenderMode::Capsule};
-    uint32_t materialIndex{0};
 
     FImportedCurve(Allocator* alloc) : points(alloc), curveVertexCounts(alloc) {}
 };

@@ -26,9 +26,9 @@ struct FSerializedCurveAABB
 };
 struct FSerializedCurve
 {
+    FUUID id{};
     FSerializedBounds bounds;
     FBlobRef points;
     FBlobRef segments;
     FBlobRef aabbs;
-    uint32_t materialIndex{0};
 };

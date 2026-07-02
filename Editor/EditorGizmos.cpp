@@ -399,31 +399,6 @@ static bool WorldToRenderPixel(float3 world, mat4 const& viewProj, float2 render
     return true;
 }
 
-static bool IsSelectedInstanceValid()
-{
-    return GEditor.HasScene() && GContext->gpuScene &&
-           GEditor.selectedInstance >= 0 &&
-           GEditor.selectedInstance < static_cast<int>(GContext->gpuScene->GetInstanceCount()) &&
-           GEditor.selectedInstance < static_cast<int>(GEditor.Scene().GetInstances().size());
-}
-
-static FSerializedBounds const* InstanceResourceBounds(FInstance const& instance)
-{
-    if (instance.type == FInstanceType::Mesh)
-    {
-        auto meshes = GEditor.Scene().GetMeshes();
-        if (instance.resourceIndex < meshes.size())
-            return &meshes[instance.resourceIndex].bounds;
-    }
-    else if (instance.type == FInstanceType::Curve)
-    {
-        auto curves = GEditor.Scene().GetCurves();
-        if (instance.resourceIndex < curves.size())
-            return &curves[instance.resourceIndex].bounds;
-    }
-    return nullptr;
-}
-
 static mat4 InstanceTransformMatrix(FTransform const& transform)
 {
     return translate(mat4(1.0f), transform.transform) *
@@ -436,7 +411,7 @@ static bool GetSelectedInstanceWorldBounds(FSerializedBounds& outBounds)
     if (!IsSelectedInstanceValid())
         return false;
 
-    FInstance const& instance = GEditor.Scene().GetInstances()[GEditor.selectedInstance];
+    FInstance const& instance = GEditor.Scene().GetInstances()[SceneInstanceIndexFromId(GEditor.selectedInstance)];
     FSerializedBounds const* localBounds = InstanceResourceBounds(instance);
     if (!localBounds)
         return false;
@@ -477,7 +452,7 @@ namespace EditorGizmos
 
 void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D extent)
 {
-    if (!GEditor.gizmo.enabled)
+    if (!GEditor.gizmo.showBoundingBox && !GEditor.gizmo.showLightGizmos)
         return;
 
     CHECK(renderer);
@@ -651,37 +626,44 @@ void BuildLightGizmos()
     if (!GEditor.showImGui || !GEditor.HasScene())
         return;
 
+    if (!GEditor.gizmo.showBoundingBox && !GEditor.gizmo.showLightGizmos)
+        return;
+
     AppendXZGrid(sGizmo.vertices, GEditor.camera.center);
 
-    auto lights = GEditor.Scene().GetLights();
-    for (int i = 0; i < static_cast<int>(lights.size()); ++i)
+    if (GEditor.gizmo.showLightGizmos)
     {
-        FLight const& light = lights[i];
-        if (light.type == FLightType::Environment)
-            continue;
-
-        bool const selected = i == GEditor.selectedLight;
-        float4 const color = GizmoColor(selected);
-        switch (light.type)
+        auto lights = GEditor.Scene().GetLights();
+        for (int i = 0; i < static_cast<int>(lights.size()); ++i)
         {
-        case FLightType::Directional: AppendDirectionalGizmo(sGizmo.vertices, light, color); break;
-        case FLightType::Point:       AppendPointGizmo(sGizmo.vertices, light, color);       break;
-        case FLightType::Spot:        AppendSpotGizmo(sGizmo.vertices, light, color);        break;
-        case FLightType::Disk:        AppendDiskGizmo(sGizmo.vertices, light, color);        break;
-        case FLightType::Rect:        AppendRectGizmo(sGizmo.vertices, light, color);        break;
-        default: break;
-        }
+            FLight const& light = lights[i];
+            if (light.type == FLightType::Environment)
+                continue;
 
-        uint32_t const textureId = IconForLight(light.type, sGizmo.icons);
-        if (textureId != ~0u)
-        {
-            float3 const pos = light.transform.transform;
-            float4 const spriteColor = LightGizmoSpriteColor(light, selected);
-            AppendSpriteBillboard(sGizmo.spriteVertices, sGizmo.spriteIndices, pos, spriteColor, textureId);
+            bool const selected = (light.id == GEditor.selectedLight);
+            float4 const color = GizmoColor(selected);
+            switch (light.type)
+            {
+            case FLightType::Directional: AppendDirectionalGizmo(sGizmo.vertices, light, color); break;
+            case FLightType::Point:       AppendPointGizmo(sGizmo.vertices, light, color);       break;
+            case FLightType::Spot:        AppendSpotGizmo(sGizmo.vertices, light, color);        break;
+            case FLightType::Disk:        AppendDiskGizmo(sGizmo.vertices, light, color);        break;
+            case FLightType::Rect:        AppendRectGizmo(sGizmo.vertices, light, color);        break;
+            default: break;
+            }
+
+            uint32_t const textureId = IconForLight(light.type, sGizmo.icons);
+            if (textureId != ~0u)
+            {
+                float3 const pos = light.transform.transform;
+                float4 const spriteColor = LightGizmoSpriteColor(light, selected);
+                AppendSpriteBillboard(sGizmo.spriteVertices, sGizmo.spriteIndices, pos, spriteColor, textureId);
+            }
         }
     }
 
-    AppendSelectedInstanceBounds(sGizmo.vertices);
+    if (GEditor.gizmo.showBoundingBox)
+        AppendSelectedInstanceBounds(sGizmo.vertices);
 
     sGizmo.vertexCount = static_cast<uint32_t>(sGizmo.vertices.size());
     sGizmo.spriteIndexCount = static_cast<uint32_t>(sGizmo.spriteIndices.size());
@@ -689,7 +671,7 @@ void BuildLightGizmos()
 
 int PickLightAtRenderPixel(Math::int2 pixel)
 {
-    if (!GEditor.showImGui || !GEditor.gizmo.enabled || !GEditor.HasScene())
+    if (!GEditor.showImGui || !GEditor.gizmo.showLightGizmos || !GEditor.HasScene())
         return -1;
 
     RHIExtent2D const renderExtent = GEditor.viewport.renderExtent;
