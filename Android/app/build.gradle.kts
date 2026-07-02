@@ -72,6 +72,7 @@ android {
 afterEvaluate {
     tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
         val variantName = name.removePrefix("merge").removeSuffix("Assets")
-        dependsOn("externalNativeBuild$variantName")
+        val nativeVariant = variantName.removeSuffix("AndroidTest").removeSuffix("UnitTest")
+        tasks.findByName("externalNativeBuild$nativeVariant")?.let { dependsOn(it) }
     }
 }
