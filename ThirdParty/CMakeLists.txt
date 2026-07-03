@@ -123,19 +123,6 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
-    imgui
-    GIT_REPOSITORY https://github.com/ocornut/imgui
-    GIT_TAG v1.92.7-docking
-    GIT_SHALLOW TRUE
-)
-
-FetchContent_Declare(
-    imguizmo
-    GIT_REPOSITORY https://github.com/hrydgard/ImGuizmo
-    GIT_TAG 5088891e308f14556c6c961aac1be79e1fc1850f
-)
-
-FetchContent_Declare(
     lz4
     GIT_REPOSITORY https://github.com/lz4/lz4
     GIT_TAG v1.10.0
