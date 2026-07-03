@@ -12,6 +12,7 @@ public static const int kViewAOVDiffuse  = 1 << 8;
 public static const int kViewAOVSpecular = 1 << 9;
 public static const int kViewAOVSampleCount = 1 << 10;
 public static const int kEnableRasterRTShadows = 1 << 16;
+public static const int kEnableRasterAmbientOcclusion = 1 << 17;
 public static const int kForceTextureLOD0 = 1 << 24;
 
 public static const int kCullFrustum = 1 << 0;

@@ -3,6 +3,7 @@
 #include <RenderUtils/PSFullscreen.hpp>
 #include <algorithm>
 #include <Core/Paths.hpp>
+#include <limits>
 #include "GPUScene.hpp"
 #include "Renderer.hpp"
 using namespace Foundation;
@@ -39,6 +40,26 @@ constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
 constexpr size_t kDisableRTBuildFlags = kViewOverdraw | kViewMeshlet | kViewBaseColor | kViewNormal | kViewPosition | kViewMatcap;
+constexpr RHIResourceFormat kGBufferNormalFormat = RHIResourceFormat::A2B10G10R10Unorm;
+
+static void RunRasterEffects(RasterEffectContext& ctx, RasterInjectionPoint point)
+{
+    int lastOrder = std::numeric_limits<int>::min();
+    for (;;)
+    {
+        int nextOrder = std::numeric_limits<int>::max();
+        for (RasterEffect const& effect : ctx.cfg->rasterEffects)
+            if (effect.callback && effect.injectionPoint == point && effect.order > lastOrder)
+                nextOrder = std::min(nextOrder, effect.order);
+        if (nextOrder == std::numeric_limits<int>::max())
+            break;
+        for (RasterEffect const& effect : ctx.cfg->rasterEffects)
+            if (effect.callback && effect.injectionPoint == point && effect.order == nextOrder)
+                effect.callback(ctx, effect.config);
+        lastOrder = nextOrder;
+    }
+}
+
 void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
                             RendererConfig const& cfg, RendererOutputs& out)
 {
@@ -223,7 +244,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                                                   RHITextureUsageBits::StorageImage |
                                                                   RHITextureUsageBits::SampledImage,
                                                               .extent = {w, h, 1},
-                                                              .format = RHIResourceFormat::R8G8B8A8Unorm});
+                                                              .format = kGBufferNormalFormat});
     auto GBufferRT2 = renderer->CreateResource("GBuffer 2",
                                                RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
                                                                   RHITextureUsageBits::StorageImage |
@@ -343,7 +364,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureRTV(self, GBufferRT1,
-                                      {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                      {.format = kGBufferNormalFormat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureRTV(self, GBufferRT2,
                                       {.format = RHIResourceFormat::B10G11R11Ufloat,
@@ -466,7 +487,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                   {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                 r->BindTextureRTV(self, GBufferRT1,
-                                  {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                  {.format = kGBufferNormalFormat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                 r->BindTextureRTV(self, GBufferRT2,
                                   {.format = RHIResourceFormat::B10G11R11Ufloat,
@@ -575,18 +596,72 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
             }
         });
+        RasterEffectContext effectCtx{
+            .renderer = renderer,
+            .globals = globals,
+            .gpu = gpu,
+            .cfg = &cfg,
+            .extent = {w, h},
+            .globalUBO = GlobalUBO,
+            .primitiveBuffer = PrimitiveBuffer,
+            .dynamicPrimitiveBuffer = DynamicPrimitiveBuffer,
+            .instanceBuffer = InstanceBuffer,
+            .materialBuffer = MaterialBuffer,
+            .lightBuffer = LightBuffer,
+            .tlas = TLAS,
+            .gbuffer0 = GBufferRT0,
+            .gbuffer1 = GBufferRT1,
+            .gbuffer2 = GBufferRT2,
+            .depth = Depth,
+            .instanceID = InstanceIDBuffer,
+            .hiz = HIZ,
+            .hizSampler = HIZSampler,
+            .diffuse = DiffuseBuffer,
+            .specular = SpecularBuffer,
+        };
+        RunRasterEffects(effectCtx, RasterInjectionPoint::AfterGBuffer);
+        RunRasterEffects(effectCtx, RasterInjectionPoint::BeforeLighting);
+        bool hasAmbientOcclusion = effectCtx.ambientOcclusion != kInvalidHandle;
+        if (!hasAmbientOcclusion)
+        {
+            effectCtx.ambientOcclusion = renderer->CreateResource(
+                "Ambient Occlusion Neutral",
+                RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+                               .extent = {w, h, 1},
+                               .format = RHIResourceFormat::R16Unorm});
+            auto NeutralAO = effectCtx.ambientOcclusion;
+            renderer->CreatePass(
+                "Ambient Occlusion Neutral Clear", RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindTextureUAV(self, NeutralAO, "texture", RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
+                                                         .range = RHITextureSubresourceRange::Create()});
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                                  PathsResolve("Data/Shaders/CSClearBuffer.spv"));
+                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    CSClearBufferData cdata{float4(1.0f), w, h};
+                    r->CmdSetPipeline(self, cmd);
+                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
+                    r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
+                });
+        }
         renderer->CreatePass(
             "Lighting", RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r)
             {
+                uint32_t lightingFlags = lightingViewFlags | (hasAmbientOcclusion ? kEnableRasterAmbientOcclusion : 0u);
                 r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSLighting.spv"),
-                              AsBytes(AsSpan(lightingViewFlags)));
+                              AsBytes(AsSpan(lightingFlags)));
                 r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                 r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
                                                      .range = RHITextureSubresourceRange::Create()});
                 r->BindTextureSRV(self, GBufferRT1, "RT1", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                  RHITextureViewDesc{.format = kGBufferNormalFormat,
                                                      .range = RHITextureSubresourceRange::Create()});
                 r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
@@ -598,6 +673,10 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
                 r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
                 r->BindTextureSampler(self, LUTSampler, "lutSampler");
+                r->BindTextureSRV(self, effectCtx.ambientOcclusion, "ambientOcclusion",
+                                  RHIPipelineStageBits::ComputeShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
+                                                     .range = RHITextureSubresourceRange::Create()});
                 r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
                 r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
                 r->BindTextureUAV(self, DiffuseBuffer, "diffuseOutput", RHIPipelineStageBits::ComputeShader,
@@ -615,6 +694,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());
                 r->CmdDispatch(self, cmd, {w, h, 1});
             });
+        RunRasterEffects(effectCtx, RasterInjectionPoint::AfterLighting);
         out.diffuse = DiffuseBuffer;
         out.specular = SpecularBuffer;
     }

@@ -2,6 +2,7 @@
 #include <Math/Math.hpp>
 #include <RenderCore/RenderPass.hpp>
 using namespace Foundation;
+using namespace Foundation::Math;
 using namespace Foundation::RenderCore;
 #pragma pack(push, 4)
 struct RendererUBO
@@ -90,6 +91,7 @@ static const int kViewAOVSampleCount = 1 << 10;
 static const int kMaterialDbgWhiteBaseColor = 1 << 0;
 
 static const int kEnableRasterRTShadows = 1 << 16;
+static const int kEnableRasterAmbientOcclusion = 1 << 17;
 static const int kForceTextureLOD0 = 1 << 24;
 
 static const int kCullFrustum = 1 << 0;
@@ -117,12 +119,61 @@ inline uint32_t PTPackCompileOptions(uint32_t sampler, bool forceTextureLOD0)
     return options;
 }
 
+class GPUScene;
+
+struct RendererConfig;
+
+enum class RasterInjectionPoint : uint8_t
+{
+    AfterGBuffer,
+    BeforeLighting,
+    AfterLighting,
+    BeforePostprocess,
+};
+
+struct RasterEffectContext
+{
+    Renderer* renderer{nullptr};
+    RendererUBO* globals{nullptr};
+    GPUScene* gpu{nullptr};
+    RendererConfig const* cfg{nullptr};
+    RHIExtent2D extent{0u, 0u};
+    ResourceHandle globalUBO{kInvalidHandle};
+    ResourceHandle primitiveBuffer{kInvalidHandle};
+    ResourceHandle dynamicPrimitiveBuffer{kInvalidHandle};
+    ResourceHandle instanceBuffer{kInvalidHandle};
+    ResourceHandle materialBuffer{kInvalidHandle};
+    ResourceHandle lightBuffer{kInvalidHandle};
+    ResourceHandle tlas{kInvalidHandle};
+    ResourceHandle gbuffer0{kInvalidHandle};
+    ResourceHandle gbuffer1{kInvalidHandle};
+    ResourceHandle gbuffer2{kInvalidHandle};
+    ResourceHandle depth{kInvalidHandle};
+    ResourceHandle instanceID{kInvalidHandle};
+    ResourceHandle hiz{kInvalidHandle};
+    ResourceHandle hizSampler{kInvalidHandle};
+    ResourceHandle diffuse{kInvalidHandle};
+    ResourceHandle specular{kInvalidHandle};
+    ResourceHandle ambientOcclusion{kInvalidHandle};
+};
+
+using RasterEffectCallback = void (*)(RasterEffectContext& ctx, void const* config);
+
+struct RasterEffect
+{
+    RasterInjectionPoint injectionPoint{RasterInjectionPoint::BeforeLighting};
+    int order{0};
+    RasterEffectCallback callback{nullptr};
+    void const* config{nullptr};
+};
+
 struct RendererConfig
 {
     unsigned viewFlags{kEnableRasterRTShadows};
     unsigned materialFlags{0u};
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
     RHIExtent2D renderExtent{0u, 0u};
+    Span<RasterEffect const> rasterEffects{};
     uint32_t ptSampler{kPTSamplerSobol};
     bool const* ptRenderPaused{nullptr}; // dynamic runtime pause gate, read by PT dispatch pass
     bool ptShaderExecutionReordering{true};
@@ -144,8 +195,6 @@ inline RHIDeviceSampler::SamplerDesc MakeTextureSamplerDesc(RendererConfig const
         .lod = {.max = 16.0f},
     };
 }
-
-class GPUScene;
 
 struct RendererOutputs
 {

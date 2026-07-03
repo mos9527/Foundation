@@ -11,6 +11,7 @@ Texture2D<float4> RT0;
 Texture2D<float4> RT1;
 Texture2D<float4> RT2;
 Texture2D<float> depth;
+Texture2D<float> ambientOcclusion;
 RWTexture2D<float4> diffuseOutput;
 RWTexture2D<float4> specularOutput;
 RaytracingAccelerationStructure AS;
@@ -49,7 +50,7 @@ float3 EnvLightTint()
         if (GSLightType(gl) == 5u)
             return gl.color * gl.power;
     }
-    return float3(1.0f);
+    return float3(0.0f);
 }
 
 float ReflectionMipFromRoughness(float roughness, uint32_t numMips)
@@ -74,7 +75,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float ndcDepth = depth.Load(uint3(tid,0));
     if (ndcDepth <= EPS) {
         diffuseOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
-        float3 envLight = lights[globalParams.firstLight].color * lights[globalParams.firstLight].power;
+        float3 envLight = EnvLightTint();
         if (globalParams.hasEnvMap != 0u) {
             float2 uvNdc = (tid.xy + 0.5f) / float2(globalParams.fbWidth, globalParams.fbHeight);
             float4 ndcFar = float4(uvNdc.x * 2.0f - 1.0f, 1.0f - uvNdc.y * 2.0f, 1.0f, 1.0f);
@@ -97,10 +98,9 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float3 p = wsPosition.xyz / wsPosition.w;
     float3 eye = globalParams.camPosition.xyz;
 
-    float3 normalWS, t;
-    unpackTBN888(color1.xyz, normalWS, t);
+    float3 normalWS = unpackUnitOctahedralSnorm(color1.xy * 2.0f - 1.0f);
 
-    float metallic = color1.w;
+    float metallic = color1.z;
     float roughness = color0.w;
     float3 emissive = color2.xyz;
 
@@ -193,21 +193,24 @@ void main(uint2 tid: SV_DispatchThreadID) {
             Ls += fs * lightContrib;
         }
 
-        if (globalParams.hasEnvMap != 0u) {
-            float3 diffuseAlbedo = baseColor * (1.0f - metallic);
-            Ld += diffuseAlbedo * SHIrradiance(globalParams.envSHCoeffs, normalWS);
+        float3 envTint = EnvLightTint();
+        float3 diffuseAlbedo = baseColor * (1.0f - metallic);
+        float ao = (flags & kEnableRasterAmbientOcclusion) != 0 ? ambientOcclusion.Load(uint3(tid, 0)) : 1.0f;
+        Ld += ao * diffuseAlbedo * (globalParams.hasEnvMap != 0u ? SHIrradiance(globalParams.envSHCoeffs, normalWS) : envTint);
 
-            float NoV = clamp(dot(normalWS, v), 0.0f, 1.0f);
+        float NoV = clamp(dot(normalWS, v), 0.0f, 1.0f);
+        float3 F0 = lerp(float3(F0FromIor(1.5f)), baseColor, metallic);
+        float2 lutE = SampleGGXLutE(globalParams.ggxLutEIndex, NoV, roughness);
+        float3 F = F0 * lutE.x + (1.0f - F0) * lutE.y;
+        if (globalParams.hasEnvMap != 0u) {
             float3 R = 2.0f * NoV * normalWS - v;
             float mip = ReflectionMipFromRoughness(roughness, globalParams.envMapPrefilteredMips);
             float azimuth = EnvLightAzimuth();
             float3 prefiltered = textures[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
                                      .SampleLevel(lutSampler, EnvMapDirToUV(R, azimuth), mip).xyz;
-            float3 F0 = lerp(float3(F0FromIor(1.5f)), baseColor, metallic);
-            float2 lutE = SampleGGXLutE(globalParams.ggxLutEIndex, NoV, roughness);
-            float3 F = F0 * lutE.x + (1.0f - F0) * lutE.y;
             Ls += prefiltered * F;
-        }
+        } else
+            Ls += envTint * F;
 
         Ld += emissive;
 

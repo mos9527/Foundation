@@ -2,6 +2,7 @@
 #include <cmath>
 #include <RenderUtils/PSFullscreen.hpp>
 #include <Renderer/Postprocess.hpp>
+#include <Renderer/RasterEffects.hpp>
 #include "EditorGizmos.hpp"
 #include "EditorState.hpp"
 #include <imgui.h>
@@ -14,6 +15,7 @@ static ResourceHandle sPickResultBuffer;
 static RendererOutputs sRenderOutputs;
 static int2 sPickingPixel;
 static bool sPickingDoubleClick = false;
+static RasterEffect sEditorRasterEffects[1];
 
 int SceneInstanceIndexFromId(FUUID id)
 {
@@ -339,6 +341,10 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
         std::max(16u, static_cast<uint32_t>(renderExtent.y * GEditor.renderResolutionScale))
     };
     GEditor.rendererConfig.renderExtent = scaledExtent;
+    sEditorRasterEffects[0] = MakeRasterGTAOEffect(&GEditor.rasterGTAOConfig);
+    GEditor.rendererConfig.rasterEffects = GEditor.rasterGTAO
+        ? Span<const RasterEffect>(sEditorRasterEffects, sizeof(sEditorRasterEffects) / sizeof(sEditorRasterEffects[0]))
+        : Span<const RasterEffect>{};
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
     if (GEditor.rendererMode == ERendererMode::PathTracer)
         BuildPathTracerRenderGraph(renderer, &GEditor.shaderGlobals, context->gpuScene, GEditor.rendererConfig, outOutputs);

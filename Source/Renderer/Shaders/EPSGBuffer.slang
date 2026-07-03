@@ -83,9 +83,9 @@ Fragment drawGBuffer(V2F input){
         emissive *= SampleMaterialTexture(material.emissiveTexture, input.uv);
     // -- GBuffer Packing
     float3 normal = normalize(input.tangent * normalTBN.x + input.bitangent * normalTBN.y + input.normal * normalTBN.z);
-    float3 normal888 = packTBN888(normal, input.tangent);
+    float2 normalOct = packUnitOctahedralSnorm(normal) * 0.5f + 0.5f;
     output.RT0 = float4(baseColor.xyz, pbrMetalRough.y); // BaseColor, Roughness
-    output.RT1 = float4(normal888, pbrMetalRough.z); // Normal 888, Metallic
+    output.RT1 = float4(normalOct, pbrMetalRough.z, 0.0f);
     output.RT2 = float3(emissive.xyz); // Emissive
     output.RT3 = input.instanceID - globalParams.firstInstance;
     return output;

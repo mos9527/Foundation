@@ -2864,6 +2864,26 @@ void FRunningImGui()
                 ImGui::SeparatorText(PSI_COG " Options");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values);
             }
+            {
+                ImGui::SeparatorText(PSI_COG " Raster Effects");
+                if (ImGui::CollapsingHeader("GTAO", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    changed |= ImGui::Checkbox("Enable GTAO", &GEditor.rasterGTAO);
+                    ImGui::BeginDisabled(!GEditor.rasterGTAO);
+                    RasterGTAOConfig& gtao = GEditor.rasterGTAOConfig;
+                    ImGui::SliderFloat("Radius Pixels", &gtao.radiusPixels, 4.0f, 96.0f, "%.0f");
+                    ImGui::SliderFloat("Radius World", &gtao.radiusWorld, 0.1f, 8.0f, "%.2f");
+                    ImGui::SliderFloat("Intensity", &gtao.intensity, 0.0f, 6.0f, "%.2f");
+                    ImGui::SliderFloat("Bias", &gtao.bias, 0.0f, 0.25f, "%.3f");
+                    int directions = static_cast<int>(gtao.directionCount);
+                    if (ImGui::SliderInt("Directions", &directions, 1, 8))
+                        gtao.directionCount = static_cast<uint32_t>(directions);
+                    int steps = static_cast<int>(gtao.stepCount);
+                    if (ImGui::SliderInt("Steps", &steps, 1, 16))
+                        gtao.stepCount = static_cast<uint32_t>(steps);
+                    ImGui::EndDisabled();
+                }
+            }
             if ((GEditor.rendererConfig.viewFlags & kViewMatcap) != 0u)
             {
                 ImGui::SeparatorText(PSI_TINT " Matcap");

@@ -36,6 +36,7 @@ target_include_directories(Foundation_GPUScene PUBLIC
     "${meshoptimizer_SOURCE_DIR}/demo"
 )
 add_library(Foundation_Rasterizer STATIC
+    RasterEffects.cpp
     Rasterizer.cpp
 )
 target_link_libraries(Foundation_Rasterizer PUBLIC

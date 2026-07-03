@@ -240,7 +240,7 @@ public uint hash(uint4 v)
 }
 // -- RNG
 // In [0, 1) range
-float uintToFloat(uint x) {
+public float uintToFloat(uint x) {
 	return asfloat(0x3f800000 | (x >> 9)) - 1.0f;
 }
 

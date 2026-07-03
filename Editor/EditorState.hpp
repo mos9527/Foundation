@@ -3,6 +3,7 @@
 #include <cmath>
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Postprocess.hpp>
+#include <Renderer/RasterEffects.hpp>
 #include "Camera.hpp"
 #include "Editor.hpp"
 #include "Runtime/Animation.hpp"
@@ -161,6 +162,8 @@ struct EditorState
     FEditorState    state = FEInitEnter;
     bool            cameraUpdated = true;
     float           renderResolutionScale = 1.0f; // 0.25 .. 1.0
+    bool            rasterGTAO = true;
+    RasterGTAOConfig rasterGTAOConfig{};
 
     [[nodiscard]] bool HasScene() const { return scene.has_value(); }
     FImportedScene& Scene()

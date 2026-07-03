@@ -2,6 +2,7 @@
 #define FOUNDATION_EXAMPLES_IMPLEMENTATION
 #include "Examples.hpp"
 
+#include <Renderer/RasterEffects.hpp>
 #include <argh.h>
 #include <algorithm>
 #include <cmath>
@@ -23,6 +24,8 @@ constexpr int kExampleUiCharWidth = 9;
 constexpr int kExampleUiCharHeight = 16;
 constexpr int kExampleUiDefaultColor = -1;
 constexpr int kExampleUiActiveColor = 0xff00ff00;
+const RasterGTAOConfig kExampleRasterGTAOConfig{};
+const RasterEffect kExampleRasterEffects[] = {MakeRasterGTAOEffect(&kExampleRasterGTAOConfig)};
 
 constexpr RHISurfaceFormat kFormatPreferenceList[] = {
     {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
@@ -814,6 +817,8 @@ void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPU
     state.config.renderExtent.x = std::max(state.config.renderExtent.x, 1u);
     state.config.renderExtent.y = std::max(state.config.renderExtent.y, 1u);
     state.config.ptRenderPaused = &state.renderPaused;
+    state.config.rasterEffects = Span<const RasterEffect>(
+        kExampleRasterEffects, sizeof(kExampleRasterEffects) / sizeof(kExampleRasterEffects[0]));
 
     const bool pathTracer = state.mode == ExampleGPUSceneRenderMode::PathTracer;
     renderer->BeginSetup();

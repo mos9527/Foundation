@@ -250,7 +250,9 @@ Raster
 ---
 Unfortunately not the favourite child. Maybe one day.
 - [x] IBL
-- [ ] Screen Space Ambient Occlusion
+- [x] Screen Space Ambient Occlusion
+  - [x] [GTAO](https://www.activision.com/cdn/research/PracticalRealtimeStrategiesTRfinal.pdf)
+    - Dollar store version. Doesn't even bother with denoising. Taken from Unity HDRP.
 - [ ] Screen Space Reflections
 - [ ] Screen Space Diffuse GI
 - [ ] Light Probe Volumes
