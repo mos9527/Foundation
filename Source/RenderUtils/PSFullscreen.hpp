@@ -70,7 +70,12 @@ namespace Foundation::RenderUtils {
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
-                RHIExtent2D img_wh = extent.x != 0u && extent.y != 0u ? extent : r->GetSwapchainExtent();
+                RHIExtent2D img_wh = extent;
+                if (img_wh.x == 0u || img_wh.y == 0u)
+                {
+                    auto const* rtv = r->DerefResource(rtvTexture).Get<RHITexture*>();
+                    img_wh = {rtv->mDesc.extent.x, rtv->mDesc.extent.y};
+                }
                 r->CmdSetPipeline(self, cmd);
                 record(self, r, cmd);
                 r->CmdBeginGraphics(self, cmd, img_wh, {{RHIColorAttachmentLoad{RHIAttachmentLoadOp::DontCare}}},

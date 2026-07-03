@@ -564,6 +564,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
             renderer, "Overdraw Debug", DebugOutput,
             RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
                                .range = RHITextureSubresourceRange::Create()},
+            {w, h},
             [=](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
@@ -572,7 +573,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                   RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                      .range = RHITextureSubresourceRange::Create()});
                 r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
-            });
+            },
+            [](PassHandle, Renderer*, RHICommandList*) {});
     } else
     {
         auto DiffuseBuffer = renderer->CreateResource(

@@ -240,6 +240,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                 renderer, "Editor Debug Blit Raster", PostprocessBuffer,
                 RHITextureViewDesc{.format = postprocessFormat,
                                    .range = RHITextureSubresourceRange::Create()},
+                {w, h},
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve("Data/Shaders/PSCopy.spv"));
@@ -247,7 +248,8 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                     r->BindTextureSRV(self, outputs.debugOutput, "srcTexture", RHIPipelineStageBits::FragmentShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
                                                          .range = RHITextureSubresourceRange::Create()});
-                });
+                },
+                [](PassHandle, Renderer*, RHICommandList*) {});
         }
         else
         {
