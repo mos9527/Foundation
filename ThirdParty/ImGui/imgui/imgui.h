@@ -202,6 +202,7 @@ struct ImGuiPayload;                // User data payload for drag and drop opera
 struct ImGuiPlatformIO;             // Interface between platform/renderer backends and ImGui (e.g. Clipboard, IME, Multi-Viewport support). Extends ImGuiIO.
 struct ImGuiPlatformImeData;        // Platform IME data for io.PlatformSetImeDataFn() function.
 struct ImGuiPlatformMonitor;        // Multi-viewport support: user-provided bounds for each connected monitor/display. Used when positioning popups and tooltips to avoid them straddling monitors
+struct ImGuiSdfFrameStyle;          // SDF frame styling.
 struct ImGuiSelectionBasicStorage;  // Optional helper to store multi-selection state + apply multi-selection requests.
 struct ImGuiSelectionExternalStorage;//Optional helper to apply multi-selection requests to existing randomly accessible storage.
 struct ImGuiSelectionRequest;       // A selection request (stored in ImGuiMultiSelectIO)
@@ -409,6 +410,7 @@ namespace ImGui
     IMGUI_API void          EndFrame();                                 // ends the Dear ImGui frame. automatically called by Render(). If you don't need to render data (skipping rendering) you may call EndFrame() without Render()... but you'll have wasted CPU already! If you don't need to render, better to not create any windows and not call NewFrame() at all!
     IMGUI_API void          Render();                                   // ends the Dear ImGui frame, finalize the draw data. You can then get call GetDrawData().
     IMGUI_API ImDrawData*   GetDrawData();                              // valid after Render() and until the next call to NewFrame(). Call ImGui_ImplXXXX_RenderDrawData() function in your Renderer Backend to render.
+    IMGUI_API void          EnableSdfFrames(const ImGuiSdfFrameStyle* style);
 
     // Demo, Debug, Information
     IMGUI_API void          ShowDemoWindow(bool* p_open = NULL);        // create Demo window. demonstrate most ImGui features. call this to learn about the library! try to make it always available in your application!
@@ -3396,6 +3398,33 @@ enum ImDrawFlags_
     ImDrawFlags_RoundCornersMask_           = ImDrawFlags_RoundCornersAll | ImDrawFlags_RoundCornersNone,
 };
 
+enum ImGuiSdfPreset
+{
+    ImGuiSdfPreset_Box = 0,
+    ImGuiSdfPreset_DropShadow = 1,
+    ImGuiSdfPreset_InnerShadow = 2,
+    ImGuiSdfPreset_Bevel = 3,
+    ImGuiSdfPreset_Gloss = 4,
+    ImGuiSdfPreset_Noise = 5,
+};
+
+struct ImGuiSdfFrameStyle
+{
+    ImGuiSdfPreset Preset = ImGuiSdfPreset_Bevel;
+    float GradientTop = 1.15f, GradientBottom = 0.85f;
+    float Param0 = 3.0f, Param1 = 0.6f;
+    ImU32 ShadowColor = IM_COL32(0, 0, 0, 96);
+    float ShadowSoftness = 4.0f;
+};
+
+struct ImGuiSdfParams
+{
+    ImVec4 RectRound;
+    ImVec4 ColA;
+    ImVec4 ColB;
+    ImVec4 Params;
+};
+
 // Flags for ImDrawList instance. Those are set automatically by ImGui:: functions from ImGuiIO settings, and generally not manipulated directly.
 // It is however possible to temporarily alter flags between calls to ImDrawList:: functions.
 enum ImDrawListFlags_
@@ -3422,6 +3451,7 @@ struct ImDrawList
     ImVector<ImDrawCmd>     CmdBuffer;          // Draw commands. Typically 1 command = 1 GPU draw call, unless the command is a callback.
     ImVector<ImDrawIdx>     IdxBuffer;          // Index buffer. Each command consume ImDrawCmd::ElemCount of those
     ImVector<ImDrawVert>    VtxBuffer;          // Vertex buffer.
+    ImVector<ImGuiSdfParams> SdfParamsBuffer;   // SDF/procedural rect parameters referenced by draw commands.
     ImDrawListFlags         Flags;              // Flags, you may poke into these to adjust anti-aliasing settings per-primitive.
 
     // [Internal, used while building lists]
@@ -3461,6 +3491,7 @@ struct ImDrawList
     IMGUI_API void  AddLine(const ImVec2& p1, const ImVec2& p2, ImU32 col, float thickness = 1.0f);
     IMGUI_API void  AddRect(const ImVec2& p_min, const ImVec2& p_max, ImU32 col, float rounding = 0.0f, ImDrawFlags flags = 0, float thickness = 1.0f);   // a: upper-left, b: lower-right (== upper-left + size)
     IMGUI_API void  AddRectFilled(const ImVec2& p_min, const ImVec2& p_max, ImU32 col, float rounding = 0.0f, ImDrawFlags flags = 0);                     // a: upper-left, b: lower-right (== upper-left + size)
+    IMGUI_API void  AddRectSDF(const ImVec2& p_min, const ImVec2& p_max, ImGuiSdfPreset preset, float rounding, ImU32 col_a, ImU32 col_b = 0xFFFFFFFF, float param0 = 0.0f, float param1 = 0.0f, ImDrawFlags flags = 0);
     IMGUI_API void  AddRectFilledMultiColor(const ImVec2& p_min, const ImVec2& p_max, ImU32 col_upr_left, ImU32 col_upr_right, ImU32 col_bot_right, ImU32 col_bot_left);
     IMGUI_API void  AddQuad(const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec2& p4, ImU32 col, float thickness = 1.0f);
     IMGUI_API void  AddQuadFilled(const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec2& p4, ImU32 col);

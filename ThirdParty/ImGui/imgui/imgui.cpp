@@ -4027,12 +4027,52 @@ void ImGui::RenderTextEllipsis(ImDrawList* draw_list, const ImVec2& pos_min, con
         LogRenderedText(&pos_min, text, text_end_full);
 }
 
+static ImGuiSdfFrameStyle GImGuiSdfFrameStyle;
+static bool GImGuiSdfFramesEnabled = false;
+
+void ImGui::EnableSdfFrames(const ImGuiSdfFrameStyle* style)
+{
+    GImGuiSdfFramesEnabled = style != NULL;
+    if (style != NULL)
+        GImGuiSdfFrameStyle = *style;
+}
+
+static ImU32 ImGuiSdfScaleColor(ImU32 c, float f)
+{
+    ImVec4 v = ImGui::ColorConvertU32ToFloat4(c);
+    v.x = ImClamp(v.x * f, 0.0f, 1.0f);
+    v.y = ImClamp(v.y * f, 0.0f, 1.0f);
+    v.z = ImClamp(v.z * f, 0.0f, 1.0f);
+    return ImGui::ColorConvertFloat4ToU32(v);
+}
+
+bool ImGui::RenderFrameSDF(ImDrawList* draw_list, ImVec2 p_min, ImVec2 p_max, ImU32 fill_col, float rounding, ImDrawFlags draw_flags)
+{
+    if (!GImGuiSdfFramesEnabled || ImGui::GetIO().BackendRendererUserData == NULL)
+        return false;
+    const ImGuiSdfFrameStyle& s = GImGuiSdfFrameStyle;
+    if ((s.ShadowColor >> IM_COL32_A_SHIFT) & 0xFF)
+        draw_list->AddRectSDF(p_min, p_max, ImGuiSdfPreset_DropShadow, rounding, s.ShadowColor, 0, s.ShadowSoftness, 0.0f, draw_flags);
+    draw_list->AddRectSDF(p_min, p_max, s.Preset, rounding, ImGuiSdfScaleColor(fill_col, s.GradientTop), ImGuiSdfScaleColor(fill_col, s.GradientBottom), s.Param0, s.Param1, draw_flags);
+    return true;
+}
+
+bool ImGui::RenderGrabSDF(ImDrawList* draw_list, ImVec2 p_min, ImVec2 p_max, ImU32 fill_col, float rounding, ImDrawFlags draw_flags)
+{
+    if (!GImGuiSdfFramesEnabled || ImGui::GetIO().BackendRendererUserData == NULL)
+        return false;
+    const ImGuiSdfFrameStyle& s = GImGuiSdfFrameStyle;
+    draw_list->AddRectSDF(p_min, p_max, s.Preset, rounding, ImGuiSdfScaleColor(fill_col, s.GradientTop), ImGuiSdfScaleColor(fill_col, s.GradientBottom), s.Param0, s.Param1, draw_flags);
+    return true;
+}
+
 // Render a rectangle shaped with optional rounding and borders
 void ImGui::RenderFrame(ImVec2 p_min, ImVec2 p_max, ImU32 fill_col, bool borders, float rounding)
 {
     ImGuiContext& g = *GImGui;
     ImGuiWindow* window = g.CurrentWindow;
-    window->DrawList->AddRectFilled(p_min, p_max, fill_col, rounding);
+    if (!RenderFrameSDF(window->DrawList, p_min, p_max, fill_col, rounding, 0))
+        window->DrawList->AddRectFilled(p_min, p_max, fill_col, rounding);
     const float border_size = g.Style.FrameBorderSize;
     if (borders && border_size > 0.0f)
     {
@@ -7559,7 +7599,8 @@ void ImGui::RenderWindowDecorations(ImGuiWindow* window, const ImRect& title_bar
             ImU32 title_bar_col = GetColorU32(title_bar_is_highlight ? ImGuiCol_TitleBgActive : ImGuiCol_TitleBg);
             if (window->ViewportOwned)
                 title_bar_col |= IM_COL32_A_MASK; // No alpha
-            window->DrawList->AddRectFilled(title_bar_rect.Min, title_bar_rect.Max, title_bar_col, window_rounding, ImDrawFlags_RoundCornersTop);
+            if (!RenderGrabSDF(window->DrawList, title_bar_rect.Min, title_bar_rect.Max, title_bar_col, window_rounding, ImDrawFlags_RoundCornersTop))
+                window->DrawList->AddRectFilled(title_bar_rect.Min, title_bar_rect.Max, title_bar_col, window_rounding, ImDrawFlags_RoundCornersTop);
         }
 
         // Menu bar
@@ -19486,7 +19527,8 @@ static void ImGui::DockNodeUpdateTabBar(ImGuiDockNode* node, ImGuiWindow* host_w
         node->LastFrameFocused = g.FrameCount;
     ImU32 title_bar_col = GetColorU32(host_window->Collapsed ? ImGuiCol_TitleBgCollapsed : is_focused ? ImGuiCol_TitleBgActive : ImGuiCol_TitleBg);
     ImDrawFlags rounding_flags = CalcRoundingFlagsForRectInRect(title_bar_rect, host_window->Rect(), g.Style.DockingSeparatorSize);
-    host_window->DrawList->AddRectFilled(title_bar_rect.Min, title_bar_rect.Max, title_bar_col, host_window->WindowRounding, rounding_flags);
+    if (!RenderGrabSDF(host_window->DrawList, title_bar_rect.Min, title_bar_rect.Max, title_bar_col, host_window->WindowRounding, rounding_flags))
+        host_window->DrawList->AddRectFilled(title_bar_rect.Min, title_bar_rect.Max, title_bar_col, host_window->WindowRounding, rounding_flags);
 
     // Docking/Collapse button
     if (has_window_menu_button)

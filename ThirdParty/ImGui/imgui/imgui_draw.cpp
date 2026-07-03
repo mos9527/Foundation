@@ -466,6 +466,7 @@ void ImDrawList::_ResetForNewFrame()
     CmdBuffer.resize(0);
     IdxBuffer.resize(0);
     VtxBuffer.resize(0);
+    SdfParamsBuffer.resize(0);
     Flags = _Data->InitialFlags;
     memset(&_CmdHeader, 0, sizeof(_CmdHeader));
     _VtxCurrentIdx = 0;
@@ -485,6 +486,7 @@ void ImDrawList::_ClearFreeMemory()
     CmdBuffer.clear();
     IdxBuffer.clear();
     VtxBuffer.clear();
+    SdfParamsBuffer.clear();
     Flags = ImDrawListFlags_None;
     _VtxCurrentIdx = 0;
     _VtxWritePtr = NULL;
@@ -503,6 +505,7 @@ ImDrawList* ImDrawList::CloneOutput() const
     dst->CmdBuffer = CmdBuffer;
     dst->IdxBuffer = IdxBuffer;
     dst->VtxBuffer = VtxBuffer;
+    dst->SdfParamsBuffer = SdfParamsBuffer;
     dst->Flags = Flags;
     return dst;
 }
@@ -1526,6 +1529,41 @@ void ImDrawList::AddRectFilled(const ImVec2& p_min, const ImVec2& p_max, ImU32 c
         PathRect(p_min, p_max, rounding, flags);
         PathFillConvex(col);
     }
+}
+
+void ImDrawList::AddRectSDF(const ImVec2& p_min, const ImVec2& p_max, ImGuiSdfPreset preset, float rounding, ImU32 col_a, ImU32 col_b, float param0, float param1, ImDrawFlags flags)
+{
+    ImVec2 rect_min = p_min;
+    ImVec2 rect_max = p_max;
+    unsigned int corner_mask = 0xF;
+    if (flags & ImDrawFlags_RoundCornersMask_)
+    {
+        corner_mask = 0;
+        if (flags & ImDrawFlags_RoundCornersTopLeft)     corner_mask |= 1;
+        if (flags & ImDrawFlags_RoundCornersTopRight)    corner_mask |= 2;
+        if (flags & ImDrawFlags_RoundCornersBottomLeft)  corner_mask |= 4;
+        if (flags & ImDrawFlags_RoundCornersBottomRight) corner_mask |= 8;
+    }
+
+    const float pad = (preset == ImGuiSdfPreset_DropShadow) ? param0 : 0.0f;
+    rect_min.x -= pad, rect_min.y -= pad;
+    rect_max.x += pad, rect_max.y += pad;
+    const ImVec2 size = rect_max - rect_min;
+    if (size.x <= 0.0f || size.y <= 0.0f)
+        return;
+
+    ImGuiSdfParams prm;
+    prm.RectRound = ImVec4(size.x, size.y, rounding, (float)((unsigned int)preset | (corner_mask << 8)));
+    prm.ColA = ImGui::ColorConvertU32ToFloat4(col_a);
+    prm.ColB = ImGui::ColorConvertU32ToFloat4(col_b);
+    prm.Params = ImVec4(param0, param1, 0.0f, pad);
+    SdfParamsBuffer.push_back(prm);
+
+    const ImTextureID tex_id = (ImTextureID)(SdfParamsBuffer.Size) | ((ImTextureID)2 << (sizeof(unsigned int) * 8));
+    PushTexture(ImTextureRef(tex_id));
+    PrimReserve(6, 4);
+    PrimRectUV(rect_min, rect_max, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), IM_COL32_WHITE);
+    PopTexture();
 }
 
 // p_min = upper-left, p_max = lower-right

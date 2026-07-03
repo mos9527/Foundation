@@ -1126,7 +1126,8 @@ bool ImGui::ScrollbarEx(const ImRect& bb_frame, ImGuiID id, ImGuiAxis axis, ImS6
         grab_rect = ImRect(ImLerp(bb.Min.x, bb.Max.x, grab_v_norm), bb.Min.y, ImLerp(bb.Min.x, bb.Max.x, grab_v_norm) + grab_h_pixels, bb.Max.y);
     else
         grab_rect = ImRect(bb.Min.x, ImLerp(bb.Min.y, bb.Max.y, grab_v_norm), bb.Max.x, ImLerp(bb.Min.y, bb.Max.y, grab_v_norm) + grab_h_pixels);
-    window->DrawList->AddRectFilled(grab_rect.Min, grab_rect.Max, grab_col, style.ScrollbarRounding);
+    if (!RenderGrabSDF(window->DrawList, grab_rect.Min, grab_rect.Max, grab_col, style.ScrollbarRounding, 0))
+        window->DrawList->AddRectFilled(grab_rect.Min, grab_rect.Max, grab_col, style.ScrollbarRounding);
 
     return held;
 }
@@ -1976,12 +1977,18 @@ bool ImGui::BeginCombo(const char* label, const char* preview_value, ImGuiComboF
     const float value_x2 = ImMax(bb.Min.x, bb.Max.x - arrow_size);
     RenderNavCursor(bb, id);
     if (!(flags & ImGuiComboFlags_NoPreview))
-        window->DrawList->AddRectFilled(bb.Min, ImVec2(value_x2, bb.Max.y), frame_col, style.FrameRounding, (flags & ImGuiComboFlags_NoArrowButton) ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersLeft);
+    {
+        const ImDrawFlags preview_flags = (flags & ImGuiComboFlags_NoArrowButton) ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersLeft;
+        if (!RenderFrameSDF(window->DrawList, bb.Min, ImVec2(value_x2, bb.Max.y), frame_col, style.FrameRounding, preview_flags))
+            window->DrawList->AddRectFilled(bb.Min, ImVec2(value_x2, bb.Max.y), frame_col, style.FrameRounding, preview_flags);
+    }
     if (!(flags & ImGuiComboFlags_NoArrowButton))
     {
         ImU32 bg_col = GetColorU32((popup_open || hovered) ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
         ImU32 text_col = GetColorU32(ImGuiCol_Text);
-        window->DrawList->AddRectFilled(ImVec2(value_x2, bb.Min.y), bb.Max, bg_col, style.FrameRounding, (w <= arrow_size) ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersRight);
+        const ImDrawFlags arrow_flags = (w <= arrow_size) ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersRight;
+        if (!RenderFrameSDF(window->DrawList, ImVec2(value_x2, bb.Min.y), bb.Max, bg_col, style.FrameRounding, arrow_flags))
+            window->DrawList->AddRectFilled(ImVec2(value_x2, bb.Min.y), bb.Max, bg_col, style.FrameRounding, arrow_flags);
         if (value_x2 + arrow_size - style.FramePadding.x <= bb.Max.x)
             RenderArrow(window->DrawList, ImVec2(value_x2 + style.FramePadding.y, bb.Min.y + style.FramePadding.y), text_col, ImGuiDir_Down, 1.0f);
     }
@@ -3379,7 +3386,11 @@ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_dat
 
     // Render grab
     if (grab_bb.Max.x > grab_bb.Min.x)
-        window->DrawList->AddRectFilled(grab_bb.Min, grab_bb.Max, GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab), style.GrabRounding);
+    {
+        const ImU32 grab_col = GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab);
+        if (!RenderGrabSDF(window->DrawList, grab_bb.Min, grab_bb.Max, grab_col, style.GrabRounding, 0))
+            window->DrawList->AddRectFilled(grab_bb.Min, grab_bb.Max, grab_col, style.GrabRounding);
+    }
 
     // Display value using user-provided display format so user can add prefix/suffix/decorations to the value.
     char value_buf[64];
@@ -3531,7 +3542,11 @@ bool ImGui::VSliderScalar(const char* label, const ImVec2& size, ImGuiDataType d
 
     // Render grab
     if (grab_bb.Max.y > grab_bb.Min.y)
-        window->DrawList->AddRectFilled(grab_bb.Min, grab_bb.Max, GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab), style.GrabRounding);
+    {
+        const ImU32 grab_col = GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab);
+        if (!RenderGrabSDF(window->DrawList, grab_bb.Min, grab_bb.Max, grab_col, style.GrabRounding, 0))
+            window->DrawList->AddRectFilled(grab_bb.Min, grab_bb.Max, grab_col, style.GrabRounding);
+    }
 
     // Display value using user-provided display format so user can add prefix/suffix/decorations to the value.
     // For the vertical slider we allow centered text to overlap the frame padding

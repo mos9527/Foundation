@@ -3913,6 +3913,8 @@ namespace ImGui
 #endif
     IMGUI_API const char*   FindRenderedTextEnd(const char* text, const char* text_end = NULL); // Find the optional ## from which we stop displaying text.
     IMGUI_API void          RenderMouseCursor(ImVec2 pos, float scale, ImGuiMouseCursor mouse_cursor, ImU32 col_fill, ImU32 col_border, ImU32 col_shadow);
+    IMGUI_API bool          RenderFrameSDF(ImDrawList* draw_list, ImVec2 p_min, ImVec2 p_max, ImU32 fill_col, float rounding, ImDrawFlags draw_flags);
+    IMGUI_API bool          RenderGrabSDF(ImDrawList* draw_list, ImVec2 p_min, ImVec2 p_max, ImU32 fill_col, float rounding, ImDrawFlags draw_flags);
 
     // Render helpers (those functions don't access any ImGui state!)
     IMGUI_API void          RenderArrow(ImDrawList* draw_list, ImVec2 pos, ImU32 col, ImGuiDir dir, float scale = 1.0f);

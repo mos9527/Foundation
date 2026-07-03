@@ -181,24 +181,24 @@ void ImGui_ImplFoundation_RemoveImage(ImTextureID textureID)
     auto [hdl, smp] = ImGui_ImplFoundation_DecodeImTextureID(textureID);
     gImGuiTexturePool->Free(hdl);
 }
-
 #pragma pack(push, 4)
 struct PushConstants
 {
-    float2 s; // scale
-    float2 t; // translation
-    uint textureId;
-    uint samplerId;
+    float scaleTranslate[4]; // xy: scale, zw: translation
+    uint textureSampler[4];  // x: texture id, y: sampler id
+    ImGuiSdfParams sdfParams;
 };
 #pragma pack(pop)
+static_assert(sizeof(PushConstants) == 96);
 
 void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHandle vtxBuffer,
-                                        ResourceHandle idxBuffer, ResourceHandle linSampler, ResourceHandle nearSampler, StringView customVS, StringView customFS)
+                                        ResourceHandle idxBuffer, ResourceHandle linSampler,
+                                        ResourceHandle nearSampler)
 {
     r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
     r->BindBufferCopyDst(self, vtxBuffer);
     r->BindBufferCopyDst(self, idxBuffer);
-    r->BindPushConstant(self, RHIShaderStageBits::Vertex, 0, sizeof(PushConstants));
+    r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, sizeof(PushConstants));
     // Specialization constant
     uint flags{};
     // We can output to these colorspaces:
@@ -292,12 +292,11 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
     // Setup scale and translation:
     // Our visible imgui space lies from draw_data->DisplayPps (top left) to
     // draw_data->DisplayPos+data_data->DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
-    PushConstants pc{
-        .s = {2.0f / draw_data->DisplaySize.x, 2.0f / draw_data->DisplaySize.y},
-        .t = {-1.0f - draw_data->DisplayPos.x * (2.0f / draw_data->DisplaySize.x),
-              -1.0f - draw_data->DisplayPos.y * (2.0f / draw_data->DisplaySize.y)},
-        .textureId = 0 // Updated per-draw
-    };
+    PushConstants pc{};
+    pc.scaleTranslate[0] = 2.0f / draw_data->DisplaySize.x;
+    pc.scaleTranslate[1] = 2.0f / draw_data->DisplaySize.y;
+    pc.scaleTranslate[2] = -1.0f - draw_data->DisplayPos.x * (2.0f / draw_data->DisplaySize.x);
+    pc.scaleTranslate[3] = -1.0f - draw_data->DisplayPos.y * (2.0f / draw_data->DisplaySize.y);
     // Render command list
     // Will project scissor/clipping rectangles into framebuffer space
     ImVec2 clip_off = draw_data->DisplayPos; // (0,0) unless using multi-viewports
@@ -323,17 +322,21 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
             // All textures live in the @ref TexturePool - akin to D3D12's ResourceDescriptorHeap
             // Whether they exist or not - push it
             auto [textureId, samplerId] = ImGui_ImplFoundation_DecodeImTextureID(pcmd->GetTexID());
-            pc.textureId = textureId;
+            pc.textureSampler[0] = textureId;
             switch (samplerId)
             {
             case ImGuiImplFoundationImageSamplerLinear:
-                pc.samplerId = 0;
+                pc.textureSampler[1] = 0;
                 break;
             case ImGuiImplFoundationImageSamplerNearest:
-                pc.samplerId = 1;
+                pc.textureSampler[1] = 1;
+                break;
+            case ImGuiImplFoundationImageSamplerProceduralInternal:
+                pc.textureSampler[1] = 2;
+                pc.sdfParams = draw_list->SdfParamsBuffer[textureId];
                 break;
             }
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex, 0, pc);
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, pc);
             // Draw!
             cmd->DrawIndexed(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset,
                              pcmd->VtxOffset + global_vtx_offset, 0);
@@ -344,8 +347,8 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
     cmd->EndGraphics();
 }
 void ImGui_ImplFoundation_ImplCreateResources(Renderer* renderer, ResourceHandle& outVtxBuffer,
-                                              ResourceHandle& outIdxBuffer, ResourceHandle& outLinearSampler,
-                                              ResourceHandle& outNearestSampler)
+                                              ResourceHandle& outIdxBuffer,
+                                              ResourceHandle& outLinearSampler, ResourceHandle& outNearestSampler)
 {
     outVtxBuffer = renderer->CreateResource(
         "ImGui Vertex Buffer",
@@ -372,70 +375,97 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
                                    // DPI changes. This will scale fonts but _NOT_ scale sizes/padding for now.
     io.Fonts->Clear();
     io.Fonts->AddFontFromMemoryCompressedBase85TTF(kEmbedFontPlexSansIcon, 15.0f);
-    // Styles from
-    // https://github.com/KhronosGroup/Vulkan-Samples/blob/b9961792604af2ede4c9d0868947de2a8eccd549/framework/gui.h#L338
     ImGuiStyle& style = ImGui::GetStyle();
-    style.FrameRounding = 8.0f;
     style.CircleTessellationMaxError = 0.01f;
-    style.FramePadding = ImVec2(8.0f, 8.0f);
-    style.Colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-    style.Colors[ImGuiCol_TextDisabled] = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.96f);
-    style.Colors[ImGuiCol_ChildBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    style.Colors[ImGuiCol_PopupBg] = ImVec4(0.03f, 0.03f, 0.03f, 0.98f);
-    style.Colors[ImGuiCol_Border] = ImVec4(1.0f, 0.0f, 0.0f, 0.5f);
-    style.Colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    style.Colors[ImGuiCol_FrameBg] = ImVec4(0.05f, 0.05f, 0.05f, 0.9f);
-    style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(0.4f, 0.0f, 0.0f, 0.5f);
-    style.Colors[ImGuiCol_FrameBgActive] = ImVec4(0.6f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.6f, 0.0f, 0.0f, 0.8f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.0f, 0.0f, 1.0f);
-    style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.4f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.5f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.02f, 0.02f, 0.02f, 0.6f);
-    style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.7f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.9f, 0.1f, 0.1f, 0.8f);
-    style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(1.0f, 0.15f, 0.15f, 1.0f);
-    style.Colors[ImGuiCol_CheckMark] = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-    style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.9f, 0.0f, 0.0f, 0.7f);
-    style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(1.0f, 0.15f, 0.15f, 1.0f);
-    style.Colors[ImGuiCol_Button] = ImVec4(0.7f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.9f, 0.1f, 0.1f, 0.8f);
-    style.Colors[ImGuiCol_ButtonActive] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
-    style.Colors[ImGuiCol_Header] = ImVec4(0.6f, 0.0f, 0.0f, 0.5f);
-    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.8f, 0.05f, 0.05f, 0.7f);
-    style.Colors[ImGuiCol_HeaderActive] = ImVec4(1.0f, 0.1f, 0.1f, 0.9f);
-    style.Colors[ImGuiCol_Separator] = ImVec4(0.8f, 0.0f, 0.0f, 0.5f);
-    style.Colors[ImGuiCol_SeparatorHovered] = ImVec4(1.0f, 0.1f, 0.1f, 0.8f);
-    style.Colors[ImGuiCol_SeparatorActive] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
-    style.Colors[ImGuiCol_ResizeGrip] = ImVec4(0.8f, 0.0f, 0.0f, 0.4f);
-    style.Colors[ImGuiCol_ResizeGripHovered] = ImVec4(1.0f, 0.1f, 0.1f, 0.8f);
-    style.Colors[ImGuiCol_ResizeGripActive] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
-    style.Colors[ImGuiCol_InputTextCursor] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-    style.Colors[ImGuiCol_TabHovered] = ImVec4(0.9f, 0.1f, 0.1f, 0.8f);
-    style.Colors[ImGuiCol_Tab] = ImVec4(0.4f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_TabSelected] = ImVec4(0.9f, 0.0f, 0.0f, 1.0f);
-    style.Colors[ImGuiCol_TabSelectedOverline] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
-    style.Colors[ImGuiCol_TabDimmed] = ImVec4(0.2f, 0.0f, 0.0f, 0.5f);
-    style.Colors[ImGuiCol_TabDimmedSelected] = ImVec4(0.5f, 0.0f, 0.0f, 0.8f);
-    style.Colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.6f, 0.0f, 0.0f, 1.0f);
-    style.Colors[ImGuiCol_DockingPreview] = ImVec4(1.0f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.02f, 0.02f, 0.02f, 1.0f);
-    style.Colors[ImGuiCol_PlotLines] = ImVec4(1.0f, 1.0f, 1.0f, 0.8f);
-    style.Colors[ImGuiCol_PlotLinesHovered] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
-    style.Colors[ImGuiCol_PlotHistogram] = ImVec4(0.9f, 0.0f, 0.0f, 0.8f);
-    style.Colors[ImGuiCol_PlotHistogramHovered] = ImVec4(1.0f, 0.15f, 0.15f, 1.0f);
-    style.Colors[ImGuiCol_TableHeaderBg] = ImVec4(0.3f, 0.0f, 0.0f, 0.8f);
-    style.Colors[ImGuiCol_TableBorderStrong] = ImVec4(1.0f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_TableBorderLight] = ImVec4(0.8f, 0.0f, 0.0f, 0.3f);
-    style.Colors[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    style.Colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.0f, 1.0f, 1.0f, 0.06f);
-    style.Colors[ImGuiCol_TextLink] = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
-    style.Colors[ImGuiCol_TextSelectedBg] = ImVec4(0.9f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_TreeLines] = ImVec4(0.6f, 0.6f, 0.6f, 0.6f);
-    style.Colors[ImGuiCol_DragDropTarget] = ImVec4(1.0f, 1.0f, 0.0f, 0.9f);
-    style.Colors[ImGuiCol_NavCursor] = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
-    style.Colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.0f, 1.0f, 1.0f, 0.8f);
-    style.Colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.1f, 0.1f, 0.1f, 0.3f);
-    style.Colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.5f);
+    style.WindowPadding = ImVec2(12.0f, 12.0f);
+    style.FramePadding = ImVec2(10.0f, 7.0f);
+    style.CellPadding = ImVec2(8.0f, 6.0f);
+    style.ItemSpacing = ImVec2(7.0f, 9.0f);
+    style.ItemInnerSpacing = ImVec2(6.0f, 6.0f);
+    style.IndentSpacing = 18.0f;
+    style.ScrollbarSize = 16.0f;
+    style.GrabMinSize = 12.0f;
+    style.WindowBorderSize = 0.0f;
+    style.ChildBorderSize = 0.0f;
+    style.PopupBorderSize = 1.0f;
+    style.FrameBorderSize = 1.0f;
+    style.TabBorderSize = 1.0f;
+    style.WindowRounding = 6.0f;
+    style.ChildRounding = 4.0f;
+    style.PopupRounding = 4.0f;
+    style.FrameRounding = 4.0f;
+    style.ScrollbarRounding = 8.0f;
+    style.GrabRounding = 8.0f;
+    style.TabRounding = 4.0f;
+    style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
+
+    ImVec4* colors = style.Colors;
+    colors[ImGuiCol_Text] = ImVec4(0.78f, 0.78f, 0.78f, 1.00f);
+    colors[ImGuiCol_TextDisabled] = ImVec4(0.42f, 0.42f, 0.42f, 1.00f);
+    colors[ImGuiCol_WindowBg] = ImVec4(0.20f, 0.20f, 0.19f, 1.00f);
+    colors[ImGuiCol_ChildBg] = ImVec4(0.20f, 0.20f, 0.19f, 1.00f);
+    colors[ImGuiCol_PopupBg] = ImVec4(0.16f, 0.16f, 0.15f, 0.98f);
+    colors[ImGuiCol_Border] = ImVec4(0.05f, 0.05f, 0.05f, 0.90f);
+    colors[ImGuiCol_BorderShadow] = ImVec4(0.62f, 0.62f, 0.59f, 0.18f);
+    colors[ImGuiCol_FrameBg] = ImVec4(0.19f, 0.19f, 0.18f, 1.00f);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.27f, 0.27f, 0.26f, 1.00f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.13f, 0.13f, 0.13f, 1.00f);
+    colors[ImGuiCol_TitleBg] = ImVec4(0.16f, 0.16f, 0.15f, 1.00f);
+    colors[ImGuiCol_TitleBgActive] = ImVec4(0.25f, 0.25f, 0.24f, 1.00f);
+    colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.16f, 0.16f, 0.15f, 1.00f);
+    colors[ImGuiCol_MenuBarBg] = ImVec4(0.18f, 0.18f, 0.17f, 1.00f);
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(0.12f, 0.12f, 0.11f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.31f, 0.31f, 0.30f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.40f, 0.40f, 0.38f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.48f, 0.48f, 0.46f, 1.00f);
+    colors[ImGuiCol_CheckMark] = ImVec4(0.68f, 0.68f, 0.66f, 1.00f);
+    colors[ImGuiCol_SliderGrab] = ImVec4(0.42f, 0.42f, 0.40f, 1.00f);
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(0.62f, 0.62f, 0.59f, 1.00f);
+    colors[ImGuiCol_Button] = ImVec4(0.22f, 0.22f, 0.21f, 1.00f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.31f, 0.31f, 0.30f, 1.00f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.13f, 0.13f, 0.12f, 1.00f);
+    colors[ImGuiCol_Header] = ImVec4(0.24f, 0.24f, 0.23f, 1.00f);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(0.32f, 0.32f, 0.30f, 1.00f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(0.15f, 0.15f, 0.14f, 1.00f);
+    colors[ImGuiCol_Separator] = ImVec4(0.09f, 0.09f, 0.09f, 0.85f);
+    colors[ImGuiCol_SeparatorHovered] = ImVec4(0.45f, 0.45f, 0.43f, 1.00f);
+    colors[ImGuiCol_SeparatorActive] = ImVec4(0.58f, 0.58f, 0.55f, 1.00f);
+    colors[ImGuiCol_ResizeGrip] = ImVec4(0.42f, 0.42f, 0.40f, 0.35f);
+    colors[ImGuiCol_ResizeGripHovered] = ImVec4(0.52f, 0.52f, 0.49f, 0.65f);
+    colors[ImGuiCol_ResizeGripActive] = ImVec4(0.65f, 0.65f, 0.61f, 0.90f);
+    colors[ImGuiCol_InputTextCursor] = ImVec4(0.80f, 0.80f, 0.76f, 1.00f);
+    colors[ImGuiCol_Tab] = ImVec4(0.20f, 0.20f, 0.19f, 1.00f);
+    colors[ImGuiCol_TabHovered] = ImVec4(0.34f, 0.34f, 0.32f, 1.00f);
+    colors[ImGuiCol_TabSelected] = ImVec4(0.27f, 0.27f, 0.25f, 1.00f);
+    colors[ImGuiCol_TabSelectedOverline] = ImVec4(0.58f, 0.58f, 0.54f, 1.00f);
+    colors[ImGuiCol_TabDimmed] = ImVec4(0.15f, 0.15f, 0.14f, 1.00f);
+    colors[ImGuiCol_TabDimmedSelected] = ImVec4(0.23f, 0.23f, 0.22f, 1.00f);
+    colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.42f, 0.42f, 0.39f, 1.00f);
+    colors[ImGuiCol_DockingPreview] = ImVec4(0.62f, 0.62f, 0.58f, 0.45f);
+    colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.15f, 0.15f, 0.14f, 1.00f);
+    colors[ImGuiCol_PlotLines] = ImVec4(0.72f, 0.72f, 0.68f, 1.00f);
+    colors[ImGuiCol_PlotLinesHovered] = ImVec4(0.88f, 0.88f, 0.82f, 1.00f);
+    colors[ImGuiCol_PlotHistogram] = ImVec4(0.52f, 0.52f, 0.49f, 1.00f);
+    colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.74f, 0.74f, 0.69f, 1.00f);
+    colors[ImGuiCol_TableHeaderBg] = ImVec4(0.22f, 0.22f, 0.21f, 1.00f);
+    colors[ImGuiCol_TableBorderStrong] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
+    colors[ImGuiCol_TableBorderLight] = ImVec4(0.12f, 0.12f, 0.12f, 1.00f);
+    colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.00f, 1.00f, 1.00f, 0.04f);
+    colors[ImGuiCol_TextLink] = ImVec4(0.72f, 0.72f, 0.68f, 1.00f);
+    colors[ImGuiCol_TextSelectedBg] = ImVec4(0.58f, 0.58f, 0.54f, 0.35f);
+    colors[ImGuiCol_TreeLines] = ImVec4(0.42f, 0.42f, 0.40f, 0.55f);
+    colors[ImGuiCol_DragDropTarget] = ImVec4(0.85f, 0.80f, 0.45f, 0.90f);
+    colors[ImGuiCol_NavCursor] = ImVec4(0.75f, 0.75f, 0.70f, 1.00f);
+    colors[ImGuiCol_NavWindowingHighlight] = ImVec4(0.86f, 0.86f, 0.82f, 0.70f);
+    colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.08f, 0.08f, 0.08f, 0.35f);
+    colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.08f, 0.08f, 0.08f, 0.55f);
+    ImGuiSdfFrameStyle sdfStyle{};
+    sdfStyle.GradientTop = 1.12f;
+    sdfStyle.GradientBottom = 0.78f;
+    sdfStyle.Param0 = 2.25f;
+    sdfStyle.Param1 = 0.42f;
+    sdfStyle.ShadowColor = IM_COL32(0, 0, 0, 72);
+    sdfStyle.ShadowSoftness = 3.0f;
+    ImGui::EnableSdfFrames(&sdfStyle);
 }

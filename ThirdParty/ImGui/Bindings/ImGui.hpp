@@ -13,7 +13,8 @@
 enum ImGui_ImplFoundation_ImageSampler
 {
     ImGuiImplFoundationImageSamplerLinear = 0,
-    ImGuiImplFoundationImageSamplerNearest = 1
+    ImGuiImplFoundationImageSamplerNearest = 1,
+    ImGuiImplFoundationImageSamplerProceduralInternal = 2
 };
 
 /* -- Internals -- */
@@ -23,9 +24,7 @@ void ImGui_ImplFoundation_ImplPassSetup(Foundation::RenderCore::PassHandle self,
                                         Foundation::RenderCore::ResourceHandle vtxBuffer,
                                         Foundation::RenderCore::ResourceHandle idxBuffer,
                                         Foundation::RenderCore::ResourceHandle linSampler,
-                                        Foundation::RenderCore::ResourceHandle nearSampler,
-                                        Foundation::Core::StringView customVS = "",
-                                        Foundation::Core::StringView customFS = "");
+                                        Foundation::RenderCore::ResourceHandle nearSampler);
 void ImGui_ImplFoundation_ImplPassRecord(Foundation::RenderCore::PassHandle self,
                                          Foundation::RenderCore::Renderer* renderer, bool clear,
                                          Foundation::RHI::RHICommandList* cmd,
