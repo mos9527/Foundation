@@ -249,10 +249,10 @@ Done:
 Raster
 ---
 Unfortunately not the favourite child. Maybe one day.
+- [x] IBL
+- [ ] Screen Space Ambient Occlusion
+- [ ] Screen Space Reflections
+- [ ] Screen Space Diffuse GI
+- [ ] Light Probe Volumes
 - [ ] _Really_ Speed up meshlet continuous LOD selection.
   - We're O(N). Nanite does it O (log N) via BVH
-- [ ] IBL
-- [ ] Screen Space Diffuse GI
-- [ ] Screen Space Reflections
-- [ ] Screen Space Ambient Occlusion
-- [ ] Light Probe Volumes
