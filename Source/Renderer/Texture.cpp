@@ -3,6 +3,7 @@
 #include <limits>
 #include <stb_image_write.h>
 using namespace Foundation::RHI;
+using namespace Foundation::Math;
 FTexture::FTexture(Allocator* alloc) : bytes(alloc)
 {
     magic = DDS_MAGIC;
@@ -276,22 +277,61 @@ Span<unsigned char> FTexture::GetSubresource(uint32_t mipLevel, uint32_t arrayLa
               arrayLayer, mipLevel, mipSize, bytes.size());
     return {bytes.data() + offset, bytes.data() + offsetEnd};
 }
+float4 SampleF32Bilinear(Span<const float4> mip, uint32_t mipW, uint32_t mipH, float u, float v)
+{
+    float fx = u * mipW - 0.5f, fy = v * mipH - 0.5f;
+    int ix = static_cast<int>(std::floor(fx)), iy = static_cast<int>(std::floor(fy));
+    float tx = fx - ix, ty = fy - iy;
+    auto Fetch = [&](int x, int y) {
+        x = (x + mipW) % mipW; // equirect seam wrap on U; clamp V
+        y = std::clamp(y, 0, static_cast<int>(mipH) - 1);
+        return mip[static_cast<size_t>(y) * mipW + x];
+    };
+    float4 c00 = Fetch(ix, iy), c10 = Fetch(ix + 1, iy);
+    float4 c01 = Fetch(ix, iy + 1), c11 = Fetch(ix + 1, iy + 1);
+    float4 txv(tx), tyv(ty);
+    return mix(mix(c00, c10, txv), mix(c01, c11, txv), tyv);
+}
+float4 SampleF32Trilinear(const float4* const* mips, const uint32_t* mipW, const uint32_t* mipH, uint32_t mipCount,
+                          float u, float v, float mip)
+{
+    float level = std::clamp(mip, 0.0f, static_cast<float>(mipCount - 1));
+    uint32_t l0 = static_cast<uint32_t>(std::floor(level));
+    uint32_t l1 = std::min(l0 + 1, mipCount - 1);
+    float t = level - l0;
+    float4 a = SampleF32Bilinear({mips[l0], mipW[l0] * mipH[l0]}, mipW[l0], mipH[l0], u, v);
+    float4 b = SampleF32Bilinear({mips[l1], mipW[l1] * mipH[l1]}, mipW[l1], mipH[l1], u, v);
+    return mix(a, b, float4(t));
+}
+float2 EquirectDirectionToUV(float3 dir)
+{
+    float phi = std::atan2(dir.z, dir.x);
+    float theta = std::acos(std::clamp(dir.y, -1.0f, 1.0f));
+    return {0.5f + phi * (0.5f / pi<float>()) - std::floor(0.5f + phi * (0.5f / pi<float>())), theta / pi<float>()};
+}
+float3 EquirectUVToDirection(float2 uv)
+{
+    float phi = (uv.x - 0.5f) * 2.0f * pi<float>();
+    float theta = uv.y * pi<float>();
+    float st = std::sin(theta), ct = std::cos(theta);
+    return {st * std::cos(phi), ct, st * std::sin(phi)};
+}
 void FTexture::GenerateMips()
 {
     CHECK_MSG(GetNumMips() == 1, "Texture already has mipmaps");
-    CHECK_MSG(GetFormat() == RHIResourceFormat::R8G8B8A8Unorm || GetFormat() == RHIResourceFormat::R8G8B8A8Srgb,
-              "Source texture must be R8G8B8A8 format. Got {}", GetFormat());
+    const RHIResourceFormat format = GetFormat();
+    const bool isRGBA8 = format == RHIResourceFormat::R8G8B8A8Unorm || format == RHIResourceFormat::R8G8B8A8Srgb;
+    const bool isRGBA32F = format == RHIResourceFormat::R32G32B32A32SignedFloat;
+    CHECK_MSG(isRGBA8 || isRGBA32F, "Source texture must be RGBA8 or RGBA32F. Got {}", format);
     uint32_t numMips = std::max(GetWidth(), GetHeight());
     numMips = 1 + static_cast<uint32_t>(std::floor(std::log2(numMips)));
     if (numMips <= GetNumMips())
         return;
-    RHIResourceFormat format = GetFormat();
     RHITextureDimension dimension = GetDimension();
     uint32_t width = GetWidth(), height = GetHeight(), depth = GetDepth(), layerCount = GetNumLayers();
     ddsCreateHeader(header, width, height, numMips, depth);
     ddsSetFormat(header, header10, layerCount, format, dimension);
     bytes.resize(GetSize());
-    // Gamma correct. Mip generation should only be done in linear space.
     auto SrgbToLinear = [&](bool inverse = false /* linear to gamma */)
     {
         for (size_t i = 0; i < bytes.size(); i += 4)
@@ -319,46 +359,70 @@ void FTexture::GenerateMips()
             bytes[i + 3] = static_cast<unsigned char>(std::clamp(a * 255.0f, 0.0f, 255.0f));
         }
     };
-    if (GetFormat() == RHIResourceFormat::R8G8B8A8Srgb)
+    if (format == RHIResourceFormat::R8G8B8A8Srgb)
         SrgbToLinear(false);
     for (uint32_t layer = 0; layer < GetNumLayers(); ++layer)
     {
         for (uint32_t mip = 1; mip < GetNumMips(); ++mip)
         {
-            Span<const unsigned char> srcData = GetSubresource(mip - 1, layer);
-            Span<unsigned char> dstData = GetSubresource(mip, layer);
             uint32_t srcWidth = std::max(1u, GetWidth() >> (mip - 1)),
                      srcHeight = std::max(1u, GetHeight() >> (mip - 1));
             const uint32_t mipWidth = std::max(1u, GetWidth() >> mip), mipHeight = std::max(1u, GetHeight() >> mip);
-            for (uint32_t y = 0; y < mipHeight; ++y)
-                for (uint32_t x = 0; x < mipWidth; ++x)
-                {
-                    uint32_t r = 0, g = 0, b = 0, a = 0;
-                    uint32_t samples = 0;
-                    for (uint32_t oy = 0; oy < 2; ++oy)
-                        for (uint32_t ox = 0; ox < 2; ++ox)
-                        {
-                            uint32_t sx = x * 2 + ox;
-                            uint32_t sy = y * 2 + oy;
-                            if (sx < srcWidth && sy < srcHeight)
+            if (isRGBA32F)
+            {
+                Span<unsigned char> srcRaw = GetSubresource(mip - 1, layer);
+                Span<unsigned char> dstRaw = GetSubresource(mip, layer);
+                const float4* src = reinterpret_cast<const float4*>(srcRaw.data());
+                float4* dst = reinterpret_cast<float4*>(dstRaw.data());
+                for (uint32_t y = 0; y < mipHeight; ++y)
+                    for (uint32_t x = 0; x < mipWidth; ++x)
+                    {
+                        float4 acc(0.0f);
+                        uint32_t samples = 0;
+                        for (uint32_t oy = 0; oy < 2; ++oy)
+                            for (uint32_t ox = 0; ox < 2; ++ox)
                             {
-                                uint32_t srcIndex = (sy * srcWidth + sx) * 4;
-                                r += srcData[srcIndex + 0];
-                                g += srcData[srcIndex + 1];
-                                b += srcData[srcIndex + 2];
-                                a += srcData[srcIndex + 3];
-                                samples++;
+                                uint32_t sx = x * 2 + ox, sy = y * 2 + oy;
+                                if (sx < srcWidth && sy < srcHeight)
+                                    acc += src[sy * srcWidth + sx], ++samples;
                             }
-                        }
-                    uint32_t dstIndex = (y * mipWidth + x) * 4;
-                    dstData[dstIndex + 0] = static_cast<unsigned char>(r / samples);
-                    dstData[dstIndex + 1] = static_cast<unsigned char>(g / samples);
-                    dstData[dstIndex + 2] = static_cast<unsigned char>(b / samples);
-                    dstData[dstIndex + 3] = static_cast<unsigned char>(a / samples);
-                }
+                        dst[y * mipWidth + x] = acc / static_cast<float>(samples);
+                    }
+            }
+            else
+            {
+                Span<const unsigned char> srcData = GetSubresource(mip - 1, layer);
+                Span<unsigned char> dstData = GetSubresource(mip, layer);
+                for (uint32_t y = 0; y < mipHeight; ++y)
+                    for (uint32_t x = 0; x < mipWidth; ++x)
+                    {
+                        uint32_t r = 0, g = 0, b = 0, a = 0;
+                        uint32_t samples = 0;
+                        for (uint32_t oy = 0; oy < 2; ++oy)
+                            for (uint32_t ox = 0; ox < 2; ++ox)
+                            {
+                                uint32_t sx = x * 2 + ox;
+                                uint32_t sy = y * 2 + oy;
+                                if (sx < srcWidth && sy < srcHeight)
+                                {
+                                    uint32_t srcIndex = (sy * srcWidth + sx) * 4;
+                                    r += srcData[srcIndex + 0];
+                                    g += srcData[srcIndex + 1];
+                                    b += srcData[srcIndex + 2];
+                                    a += srcData[srcIndex + 3];
+                                    samples++;
+                                }
+                            }
+                        uint32_t dstIndex = (y * mipWidth + x) * 4;
+                        dstData[dstIndex + 0] = static_cast<unsigned char>(r / samples);
+                        dstData[dstIndex + 1] = static_cast<unsigned char>(g / samples);
+                        dstData[dstIndex + 2] = static_cast<unsigned char>(b / samples);
+                        dstData[dstIndex + 3] = static_cast<unsigned char>(a / samples);
+                    }
+            }
         }
     }
-    if (GetFormat() == RHIResourceFormat::R8G8B8A8Srgb)
+    if (format == RHIResourceFormat::R8G8B8A8Srgb)
         SrgbToLinear(true);
 }
 void LoadDDS(FTexture& texture, StringView path)

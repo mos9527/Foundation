@@ -32,6 +32,34 @@ bool shadow(float3 p, float3 l, float tMax = INF)
     return hit;
 }
 
+float EnvLightAzimuth()
+{
+    for (uint li = 0; li < globalParams.numSceneLights; li++) {
+        GSLight gl = lights[globalParams.firstLight + li];
+        if (GSLightType(gl) == 5u)
+            return gl.params.x / 180.0f * Pi;
+    }
+    return 0.0f;
+}
+
+float3 EnvLightTint()
+{
+    for (uint li = 0; li < globalParams.numSceneLights; li++) {
+        GSLight gl = lights[globalParams.firstLight + li];
+        if (GSLightType(gl) == 5u)
+            return gl.color * gl.power;
+    }
+    return float3(1.0f);
+}
+
+float ReflectionMipFromRoughness(float roughness, uint32_t numMips)
+{
+    const float kRoughestMip = 1.0f;
+    const float kScale = 1.2f;
+    float levelFrom1x1 = kRoughestMip - kScale * log2(max(roughness, 0.001f));
+    return float(numMips - 1u) - levelFrom1x1;
+}
+
 [shader("compute")]
 [numthreads(16, 16, 1)]
 void main(uint2 tid: SV_DispatchThreadID) {
@@ -45,10 +73,18 @@ void main(uint2 tid: SV_DispatchThreadID) {
 
     float ndcDepth = depth.Load(uint3(tid,0));
     if (ndcDepth <= EPS) {
-        // Infinite depth
         diffuseOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
-        // Enviornment
         float3 envLight = lights[globalParams.firstLight].color * lights[globalParams.firstLight].power;
+        if (globalParams.hasEnvMap != 0u) {
+            float2 uvNdc = (tid.xy + 0.5f) / float2(globalParams.fbWidth, globalParams.fbHeight);
+            float4 ndcFar = float4(uvNdc.x * 2.0f - 1.0f, 1.0f - uvNdc.y * 2.0f, 1.0f, 1.0f);
+            float4 wsFar = mul(globalParams.inverseViewProj, ndcFar);
+            float3 dir = normalize(wsFar.xyz / wsFar.w - globalParams.camPosition.xyz);
+            float azimuth = EnvLightAzimuth();
+            float3 Le = textures[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
+                           .SampleLevel(lutSampler, EnvMapDirToUV(dir, azimuth), 0).xyz;
+            envLight = Le * EnvLightTint();
+        }
         specularOutput[tid] = float4(envLight, 1.0f);
         return;
     }
@@ -112,10 +148,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
             uint32_t lightType = GSLightType(gl);
             float3 lightColor = gl.color * gl.power;
             if (!any(lightColor > 0.0f)) continue;
-            if (lightType == 5) { // Environment: raster uses the synthetic env light as simple ambient.
-                Ld += baseColor * lightColor;
+            if (lightType == 5) // Environment: handled as IBL below.
                 continue;
-            }
 
             float3 l;
             float atten = 1.0f;
@@ -157,6 +191,22 @@ void main(uint2 tid: SV_DispatchThreadID) {
             float3 lightContrib = AbsCosTheta(wi) * vis * lightColor * atten;
             Ld += fd * lightContrib;
             Ls += fs * lightContrib;
+        }
+
+        if (globalParams.hasEnvMap != 0u) {
+            float3 diffuseAlbedo = baseColor * (1.0f - metallic);
+            Ld += diffuseAlbedo * SHIrradiance(globalParams.envSHCoeffs, normalWS);
+
+            float NoV = clamp(dot(normalWS, v), 0.0f, 1.0f);
+            float3 R = 2.0f * NoV * normalWS - v;
+            float mip = ReflectionMipFromRoughness(roughness, globalParams.envMapPrefilteredMips);
+            float azimuth = EnvLightAzimuth();
+            float3 prefiltered = textures[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
+                                     .SampleLevel(lutSampler, EnvMapDirToUV(R, azimuth), mip).xyz;
+            float3 F0 = lerp(float3(F0FromIor(1.5f)), baseColor, metallic);
+            float2 lutE = SampleGGXLutE(globalParams.ggxLutEIndex, NoV, roughness);
+            float3 F = F0 * lutE.x + (1.0f - F0) * lutE.y;
+            Ls += prefiltered * F;
         }
 
         Ld += emissive;

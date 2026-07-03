@@ -812,6 +812,11 @@ void GPUScene::BuildUBO(RendererUBO& globals) const
     globals.envMapTextureIndex = GetEnvMapIndexOrDefault();
     globals.envMapMarginalCDFIndex = GetEnvMapMarginalCDFIndexOrDefault();
     globals.envMapConditionalCDFIndex = GetEnvMapConditionalCDFIndexOrDefault();
+    globals.envMapPrefilteredMips = HasEnvMap() ? mEnvMapPrefilteredMips : 0u;
+    globals.hasEnvMap = HasEnvMap() ? 1u : 0u;
+    Span<const float3> sh = GetEnvSHCoeffs();
+    for (size_t i = 0; i < sh.size(); ++i)
+        globals.envSHCoeffs[i] = sh[i];
 }
 
 void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
@@ -2579,9 +2584,6 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
 
 GPUScene::Result GPUSceneImpl::UploadEnvMap(FTexture const& source)
 {
-    if (Result r = Upload(source, owner.mEnvMapIndex, "Environment Map", true); r != Result::Ready)
-        return r;
-    // Compute CDFs for importance sampling
     uint32_t width = source.GetWidth();
     uint32_t height = source.GetHeight();
     Span<const unsigned char> data = source.GetSubresource(0, 0);
@@ -2596,42 +2598,54 @@ GPUScene::Result GPUSceneImpl::UploadEnvMap(FTexture const& source)
         {
             float4 pixel = pixels[y * width + x];
             float luminance = max(pixel.x, max(pixel.y, pixel.z));
-            // dw = dPhi dTheta sinTheta, account for solid angle (area)
             f[y * width + x] = luminance * sinTheta;
         }
     }
 
     PiecewiseConstant2D cdf(f, width, height, mAllocator);
 
-    // Upload Marginal CDF as Texture2D
-    FTexture marginalTex(mAllocator);
-    marginalTex.Initialize(RHIResourceFormat::R32SignedFloat, RHITextureDimension::E2D, cdf.mMarginal->mCDF.size(), 1);
-    const size_t marginalSize = cdf.mMarginal->mCDF.size() * sizeof(float);
-    marginalTex.bytes.resize(marginalSize);
-    std::memcpy(marginalTex.bytes.data(), cdf.mMarginal->mCDF.data(), marginalSize);
-    if (Result r = Upload(marginalTex, owner.mEnvMapMarginalCDFIndex, "Environment Map Marginal CDF", true);
+    auto UploadR32Texture = [this](Span<const float> values, uint32_t texWidth, uint32_t texHeight,
+                                   TextureHandle& outTexture, const char* debugName) -> Result
+    {
+        FTexture texture(mAllocator);
+        texture.Initialize(RHIResourceFormat::R32SignedFloat, RHITextureDimension::E2D, texWidth, texHeight);
+        texture.bytes.resize(values.size_bytes());
+        std::memcpy(texture.bytes.data(), values.data(), values.size_bytes());
+        return Upload(texture, outTexture, debugName, true);
+    };
+
+    uint32_t marginalWidth = static_cast<uint32_t>(cdf.mMarginal->mCDF.size());
+    if (Result r = UploadR32Texture(cdf.mMarginal->mCDF, marginalWidth, 1u, owner.mEnvMapMarginalCDFIndex,
+                                    "Environment Map Marginal CDF");
         r != Result::Ready)
         return r;
 
-    // Upload Conditional CDF as Texture2D
-    FTexture conditionalTex(mAllocator);
-    conditionalTex.Initialize(RHIResourceFormat::R32SignedFloat, RHITextureDimension::E2D,
-                              cdf.mConditional[0]->mCDF.size(), height);
-
-    size_t conditionalSize = height * cdf.mConditional[0]->mCDF.size() * sizeof(float);
-    conditionalTex.bytes.resize(conditionalSize);
+    uint32_t conditionalWidth = static_cast<uint32_t>(cdf.mConditional[0]->mCDF.size());
+    Vector<float> conditionalCDF(static_cast<size_t>(height) * conditionalWidth, mAllocator);
 
     for (uint32_t y = 0; y < height; ++y)
     {
-        std::memcpy(conditionalTex.bytes.data() + y * cdf.mConditional[0]->mCDF.size() * sizeof(float),
-                    cdf.mConditional[y]->mCDF.data(), cdf.mConditional[y]->mCDF.size() * sizeof(float));
+        std::memcpy(conditionalCDF.data() + static_cast<size_t>(y) * conditionalWidth, cdf.mConditional[y]->mCDF.data(),
+                    cdf.mConditional[y]->mCDF.size() * sizeof(float));
     }
 
-    if (Result r = Upload(conditionalTex, owner.mEnvMapConditionalCDFIndex, "Environment Map Conditional CDF", true);
+    if (Result r = UploadR32Texture(conditionalCDF, conditionalWidth, height, owner.mEnvMapConditionalCDFIndex,
+                                    "Environment Map Conditional CDF");
         r != Result::Ready)
         return r;
 
-    LOG(GPUScene, LogInfo, "Environment map uploaded: {}x{}", source.GetWidth(), source.GetHeight());
+    float3 shCoeffs[9];
+    PrefilterEnvmapSH9(source, shCoeffs);
+    for (int i = 0; i < 9; ++i)
+        owner.mEnvSHCoeffs[static_cast<size_t>(i)] = shCoeffs[i];
+
+    FTexture prefiltered = PrefilterEnvmapSpecular(source, mAllocator);
+    owner.mEnvMapPrefilteredMips = prefiltered.GetNumMips();
+    if (Result r = Upload(prefiltered, owner.mEnvMapIndex, "Environment Map", true); r != Result::Ready)
+        return r;
+
+    LOG(GPUScene, LogInfo, "Environment map uploaded: {}x{} ({} prefilter mips)", source.GetWidth(),
+        source.GetHeight(), owner.mEnvMapPrefilteredMips);
     return Result::Ready;
 }
 
@@ -2708,6 +2722,9 @@ void GPUSceneImpl::Reset()
     if (mDynamicPrimitiveAlloc)
         mDynamicPrimitiveAlloc->Clear();
     mDynamicGeometrySlots.clear();
+    owner.mEnvMapPrefilteredMips = 0u;
+    for (auto& c : owner.mEnvSHCoeffs)
+        c = float3(0.0f);
 }
 
 GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle)

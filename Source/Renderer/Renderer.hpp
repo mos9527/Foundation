@@ -45,6 +45,9 @@ struct RendererUBO
     uint32_t envMapTextureIndex{UINT32_MAX};
     uint32_t envMapMarginalCDFIndex{UINT32_MAX};
     uint32_t envMapConditionalCDFIndex{UINT32_MAX};
+    uint32_t envMapPrefilteredMips{0u};
+    uint32_t hasEnvMap{0u};
+    float3 envSHCoeffs[9]{};
     uint32_t matcapTextureIndex{UINT32_MAX};
     // Scene lights
     uint32_t firstLight{0u};

@@ -183,17 +183,9 @@ public struct InfiniteLight : ILight {
         this.envMapConditionalCDFIndex = envMapConditionalCDFIndex;
     }
 
-    // Direction → equirectangular UV (azimuth-elevation mapping)
-    // φ = atan2(d.z, d.x) ∈ [-π,π],  θ = acos(d.y) ∈ [0,π]
-    float2 EnvMapDirToUV(float3 d) {
-        // w. offset, -azimuth to go back to local texture space
-        float phi   = atan2(d.z, d.x) - azimuthOffset;
-        float theta = acos(clamp(d.y, -1, 1));
-        return float2(frac(0.5f + phi * (0.5f * InvPi)), theta * InvPi);
-    }
-
     float3 SampleEnvMapTexture(float3 dir) {
-        return textures[NonUniformResourceIndex(envMapTextureIndex)].SampleLevel(envMapSampler, EnvMapDirToUV(dir), 0).xyz;
+        return textures[NonUniformResourceIndex(envMapTextureIndex)]
+            .SampleLevel(envMapSampler, EnvMapDirToUV(dir, azimuthOffset), 0).xyz;
     }
 
     public LightType Type() {
@@ -224,16 +216,9 @@ public struct InfiniteLight : ILight {
         uint2 offset;
         float2 uv = Sample2D(envMapMarginalCDFIndex, height, envMapConditionalCDFIndex, width, u, pdf, offset);
 
-        float phi = (uv.x - 0.5f) * 2.0f * Pi; // radians
+        float3 wi = EnvMapUVToDir(uv, azimuthOffset);
         float theta = uv.y * Pi;
-        // local sample, bring to world
-        phi += azimuthOffset;
         float sinTheta = sin(theta);
-        float cosTheta = cos(theta);
-        float sinPhi = sin(phi);
-        float cosPhi = cos(phi);
-            
-        float3 wi = float3(sinTheta * cosPhi, cosTheta, sinTheta * sinPhi);
 
         /**
         Jacobian change of var:
@@ -263,7 +248,7 @@ public struct InfiniteLight : ILight {
 
         uint width, height;
         textures[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
-        float2 uv = EnvMapDirToUV(w);
+        float2 uv = EnvMapDirToUV(w, azimuthOffset);
         float pdf = PDF2D(envMapMarginalCDFIndex, height, envMapConditionalCDFIndex, width, uv);
             
         float theta = uv.y * Pi;

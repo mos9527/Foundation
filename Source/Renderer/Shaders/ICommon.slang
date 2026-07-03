@@ -253,6 +253,9 @@ public struct UBO
     public uint32_t envMapTextureIndex;
     public uint32_t envMapMarginalCDFIndex;
     public uint32_t envMapConditionalCDFIndex;
+    public uint32_t envMapPrefilteredMips;
+    public uint32_t hasEnvMap;
+    public float3 envSHCoeffs[9];
     public uint32_t matcapTextureIndex;
     // Scene lights
     public uint32_t firstLight;

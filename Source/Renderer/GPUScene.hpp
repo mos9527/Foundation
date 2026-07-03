@@ -542,6 +542,8 @@ public:
         return mEnvMapConditionalCDFIndex.IsValid() ? mEnvMapConditionalCDFIndex.index
                                                     : mFoundationDefaultTexture2DFloatIndex.index;
     }
+    [[nodiscard]] uint32_t GetEnvMapPrefilteredMips() const { return mEnvMapPrefilteredMips; }
+    [[nodiscard]] Span<const float3> GetEnvSHCoeffs() const { return {mEnvSHCoeffs.data(), mEnvSHCoeffs.size()}; }
     /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const
     {
@@ -583,6 +585,8 @@ private:
     TextureHandle mEnvMapIndex;
     TextureHandle mEnvMapMarginalCDFIndex;
     TextureHandle mEnvMapConditionalCDFIndex;
+    uint32_t mEnvMapPrefilteredMips{0u};
+    Array<float3, 9> mEnvSHCoeffs{};
 
     UniquePtr<GPUSceneImpl> mImpl;
 };

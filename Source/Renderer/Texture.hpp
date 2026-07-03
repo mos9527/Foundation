@@ -87,7 +87,7 @@ struct FTexture : FTextureHeader
     [[nodiscard]] Span<unsigned char> GetSubresource(uint32_t mipLevel = 0, uint32_t arrayLayer = 0) const;
 
     /**
-     * Generates full mipmap chain for an uncompressed R8G8B8A8 texture
+     * Generates full mipmap chain for uncompressed RGBA8 or RGBA32F textures.
      */
     void GenerateMips();
     /**
@@ -145,6 +145,12 @@ void SaveHDR(const float* data, int width, int height, StringView path);
  * @param path Output file path.
  */
 void SavePNG(const unsigned char* data, int width, int height, StringView path);
+
+float4 SampleF32Bilinear(Span<const float4> mip, uint32_t mipW, uint32_t mipH, float u, float v);
+float4 SampleF32Trilinear(const float4* const* mips, const uint32_t* mipW, const uint32_t* mipH, uint32_t mipCount,
+                          float u, float v, float mip);
+float2 EquirectDirectionToUV(float3 dir);
+float3 EquirectUVToDirection(float2 uv);
 /* -- Serialization -- */
 template <>
 inline void FSerialize(FWriter& w, FSerializedTexture const& obj)

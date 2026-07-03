@@ -402,3 +402,40 @@ public float3 OffsetRay(float3 worldPosition, float3 offsetDirection)
         abs(worldPosition.y) < origin ? worldPosition.y + floatScale * offsetDirection.y : offsetPosition.y,
         abs(worldPosition.z) < origin ? worldPosition.z + floatScale * offsetDirection.z : offsetPosition.z);
 }
+public float2 EnvMapDirToUV(float3 d, float azimuthOffset)
+{
+    float phi = atan2(d.z, d.x) - azimuthOffset;
+    float theta = acos(clamp(d.y, -1.0f, 1.0f));
+    return float2(frac(0.5f + phi * (0.5f * InvPi)), theta * InvPi);
+}
+public float3 EnvMapUVToDir(float2 uv, float azimuthOffset)
+{
+    float phi = (uv.x - 0.5f) * 2.0f * Pi + azimuthOffset;
+    float theta = uv.y * Pi;
+    float sinTheta = sin(theta);
+    return float3(sinTheta * cos(phi), cos(theta), sinTheta * sin(phi));
+}
+// SH9 coefficients are cosine-convolved and 1/pi-scaled on CPU.
+public void SHEvalBasis9(float3 d, out float y[9])
+{
+    float x = d.x, y_ = d.y, z = d.z;
+    float x2 = x * x, y2 = y_ * y_, z2 = z * z;
+    y[0] = 0.2820947917738781f;
+    y[1] = 0.4886025119029199f * y_;
+    y[2] = 0.4886025119029199f * z;
+    y[3] = 0.4886025119029199f * x;
+    y[4] = 1.0925484305920790f * x * y_;
+    y[5] = 1.0925484305920790f * y_ * z;
+    y[6] = 0.3153915652525200f * (3.0f * z2 - 1.0f);
+    y[7] = 1.0925484305920790f * x * z;
+    y[8] = 0.5462742152960395f * (x2 - y2);
+}
+public float3 SHIrradiance(float3 coeffs[9], float3 n)
+{
+    float y[9];
+    SHEvalBasis9(n, y);
+    float3 r = float3(0.0f);
+    for (int i = 0; i < 9; ++i)
+        r += coeffs[i] * y[i];
+    return max(r, float3(0.0f));
+}
