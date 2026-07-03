@@ -147,6 +147,7 @@ class GPUScene;
 struct RendererOutputs
 {
     RHIExtent2D extent{0u, 0u};
+    RHIResourceFormat aovFormat{RHIResourceFormat::R16G16B16A16SignedFloat};
     // Unified pre-postprocess outputs.
     ResourceHandle diffuse{kInvalidHandle};
     ResourceHandle specular{kInvalidHandle};

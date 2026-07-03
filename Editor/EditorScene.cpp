@@ -13,6 +13,7 @@
 #include "Renderer/GPUScene.hpp"
 #include "Renderer/Postprocess.hpp"
 #include <Math/Decompose.hpp>
+#include <Math/Quantize.hpp>
 #include <imgui.h>
 #include <tracy/Tracy.hpp>
 #include <cmath>
@@ -298,12 +299,19 @@ static Vector<float> CombineRenderTextures(Span<const FTexture> textures, uint32
                                          Allocator* alloc = GLOBAL_ALLOC)
 {
     CHECK(alloc != nullptr);
-    CHECK_MSG(!textures.empty(), "Invalid render texture count");    
+    CHECK_MSG(!textures.empty(), "Invalid render texture count");
+    auto const format = textures[0].GetFormat();
+    CHECK_MSG(format == RHIResourceFormat::R32G32B32A32SignedFloat ||
+                  format == RHIResourceFormat::R16G16B16A16SignedFloat,
+              "Invalid render texture format for readback combine (got {}). RGBA16F or RGBA32F is expected.",
+              format);
     for (FTexture const& texture : textures)
     {
         uint32_t width = texture.GetWidth();
         uint32_t height = texture.GetHeight();
-        CHECK_MSG(texture.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat, "Invalid render texture format for readback combine (got {}). RGBA32F is expected.", texture.GetFormat());
+        CHECK_MSG(texture.GetFormat() == format,
+                  "Mismatched render readback texture format (got {}, expected {})",
+                  texture.GetFormat(), format);
         CHECK_MSG(width == outWidth && height == outHeight, "Mismatched render readback texture extents (got {}x{}, expected {}x{})", width, height, outWidth, outHeight);
     }
     size_t const pixelCount = static_cast<size_t>(outWidth) * outHeight;
@@ -311,9 +319,18 @@ static Vector<float> CombineRenderTextures(Span<const FTexture> textures, uint32
     Vector<float> combined(componentCount, alloc);
     for (FTexture const& texture : textures)
     {
-        auto const* rgba = reinterpret_cast<const float*>(texture.bytes.data());
-        for (size_t i = 0; i < componentCount; ++i)
-            combined[i] += rgba[i];
+        if (format == RHIResourceFormat::R32G32B32A32SignedFloat)
+        {
+            auto const* rgba = reinterpret_cast<const float*>(texture.bytes.data());
+            for (size_t i = 0; i < componentCount; ++i)
+                combined[i] += rgba[i];
+        }
+        else
+        {
+            auto const* rgba16 = reinterpret_cast<const uint16_t*>(texture.bytes.data());
+            for (size_t i = 0; i < componentCount; ++i)
+                combined[i] += Math::dequantizeFP16(rgba16[i]);
+        }
     }
     for (size_t i = 0; i < pixelCount; ++i)
         combined[i * 4 + 3] = 1.0f;

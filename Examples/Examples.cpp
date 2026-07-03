@@ -947,14 +947,14 @@ ResourceHandle Examples_InsertBasicTonemapPasses(Renderer* renderer, RendererOut
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve(shader));
             r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                              RHITextureViewDesc{.format = outputs.aovFormat,
                                                  .range = RHITextureSubresourceRange::Create()});
             if (isPathTracer)
             {
                 const ResourceHandle specular =
                     outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
                 r->BindTextureSRV(self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                  RHITextureViewDesc{.format = outputs.aovFormat,
                                                      .range = RHITextureSubresourceRange::Create()});
             }
         },

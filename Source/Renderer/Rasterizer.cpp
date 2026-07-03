@@ -560,14 +560,14 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                       RHITextureUsageBits::SampledImage |
                                       RHITextureUsageBits::TransferSource,
                            .extent = {w, h, 1},
-                           .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+                           .format = RHIResourceFormat::R16G16B16A16SignedFloat});
         auto SpecularBuffer = renderer->CreateResource(
             "Specular",
             RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
                                       RHITextureUsageBits::SampledImage |
                                       RHITextureUsageBits::TransferSource,
                            .extent = {w, h, 1},
-                           .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+                           .format = RHIResourceFormat::R16G16B16A16SignedFloat});
         auto LUTSampler = renderer->CreateSampler({
             .addressMode = {
                 .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -601,10 +601,10 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
                 r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
                 r->BindTextureUAV(self, DiffuseBuffer, "diffuseOutput", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create()});
                 r->BindTextureUAV(self, SpecularBuffer, "specularOutput", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create()});
 
             },

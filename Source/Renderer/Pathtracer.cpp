@@ -54,19 +54,20 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
     auto TexSampler = renderer->CreateSampler(MakeTextureSamplerDesc(cfg));
     uint32_t w = std::max(renderExtent.x, 1u);
     uint32_t h = std::max(renderExtent.y, 1u);
+    constexpr RHIResourceFormat kPathTracerAOVFormat = RHIResourceFormat::R32G32B32A32SignedFloat;
     // AOV buffers
     auto Diffuse = renderer->CreateResource("Diffuse",
                                             RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
                                                                RHITextureUsageBits::SampledImage |
                                                                RHITextureUsageBits::TransferSource,
                                                            .extent = {w, h, 1},
-                                                           .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+                                                           .format = kPathTracerAOVFormat});
     auto Specular = renderer->CreateResource("Specular",
                                              RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
                                                                 RHITextureUsageBits::SampledImage |
                                                                 RHITextureUsageBits::TransferSource,
                                                             .extent = {w, h, 1},
-                                                            .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+                                                            .format = kPathTracerAOVFormat});
     auto Depth = renderer->CreateResource("Depth",
                                           RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
                                                              RHITextureUsageBits::SampledImage |
@@ -84,7 +85,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
                                                                     RHITextureUsageBits::SampledImage |
                                                                     RHITextureUsageBits::TransferSource,
                                                                .extent = {w, h, 1},
-                                                               .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+                                                               .format = kPathTracerAOVFormat});
     ResourceHandle EnvMapSampler = renderer->CreateSampler({
         .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear, RHIDeviceSampler::SamplerDesc::Filter::Linear},
     });
@@ -132,10 +133,10 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
         r->BindTextureSampler(self, LUTSampler, "lutSampler");
         // Accumulation UAVs
         r->BindTextureUAV(self, Diffuse, "diffuse", pipelineStage,
-                          RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                          RHITextureViewDesc{.format = kPathTracerAOVFormat,
                                              .range = RHITextureSubresourceRange::Create()});
         r->BindTextureUAV(self, Specular, "specular", pipelineStage,
-                          RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                          RHITextureViewDesc{.format = kPathTracerAOVFormat,
                                              .range = RHITextureSubresourceRange::Create()});
         r->BindTextureUAV(self, Depth, "depth", pipelineStage,
                           RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
@@ -144,7 +145,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
                           RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                              .range = RHITextureSubresourceRange::Create()});
         r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", pipelineStage,
-                          RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                          RHITextureViewDesc{.format = kPathTracerAOVFormat,
                                              .range = RHITextureSubresourceRange::Create()});
         r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
         r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
@@ -174,7 +175,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
             r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", PathsResolve("Data/Shaders/ECSAdaptiveFilter.spv"),
                           AsBytes(AsSpan(0u))); // Pass 0
             r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                              RHITextureViewDesc{.format = kPathTracerAOVFormat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
         },
@@ -196,7 +197,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
             r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", PathsResolve("Data/Shaders/ECSAdaptiveFilter.spv"),
                           AsBytes(AsSpan(1u))); // Pass 1
             r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                              RHITextureViewDesc{.format = kPathTracerAOVFormat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
         },
@@ -210,6 +211,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
         });
 
     out.extent = {w, h};
+    out.aovFormat = kPathTracerAOVFormat;
     out.diffuse = Diffuse;
     out.specular = Specular;
     out.depth = Depth;

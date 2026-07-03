@@ -214,11 +214,11 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
                               PathsResolve("Data/Shaders/EPSPostprocessPT.spv"));
                 r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                  RHITextureViewDesc{.format = outputs.aovFormat,
                                                      .range = RHITextureSubresourceRange::Create()});
                 ResourceHandle specular = outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
                 r->BindTextureSRV(self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                  RHITextureViewDesc{.format = outputs.aovFormat,
                                                      .range = RHITextureSubresourceRange::Create()});
                 r->BindBufferUniform(self, PostprocessGlobals, RHIPipelineStageBits::FragmentShader, "globalParams");
                 r->BindDescriptorSet(self, "textures3D", context->gpuScene->GetTexture3DPool()->GetDescriptorSetLayout());
@@ -261,11 +261,11 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                 CHECK_MSG(outputs.diffuse != kInvalidHandle, "Raster postprocess missing diffuse output");
                 ResourceHandle specular = outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
                 r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                  RHITextureViewDesc{.format = outputs.aovFormat,
                                                      .range = RHITextureSubresourceRange::Create(
                                                          RHITextureAspectFlagBits::Color, 0, 1)});
                 r->BindTextureSRV(self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                  RHITextureViewDesc{.format = outputs.aovFormat,
                                                      .range = RHITextureSubresourceRange::Create(
                                                          RHITextureAspectFlagBits::Color, 0, 1)});
                 r->BindBufferUniform(self, PostprocessGlobals, RHIPipelineStageBits::FragmentShader, "globalParams");
