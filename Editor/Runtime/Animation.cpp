@@ -28,6 +28,37 @@ void ApplyAnimatedNode(FAnimationRuntime const& runtime, int32_t node, FTransfor
     decompose(nodePose.globals[node], dst.scale, dst.rotation, dst.transform);
 }
 
+// Maps the master clock to a strip's clip-local time (timescale, clip window, optional cyclic restart).
+float StripClipLocalTime(FNlaStrip const& strip, float time)
+{
+    float const span = std::max(strip.clipEnd - strip.clipStart, 0.0f);
+    float const u = (time - strip.stripStart) * strip.timeScale;
+    return strip.cyclic && span > 0.0f ? strip.clipStart + std::fmod(u, span)
+                                       : std::clamp(strip.clipStart + u, strip.clipStart, strip.clipEnd);
+}
+
+// Invokes fn(setIndex, clipLocalTime, influence) for every active NLA strip (non-mute track, within
+// its time window, influence > 0) at runtime.time, walking tracks low->high. Shared by the pose and
+// morph passes so both blend strips identically.
+template <class Fn>
+void ForEachActiveStrip(FImportedScene const& scene, FAnimationRuntime const& runtime, Fn&& fn)
+{
+    for (FNlaTrack const& track : scene.mTables.nlaTracks)
+    {
+        if (track.mute)
+            continue;
+        for (FNlaStrip const& strip : track.strips)
+        {
+            if (strip.influence <= 0.0f || runtime.time < strip.stripStart || runtime.time > strip.stripEnd)
+                continue;
+            auto it = runtime.setByName.find(strip.source);
+            if (it == runtime.setByName.end())
+                continue;
+            fn(it->second, StripClipLocalTime(strip, runtime.time), strip.influence);
+        }
+    }
+}
+
 // CPU deformation for one dynamic mesh: morph (POSITION deltas) then skin, written into the
 // mesh's dynamic ring slot. Uses the calling worker's scratch lane; each mesh's ring region +
 // output is disjoint, so this is race-free across workers.
@@ -42,22 +73,40 @@ void DeformMesh(FAnimationRuntime& runtime, FImportedScene* scene, GPUScene* gpu
     const FVertex* base = rt.bind.data();
 
     // Morph: base' = base + Σ weightₜ · deltaₜ (POSITION only), then rebuild normals from the
-    // morphed surface (skinning, applied next, rotates those fresh normals correctly).
-    if (rt.morphTrack >= 0 && rt.morphTargetCount > 0 &&
-        static_cast<size_t>(rt.morphTrack) < scene->mTables.morphTracks.size())
+    // morphed surface (skinning, applied next, rotates those fresh normals correctly). Weights are
+    // resolved through the NLA exactly like the skeletal pose: reset to rest (all-zero weights), then
+    // blend each active strip's morph channels for this mesh by influence.
+    if (rt.morphTargetCount > 0 && !rt.morphDeltas.empty())
     {
-        FMorphTrack const& track = scene->mTables.morphTracks[rt.morphTrack];
-        Vector<float>& weights = runtime.morphWeights[worker];
+        uint32_t const tc = rt.morphTargetCount;
+        Vector<float>& acc = runtime.morphAccum[worker];
+        Vector<float>& smp = runtime.morphWeights[worker];
+        std::fill_n(acc.begin(), tc, 0.0f);
+        ForEachActiveStrip(*scene, runtime, [&](uint32_t setIdx, float cl, float influence)
+        {
+            FAnimationSet const& set = runtime.animations[setIdx];
+            for (uint32_t clipIdx : set.clips)
+            {
+                FAnimationClip const& clip = scene->mTables.clips[clipIdx];
+                for (FMorphChannel const& mc : clip.morphChannels)
+                {
+                    if (mc.mesh != rt.meshId || mc.targetCount == 0)
+                        continue;
+                    uint32_t const w = std::min(mc.targetCount, tc);
+                    SampleTrack(Span<const float>(mc.times.data(), mc.times.size()),
+                                Span<const float>(mc.values.data(), mc.values.size()), mc.targetCount, mc.interp, cl,
+                                Span<float>(smp.data(), mc.targetCount));
+                    for (uint32_t i = 0; i < w; ++i)
+                        acc[i] += (smp[i] - acc[i]) * influence;
+                }
+            }
+        });
         Vector<FVertex>& morphed = runtime.morphs[worker];
-        float t = track.duration > 0.0f ? std::fmod(runtime.time, track.duration) : 0.0f;
-        SampleTrack(Span<const float>(track.times.data(), track.times.size()),
-                    Span<const float>(track.values.data(), track.values.size()), rt.morphTargetCount,
-                    track.interp, t, Span<float>(weights.data(), rt.morphTargetCount));
         for (size_t v = 0; v < n; ++v)
         {
             FVertex mv = rt.bind[v];
-            for (uint32_t tt = 0; tt < rt.morphTargetCount; ++tt)
-                mv.position += weights[tt] * rt.morphDeltas[static_cast<size_t>(tt) * n + v];
+            for (uint32_t tt = 0; tt < tc; ++tt)
+                mv.position += acc[tt] * rt.morphDeltas[static_cast<size_t>(tt) * n + v];
             morphed[v] = mv;
         }
         RecomputeNormals(Span<FVertex>(morphed.data(), n),
@@ -100,9 +149,8 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
         maxJoints = std::max(maxJoints, skel.Count());
     poses.resize(skeletons.size());
 
-    // Joint-local indices stay indices; resolve skeleton/morph-track ids via scene index.
+    // Joint-local indices stay indices; resolve skeleton ids via scene index.
     auto skeletonIndex = [&](FUUID id) { return scene.SkeletonIndex(id); };
-    auto morphTrackIndex = [&](FUUID id) { return scene.MorphTrackIndex(id); };
 
     // Rigid node animation: mark nodes that are animated or descend from an animated node, so the
     // per-frame override only touches moving instances/lights (and a held pose lets PT converge).
@@ -144,14 +192,14 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
     {
         FSerializedMesh const& mesh = sceneMeshes[m];
         int32_t const skelIdx = skeletonIndex(mesh.skeleton);
-        int32_t const morphIdx = morphTrackIndex(mesh.morphTrack);
         bool const skinned = mesh.skinBinding.count != 0 && skelIdx >= 0;
-        bool const morphed = morphIdx >= 0 && mesh.morphTargetCount > 0;
+        bool const morphed = mesh.morphTargetCount > 0 && mesh.morphPositions.count > 0;
         if ((!skinned && !morphed) || m >= resources.meshGeometry.size())
             continue;
         FDynamicMeshRuntime rt(GLOBAL_ALLOC);
         rt.handle = resources.meshGeometry[m];
         rt.meshIndex = m;
+        rt.meshId = mesh.id;
         Vector<FQVertex> quantized = blobs.ReadArray<FQVertex>(mesh.vertices, GLOBAL_ALLOC);
         rt.bind.resize(quantized.size());
         for (size_t i = 0; i < quantized.size(); ++i)
@@ -163,7 +211,6 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
         }
         if (morphed)
         {
-            rt.morphTrack = morphIdx;
             rt.morphTargetCount = mesh.morphTargetCount;
             rt.morphDeltas = blobs.ReadArray<float3>(mesh.morphPositions, GLOBAL_ALLOC);
             // Topology is needed to recompute normals from the morphed positions each frame.
@@ -183,11 +230,13 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
     skins.resize(lanes, Vector<mat4>{GLOBAL_ALLOC});
     morphs.resize(lanes, Vector<FVertex>{GLOBAL_ALLOC});
     morphWeights.resize(lanes, Vector<float>{GLOBAL_ALLOC});
+    morphAccum.resize(lanes, Vector<float>{GLOBAL_ALLOC});
     for (size_t l = 0; l < lanes; ++l)
     {
         skins[l].assign(maxJoints, mat4(1.0f));
         morphs[l].resize(maxVerts);
         morphWeights[l].resize(maxTargets);
+        morphAccum[l].resize(maxTargets);
     }
 
     // Bucket clips by the skeleton they drive so the per-skeleton pose pass is independent, and
@@ -218,7 +267,7 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
         FAnimationSet& as = animations[set];
         as.clips.push_back(ci);
         as.duration = std::max(as.duration, clip.duration);
-        as.channelCount += static_cast<uint32_t>(clip.channels.size());
+        as.channelCount += static_cast<uint32_t>(clip.channels.size() + clip.morphChannels.size());
         if (sk >= 0 && sk == sceneNodeSkeleton)
             as.hasRigid = true;
         else if (sk >= 0)
@@ -232,12 +281,16 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
     {
         Vector<uint8_t> rigidNodes(GLOBAL_ALLOC);
         Vector<int32_t> skinSkels(GLOBAL_ALLOC);
+        Vector<FUUID> morphMeshes(GLOBAL_ALLOC); // meshes this set drives via morph channels
         bool setDrivesRigid = false;
         if (sceneNodeSkeleton >= 0)
             rigidNodes.assign(skeletons[static_cast<size_t>(sceneNodeSkeleton)].Count(), 0u);
         for (uint32_t ci : set.clips)
         {
             FAnimationClip const& clip = scene.mTables.clips[ci];
+            for (FMorphChannel const& mc : clip.morphChannels)
+                if (!mc.mesh.IsNil() && std::find(morphMeshes.begin(), morphMeshes.end(), mc.mesh) == morphMeshes.end())
+                    morphMeshes.push_back(mc.mesh);
             int32_t const sk = skeletonIndex(clip.skeleton);
             if (sk < 0)
                 continue;
@@ -277,6 +330,8 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
                     affected = msk >= 0 && std::find(skinSkels.begin(), skinSkels.end(), msk) != skinSkels.end();
                 }
             }
+            if (!affected && !morphMeshes.empty() && inst.type == FInstanceType::Mesh)
+                affected = std::find(morphMeshes.begin(), morphMeshes.end(), inst.resource) != morphMeshes.end();
             if (affected)
                 set.instances.push_back(ii);
         }
@@ -284,8 +339,6 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
 
     for (FAnimationClip const& clip : scene.mTables.clips)
         fullDuration = std::max(fullDuration, clip.duration);
-    for (FMorphTrack const& track : scene.mTables.morphTracks)
-        fullDuration = std::max(fullDuration, track.duration);
     // Name -> set index, so an NLA strip's `source` resolves to its clip group at runtime.
     setByName.clear();
     for (uint32_t i = 0; i < animations.size(); ++i)
@@ -294,14 +347,14 @@ void FAnimationRuntime::Setup(FImportedScene const& scene, FSceneGPUResources co
     // Derive the timeline length + animated-instance highlight from the imported NLA tracks.
     animatedMask.assign(instanceCount, 0u);
     RefreshAnimatedInstances(scene);
-    // Skinned-only imports (no clip/morph tracks) should start paused: there's deformable data,
-    // but no time-varying source to advance.
-    playing = !scene.mTables.clips.empty() || !scene.mTables.morphTracks.empty();
+    // Skinned-only imports (no clips) should start paused: there's deformable data, but no
+    // time-varying source to advance.
+    playing = !scene.mTables.clips.empty();
 
     LOG(Editor, LogInfo,
-        "Animation runtime: {} deforming mesh(es), {} skeleton(s), {} clip(s), {} animation(s), {} NLA track(s), {} morph track(s)",
+        "Animation runtime: {} deforming mesh(es), {} skeleton(s), {} clip(s), {} animation(s), {} NLA track(s)",
         meshes.size(), skeletons.size(), scene.mTables.clips.size(), animations.size(),
-        scene.mTables.nlaTracks.size(), scene.mTables.morphTracks.size());
+        scene.mTables.nlaTracks.size());
 }
 
 void FAnimationRuntime::RefreshAnimatedInstances(FImportedScene const& scene)
@@ -396,38 +449,24 @@ void FAnimationRuntime::Begin(FImportedScene& scene, GPUScene* gpu, float dt, Th
                 ZoneScopedN("Anim Pose");
                 auto const& skels = scene.mTables.skeletons;
                 ResetToRest(skels[s], poses[s]);
-                // NLA: walk tracks low->high (Replace; higher tracks overwrite per channel). For
-                // each active strip, map the master clock into clip-local time (timescale, clip
-                // window, optional cyclic restart) and sample that strip's clips onto this skeleton.
-                for (FNlaTrack const& track : scene.mTables.nlaTracks)
+                // NLA: walk tracks low->high, blending each active strip into the running pose by
+                // its influence (per-channel lerp/slerp, so stacked strips on shared joints
+                // accumulate instead of the top track clobbering the rest). Only clips driving this
+                // skeleton contribute; morph-only clips fall out here (no channels for skeleton s).
+                ForEachActiveStrip(scene, *this, [&](uint32_t setIdx, float cl, float influence)
                 {
-                    if (track.mute)
-                        continue;
-                    for (FNlaStrip const& strip : track.strips)
+                    FAnimationSet const& set = animations[setIdx];
+                    for (uint32_t clipIdx : set.clips)
                     {
-                        if (strip.influence <= 0.0f || time < strip.stripStart || time > strip.stripEnd)
+                        if (clipAnimation[clipIdx] != static_cast<int32_t>(setIdx))
                             continue;
-                        auto it = setByName.find(strip.source);
-                        if (it == setByName.end())
-                            continue;
-                        FAnimationSet const& set = animations[it->second];
-                        float const span = std::max(strip.clipEnd - strip.clipStart, 0.0f);
-                        float u = (time - strip.stripStart) * strip.timeScale;
-                        float cl = strip.cyclic && span > 0.0f
-                            ? strip.clipStart + std::fmod(u, span)
-                            : std::clamp(strip.clipStart + u, strip.clipStart, strip.clipEnd);
-                        for (uint32_t clipIdx : set.clips)
-                        {
-                            if (clipAnimation[clipIdx] != static_cast<int32_t>(it->second))
-                                continue;
-                            if (skeletonClips[s].empty() ||
-                                std::find(skeletonClips[s].begin(), skeletonClips[s].end(), clipIdx) ==
-                                    skeletonClips[s].end())
-                                continue; // clip drives a different skeleton
-                            SampleClip(scene.mTables.clips[clipIdx], cl, poses[s]);
-                        }
+                        if (skeletonClips[s].empty() ||
+                            std::find(skeletonClips[s].begin(), skeletonClips[s].end(), clipIdx) ==
+                                skeletonClips[s].end())
+                            continue; // clip drives a different skeleton
+                        BlendClip(scene.mTables.clips[clipIdx], cl, influence, poses[s]);
                     }
-                }
+                });
                 ComputeGlobals(skels[s], poses[s]);
             });
 

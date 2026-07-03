@@ -123,6 +123,36 @@ void SampleClip(FAnimationClip const& clip, float t, FPose& pose)
     }
 }
 
+void BlendClip(FAnimationClip const& clip, float t, float weight, FPose& pose)
+{
+    if (weight <= 0.0f)
+        return;
+    for (FAnimChannel const& c : clip.channels)
+    {
+        if (c.times.empty() || c.joint >= pose.translations.size())
+            continue;
+        KeySegment seg = FindSegment(c.times, t);
+        switch (c.path)
+        {
+        case FAnimPath::Translation:
+            pose.translations[c.joint] = mix(pose.translations[c.joint], SampleVec3(c, seg), weight);
+            break;
+        case FAnimPath::Scale:
+            pose.scales[c.joint] = mix(pose.scales[c.joint], SampleVec3(c, seg), weight);
+            break;
+        case FAnimPath::Rotation:
+        {
+            quat sampled = SampleQuat(c, seg);
+            quat const& cur = pose.rotations[c.joint];
+            if (dot(cur, sampled) < 0.0f) // shortest arc
+                sampled = -sampled;
+            pose.rotations[c.joint] = normalize(slerp(cur, sampled, weight));
+            break;
+        }
+        }
+    }
+}
+
 void ComputeGlobals(FSkeleton const& skel, FPose& pose)
 {
     uint32_t n = skel.Count();

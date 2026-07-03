@@ -9,10 +9,10 @@ struct FDynamicMeshRuntime
 {
     GeometryHandle handle{};
     size_t meshIndex{std::numeric_limits<size_t>::max()};
+    FUUID meshId{}; // matches FMorphChannel::mesh when resolving morph weights through the NLA
     Vector<FVertex> bind;
     int32_t skeleton{-1};
     Vector<FSkinBinding> binding;
-    int32_t morphTrack{-1};
     uint32_t morphTargetCount{0};
     Vector<float3> morphDeltas; // POSITION deltas, target-major (t*vtxCount + v)
     Vector<uint32_t> indices; // LOD0 topology, for recomputing normals after morphing
@@ -57,7 +57,8 @@ struct FAnimationRuntime
     // Per-worker scratch (outer index == ParallelFor workerId), pre-sized by Setup().
     Vector<Vector<mat4>> skins{GLOBAL_ALLOC};
     Vector<Vector<FVertex>> morphs{GLOBAL_ALLOC};
-    Vector<Vector<float>> morphWeights{GLOBAL_ALLOC};
+    Vector<Vector<float>> morphWeights{GLOBAL_ALLOC}; // per-strip sampled weights (blended into morphAccum)
+    Vector<Vector<float>> morphAccum{GLOBAL_ALLOC};   // NLA-blended morph weights for the deforming mesh
     int32_t sceneNodeSkeleton{-1};
     Vector<uint8_t> nodeAffected{GLOBAL_ALLOC};
     bool rigidDrivesTransforms{false};

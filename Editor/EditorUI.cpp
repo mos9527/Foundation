@@ -1076,7 +1076,7 @@ static void MaterialTexturePickerTileStyleBegin(bool selected)
     if (!selected)
         return;
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::GetStyleColorVec4(ImGuiCol_NavHighlight));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::GetStyleColorVec4(ImGuiCol_NavCursor));
 }
 
 static void MaterialTexturePickerTileStyleEnd(bool selected)
@@ -1093,7 +1093,7 @@ static void MaterialTexturePickerTileSelectionOutline(bool selected)
         return;
     ImVec2 const min = ImGui::GetItemRectMin();
     ImVec2 const max = ImGui::GetItemRectMax();
-    ImGui::GetWindowDrawList()->AddRect(min, max, ImGui::GetColorU32(ImGuiCol_NavHighlight), 0.0f, 0, 2.0f);
+    ImGui::GetWindowDrawList()->AddRect(min, max, ImGui::GetColorU32(ImGuiCol_NavCursor), 0.0f, 0, 2.0f);
 }
 
 static void DrawMaterialTexturePickerNoneTile(ImVec2 size, bool selected)

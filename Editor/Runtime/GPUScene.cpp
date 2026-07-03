@@ -37,7 +37,7 @@ void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResourc
         GeometryHandle handle;
         // Deforming (skinned/morphed) meshes upload as dynamic geometry (Ready synchronously);
         // everything else streams in through the upload worker (InProgress).
-        bool const dynamic = mesh.skinBinding.count != 0 || !mesh.morphTrack.IsNil();
+        bool const dynamic = mesh.skinBinding.count != 0 || mesh.morphTargetCount != 0;
         GPUScene::Result r = dynamic ? gpu.UploadDynamic(&blobs, mesh, handle) : gpu.Upload(&blobs, mesh, handle);
         CHECK_MSG(r == GPUScene::Result::InProgress || r == GPUScene::Result::Ready, "Mesh upload rejected ({})",
                   static_cast<int>(r));

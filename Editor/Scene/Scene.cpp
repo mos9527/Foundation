@@ -335,7 +335,6 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
     HashSet<FUUID> const meshIds = BuildIdSet(tables.meshes, "FScene mesh");
     HashSet<FUUID> const curveIds = BuildIdSet(tables.curves, "FScene curve");
     HashSet<FUUID> const textureIds = BuildIdSet(tables.textures, "FScene texture");
-    HashSet<FUUID> const morphTrackIds = BuildIdSet(tables.morphTracks, "FScene morphTrack");
     BuildIdSet(tables.clips, "FScene clip");
     BuildIdSet(tables.instances, "FScene instance");
     BuildIdSet(tables.cameras, "FScene camera");
@@ -360,12 +359,6 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
     auto requireMaterial = [&](FUUID id, const char* what)
     {
         CHECK_MSG(materialIds.contains(id), "{} references unknown material id", what);
-    };
-    auto requireMorphTrack = [&](FUUID id, const char* what)
-    {
-        if (id.IsNil())
-            return;
-        CHECK_MSG(morphTrackIds.contains(id), "{} references unknown morphTrack id", what);
     };
     // Returns joint count; callers guard nil ids first.
     auto requireSkeleton = [&](FUUID id, const char* what) -> uint32_t
@@ -474,15 +467,24 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
             CHECK_MSG(mesh.morphPositions.count == mesh.morphTargetCount * mesh.vertexCount,
                       "FScene mesh morph delta count mismatch");
         }
-        requireMorphTrack(mesh.morphTrack, "mesh.morphTrack");
     }
 
     for (auto const& clip : tables.clips)
     {
-        CHECK_MSG(!clip.skeleton.IsNil(), "FScene clip has no skeleton");
-        uint32_t jointCount = requireSkeleton(clip.skeleton, "FScene clip skeleton");
-        for (auto const& channel : clip.channels)
-            CHECK_MSG(channel.joint < jointCount, "FScene clip channel joint index out of range");
+        // Skeletal channels require a skeleton; a morph-only clip carries no channels and no skeleton.
+        if (!clip.channels.empty())
+        {
+            CHECK_MSG(!clip.skeleton.IsNil(), "FScene clip has no skeleton");
+            uint32_t jointCount = requireSkeleton(clip.skeleton, "FScene clip skeleton");
+            for (auto const& channel : clip.channels)
+                CHECK_MSG(channel.joint < jointCount, "FScene clip channel joint index out of range");
+        }
+        for (auto const& mc : clip.morphChannels)
+        {
+            CHECK_MSG(!mc.mesh.IsNil() && meshIds.contains(mc.mesh), "FScene clip morph channel references unknown mesh id");
+            CHECK_MSG(mc.targetCount != 0, "FScene clip morph channel has zero target count");
+        }
+        CHECK_MSG(!clip.channels.empty() || !clip.morphChannels.empty(), "FScene clip has no channels");
     }
 
     for (auto const& track : tables.nlaTracks)
@@ -975,8 +977,7 @@ void AppendResourceBlobJobs(Vector<FBlobJob>& blobJobs, FResourceBlobJobs& resou
 }
 
 void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, FTexture&& texture);
-void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, FUUID skeleton,
-                       FUUID morphTrack);
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, FUUID skeleton);
 void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImportedCurve const& curve);
 
 // Builds a flat, topologically sorted @ref FSkeleton from a glTF skin. @p outRemap maps a
@@ -1095,6 +1096,28 @@ bool BuildAnimChannel(const cgltf_animation_channel* ch, uint32_t joint, FAnimCh
     cgltf_accessor_unpack_floats(output, out.values.data(), outFloats);
     if (input->count > 0)
         duration = std::max(duration, out.times[input->count - 1]);
+    return true;
+}
+
+// Reads a morph-target `weights` channel into @p out, targeting Foundation mesh @p mesh with
+// @p targetCount morph targets. Returns false for missing accessors; grows @p duration to the last key.
+bool BuildMorphChannel(const cgltf_animation_channel* ch, FUUID mesh, uint32_t targetCount, FMorphChannel& out,
+                       float& duration)
+{
+    if (!ch->sampler || targetCount == 0)
+        return false;
+    const cgltf_accessor* input = ch->sampler->input;
+    const cgltf_accessor* output = ch->sampler->output;
+    if (!input || !output || input->count == 0)
+        return false;
+    out.mesh = mesh;
+    out.targetCount = targetCount;
+    out.interp = MapAnimInterp(ch->sampler->interpolation);
+    out.times.resize(input->count);
+    cgltf_accessor_unpack_floats(input, out.times.data(), input->count);
+    out.values.resize(output->count * cgltf_num_components(output->type));
+    cgltf_accessor_unpack_floats(output, out.values.data(), out.values.size());
+    duration = std::max(duration, out.times[input->count - 1]);
     return true;
 }
 
@@ -1489,9 +1512,12 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
     auto NodeJoint = [&](size_t nodeIndex) -> int32_t
     { return hasSceneNodeSkeleton ? nodeToSceneJoint[nodeIndex] : -1; };
 
-    /* Morph-target weight tracks: one per glTF mesh that an animation drives via a `weights` channel
-     * (first wins). Each mesh's submeshes link to it through FSerializedMesh::morphTrack. */
-    Vector<FUUID> meshMorphTrackIds(data->meshes_count, kNilUUID, scratchAlloc);
+    /* Morph-animated meshes: any glTF mesh an animation drives via a `weights` channel. The actual
+     * weight keyframes become morph channels on the animation's clip (built with the skeletal clips
+     * below); here we only flag which meshes need morph geometry + the dynamic vertex/index path,
+     * and cache each mesh's morph-target count for building those channels. */
+    Vector<uint8_t> meshMorphAnimated(data->meshes_count, uint8_t{0}, scratchAlloc);
+    Vector<uint32_t> meshMorphTargetCount(data->meshes_count, 0u, scratchAlloc);
     for (size_t a = 0; a < data->animations_count; a++)
     {
         const cgltf_animation* anim = &data->animations[a];
@@ -1502,26 +1528,12 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                 !ch->target_node->mesh || !ch->sampler)
                 continue;
             size_t meshIdx = cgltf_mesh_index(data, ch->target_node->mesh);
-            if (!meshMorphTrackIds[meshIdx].IsNil())
-                continue; // first track wins for a given mesh
             const cgltf_primitive* prim0 = ch->target_node->mesh->primitives_count ? &ch->target_node->mesh->primitives[0] : nullptr;
             uint32_t targetCount = prim0 ? static_cast<uint32_t>(prim0->targets_count) : 0u;
-            const cgltf_accessor* input = ch->sampler->input;
-            const cgltf_accessor* output = ch->sampler->output;
-            if (targetCount == 0 || !input || !output)
+            if (targetCount == 0 || !ch->sampler->input || !ch->sampler->output)
                 continue;
-            FMorphTrack track(scratchAlloc);
-            track.id = FUUID::Generate();
-            track.targetCount = targetCount;
-            track.interp = MapAnimInterp(ch->sampler->interpolation);
-            track.times.resize(input->count);
-            cgltf_accessor_unpack_floats(input, track.times.data(), input->count);
-            track.values.resize(output->count * cgltf_num_components(output->type));
-            cgltf_accessor_unpack_floats(output, track.values.data(), track.values.size());
-            if (input->count > 0)
-                track.duration = track.times[input->count - 1];
-            meshMorphTrackIds[meshIdx] = track.id;
-            scene.mTables.morphTracks.push_back(std::move(track));
+            meshMorphAnimated[meshIdx] = 1u;
+            meshMorphTargetCount[meshIdx] = targetCount;
         }
     }
 
@@ -1552,7 +1564,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         {
             auto& mesh = data->meshes[i];
             int32_t skinIndex = meshToSkin[i];
-            FUUID morphTrackId = meshMorphTrackIds[i];
+            bool const morphAnimated = meshMorphAnimated[i] != 0;
             const Vector<uint16_t>* remap = skinIndex >= 0 ? &skinRemap[skinIndex] : nullptr;
             auto& [mmin, mmax] = submeshIndices.emplace_back(nextSubmesh, nextSubmesh);
             for (size_t p = 0; p < mesh.primitives_count; p++)
@@ -1561,13 +1573,13 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                 CHECK(sub->type == cgltf_primitive_type_triangles);
                 uint32_t meshIndex = nextSubmesh++;
                 futures.push_back(pool.Push(
-                    [&, meshIndex, sub, skinIndex, morphTrackId, remap]
+                    [&, meshIndex, sub, skinIndex, morphAnimated, remap]
                     {
-                        FImportedMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc, remap, !morphTrackId.IsNil());
+                        FImportedMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc, remap, morphAnimated);
                         // Deforming meshes (skinned or morph-animated) take the dynamic vertex/index
                         // path: skip vertex reordering (which would desync the per-vertex binding /
                         // morph deltas) and the DAG/meshlet build.
-                        bool const dynamic = !submesh.skin.empty() || !morphTrackId.IsNil();
+                        bool const dynamic = !submesh.skin.empty() || morphAnimated;
                         if (!dynamic)
                         {
                             LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
@@ -1578,7 +1590,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                         }
                         submesh.Quantize();
                         BuildMeshBlobJobs(scene.mTables.meshes[meshIndex], meshBlobJobs[meshIndex].jobs, submesh,
-                                          submesh.skin.empty() ? kNilUUID : skinSkeletonIds[skinIndex], morphTrackId);
+                                          submesh.skin.empty() ? kNilUUID : skinSkeletonIds[skinIndex]);
                     }));
             }
             mmax = nextSubmesh;
@@ -1903,6 +1915,39 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             scene.mTables.clips.push_back(std::move(clip));
     }
 
+    /* Morph clips: one per glTF animation that drives any morph-animated mesh's weights. Each weights
+     * channel becomes a morph channel per Foundation submesh of the driven glTF mesh, sharing the
+     * animation's name so it lands in the same animation set as that animation's skin/rigid clips
+     * (a morph-only animation gets its own set). Morph clips carry no skeleton. */
+    for (size_t a = 0; a < data->animations_count; a++)
+    {
+        const cgltf_animation* anim = &data->animations[a];
+        FAnimationClip clip(scratchAlloc);
+        for (size_t c = 0; c < anim->channels_count; c++)
+        {
+            const cgltf_animation_channel* ch = &anim->channels[c];
+            if (ch->target_path != cgltf_animation_path_type_weights || !ch->target_node || !ch->target_node->mesh)
+                continue;
+            size_t const gmesh = cgltf_mesh_index(data, ch->target_node->mesh);
+            if (!meshMorphAnimated[gmesh])
+                continue;
+            auto const& [mmin, mmax] = submeshIndices[gmesh];
+            for (size_t idx = mmin; idx < mmax; ++idx)
+            {
+                FMorphChannel mc(scratchAlloc);
+                if (BuildMorphChannel(ch, scene.mTables.meshes[idx].id, meshMorphTargetCount[gmesh], mc, clip.duration))
+                    clip.morphChannels.push_back(std::move(mc));
+            }
+        }
+        if (!clip.morphChannels.empty())
+        {
+            clip.id = FUUID::Generate();
+            clip.name = animName(anim, a);
+            animationName[anim] = clip.name;
+            scene.mTables.clips.push_back(std::move(clip));
+        }
+    }
+
     /* NLA tracks: from EXT_foundation_animation if present, otherwise one auto-track per glTF
      * animation (each placing its clip group at t=0 looping for its natural duration). */
     LoadFoundationAnimationExtension(data, animationName, scene, scratchAlloc);
@@ -2112,8 +2157,7 @@ void BuildCurveGeometry(FImportedCurve const& curve, Span<FSerializedCurveSegmen
               segments.size(), segmentCursor);
 }
 
-void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, FUUID skeleton,
-                       FUUID morphTrack)
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, FUUID skeleton)
 {
     CHECK_MSG(!mesh.verticesQuantized.empty(), "FScene mesh is not quantized");
     desc.bounds = BuildMeshBounds(mesh);
@@ -2128,7 +2172,6 @@ void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImpor
     desc.skeleton = skeleton;
     desc.morphPositions = {};
     desc.morphTargetCount = mesh.morphTargetCount;
-    desc.morphTrack = morphTrack;
 
     AppendArrayBlobJob(blobJobs, mesh.verticesQuantized, FBlobCodec::LZ4, desc.vertices);
     if (!mesh.skin.empty())
@@ -2210,7 +2253,6 @@ void FImportedScene::RebuildIndex()
     fill(mIndex.meshes, mTables.meshes);
     fill(mIndex.curves, mTables.curves);
     fill(mIndex.skeletons, mTables.skeletons);
-    fill(mIndex.morphTracks, mTables.morphTracks);
 }
 
 Span<const unsigned char> FImportedScene::GetPayloadBytes() const
@@ -2272,7 +2314,7 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     size_t dynamicBytesPerSlot = 0;
     for (auto const& mesh : GetMeshes())
     {
-        if (mesh.skinBinding.count == 0 && mesh.morphTrack.IsNil())
+        if (mesh.skinBinding.count == 0 && mesh.morphTargetCount == 0)
             continue;
         size_t vtxBytes = static_cast<size_t>(mesh.vertices.decodedSize);
         size_t idxBytes = mesh.lods.empty() ? 0u : static_cast<size_t>(mesh.lods[0].indices.decodedSize);

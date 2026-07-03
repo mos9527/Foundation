@@ -111,12 +111,11 @@ struct FSerializedMesh
     // Skinned meshes carry no DAG/meshlets (they take the dynamic vertex/index path).
     FBlobRef skinBinding;
     FUUID skeleton{};
-    // Optional morph-target POSITION deltas (target-major: target t, vertex v at t*vertexCount + v),
-    // the target count, and the id of the driving morph-weight track (kNilUUID = not morph-animated).
-    // Morph-animated meshes also take the dynamic vertex/index path.
+    // Optional morph-target POSITION deltas (target-major: target t, vertex v at t*vertexCount + v)
+    // and the target count. Only present when a clip's morph channel drives this mesh's weights
+    // (morphTargetCount == 0 otherwise); such meshes take the dynamic vertex/index path.
     FBlobRef morphPositions;
     uint32_t morphTargetCount{0};
-    FUUID morphTrack{};
 
     explicit FSerializedMesh(Allocator* alloc = GLOBAL_ALLOC)
         : lods(alloc)

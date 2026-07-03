@@ -169,22 +169,8 @@ struct FSceneGlobals
     uint32_t viewLutSdrIndex{1u};
     uint32_t viewLutHdrIndex{1u};
 };
-// A morph-target weight track: per-key weights (one set of `targetCount` per key) driving a mesh's
-// blend-shape weights. Referenced by @ref FSerializedMesh::morphTrack. Same time/value packing and
-// interpolation as @ref FAnimChannel (cubic keys store 3*targetCount values per key).
-struct FMorphTrack
-{
-    FUUID id{};
-    uint32_t targetCount{0};
-    FAnimInterp interp{FAnimInterp::Linear};
-    float duration{0.0f};
-    Vector<float> times;
-    Vector<float> values;
-    explicit FMorphTrack(Allocator* alloc = GLOBAL_ALLOC) : times(alloc), values(alloc) {}
-};
-
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 20;
+static constexpr uint32_t kSceneVersion = 21;
 
 // One NLA strip: a source clip (referenced by its animation-group name id) placed on the timeline,
 // optionally retimed and looped within a source-clip window. Matches EXT_foundation_animation.
@@ -196,7 +182,7 @@ struct FNlaStrip
     float clipStart{0.0f};  // source-local secs (Clip Start)
     float clipEnd{0.0f};    //                   (Clip End)
     float timeScale{1.0f};  // Clip Timescale (playback scale)
-    float influence{1.0f};  // 0..1; stored/exported, gates on/off at runtime this phase
+    float influence{1.0f};  // 0..1 per-channel blend weight over lower tracks (lerp T/S, slerp R)
     bool cyclic{true};      // loop clip within [clipStart,clipEnd] to fill the strip (restart)
 };
 
@@ -229,13 +215,12 @@ struct FSceneTables
     Vector<FSerializedTexture> textures;
     Vector<FSkeleton> skeletons;
     Vector<FAnimationClip> clips;
-    Vector<FMorphTrack> morphTracks;
     Vector<FNlaTrack> nlaTracks;
     FUUID sceneNodeSkeleton{}; // kNilUUID when no rigid node hierarchy.
 
     explicit FSceneTables(Allocator* alloc = GLOBAL_ALLOC)
         : strings(alloc), cameras(alloc), lights(alloc), instances(alloc), materials(alloc), meshes(alloc), curves(alloc),
-          textures(alloc), skeletons(alloc), clips(alloc), morphTracks(alloc), nlaTracks(alloc)
+          textures(alloc), skeletons(alloc), clips(alloc), nlaTracks(alloc)
     {
     }
 };
@@ -251,11 +236,10 @@ struct FSceneIndex
     HashMap<FUUID, uint32_t> meshes;
     HashMap<FUUID, uint32_t> curves;
     HashMap<FUUID, uint32_t> skeletons;
-    HashMap<FUUID, uint32_t> morphTracks;
 
     explicit FSceneIndex(Allocator* alloc = GLOBAL_ALLOC)
         : strings(alloc), instances(alloc), materials(alloc), lights(alloc), textures(alloc),
-          meshes(alloc), curves(alloc), skeletons(alloc), morphTracks(alloc)
+          meshes(alloc), curves(alloc), skeletons(alloc)
     {
     }
 
@@ -284,7 +268,6 @@ inline void FSerialize(FWriter& writer, FSerializedMesh const& mesh)
     FSerialize(writer, mesh.skeleton);
     FSerialize(writer, mesh.morphPositions);
     FSerialize(writer, mesh.morphTargetCount);
-    FSerialize(writer, mesh.morphTrack);
 }
 
 template <>
@@ -303,7 +286,6 @@ inline void FDeserialize(FReader& reader, FSerializedMesh& mesh)
     FDeserialize(reader, mesh.skeleton);
     FDeserialize(reader, mesh.morphPositions);
     FDeserialize(reader, mesh.morphTargetCount);
-    FDeserialize(reader, mesh.morphTrack);
 }
 
 // FJoint is trivially copyable, so a skeleton's joint array serializes in bulk.
@@ -340,6 +322,25 @@ inline void FDeserialize(FReader& reader, FAnimChannel& channel)
 }
 
 template <>
+inline void FSerialize(FWriter& writer, FMorphChannel const& channel)
+{
+    FSerialize(writer, channel.mesh);
+    FSerialize(writer, channel.targetCount);
+    FSerialize(writer, channel.interp);
+    FSerialize(writer, channel.times);
+    FSerialize(writer, channel.values);
+}
+template <>
+inline void FDeserialize(FReader& reader, FMorphChannel& channel)
+{
+    FDeserialize(reader, channel.mesh);
+    FDeserialize(reader, channel.targetCount);
+    FDeserialize(reader, channel.interp);
+    FDeserialize(reader, channel.times);
+    FDeserialize(reader, channel.values);
+}
+
+template <>
 inline void FSerialize(FWriter& writer, FAnimationClip const& clip)
 {
     FSerialize(writer, clip.id);
@@ -347,6 +348,7 @@ inline void FSerialize(FWriter& writer, FAnimationClip const& clip)
     FSerialize(writer, clip.skeleton);
     FSerialize(writer, clip.duration);
     FSerialize(writer, clip.channels);
+    FSerialize(writer, clip.morphChannels);
 }
 template <>
 inline void FDeserialize(FReader& reader, FAnimationClip& clip)
@@ -356,27 +358,7 @@ inline void FDeserialize(FReader& reader, FAnimationClip& clip)
     FDeserialize(reader, clip.skeleton);
     FDeserialize(reader, clip.duration);
     FDeserialize(reader, clip.channels, clip.channels.get_allocator().mResource);
-}
-
-template <>
-inline void FSerialize(FWriter& writer, FMorphTrack const& track)
-{
-    FSerialize(writer, track.id);
-    FSerialize(writer, track.targetCount);
-    FSerialize(writer, track.interp);
-    FSerialize(writer, track.duration);
-    FSerialize(writer, track.times);
-    FSerialize(writer, track.values);
-}
-template <>
-inline void FDeserialize(FReader& reader, FMorphTrack& track)
-{
-    FDeserialize(reader, track.id);
-    FDeserialize(reader, track.targetCount);
-    FDeserialize(reader, track.interp);
-    FDeserialize(reader, track.duration);
-    FDeserialize(reader, track.times);
-    FDeserialize(reader, track.values);
+    FDeserialize(reader, clip.morphChannels, clip.morphChannels.get_allocator().mResource);
 }
 
 // FNlaStrip is trivially copyable (POD), so it bulk-serializes as part of a track's vector.
@@ -450,7 +432,6 @@ inline void FSerialize(FWriter& writer, FSceneTables const& tables)
     FSerialize(writer, tables.textures);
     FSerialize(writer, tables.skeletons);
     FSerialize(writer, tables.clips);
-    FSerialize(writer, tables.morphTracks);
     FSerialize(writer, tables.nlaTracks);
     FSerialize(writer, tables.sceneNodeSkeleton);
 }
@@ -469,7 +450,6 @@ inline void FDeserialize(FReader& reader, FSceneTables& tables)
     FDeserialize(reader, tables.textures, tables.textures.get_allocator().mResource);
     FDeserialize(reader, tables.skeletons, tables.skeletons.get_allocator().mResource);
     FDeserialize(reader, tables.clips, tables.clips.get_allocator().mResource);
-    FDeserialize(reader, tables.morphTracks, tables.morphTracks.get_allocator().mResource);
     FDeserialize(reader, tables.nlaTracks, tables.nlaTracks.get_allocator().mResource);
     FDeserialize(reader, tables.sceneNodeSkeleton);
 }
@@ -605,7 +585,6 @@ struct FImportedScene
     int MeshIndex(FUUID id) const { return FSceneIndex::Find(mIndex.meshes, id); }
     int CurveIndex(FUUID id) const { return FSceneIndex::Find(mIndex.curves, id); }
     int SkeletonIndex(FUUID id) const { return FSceneIndex::Find(mIndex.skeletons, id); }
-    int MorphTrackIndex(FUUID id) const { return FSceneIndex::Find(mIndex.morphTracks, id); }
 
     // Content-addressed string pool; main-thread only during glTF build.
     FUUID InternString(const char* s)

@@ -81,19 +81,39 @@ struct FAnimChannel
 };
 
 /**
- * @brief A clip: a set of channels plus its total duration (seconds).
- * @note @ref skeleton is the id of the skeleton this clip drives; every channel's
+ * @brief A morph-target weight channel: per-key weights driving one mesh's blend shapes.
+ * @details Lives on @ref FAnimationClip alongside skeletal channels so morph animation flows through
+ *          the same clip / NLA / influence evaluation as skinning and rigid articulation. Values are
+ *          packed like @ref FAnimChannel: @ref targetCount floats per key (step/linear), or
+ *          3*targetCount for cubic (in-tangent, value, out-tangent). Times are seconds, ascending.
+ */
+struct FMorphChannel
+{
+    FUUID mesh{};             // target mesh id (drives this mesh's morph-target weights)
+    uint32_t targetCount{0};  // number of morph targets (value width per key)
+    FAnimInterp interp{FAnimInterp::Linear};
+    Vector<float> times;
+    Vector<float> values;
+    explicit FMorphChannel(Allocator* alloc = GLOBAL_ALLOC) : times(alloc), values(alloc) {}
+};
+
+/**
+ * @brief A clip: skeletal TRS channels and/or morph-target weight channels, plus its total duration.
+ * @note @ref skeleton is the id of the skeleton the TRS @ref channels drive; every channel's
  *       @ref FAnimChannel::joint indexes that skeleton's joint array (joint-local indices stay
- *       indices since they are only meaningful relative to a single skeleton).
+ *       indices since they are only meaningful relative to a single skeleton). @ref skeleton is
+ *       @c kNilUUID for a morph-only clip (@ref channels empty, @ref morphChannels populated); a
+ *       morph channel carries its own target mesh id and is independent of @ref skeleton.
  */
 struct FAnimationClip
 {
     FUUID id{};
     FUUID name{};
     Vector<FAnimChannel> channels;
+    Vector<FMorphChannel> morphChannels;
     float duration{0.0f};
     FUUID skeleton{};
-    explicit FAnimationClip(Allocator* alloc = GLOBAL_ALLOC) : channels(alloc) {}
+    explicit FAnimationClip(Allocator* alloc = GLOBAL_ALLOC) : channels(alloc), morphChannels(alloc) {}
 };
 
 /**
@@ -127,6 +147,16 @@ void ResetToRest(FSkeleton const& skel, FPose& pose);
  *       @ref ResetToRest first. @p t is clamped per channel to its key range.
  */
 void SampleClip(FAnimationClip const& clip, float t, FPose& pose);
+
+/**
+ * @brief Blends a clip at time @p t into @p pose, weighting each animated channel toward the
+ *        sampled value by @p weight (lerp for translation/scale, slerp for rotation).
+ * @details Only the channels the clip actually drives are touched, so stacked strips/tracks
+ *          accumulate on shared joints (weight 1 == overwrite, matching @ref SampleClip; 0 ==
+ *          no-op) instead of the last write replacing the running pose. Seed with
+ *          @ref ResetToRest first, exactly as for @ref SampleClip.
+ */
+void BlendClip(FAnimationClip const& clip, float t, float weight, FPose& pose);
 
 /** @brief Walks the hierarchy, composing local TRS into world matrices in @ref FPose::globals. */
 void ComputeGlobals(FSkeleton const& skel, FPose& pose);
