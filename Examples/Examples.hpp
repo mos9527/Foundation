@@ -166,7 +166,8 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
 
 // Drains all pending SDL events into the frame input state, resizing the swapchain as needed.
 bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap,
-                         ExampleInputState& input, SDL_Event* outLastEvent = nullptr);
+                         ExampleInputState& input, SDL_Event* outLastEvent = nullptr,
+                         void (*processEvent)(SDL_Event*) = nullptr);
 
 // Compatibility wrapper for simple examples that only need close/resize and optionally the last event.
 bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap,

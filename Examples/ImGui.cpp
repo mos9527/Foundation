@@ -18,12 +18,14 @@ int main(int argc, char** argv)
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui Pass", true /* clear */, FSetupDefault{});
     createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
     renderer->EndSetup();
-    SDL_Event event;
+    ExampleInputState input;
     ExampleFpsCounter fps;
-    while (!Examples_ShouldClose(window, renderer, swapchain, &event))
+    while (true)
     {
+        Examples_BeginFrameInput(input);
+        if (Examples_PollEvents(window, renderer, swapchain, input, nullptr, ImGui_ImplFoundation_ProcessEvent))
+            break;
         lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
-        ImGui_ImplFoundation_ProcessEvent(&event);
         ImGui_ImplFoundation_NewFrame();
         ImGui::NewFrame();
         ImGui::ShowDemoWindow();

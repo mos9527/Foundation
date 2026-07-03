@@ -431,16 +431,10 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.48f, 0.48f, 0.46f, 1.00f);
     colors[ImGuiCol_CheckMark] = accent(1.0f, 1.0f);
     colors[ImGuiCol_SliderGrab] = accent(1.0f, 0.62f);
-    colors[ImGuiCol_SliderGrabActive] = accent(1.0f, 0.91f);
     colors[ImGuiCol_Button] = ImVec4(0.22f, 0.22f, 0.21f, 1.00f);
-    colors[ImGuiCol_ButtonHovered] = ImVec4(0.31f, 0.31f, 0.30f, 1.00f);
-    colors[ImGuiCol_ButtonActive] = ImVec4(0.13f, 0.13f, 0.12f, 1.00f);
     colors[ImGuiCol_Header] = ImVec4(0.24f, 0.24f, 0.23f, 1.00f);
-    colors[ImGuiCol_HeaderHovered] = ImVec4(0.32f, 0.32f, 0.30f, 1.00f);
-    colors[ImGuiCol_HeaderActive] = ImVec4(0.15f, 0.15f, 0.14f, 1.00f);
     colors[ImGuiCol_Separator] = ImVec4(0.09f, 0.09f, 0.09f, 0.85f);
-    colors[ImGuiCol_SeparatorHovered] = accent(1.0f, 0.66f);
-    colors[ImGuiCol_SeparatorActive] = accent(1.0f, 0.85f);
+    accent(1.0f, 0.85f);
     colors[ImGuiCol_ResizeGrip] = accent(1.0f, 0.62f, 0.35f);
     colors[ImGuiCol_ResizeGripHovered] = accent(1.0f, 0.76f, 0.65f);
     colors[ImGuiCol_ResizeGripActive] = accent(1.0f, 0.96f, 0.90f);
@@ -471,6 +465,10 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     colors[ImGuiCol_NavWindowingHighlight] = accent(1.0f, 1.26f, 0.70f);
     colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.08f, 0.08f, 0.08f, 0.35f);
     colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.08f, 0.08f, 0.08f, 0.55f);
+    colors[ImGuiCol_ButtonActive] = colors[ImGuiCol_HeaderActive] = colors[ImGuiCol_SliderGrabActive] =
+    colors[ImGuiCol_SeparatorActive] = accent(1.0f, 1.0f);
+    colors[ImGuiCol_ButtonHovered] = colors[ImGuiCol_HeaderHovered] = colors[ImGuiCol_SeparatorHovered] =
+        accent(1.0f, 0.75f);
     ImGuiSdfFrameStyle sdfStyle{};
     sdfStyle.GradientTop = 1.12f;
     sdfStyle.GradientBottom = 0.78f;

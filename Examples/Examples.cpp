@@ -631,7 +631,7 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
 }
 
 bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap,
-                         ExampleInputState& input, SDL_Event* outLastEvent)
+                         ExampleInputState& input, SDL_Event* outLastEvent, void (*processEvent)(SDL_Event*))
 {
     bool shouldClose = false;
     SDL_Event event{};
@@ -648,6 +648,8 @@ bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScoped
         }
         if (window && !EventBelongsToWindow(event, windowID))
             continue;
+        if (processEvent)
+            processEvent(&event);
         if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
         {
             shouldClose = true;

@@ -411,6 +411,8 @@ namespace ImGui
     IMGUI_API void          Render();                                   // ends the Dear ImGui frame, finalize the draw data. You can then get call GetDrawData().
     IMGUI_API ImDrawData*   GetDrawData();                              // valid after Render() and until the next call to NewFrame(). Call ImGui_ImplXXXX_RenderDrawData() function in your Renderer Backend to render.
     IMGUI_API void          EnableSdfFrames(const ImGuiSdfFrameStyle* style);
+    IMGUI_API bool          IsSdfFramesEnabled();
+    IMGUI_API ImGuiSdfFrameStyle& GetSdfFrameStyle();
 
     // Demo, Debug, Information
     IMGUI_API void          ShowDemoWindow(bool* p_open = NULL);        // create Demo window. demonstrate most ImGui features. call this to learn about the library! try to make it always available in your application!

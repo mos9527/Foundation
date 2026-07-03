@@ -8817,6 +8817,33 @@ void ImGui::ShowStyleEditor(ImGuiStyle* ref)
             DragFloat("Disabled Alpha", &style.DisabledAlpha, 0.005f, 0.0f, 1.0f, "%.2f"); SameLine(); HelpMarker("Additional alpha multiplier for disabled items (multiply over current value of Alpha).");
             PopItemWidth();
 
+            SeparatorText("SDF Frames");
+            ImGuiSdfFrameStyle& sdf_style = GetSdfFrameStyle();
+            bool sdf_enabled = IsSdfFramesEnabled();
+            bool sdf_changed = Checkbox("Enable SDF frames", &sdf_enabled);
+            const char* sdf_preset_names[] = { "Box", "Drop Shadow", "Inner Shadow", "Bevel", "Gloss", "Noise" };
+            int sdf_preset = (int)sdf_style.Preset;
+            if (Combo("SDF Preset", &sdf_preset, sdf_preset_names, IM_ARRAYSIZE(sdf_preset_names)))
+            {
+                sdf_style.Preset = (ImGuiSdfPreset)sdf_preset;
+                sdf_changed = true;
+            }
+            PushItemWidth(GetFontSize() * 8);
+            sdf_changed |= DragFloat("Gradient Top", &sdf_style.GradientTop, 0.01f, 0.0f, 4.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+            sdf_changed |= DragFloat("Gradient Bottom", &sdf_style.GradientBottom, 0.01f, 0.0f, 4.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+            sdf_changed |= DragFloat("Param0", &sdf_style.Param0, 0.01f, -16.0f, 16.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+            sdf_changed |= DragFloat("Param1", &sdf_style.Param1, 0.01f, -16.0f, 16.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+            ImVec4 shadow_color = ColorConvertU32ToFloat4(sdf_style.ShadowColor);
+            if (ColorEdit4("Shadow Color", (float*)&shadow_color, ImGuiColorEditFlags_AlphaBar))
+            {
+                sdf_style.ShadowColor = ColorConvertFloat4ToU32(shadow_color);
+                sdf_changed = true;
+            }
+            sdf_changed |= DragFloat("Shadow Softness", &sdf_style.ShadowSoftness, 0.05f, 0.0f, 32.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+            PopItemWidth();
+            if (sdf_changed)
+                EnableSdfFrames(sdf_enabled ? &sdf_style : NULL);
+
             EndTabItem();
         }
 

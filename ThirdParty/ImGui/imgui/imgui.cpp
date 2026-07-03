@@ -4037,6 +4037,16 @@ void ImGui::EnableSdfFrames(const ImGuiSdfFrameStyle* style)
         GImGuiSdfFrameStyle = *style;
 }
 
+bool ImGui::IsSdfFramesEnabled()
+{
+    return GImGuiSdfFramesEnabled;
+}
+
+ImGuiSdfFrameStyle& ImGui::GetSdfFrameStyle()
+{
+    return GImGuiSdfFrameStyle;
+}
+
 static ImU32 ImGuiSdfScaleColor(ImU32 c, float f)
 {
     ImVec4 v = ImGui::ColorConvertU32ToFloat4(c);
