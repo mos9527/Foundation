@@ -2374,6 +2374,8 @@ void FRunningImGui()
             GEditor.cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GEditor.camera.fovY);
         else
             ImGui::TextDisabled("Renders a 360x180 equirectangular view.");
+        GEditor.cameraUpdated |= ImGui::SliderFloat("Z Near", &GEditor.camera.zNear, 0.001f, 10.0f, "%.4f",
+                                                    ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Exposure (EV)", &GEditor.shaderGlobals.camEV, -16.0f, 16.0f);
         ImGui::Separator();
         ImGui::SliderFloat("WASD Speed", &GEditor.camera.moveSpeed, 0.1f, 50.0f, "%.1f", ImGuiSliderFlags_Logarithmic);

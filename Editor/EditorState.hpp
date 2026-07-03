@@ -155,7 +155,7 @@ struct EditorState
     FArcballCamera  camera{
         .center = float3{0, 0, 0},
         .radius = 1.0f,
-        .zNear = 1e-3f,
+        .zNear = 1e-1f,
         .fovY = radians(60.f),
     };
     bool            showImGui = false;
