@@ -39,7 +39,6 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 - Anamorphic physical lens
 - Area, point, spot, and directional lights
 - Uniform/Power light sampling with alias tables 
-- Runs entirely in your Vulkan GPU (or Lavapipe on CPU if *that* interests you)
 
 ### Rasterizer
 - GPU-driven mesh shader pipeline with hierarchical continuous LOD
@@ -89,33 +88,14 @@ sudo pacman -S vulkan-validation-layers vulkan-tools vulkan-radeon vulkan-header
 Install the official [Vulkan SDK](https://vulkan.lunarg.com/) PKG, and expect things to just build through CMake as usual.
 
 ### Android
-An Android Studio project lives under `Android/`, packaging <a href="examples.html">the Examples</a> as a single app
-with a picker screen that launches each example in its own `SDLActivity`. It drives the same top-level `CMakeLists.txt` via Gradle's
-[CMake `externalNativeBuild`](https://developer.android.com/studio/projects/configure-cmake) integration - there is no
-separate Android-specific CMake configuration to maintain.
+Open `Android/` as a project in Android Studio ~~and suffer~~ - that should (hopefully) be enough.
 
-Requirements:
-- Android Studio, with the NDK and CMake components installed via its SDK Manager.
-- A **physical device** with Vulkan support is strongly recommended over an emulator - see the caveats below.
-
-Open `Android/` as a project in Android Studio, let Gradle sync, then Run the `app` configuration onto a connected
-device. From the command line, the equivalent is:
-```bash
-cd Android
-./gradlew assembleDebug
-# adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
-
-Only the `arm64-v8a` ABI is built. `Scripts/GenerateExamples.py` keeps the example picker (`MainActivity.java`),
-the Gradle `externalNativeBuild` `targets(...)` list, and the Windows CI build target list (`.github/workflows/build.yml`)
-in sync with `Examples/CMakeLists.txt` - re-run it (pass `--dry-run` to check first) after adding, removing, or
-renaming an example:
+Notes on example selection - for CI and Android only select examples are built. These are populated by:
 ```bash
 python Scripts/GenerateExamples.py
 ```
 
 ### Building from command line
-The following commands will create a build directory, generate the build system files, and build all targets with 8 parallel jobs.
 Binary artifacts will be located in `build/bin/`.
 
 ```bash
@@ -178,7 +158,7 @@ We use Vulkan exclusively, so portability wise:
   - RT & Mesh Shader usage practically means anything DirectX 12 Ultimate Certified will Just Work(tm)
   - [ ] TODO Fallback path for Raster to invoke MDI when running without Mesh Shader support?
 - [-] Android 
-  - Inline Ray Tracing is surprising solid & widely supported on mobile Androids *nowadays*
+  - Inline Ray Tracing is surprisingly solid & widely supported on mobile Androids *nowadays*
   - As ridiculous as it sounds - GPUScene Examples can run on those devices. Turns out you *can* do HW accelerated Path Tracing on mobile...
   - Mesh Shaders are mostly amiss. Newer (8Gen3) Adrenos offer support - not sure about other chips.   
 - [-] Metal (iDevices and Macs)  

@@ -1,5 +1,7 @@
 #include <cmath>
 #include <cfloat>
+#include <cstring>
+#include <filesystem>
 #include <algorithm>
 #include <Math/Decompose.hpp>
 #include <imgui_internal.h>
@@ -56,7 +58,36 @@ bool SaveFile(SDL_DialogFileFilter filter, String& outPath)
     DialogResult result{};
     SDL_ShowSaveFileDialog(&DialogCallback, &result, GContext->window,
                            &filter, 1, nullptr);
-    return WaitForDialog(result, outPath);
+    if (!WaitForDialog(result, outPath))
+        return false;
+
+    // Native save dialogs don't reliably append an extension from the filter,
+    // so enforce the filter's first extension if the user typed a bare name.
+    std::filesystem::path path(outPath);
+    String ext = path.extension().string();
+    if (!ext.empty())
+        ext.erase(0, 1);
+
+    bool matchesFilter = false;
+    for (char const* cur = filter.pattern; cur; )
+    {
+        char const* next = std::strchr(cur, ';');
+        size_t len = next ? size_t(next - cur) : std::strlen(cur);
+        if (len == ext.size() && SDL_strncasecmp(cur, ext.c_str(), len) == 0)
+        {
+            matchesFilter = true;
+            break;
+        }
+        cur = next ? next + 1 : nullptr;
+    }
+
+    if (!matchesFilter)
+    {
+        char const* firstExtEnd = std::strchr(filter.pattern, ';');
+        String firstExt = firstExtEnd ? String(filter.pattern, firstExtEnd) : String(filter.pattern);
+        outPath = path.string() + "." + firstExt;
+    }
+    return true;
 }
 } // namespace
 
