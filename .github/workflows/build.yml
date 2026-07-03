@@ -13,23 +13,35 @@ env:
 
 jobs:
   build:
-    name: Windows x64
-    runs-on: windows-latest
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - name: Windows x64
+          runner: windows-latest
+          platform: windows
+        - name: Android Examples
+          runner: windows-latest
+          platform: android
 
     steps:
     - uses: actions/checkout@v4
 
     # ── Ninja + MSVC  ──
     - name: Install Ninja
+      if: matrix.platform == 'windows'
       shell: pwsh
       run: choco install ninja -y --no-progress
 
     - name: Setup MSVC dev environment
+      if: matrix.platform == 'windows'
       uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: x64
 
-    # ── Vulkan SDK ──
+    # ── Vulkan SDK (provides slangc, needed by both desktop and Android shader builds) ──
     - name: Install Vulkan SDK
       shell: pwsh
       run: |
@@ -48,9 +60,11 @@ jobs:
 
     # ── Configure & Build ──
     - name: Create build directory
+      if: matrix.platform == 'windows'
       run: cmake -E make_directory ${{ github.workspace }}/build
 
     - name: Configure CMake
+      if: matrix.platform == 'windows'
       working-directory: ${{ github.workspace }}/build
       shell: pwsh
       run: >
@@ -62,6 +76,7 @@ jobs:
         -DFOUNDATION_RHIVULKAN_VALIDATION_LAYER=OFF
 
     - name: Build
+      if: matrix.platform == 'windows'
       working-directory: ${{ github.workspace }}/build
       shell: bash
       run: |
@@ -92,7 +107,35 @@ jobs:
         done
         cmake --build . "${args[@]}"
 
+    # ── Android Examples ──
+    # windows-latest ships the Android SDK/NDK/CMake preinstalled, and the Vulkan
+    # SDK step above put slangc on PATH for the on-host shader compilation.
+    - name: Setup JDK
+      if: matrix.platform == 'android'
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Setup Gradle
+      if: matrix.platform == 'android'
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: 8.10.2
+
+    - name: Build Android examples
+      if: matrix.platform == 'android'
+      working-directory: ${{ github.workspace }}/Android
+      shell: pwsh
+      run: |
+        # Pin the NDK to whatever the runner image ships so AGP doesn't try to
+        # download its (different) default version.
+        $env:FOUNDATION_ANDROID_NDK_VERSION = Split-Path $env:ANDROID_NDK_HOME -Leaf
+        Write-Host "Using NDK $env:FOUNDATION_ANDROID_NDK_VERSION"
+        gradle --no-daemon :app:assembleDebug
+
     - name: Stage artifacts
+      if: matrix.platform == 'windows'
       shell: pwsh
       run: |
         $package = "${{ github.workspace }}/package"
@@ -115,6 +158,7 @@ jobs:
 
     # ── Upload ──
     - name: Upload artifacts
+      if: matrix.platform == 'windows'
       uses: actions/upload-artifact@v4
       with:
         name: Foundation-win-x64
@@ -122,4 +166,12 @@ jobs:
           ${{ github.workspace }}/package/
           !${{ github.workspace }}/package/**/*.pdb
           !${{ github.workspace }}/package/**/*.ilk
+        compression-level: 9
+
+    - name: Upload Android APK
+      if: matrix.platform == 'android'
+      uses: actions/upload-artifact@v4
+      with:
+        name: Foundation-android-examples
+        path: ${{ github.workspace }}/Android/app/build/outputs/apk/debug/*.apk
         compression-level: 9

@@ -6,6 +6,9 @@ android {
     namespace = "foundation.examples"
     compileSdk = 34
 
+    // CI pins the NDK to the version present on the runner image; unset locally.
+    System.getenv("FOUNDATION_ANDROID_NDK_VERSION")?.takeIf { it.isNotBlank() }?.let { ndkVersion = it }
+
     defaultConfig {
         applicationId = "foundation.examples"
         minSdk = 33
