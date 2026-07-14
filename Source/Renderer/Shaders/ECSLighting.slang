@@ -197,7 +197,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 envTint = EnvLightTint();
         float3 diffuseAlbedo = baseColor * (1.0f - metallic);
         float ao = (flags & kEnableRasterAmbientOcclusion) != 0 ? ambientOcclusion.Load(uint3(tid, 0)) : 1.0f;
-        Ld += ao * diffuseAlbedo * (globalParams.hasEnvMap != 0u ? SHIrradiance(globalParams.envSHCoeffs, normalWS) : envTint);
+        Ld += ao * diffuseAlbedo * (globalParams.hasEnvMap != 0u ? SHIrradiance(globalParams.envSHCoeffs, normalWS) * envTint : envTint);
 
         float NoV = clamp(dot(normalWS, v), 0.0f, 1.0f);
         float3 F0 = lerp(float3(F0FromIor(1.5f)), baseColor, metallic);
@@ -209,7 +209,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
             float azimuth = EnvLightAzimuth();
             float3 prefiltered = textures[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
                                      .SampleLevel(lutSampler, EnvMapDirToUV(R, azimuth), mip).xyz;
-            Ls += prefiltered * F;
+            Ls += prefiltered * envTint * F;
         } else
             Ls += envTint * F;
 
