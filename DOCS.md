@@ -222,6 +222,8 @@ Done, awaiting Blog Update:
     - Conversion to small disk lights is feasible, or another O(N) loop to evaluate all of those inline w/o going through scene BVH
     - Not worth it nonetheless. This is merely brute-forcing.
 - [x] Light BVH sampling for scene lights
+  - https://fileadmin.cs.lth.se/graphics/research/papers/2019/dyn_manylight/MPC19_presentation.pdf, implementation referencing https://github.com/NVIDIAGameWorks/Falcor
+  - Also PBRTv4's implementation in https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
 - [x] Importance sampling Infinite Image Lights
 
 Done:
