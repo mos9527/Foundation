@@ -260,6 +260,9 @@ public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
     if (globalParams.numSceneLights == 0u || lightIndex >= globalParams.numSceneLights)
         return 0.0f;
 
+    if (globalParams.lightSamplerMode == kLightSamplerUniform)
+        return 1.0f / float(globalParams.numSceneLights);
+
     float3 posW = ctx.p();
     float3 normalW = ctx.ns;
     bool upperHemisphere = true;
@@ -293,6 +296,14 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
     selectionPMF = 0.0f;
     if (globalParams.numSceneLights == 0u)
         return false;
+
+    if (globalParams.lightSamplerMode == kLightSamplerUniform)
+    {
+        uint n = globalParams.numSceneLights;
+        lightIndex = min(uint(u * float(n)), n - 1u);
+        selectionPMF = 1.0f / float(n);
+        return true;
+    }
 
     float3 posW = ctx.p();
     float3 normalW = ctx.ns;

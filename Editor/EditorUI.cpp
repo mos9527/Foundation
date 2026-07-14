@@ -2813,6 +2813,14 @@ void FRunningImGui()
             ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);
             ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
             ImGui::SeparatorText(PSI_RANDOM " Sampling");
+            const char* lightSamplerItems[] = {"Light BVH", "Uniform (Reference)"};
+            int lightSampler = static_cast<int>(GEditor.rendererConfig.lightSamplerMode);
+            if (ImGui::Combo("Light Sampler", &lightSampler, lightSamplerItems, 2))
+            {
+                GEditor.rendererConfig.lightSamplerMode = static_cast<uint32_t>(lightSampler);
+                GEditor.shaderGlobals.lightSamplerMode = GEditor.rendererConfig.lightSamplerMode;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
             ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
             if (ImGui::SliderFloat("Adaptive Threshold", &GEditor.shaderGlobals.adaptiveThreshold, 0.0f, 1.0f, "%.4f"))
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;

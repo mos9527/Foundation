@@ -101,6 +101,8 @@ public static const uint32_t kGSLightTypeEnvironment = 5u;
 public static const uint32_t kGSLightFlagTwoSided = 0x100u;
 public static const uint32_t kGSLightFlagUseShadow = 0x200u;
 public static const uint32_t kGSLightFlagEnvironmentMap = 0x400u;
+public static const uint32_t kLightSamplerBVH = 0u;
+public static const uint32_t kLightSamplerUniform = 1u;
 public struct GSInstance
 {
     // TRS
@@ -285,6 +287,7 @@ public struct UBO
     public uint32_t numLightBVHGlobalLights;
     public uint32_t lightBVHValid;
     public uint32_t energyCompensation;
+    public uint32_t lightSamplerMode;
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBouncesDiffuse;
