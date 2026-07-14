@@ -54,10 +54,17 @@ struct RendererUBO
     uint32_t matcapTextureIndex{UINT32_MAX};
     // Scene lights
     uint32_t firstLight{0u};
-    uint32_t firstLightAliasTable{0u};
     uint32_t numSceneLights{0u};
-    float sceneLightImportanceSum{0.0f};
+    uint32_t firstLightBVHNode{0u};
+    uint32_t numLightBVHNodes{0u};
+    uint32_t firstLightBVHLightIndex{0u};
+    uint32_t numLightBVHLightIndices{0u};
+    uint32_t firstLightBVHBitmask{0u};
+    uint32_t firstLightBVHGlobalIndex{0u};
+    uint32_t numLightBVHGlobalLights{0u};
+    uint32_t lightBVHValid{0u};
     uint32_t energyCompensation{1u};
+    uint32_t lightSamplerMode{0u}; // kLightSamplerBVH / kLightSamplerUniform
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
     uint32_t ptMaxBouncesDiffuse{4u};
@@ -122,6 +129,9 @@ static const int kCullStageLate = 1 << 17;
 
 static constexpr uint32_t kPTSamplerPCG = 0u;
 static constexpr uint32_t kPTSamplerSobol = 1u;
+
+static constexpr uint32_t kLightSamplerBVH = 0u;
+static constexpr uint32_t kLightSamplerUniform = 1u;
 
 static constexpr uint32_t kPTCompileOptionSamplerSobol = 1u << 1;
 static constexpr uint32_t kPTCompileOptionSamplerPCG = 1u << 2;
@@ -195,6 +205,7 @@ struct RendererConfig
     RHIExtent2D renderExtent{0u, 0u};
     Span<RasterEffect const> rasterEffects{};
     uint32_t ptSampler{kPTSamplerSobol};
+    uint32_t lightSamplerMode{kLightSamplerBVH};
     bool const* ptRenderPaused{nullptr}; // dynamic runtime pause gate, read by PT dispatch pass
     bool ptShaderExecutionReordering{true};
     bool forceTextureLOD0{false};

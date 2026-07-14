@@ -92,9 +92,17 @@ public struct MIndex {
 public static const uint32_t kGSInstanceTypeMask = 0xFFu;
 public static const uint32_t kGSInstanceFlagDynamic = 0x100u; // CPU-updateable geometry: read positions from `dynamicPrimitives`
 public static const uint32_t kGSLightTypeMask = 0xFFu;
+public static const uint32_t kGSLightTypeDirectional = 0u;
+public static const uint32_t kGSLightTypePoint = 1u;
+public static const uint32_t kGSLightTypeSpot = 2u;
+public static const uint32_t kGSLightTypeDisk = 3u;
+public static const uint32_t kGSLightTypeRect = 4u;
+public static const uint32_t kGSLightTypeEnvironment = 5u;
 public static const uint32_t kGSLightFlagTwoSided = 0x100u;
 public static const uint32_t kGSLightFlagUseShadow = 0x200u;
 public static const uint32_t kGSLightFlagEnvironmentMap = 0x400u;
+public static const uint32_t kLightSamplerBVH = 0u;
+public static const uint32_t kLightSamplerUniform = 1u;
 public struct GSInstance
 {
     // TRS
@@ -269,10 +277,17 @@ public struct UBO
     public uint32_t matcapTextureIndex;
     // Scene lights
     public uint32_t firstLight;
-    public uint32_t firstLightAliasTable;
     public uint32_t numSceneLights;
-    public float sceneLightImportanceSum;
+    public uint32_t firstLightBVHNode;
+    public uint32_t numLightBVHNodes;
+    public uint32_t firstLightBVHLightIndex;
+    public uint32_t numLightBVHLightIndices;
+    public uint32_t firstLightBVHBitmask;
+    public uint32_t firstLightBVHGlobalIndex;
+    public uint32_t numLightBVHGlobalLights;
+    public uint32_t lightBVHValid;
     public uint32_t energyCompensation;
+    public uint32_t lightSamplerMode;
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBouncesDiffuse;

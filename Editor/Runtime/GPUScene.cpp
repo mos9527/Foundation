@@ -156,7 +156,7 @@ float AreaLightFluxImportance(GSLight const& light)
     return light.power * area * std::numbers::pi_v<float> * sides;
 }
 
-void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu, GPUScene::LightSamplerType sampler)
+void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu)
 {
     dst = GSLight{};
     dst.flags = static_cast<uint32_t>(src.type);
@@ -187,13 +187,13 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu, GPUSc
         CoordinateSystem(n, u, v);
         if (src.type == FLightType::Disk)
         {
-            dst.dpdu = u; // Unit tangent; radius is separate.
+            dst.dpdu = u;
             dst.dpdv = v;
         }
         else
         {
-            dst.dpdu = u * areaWidth; // Half-extent along u.
-            dst.dpdv = v * areaHeight; // Half-extent along v.
+            dst.dpdu = u * areaWidth;
+            dst.dpdv = v * areaHeight;
         }
 
         if (src.normalize)
@@ -201,7 +201,6 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu, GPUSc
             float area = src.type == FLightType::Disk ? std::numbers::pi_v<float> * areaWidth * areaHeight
                                                         : 4.0f * areaWidth * areaHeight;
             float totalArea = src.twoSided ? 2.0f * area : area;
-            // Lambertian emitter: total flux Phi = L * A * pi per emitting side.
             dst.power = src.power / (totalArea * std::numbers::pi_v<float>);
         }
     }
@@ -215,33 +214,28 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu, GPUSc
         dst.params.x = src.environmentAzimuthOffset;
     }
 
+    constexpr float kEnvDirectionalImportance = 10.0f;
     float importance = 1.0f;
-    if (sampler == GPUScene::LightSamplerType::Importance)
+    switch (src.type)
     {
-        // Light BVH is a someday problem; for now weight these more since they may light most of
-        // the scene.
-        constexpr float kEnvDirectionalImportance = 10.0f;
-        switch (src.type)
-        {
-        case FLightType::Environment:
-            importance = LightColorImportance(dst.color) * dst.power * kEnvDirectionalImportance;
-            break;
-        case FLightType::Directional:
-            importance = dst.power * kEnvDirectionalImportance;
-            break;
-        case FLightType::Point:
-            importance = dst.power * 4.0f * std::numbers::pi_v<float>;
-            break;
-        case FLightType::Spot:
-            importance = dst.power * SpotLightImportanceSolidAngle(dst.params.y, dst.params.z);
-            break;
-        case FLightType::Disk:
-        case FLightType::Rect:
-            importance = AreaLightFluxImportance(dst);
-            break;
-        }
-        importance *= LightColorImportance(dst.color);
+    case FLightType::Environment:
+        importance = LightColorImportance(dst.color) * dst.power * kEnvDirectionalImportance;
+        break;
+    case FLightType::Directional:
+        importance = dst.power * kEnvDirectionalImportance;
+        break;
+    case FLightType::Point:
+        importance = dst.power * 4.0f * std::numbers::pi_v<float>;
+        break;
+    case FLightType::Spot:
+        importance = dst.power * SpotLightImportanceSolidAngle(dst.params.y, dst.params.z);
+        break;
+    case FLightType::Disk:
+    case FLightType::Rect:
+        importance = AreaLightFluxImportance(dst);
+        break;
     }
+    importance *= LightColorImportance(dst.color);
     dst.importance = std::max(0.0f, importance);
 }
 
@@ -348,7 +342,7 @@ GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FS
     for (size_t i = 0; i < materials.size(); ++i)
         FillGSMaterial(tables.materials[i], materials[i], resources, gpu);
     for (size_t i = 0; i < lights.size(); ++i)
-        FLightToGSLight(lights[i], tables.lights[i], gpu, gpu.mLightSamplerType);
+        FLightToGSLight(lights[i], tables.lights[i], gpu);
 
     uint32_t const motionFrame = frameNumber != UINT32_MAX ? frameNumber : globals.frameNumber;
     GPUScene::UpdateResult result = gpu.EndScene(tables, motionFrame);

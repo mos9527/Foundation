@@ -11,6 +11,7 @@
 #include <Renderer/Mesh.hpp>
 #include <Renderer/Animation.hpp>
 #include "Renderer/GPUScene.hpp"
+#include "Renderer/LightBVH.hpp"
 #include "Renderer/Postprocess.hpp"
 #include <Math/Decompose.hpp>
 #include <Math/Quantize.hpp>
@@ -440,7 +441,11 @@ static size_t GPUSceneBudgetBytes(GPUSceneDesc const& desc)
            size_t(desc.instanceBudget) * sizeof(GSInstance) +
            size_t(desc.materialBudget) * sizeof(GSMaterial) +
            size_t(desc.lightBudget) * sizeof(GSLight) +
-           size_t(desc.lightBudget) * sizeof(GSAlias) +
+           size_t(desc.lightBudget) * 2u * sizeof(GSLightBVHNode) +
+           size_t(desc.lightBudget) * sizeof(uint32_t) +
+           size_t(desc.lightBudget) * sizeof(uint2) +
+           size_t(desc.lightBudget) * sizeof(uint32_t) +
+           size_t(desc.lightBudget) * 2u * sizeof(uint32_t) +
            size_t(desc.tlasInstanceBudget) * GContext->device->WriteAccelerationStructureInstanceData({}, nullptr) +
            size_t(desc.tlasBudget) +
            size_t(desc.tlasScratchBudget);
@@ -461,13 +466,8 @@ static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBy
 
     outBudgetBytes = GPUSceneBudgetBytes(estimatedBudget);
 
-    auto lightSamplerType = GPUScene::LightSamplerType::Importance;
-    if (GContext->gpuScene)
-        lightSamplerType = GContext->gpuScene->mLightSamplerType;
-
     auto* gpu = Construct<GPUScene>(GContext->allocator, GContext->device.Get(), GContext->allocator,
                                     estimatedBudget, GContext->editorFrameScratch.get());
-    gpu->mLightSamplerType = lightSamplerType;
     return gpu;
 }
 

@@ -1994,9 +1994,6 @@ void FLightingPanel()
             uint32_t lightCapacity = GContext->gpuScene ? GContext->gpuScene->GetLightCapacity() : 0u;
             bool canAddLight = GContext->gpuScene && lights.size() < lightCapacity;
             uint32_t gpuLightCount = GContext->gpuScene ? GContext->gpuScene->GetLightCount() : 0u;
-            float sceneLightImportanceSum = 0.0f;
-            for (uint32_t lightIndex = 0; lightIndex < gpuLightCount; ++lightIndex)
-                sceneLightImportanceSum += std::max(0.0f, GContext->gpuScene->GetLight(lightIndex).importance);
             if (!canAddLight)
                 ImGui::BeginDisabled();
             if (ImModalButton(canAddLight ? PSI_PLUS_SIGN " Add Light" : "(Lights Full)"))
@@ -2165,10 +2162,8 @@ void FLightingPanel()
                 if (GContext->gpuScene && i < static_cast<int>(gpuLightCount))
                 {
                     float importance = GContext->gpuScene->GetLight(static_cast<uint32_t>(i)).importance;
-                    float probability = sceneLightImportanceSum > 0.0f ? importance / sceneLightImportanceSum : 0.0f;
                     ImGui::BeginDisabled();
-                    ImGui::InputFloat("Importance", &importance, 0.0f, 0.0f, "%.6g");
-                    ImGui::InputFloat("Prob", &probability, 0.0f, 0.0f, "%.6g");
+                    ImGui::InputFloat("Proposal Weight", &importance, 0.0f, 0.0f, "%.6g");
                     ImGui::EndDisabled();
                 }
 
@@ -2818,6 +2813,14 @@ void FRunningImGui()
             ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);
             ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
             ImGui::SeparatorText(PSI_RANDOM " Sampling");
+            const char* lightSamplerItems[] = {"Light BVH", "Uniform (Reference)"};
+            int lightSampler = static_cast<int>(GEditor.rendererConfig.lightSamplerMode);
+            if (ImGui::Combo("Light Sampler", &lightSampler, lightSamplerItems, 2))
+            {
+                GEditor.rendererConfig.lightSamplerMode = static_cast<uint32_t>(lightSampler);
+                GEditor.shaderGlobals.lightSamplerMode = GEditor.rendererConfig.lightSamplerMode;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
             ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
             if (ImGui::SliderFloat("Adaptive Threshold", &GEditor.shaderGlobals.adaptiveThreshold, 0.0f, 1.0f, "%.4f"))
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
@@ -2839,11 +2842,6 @@ void FRunningImGui()
                 GEditor.rendererConfig.ptSampler = static_cast<uint32_t>(ptSampler);
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;                
                 GEditor.state = FERunningEnter;
-            }
-            const char* lightSamplerItems[] = { "Uniform", "Importance" };
-            if (ImGui::Combo("Light Sampler", reinterpret_cast<int*>(&GContext->gpuScene->mLightSamplerType), lightSamplerItems, 2))
-            {
-                CommitSceneToGPU(true); // Light table needs to be rebuilt
             }
         }
         if (GEditor.rendererMode == ERendererMode::Raster)
@@ -2897,7 +2895,7 @@ void FRunningImGui()
                     changed |= ImGui::Checkbox("Enable Motion Blur", &GEditor.rasterMotionBlur);
                     ImGui::BeginDisabled(!GEditor.rasterMotionBlur);
                     RasterMotionBlurConfig& mb = GEditor.rasterMotionBlurConfig;
-                    ImGui::SliderFloat("Intensity", &mb.intensity, 0.0f, 2.0f, "%.2f");
+                    ImGui::SliderFloat("Intensity", &mb.intensity, 0.0f, 32.0f, "%.2f");
                     int samples = static_cast<int>(mb.sampleCount);
                     if (ImGui::SliderInt("Sample Count", &samples, 2, 32))
                         mb.sampleCount = static_cast<uint32_t>(std::max(2, samples));

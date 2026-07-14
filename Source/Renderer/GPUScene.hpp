@@ -27,6 +27,12 @@ inline constexpr uint32_t kGSInstanceTypeMask = 0xFFu;
 inline constexpr uint32_t kGSInstanceFlagDynamic = 0x100u;
 // GSLight::flags packs FLightType in the low byte and renderer flags above it.
 inline constexpr uint32_t kGSLightTypeMask = 0xFFu;
+inline constexpr uint32_t kGSLightTypeDirectional = 0u;
+inline constexpr uint32_t kGSLightTypePoint = 1u;
+inline constexpr uint32_t kGSLightTypeSpot = 2u;
+inline constexpr uint32_t kGSLightTypeDisk = 3u;
+inline constexpr uint32_t kGSLightTypeRect = 4u;
+inline constexpr uint32_t kGSLightTypeEnvironment = 5u;
 inline constexpr uint32_t kGSLightFlagTwoSided = 0x100u;
 inline constexpr uint32_t kGSLightFlagUseShadow = 0x200u;
 inline constexpr uint32_t kGSLightFlagEnvironmentMap = 0x400u;
@@ -260,13 +266,6 @@ public:
         Cancelled, 
     };
 
-    enum class LightSamplerType
-    {
-        Uniform,
-        Importance
-    };
-    LightSamplerType mLightSamplerType = LightSamplerType::Importance;
-
     [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FSerializedMesh const& src);
     [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FSerializedCurve const& src);
     [[nodiscard]] static size_t CalculateCurveAABBSize(FSerializedCurve const& src);
@@ -360,9 +359,16 @@ public:
         uint32_t firstMaterial{0u};
         uint32_t numMaterials{0u};
         uint32_t firstLight{0u};
-        uint32_t firstLightAliasTable{0u};
         uint32_t numLights{0u};
-        float sceneLightImportanceSum{0.0f};
+        uint32_t firstLightBVHNode{0u};
+        uint32_t numLightBVHNodes{0u};
+        uint32_t firstLightBVHLightIndex{0u};
+        uint32_t numLightBVHLightIndices{0u};
+        uint32_t firstLightBVHBitmask{0u};
+        uint32_t firstLightBVHGlobalIndex{0u};
+        uint32_t numLightBVHGlobalLights{0u};
+        uint32_t firstLightBVHNodeIndex{0u};
+        uint32_t lightBVHValid{0u};
     };
 
     /**
@@ -380,7 +386,6 @@ public:
         uint32_t firstInstance{0};
         uint32_t firstMaterial{0};
         uint32_t firstLight{0};
-        uint32_t firstLightAliasTable{0};
     };
     /**
      * @brief Begins a scene-table update, returning caller-fill spans.
@@ -392,7 +397,7 @@ public:
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
     /**
      * @brief Commits the filled spans: patches instance geometry fields, snapshots the
-     *        tables for TLAS/picking/@ref Collect, and computes the light alias table.
+     *        tables for TLAS/picking/@ref Collect, and builds the analytical light BVH.
      * @param frameNumber Renderer frame used to stamp motion contributors and keep a
      *                    per-frame history baseline across repeated commits.
      * @return Ring-buffer offsets/counts to populate the UBO with.
@@ -519,7 +524,16 @@ public:
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const;
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const;
     [[nodiscard]] RHIBuffer* GetLightBuffer() const;
-    [[nodiscard]] RHIBuffer* GetLightAliasTableBuffer() const;
+    [[nodiscard]] RHIBuffer* GetLightBVHNodeBuffer() const;
+    [[nodiscard]] RHIBuffer* GetLightBVHLightIndexBuffer() const;
+    [[nodiscard]] RHIBuffer* GetLightBVHBitmaskBuffer() const;
+    [[nodiscard]] RHIBuffer* GetLightBVHGlobalIndexBuffer() const;
+    [[nodiscard]] RHIBuffer* GetLightBVHNodeIndexBuffer() const;
+    [[nodiscard]] bool NeedsLightBVHRefit() const;
+    [[nodiscard]] uint32_t GetLightBVHRefitLevelCount() const;
+    [[nodiscard]] uint32_t GetLightBVHRefitLevelOffset(uint32_t level) const;
+    [[nodiscard]] uint32_t GetLightBVHRefitLevelNodeCount(uint32_t level) const;
+    [[nodiscard]] uint32_t GetLightBVHFirstNodeIndex() const;
     /* Textures */
     [[nodiscard]] BindlessPool* GetTexture2DPool();
     [[nodiscard]] BindlessPool* GetTexture3DPool();

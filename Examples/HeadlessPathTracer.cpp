@@ -238,14 +238,14 @@ int main(int argc, char** argv)
             // Single soft rectangular overhead area light (1.4 x 1.4 quad facing straight down).
             GSLight& env = tables.lights[0];
             env = GSLight{};
-            env.flags = 5u; // Environment light, always present as the first light.
+            env.flags = kGSLightTypeEnvironment;
             env.color = float3(0.0f);
             env.power = 1.0f;
             env.importance = 0.0f;
 
             GSLight& key = tables.lights[1];
             key = GSLight{};
-            key.flags = 4u | kGSLightFlagUseShadow; // Rect
+            key.flags = kGSLightTypeRect | kGSLightFlagUseShadow;
             key.color = float3(1.0f, 0.95f, 0.88f);
             key.power = 10.0f;
             key.position = float3(0.0f, boxH - 0.02f, 0.0f);

@@ -5,8 +5,11 @@
 #include <Core/AtomicQueue.hpp>
 #include <Core/Thread.hpp>
 #include <Core/ThreadPool.hpp>
+#include <algorithm>
 #include <bit>
 #include <condition_variable>
+#include <cstddef>
+#include "LightBVH.hpp"
 #include "Precompute.hpp"
 #include "Renderer.hpp"
 #include "Tables/GGX.hpp"
@@ -151,7 +154,14 @@ struct GPUSceneImpl
     UploadGPURingBuffer<GSInstance> mInstanceBuffer;
     UploadGPURingBuffer<GSMaterial> mMaterialBuffer;
     UploadGPURingBuffer<GSLight> mLightBuffer;
-    UploadGPURingBuffer<GSAlias> mLightAliasTableBuffer;
+    UploadGPURingBuffer<GSLightBVHNode> mLightBVHNodeBuffer;
+    Vector<uint32_t> mLightBVHMembership;
+    Vector<LightBVHRefitLevel> mLightBVHRefitLevels;
+    bool mLightBVHNeedsRefit{false};
+    UploadGPURingBuffer<uint32_t> mLightBVHLightIndexBuffer;
+    UploadGPURingBuffer<uint2> mLightBVHBitmaskBuffer;
+    UploadGPURingBuffer<uint32_t> mLightBVHGlobalIndexBuffer;
+    UploadGPURingBuffer<uint32_t> mLightBVHNodeIndexBuffer;
     /* Textures */
     BindlessPool mTexture2DPool;
     BindlessPool mTexture3DPool;
@@ -305,14 +315,11 @@ struct GPUSceneImpl
     Pair<GSInstance*, uint32_t> AllocateInstance(uint32_t count);
     Pair<GSMaterial*, uint32_t> AllocateMaterial(uint32_t count);
     Pair<GSLight*, uint32_t> AllocateLight(uint32_t count);
-    Pair<GSAlias*, uint32_t> AllocateLightAliasTable(uint32_t count);
     // Scratch buffers
     // Valid between BeginScene and EndScene.
     struct
     {
         bool open{false};
-        uint32_t firstAliasTable{0};
-        GSAlias* aliasPtr{nullptr};
         GSInstance* instancePtr{nullptr}; // Ring destination for the translated instances.
         uint32_t instanceCount{0};
     } mTablesScratch;
@@ -424,7 +431,9 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
                            AllocatorStack* frameScratch) :
     owner(owner), mDevice(device), mAllocator(allocator), mFrameScratch(frameScratch),
     mInstanceBuffer(device, desc.instanceBudget), mMaterialBuffer(device, desc.materialBudget),
-    mLightBuffer(device, desc.lightBudget), mLightAliasTableBuffer(device, desc.lightBudget),
+    mLightBuffer(device, desc.lightBudget), mLightBVHNodeBuffer(device, desc.lightBudget * 2u),
+    mLightBVHLightIndexBuffer(device, desc.lightBudget), mLightBVHBitmaskBuffer(device, desc.lightBudget),
+    mLightBVHGlobalIndexBuffer(device, desc.lightBudget), mLightBVHNodeIndexBuffer(device, desc.lightBudget * 2u),
     mTexture2DPool(device, allocator, {.maxBindings = desc.texturesBudget}),
     mTexture3DPool(device, allocator,
                    {.maxBindings = kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack}),
@@ -434,12 +443,23 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     mUploadGeometryQueue(std::bit_ceil(static_cast<size_t>(desc.geometryBudget) + 1), allocator),
     mUploadTextureQueue(std::bit_ceil(static_cast<size_t>(desc.texturesBudget) + 1), allocator),
     mUploadBufferQueue(std::bit_ceil(static_cast<size_t>(kGPUSceneBufferQueueCapacity)), allocator),
-    mInstanceScratch(allocator), mMotionBaseline(allocator),
+    mInstanceScratch(allocator), mMotionBaseline(allocator), mLightBVHMembership(allocator),
+    mLightBVHRefitLevels(allocator),
     mTLASInstanceStride(mDevice->WriteAccelerationStructureInstanceData({}, nullptr)),
     mTLASInstances(device, desc.tlasInstanceBudget * mTLASInstanceStride)
 {
     CHECK(mDevice != nullptr);
     CHECK(mAllocator != nullptr);
+#ifndef NDEBUG
+    {
+        String lightBvhError;
+        CHECK_MSG(LightBVHRunBuilderSelfTests(mAllocator, &lightBvhError), "Light BVH self-test failed: {}",
+                  lightBvhError);
+    }
+#endif
+    static_assert(sizeof(GSLightBVHNode) == 48);
+    static_assert(offsetof(RendererUBO, firstLightBVHNode) + sizeof(uint32_t) * 8 ==
+                  offsetof(RendererUBO, energyCompensation));
     mGeometry.reserve(desc.geometryBudget);
     mBLASes.reserve(desc.geometryBudget);
     mBLASBuffers.reserve(desc.geometryBudget);
@@ -700,11 +720,6 @@ Pair<GSMaterial*, uint32_t> GPUSceneImpl::AllocateMaterial(uint32_t count) { ret
 
 Pair<GSLight*, uint32_t> GPUSceneImpl::AllocateLight(uint32_t count) { return mLightBuffer.Allocate(count); }
 
-Pair<GSAlias*, uint32_t> GPUSceneImpl::AllocateLightAliasTable(uint32_t count)
-{
-    return mLightAliasTableBuffer.Allocate(count);
-}
-
 GPUScene::GPUSceneTables GPUSceneImpl::BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount)
 {
     CHECK_MSG(!mTablesScratch.open, "BeginScene called while a scene table is already open");
@@ -727,12 +742,8 @@ GPUScene::GPUSceneTables GPUSceneImpl::BeginScene(uint32_t instanceCount, uint32
     if (lightCount != 0)
     {
         auto [ptr, off] = AllocateLight(lightCount);
-        auto [aliasPtr, aliasOff] = AllocateLightAliasTable(lightCount);
         tables.lights = Span<GSLight>(ptr, lightCount);
         tables.firstLight = off;
-        tables.firstLightAliasTable = aliasOff;
-        mTablesScratch.firstAliasTable = aliasOff;
-        mTablesScratch.aliasPtr = aliasPtr;
     }
     mTablesScratch.open = true;
     return tables;
@@ -812,23 +823,97 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
     owner.mCommittedMaterials.assign(tables.materials.begin(), tables.materials.end());
     owner.mCommittedLights.assign(tables.lights.begin(), tables.lights.end());
 
+    mLightBVHNeedsRefit = false;
     if (!tables.lights.empty())
     {
         Allocator* scratch = mFrameScratch ? mFrameScratch : mAllocator;
-        Vector<float> weights(tables.lights.size(), scratch);
-        float importanceSum = 0.0f;
-        for (size_t i = 0; i < tables.lights.size(); ++i)
+        Vector<uint32_t> membership(scratch);
+        membership.reserve(tables.lights.size());
+        for (GSLight const& light : tables.lights)
         {
-            weights[i] = tables.lights[i].importance;
-            importanceSum += weights[i];
+            uint32_t const type = GSLightTypeCPU(light);
+            uint32_t const finiteMember = IsFiniteLightType(type) && light.importance > 0.0f ? 1u << 31u : 0u;
+            membership.push_back(type | finiteMember);
         }
-        AliasTable table(weights, scratch);
-        CHECK(mTablesScratch.aliasPtr != nullptr);
-        std::memcpy(mTablesScratch.aliasPtr, table.mBins.data(), table.mBins.size() * sizeof(GSAlias));
-        res.firstLight = tables.firstLight;
-        res.firstLightAliasTable = mTablesScratch.firstAliasTable;
-        res.numLights = static_cast<uint32_t>(tables.lights.size());
-        res.sceneLightImportanceSum = importanceSum;
+
+        bool membershipChanged = membership.size() != mLightBVHMembership.size() ||
+            !std::equal(membership.begin(), membership.end(), mLightBVHMembership.begin());
+
+        if (!membershipChanged && owner.mLastUpdateResult.lightBVHValid != 0u &&
+            owner.mLastUpdateResult.numLightBVHNodes != 0u)
+        {
+            res.firstLight = tables.firstLight;
+            res.numLights = static_cast<uint32_t>(tables.lights.size());
+            res.firstLightBVHNode = owner.mLastUpdateResult.firstLightBVHNode;
+            res.numLightBVHNodes = owner.mLastUpdateResult.numLightBVHNodes;
+            res.firstLightBVHLightIndex = owner.mLastUpdateResult.firstLightBVHLightIndex;
+            res.numLightBVHLightIndices = owner.mLastUpdateResult.numLightBVHLightIndices;
+            res.firstLightBVHBitmask = owner.mLastUpdateResult.firstLightBVHBitmask;
+            res.firstLightBVHGlobalIndex = owner.mLastUpdateResult.firstLightBVHGlobalIndex;
+            res.numLightBVHGlobalLights = owner.mLastUpdateResult.numLightBVHGlobalLights;
+            res.firstLightBVHNodeIndex = owner.mLastUpdateResult.firstLightBVHNodeIndex;
+            res.lightBVHValid = owner.mLastUpdateResult.lightBVHValid;
+            mLightBVHNeedsRefit = true;
+        }
+        else
+        {
+            LightBVHOptions options{};
+            LightBVHBuild bvh = BuildLightBVH(tables.lights, options, scratch);
+#ifndef NDEBUG
+            String bvhError;
+            CHECK_MSG(ValidateLightBVH(bvh, tables.lights, &bvhError), "Light BVH validation failed: {}", bvhError);
+#endif
+            res.firstLight = tables.firstLight;
+            res.numLights = static_cast<uint32_t>(tables.lights.size());
+            res.lightBVHValid = bvh.valid ? 1u : 0u;
+            mLightBVHMembership.assign(membership.begin(), membership.end());
+            mLightBVHRefitLevels = bvh.refitLevels;
+
+            if (!bvh.nodes.empty())
+            {
+                auto [nodePtr, nodeOff] = mLightBVHNodeBuffer.Allocate(static_cast<uint32_t>(bvh.nodes.size()));
+                std::memcpy(nodePtr, bvh.nodes.data(), bvh.nodes.size() * sizeof(GSLightBVHNode));
+                res.firstLightBVHNode = nodeOff;
+                res.numLightBVHNodes = static_cast<uint32_t>(bvh.nodes.size());
+            }
+            if (!bvh.lightIndices.empty())
+            {
+                auto [idxPtr, idxOff] =
+                    mLightBVHLightIndexBuffer.Allocate(static_cast<uint32_t>(bvh.lightIndices.size()));
+                std::memcpy(idxPtr, bvh.lightIndices.data(), bvh.lightIndices.size() * sizeof(uint32_t));
+                res.firstLightBVHLightIndex = idxOff;
+                res.numLightBVHLightIndices = static_cast<uint32_t>(bvh.lightIndices.size());
+            }
+            {
+                auto [maskPtr, maskOff] =
+                    mLightBVHBitmaskBuffer.Allocate(static_cast<uint32_t>(bvh.lightBitmasks.size()));
+                for (size_t i = 0; i < bvh.lightBitmasks.size(); ++i)
+                {
+                    uint64_t mask = bvh.lightBitmasks[i];
+                    maskPtr[i] = uint2(static_cast<uint32_t>(mask), static_cast<uint32_t>(mask >> 32));
+                }
+                res.firstLightBVHBitmask = maskOff;
+            }
+            if (!bvh.globalLightIndices.empty())
+            {
+                auto [gPtr, gOff] =
+                    mLightBVHGlobalIndexBuffer.Allocate(static_cast<uint32_t>(bvh.globalLightIndices.size()));
+                std::memcpy(gPtr, bvh.globalLightIndices.data(), bvh.globalLightIndices.size() * sizeof(uint32_t));
+                res.firstLightBVHGlobalIndex = gOff;
+                res.numLightBVHGlobalLights = static_cast<uint32_t>(bvh.globalLightIndices.size());
+            }
+            if (!bvh.nodeIndices.empty())
+            {
+                auto [nPtr, nOff] = mLightBVHNodeIndexBuffer.Allocate(static_cast<uint32_t>(bvh.nodeIndices.size()));
+                std::memcpy(nPtr, bvh.nodeIndices.data(), bvh.nodeIndices.size() * sizeof(uint32_t));
+                res.firstLightBVHNodeIndex = nOff;
+            }
+        }
+    }
+    else
+    {
+        mLightBVHMembership.clear();
+        mLightBVHRefitLevels.clear();
     }
     owner.mLastUpdateResult = res;
     mTablesScratch = {};
@@ -842,9 +927,15 @@ void GPUScene::BuildUBO(RendererUBO& globals) const
     globals.firstMaterial = mLastUpdateResult.firstMaterial;
     globals.numMaterials = mLastUpdateResult.numMaterials;
     globals.firstLight = mLastUpdateResult.firstLight;
-    globals.firstLightAliasTable = mLastUpdateResult.firstLightAliasTable;
     globals.numSceneLights = mLastUpdateResult.numLights;
-    globals.sceneLightImportanceSum = mLastUpdateResult.sceneLightImportanceSum;
+    globals.firstLightBVHNode = mLastUpdateResult.firstLightBVHNode;
+    globals.numLightBVHNodes = mLastUpdateResult.numLightBVHNodes;
+    globals.firstLightBVHLightIndex = mLastUpdateResult.firstLightBVHLightIndex;
+    globals.numLightBVHLightIndices = mLastUpdateResult.numLightBVHLightIndices;
+    globals.firstLightBVHBitmask = mLastUpdateResult.firstLightBVHBitmask;
+    globals.firstLightBVHGlobalIndex = mLastUpdateResult.firstLightBVHGlobalIndex;
+    globals.numLightBVHGlobalLights = mLastUpdateResult.numLightBVHGlobalLights;
+    globals.lightBVHValid = mLastUpdateResult.lightBVHValid;
     globals.ggxLutEIndex = mLUTGGXEIndex.index;
     globals.ggxLutEavgIndex = mLUTGGXEavgIndex.index;
     globals.ggxLutEIORIndex = mLUTGGXEIORIndex.index;
@@ -886,7 +977,11 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     size_t instanceBytes = AddRingBufferSize(mInstanceBuffer);
     size_t materialBytes = AddRingBufferSize(mMaterialBuffer);
     size_t lightBytes = AddRingBufferSize(mLightBuffer);
-    size_t lightAliasBytes = AddRingBufferSize(mLightAliasTableBuffer);
+    size_t lightBVHNodeBytes = AddRingBufferSize(mLightBVHNodeBuffer);
+    size_t lightBVHIndexBytes = AddRingBufferSize(mLightBVHLightIndexBuffer);
+    size_t lightBVHBitmaskBytes = AddRingBufferSize(mLightBVHBitmaskBuffer);
+    size_t lightBVHGlobalBytes = AddRingBufferSize(mLightBVHGlobalIndexBuffer);
+    size_t lightBVHNodeIndexBytes = AddRingBufferSize(mLightBVHNodeIndexBuffer);
     size_t tlasInstanceBytes = AddRingBufferSize(mTLASInstances);
     size_t blasBytes = SumBuffers(mBLASBuffers);
     size_t curveBLASBytes = SumBuffers(mCurveBLASBuffers);
@@ -903,7 +998,9 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     outStats.push_back({"Texture3D Pool (Texture)", texture3DStats.ownedTextureBytes});
     outStats.push_back({"Instance Buffer (Buffer)", instanceBytes});
     outStats.push_back({"TLAS Instance Buffer (Buffer)", tlasInstanceBytes});
-    outStats.push_back({"Dynamic Upload Buffers (Buffer)", materialBytes + lightBytes + lightAliasBytes});
+    outStats.push_back({"Dynamic Upload Buffers (Buffer)",
+                        materialBytes + lightBytes + lightBVHNodeBytes + lightBVHIndexBytes + lightBVHBitmaskBytes +
+                            lightBVHGlobalBytes + lightBVHNodeIndexBytes});
     outStats.push_back({"Mesh BLAS (Buffer)", blasBytes});
     outStats.push_back({"Curve BLAS (Buffer)", curveBLASBytes});
     outStats.push_back({"TLAS (Buffer)", tlasBytes});
@@ -2759,7 +2856,15 @@ void GPUSceneImpl::Reset()
     mMaterialBuffer.Reset();
     mInstanceBuffer.Reset();
     mLightBuffer.Reset();
-    mLightAliasTableBuffer.Reset();
+    mLightBVHNodeBuffer.Reset();
+    mLightBVHLightIndexBuffer.Reset();
+    mLightBVHBitmaskBuffer.Reset();
+    mLightBVHGlobalIndexBuffer.Reset();
+    mLightBVHNodeIndexBuffer.Reset();
+    mLightBVHMembership.clear();
+    mLightBVHRefitLevels.clear();
+    mLightBVHNeedsRefit = false;
+    owner.mLastUpdateResult = {};
     mMeshletGlobalCounter = 0;
     owner.mLastTLASInstancesCount = 0;
     mPrimitiveAlloc->Clear();
@@ -2844,7 +2949,27 @@ RHIBuffer* GPUScene::GetDynamicPrimitiveBuffer() const
 RHIBuffer* GPUScene::GetInstanceBuffer() const { return mImpl->mInstanceBuffer.mBuffer.Get(); }
 RHIBuffer* GPUScene::GetMaterialBuffer() const { return mImpl->mMaterialBuffer.mBuffer.Get(); }
 RHIBuffer* GPUScene::GetLightBuffer() const { return mImpl->mLightBuffer.mBuffer.Get(); }
-RHIBuffer* GPUScene::GetLightAliasTableBuffer() const { return mImpl->mLightAliasTableBuffer.mBuffer.Get(); }
+RHIBuffer* GPUScene::GetLightBVHNodeBuffer() const { return mImpl->mLightBVHNodeBuffer.mBuffer.Get(); }
+RHIBuffer* GPUScene::GetLightBVHLightIndexBuffer() const { return mImpl->mLightBVHLightIndexBuffer.mBuffer.Get(); }
+RHIBuffer* GPUScene::GetLightBVHBitmaskBuffer() const { return mImpl->mLightBVHBitmaskBuffer.mBuffer.Get(); }
+RHIBuffer* GPUScene::GetLightBVHGlobalIndexBuffer() const { return mImpl->mLightBVHGlobalIndexBuffer.mBuffer.Get(); }
+RHIBuffer* GPUScene::GetLightBVHNodeIndexBuffer() const { return mImpl->mLightBVHNodeIndexBuffer.mBuffer.Get(); }
+bool GPUScene::NeedsLightBVHRefit() const { return mImpl->mLightBVHNeedsRefit; }
+uint32_t GPUScene::GetLightBVHRefitLevelCount() const
+{
+    return static_cast<uint32_t>(mImpl->mLightBVHRefitLevels.size());
+}
+uint32_t GPUScene::GetLightBVHRefitLevelOffset(uint32_t level) const
+{
+    CHECK(level < mImpl->mLightBVHRefitLevels.size());
+    return mImpl->mLightBVHRefitLevels[level].offset;
+}
+uint32_t GPUScene::GetLightBVHRefitLevelNodeCount(uint32_t level) const
+{
+    CHECK(level < mImpl->mLightBVHRefitLevels.size());
+    return mImpl->mLightBVHRefitLevels[level].count;
+}
+uint32_t GPUScene::GetLightBVHFirstNodeIndex() const { return mLastUpdateResult.firstLightBVHNodeIndex; }
 BindlessPool* GPUScene::GetTexture2DPool() { return &mImpl->mTexture2DPool; }
 BindlessPool* GPUScene::GetTexture3DPool() { return &mImpl->mTexture3DPool; }
 BindlessPool const* GPUScene::GetTexture2DPool() const { return &mImpl->mTexture2DPool; }
