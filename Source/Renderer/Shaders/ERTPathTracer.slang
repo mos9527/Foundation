@@ -1307,29 +1307,29 @@ void WritePrimaryInstanceID(uint2 pix, uint32_t instanceID)
     instanceIDBuffer[pix] = instanceID;
 }
 
-void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float ndcDepth, float frameCount)
+void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float ndcDepth, float sampleCount)
 {
-    float4 outD = float4(radiance.diffuse, frameCount);
+    float4 outD = float4(radiance.diffuse, sampleCount);
     float4 outS = float4(radiance.specular, 1.0f);
 
-    if (frameCount == 1) {
+    if (sampleCount == 1) {
         diffuse[pix]  = outD;
         specular[pix] = outS;
         depth[pix] = ndcDepth;
     } else {
-        float invN = 1.0f / frameCount;
+        float invN = 1.0f / sampleCount;
         float4 currentD = diffuse[pix];
         currentD.rgb += (outD.rgb - currentD.rgb) * invN;
-        currentD.a = frameCount; // Store raw sample count
+        currentD.a = sampleCount;
         diffuse[pix] = currentD;
         
         specular[pix] += (outS - specular[pix]) * invN;
         depth[pix] += (ndcDepth - depth[pix]) * invN;
     }
 
-    uint frameA = (uint(frameCount) + 1) / 2;
+    uint frameA = (uint(sampleCount) + 1) / 2;
     float3 totalRadiance = outD.rgb + outS.rgb;
-    if (uint(frameCount) % 2 == 1)
+    if (uint(sampleCount) % 2 == 1)
     {
         float3 currentA = adaptiveAux[pix].xyz;
         if (frameA == 1) {
@@ -1340,7 +1340,7 @@ void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float ndcDepth, fl
         }
     }
 
-    if (frameCount > globalParams.adaptiveMinSamples && globalParams.adaptiveThreshold > 0.0f)
+    if (sampleCount > globalParams.adaptiveMinSamples && globalParams.adaptiveThreshold > 0.0f)
     {
         float3 I = diffuse[pix].rgb + specular[pix].rgb;
         float3 A = adaptiveAux[pix].xyz;
@@ -1481,7 +1481,8 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     PathRadiance radiance = PathRadiance();
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
     bool pickingWritten = false;
-    float frameCount = float(globalParams.ptAccumulatedFrames + subSample + 1u);    
+    bool resetAccumulation = globalParams.ptAccumulatedFrames == 0u && subSample == 0u;
+    float sampleCount = resetAccumulation ? 1.0f : diffuse[pix].a + 1.0f;
     float lastSamplePDF = 0.0f;
     // Serialized scenes keep the environment light as the first scene light.
     GSLight envLight = LoadSceneLight(0u);
@@ -1743,7 +1744,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     if (!pickingWritten)
         WritePrimaryInstanceID(pix, ~0u);
 
-    AccumulatePathRadiance(pix, radiance, chitNDCDepth, frameCount);
+    AccumulatePathRadiance(pix, radiance, chitNDCDepth, sampleCount);
 }
 
 bool EvaluateOpacityAlphaTest<S : ISampler>(uint instance, uint primitive, float2 bary, inout S rng)
