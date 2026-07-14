@@ -85,25 +85,14 @@ float safeACos(float v)
     return std::acos(std::clamp(v, -1.0f, 1.0f));
 }
 
-float sinFromCos(float cosAngle)
-{
-    return std::sqrt(std::max(0.0f, 1.0f - cosAngle * cosAngle));
-}
-
 float computeCosConeAngle(float3 const& coneDir, float cosTheta, float3 const& otherConeDir, float cosOtherTheta)
 {
-    float cosResult = kLightBVHInvalidCosConeAngle;
-    if (cosTheta != kLightBVHInvalidCosConeAngle && cosOtherTheta != kLightBVHInvalidCosConeAngle)
-    {
-        float const cosDiffTheta = dot(coneDir, otherConeDir);
-        float const sinDiffTheta = sinFromCos(cosDiffTheta);
-        float const sinOtherTheta = sinFromCos(cosOtherTheta);
-        float const cosTotalTheta = cosOtherTheta * cosDiffTheta - sinOtherTheta * sinDiffTheta;
-        float const sinTotalTheta = sinOtherTheta * cosDiffTheta + cosOtherTheta * sinDiffTheta;
-        if (sinTotalTheta > 0.0f)
-            cosResult = std::min(cosTheta, cosTotalTheta);
-    }
-    return cosResult;
+    if (cosTheta == kLightBVHInvalidCosConeAngle || cosOtherTheta == kLightBVHInvalidCosConeAngle)
+        return kLightBVHInvalidCosConeAngle;
+
+    float const currentAngle = safeACos(cosTheta);
+    float const otherAngle = safeACos(dot(coneDir, otherConeDir)) + safeACos(cosOtherTheta);
+    return std::cos(std::min(std::numbers::pi_v<float>, std::max(currentAngle, otherAngle)));
 }
 
 float3 coneUnionOld(float3 aDir, float aCosTheta, float3 bDir, float bCosTheta, float& cosResult)

@@ -830,7 +830,11 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
         Vector<uint32_t> membership(scratch);
         membership.reserve(tables.lights.size());
         for (GSLight const& light : tables.lights)
-            membership.push_back(GSLightTypeCPU(light));
+        {
+            uint32_t const type = GSLightTypeCPU(light);
+            uint32_t const finiteMember = IsFiniteLightType(type) && light.importance > 0.0f ? 1u << 31u : 0u;
+            membership.push_back(type | finiteMember);
+        }
 
         bool membershipChanged = membership.size() != mLightBVHMembership.size() ||
             !std::equal(membership.begin(), membership.end(), mLightBVHMembership.begin());
@@ -2852,12 +2856,15 @@ void GPUSceneImpl::Reset()
     mMaterialBuffer.Reset();
     mInstanceBuffer.Reset();
     mLightBuffer.Reset();
-    mLightBuffer.Reset();
     mLightBVHNodeBuffer.Reset();
     mLightBVHLightIndexBuffer.Reset();
     mLightBVHBitmaskBuffer.Reset();
     mLightBVHGlobalIndexBuffer.Reset();
     mLightBVHNodeIndexBuffer.Reset();
+    mLightBVHMembership.clear();
+    mLightBVHRefitLevels.clear();
+    mLightBVHNeedsRefit = false;
+    owner.mLastUpdateResult = {};
     mMeshletGlobalCounter = 0;
     owner.mLastTLASInstancesCount = 0;
     mPrimitiveAlloc->Clear();

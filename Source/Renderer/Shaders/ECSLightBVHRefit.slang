@@ -112,9 +112,37 @@ void ComputeLightBounds(GSLight light, out float3 aabbMin, out float3 aabbMax, o
     aabbMax = float3(0, 0, 0);
 }
 
-float SinFromCos(float cosAngle)
+float SafeACos(float value)
 {
-    return sqrt(max(0.0f, 1.0f - cosAngle * cosAngle));
+    return acos(clamp(value, -1.0f, 1.0f));
+}
+
+float ComputeCosConeAngle(float3 coneDirection, float cosConeAngle, float3 otherDirection, float otherCosConeAngle)
+{
+    if (cosConeAngle == kLightBVHInvalidCosConeAngle || otherCosConeAngle == kLightBVHInvalidCosConeAngle)
+        return kLightBVHInvalidCosConeAngle;
+
+    float currentAngle = SafeACos(cosConeAngle);
+    float otherAngle = SafeACos(dot(coneDirection, otherDirection)) + SafeACos(otherCosConeAngle);
+    return cos(min(3.14159265358979323846f, max(currentAngle, otherAngle)));
+}
+
+float3 ConeUnion(float3 aDirection, float aCosConeAngle, float3 bDirection, float bCosConeAngle,
+                 out float cosConeAngle)
+{
+    float3 direction = aDirection + bDirection;
+    if (aCosConeAngle == kLightBVHInvalidCosConeAngle || bCosConeAngle == kLightBVHInvalidCosConeAngle ||
+        length(direction) < 1e-8f)
+    {
+        cosConeAngle = kLightBVHInvalidCosConeAngle;
+        return float3(0.0f);
+    }
+
+    direction = normalize(direction);
+    float aAngle = SafeACos(dot(direction, aDirection)) + SafeACos(aCosConeAngle);
+    float bAngle = SafeACos(dot(direction, bDirection)) + SafeACos(bCosConeAngle);
+    cosConeAngle = cos(min(3.14159265358979323846f, max(aAngle, bAngle)));
+    return direction;
 }
 
 [shader("compute")]
@@ -161,10 +189,8 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
             float3 cMin, cMax, coneDir;
             float cosCone;
             ComputeLightBounds(light, cMin, cMax, coneDir, cosCone);
-            if (cosCone != kLightBVHInvalidCosConeAngle)
-                node.cosConeAngle = min(node.cosConeAngle, dot(node.coneDirection, coneDir));
+            node.cosConeAngle = ComputeCosConeAngle(node.coneDirection, node.cosConeAngle, coneDir, cosCone);
         }
-        node.cosConeAngle = max(node.cosConeAngle, -1.0f);
     }
     else
     {
@@ -198,29 +224,7 @@ void updateInternalNodes(uint3 DTid : SV_DispatchThreadID)
     node.extent = (aabbMax - aabbMin) * 0.5f;
     node.flux = left.flux + right.flux;
 
-    float3 coneSum = left.coneDirection + right.coneDirection;
-    float coneLen = length(coneSum);
-    node.cosConeAngle = kLightBVHInvalidCosConeAngle;
-    node.coneDirection = float3(0, 0, 0);
-    if (coneLen >= 1e-8f && left.cosConeAngle != kLightBVHInvalidCosConeAngle &&
-        right.cosConeAngle != kLightBVHInvalidCosConeAngle)
-    {
-        float3 coneDirection = coneSum / coneLen;
-        float cosLeftDiff = dot(coneDirection, left.coneDirection);
-        float sinLeftDiff = SinFromCos(cosLeftDiff);
-        float cosRightDiff = dot(coneDirection, right.coneDirection);
-        float sinRightDiff = SinFromCos(cosRightDiff);
-        float sinLeftCone = SinFromCos(left.cosConeAngle);
-        float sinRightCone = SinFromCos(right.cosConeAngle);
-        float sinLeftTotal = sinLeftCone * cosLeftDiff + sinLeftDiff * left.cosConeAngle;
-        float sinRightTotal = sinRightCone * cosRightDiff + sinRightDiff * right.cosConeAngle;
-        if (sinLeftTotal > 0.0f && sinRightTotal > 0.0f)
-        {
-            float cosLeftTotal = left.cosConeAngle * cosLeftDiff - sinLeftCone * sinLeftDiff;
-            float cosRightTotal = right.cosConeAngle * cosRightDiff - sinRightCone * sinRightDiff;
-            node.cosConeAngle = max(min(cosLeftTotal, cosRightTotal), -1.0f);
-            node.coneDirection = coneDirection;
-        }
-    }
+    node.coneDirection =
+        ConeUnion(left.coneDirection, left.cosConeAngle, right.coneDirection, right.cosConeAngle, node.cosConeAngle);
     lightBVHNodes[nodeIndex] = node;
 }

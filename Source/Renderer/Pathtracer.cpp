@@ -135,6 +135,17 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
                     count};
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
                 cmd->Dispatch((count + 255u) / 256u, 1, 1);
+                if (level > 0)
+                {
+                    cmd->BeginTransition();
+                    cmd->SetBufferTransition(
+                        gpu->GetLightBVHNodeBuffer(),
+                        {.srcAccess = RHIResourceAccessBits::ShaderWrite,
+                         .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+                         .srcStage = RHIPipelineStageBits::ComputeShader,
+                         .dstStage = RHIPipelineStageBits::ComputeShader});
+                    cmd->EndTransition();
+                }
             }
         });
 
