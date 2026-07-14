@@ -16,10 +16,6 @@ import IBxDF;
 
 uniform UBO globalParams;
 
-struct Alias {
-    float prob, select;
-    uint alias;
-}
 // -- Scene
 RaytracingAccelerationStructure AS;
 StructuredBuffer<GSInstance> instances;
@@ -27,7 +23,7 @@ ByteAddressBuffer primitives;
 ByteAddressBuffer dynamicPrimitives; // CPU-updateable geometry ring (current frame slot); aliases `primitives` when the feature is off
 StructuredBuffer<GSMaterial> materials;
 StructuredBuffer<GSLight> lights;
-StructuredBuffer<Alias> lightAliasTable;
+#include "ILightBVH.slang"
 SamplerState textureSampler;
 StructuredBuffer<uint> sobolMatrices;
 // -- Path radiance accumulation buffers
@@ -552,15 +548,11 @@ struct PathRadiance
 struct DirectLightingState
 {
     InfiniteLight env;
-    float envImportance;
-    float lightTotalImportance;
     LightSampleContext lastLightCtx;
 
-    __init(InfiniteLight env, float envImportance, float lightTotalImportance)
+    __init(InfiniteLight env)
     {
         this.env = env;
-        this.envImportance = envImportance;
-        this.lightTotalImportance = lightTotalImportance;
         this.lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
     }
 };
@@ -1141,28 +1133,21 @@ LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
     }
 }
 
-LightLiSample SampleSceneLight(LightSampleContext ctx, float uc, float2 u, float importanceSum)
+LightLiSample SampleSceneLight(LightSampleContext ctx, float uc, float2 u)
 {
-    if (importanceSum <= 0.0f || globalParams.numSceneLights == 0)
+    uint lightIndex;
+    float selectionPMF;
+    if (!SampleLightSelection(ctx, uc, lightIndex, selectionPMF) || selectionPMF <= 0.0f)
         return LightLiSample();
-        
-    uint numLights = globalParams.numSceneLights;
-    uint idx = min(uint(uc * numLights), numLights - 1);
-    Alias bin = lightAliasTable[globalParams.firstLightAliasTable + idx];
-    // Get another i.i.d.
-    uc = uc * numLights - idx;
-    idx = uc >= bin.select ? bin.alias : idx;
-    // Final selection
-    float prob = lightAliasTable[globalParams.firstLightAliasTable + idx].prob;
-    // Draw sample from selected light
-    GSLight gl = LoadSceneLight(idx);
+
+    GSLight gl = LoadSceneLight(lightIndex);
     LightLiSample Li = SampleSceneLight(gl, ctx, u);
-    if (Li.pdf > 0.0f) {
-        SampledSpectrum radiance = Li.Li / (Li.pdf * prob);
-        float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * prob);
+    if (Li.pdf > 0.0f)
+    {
+        SampledSpectrum radiance = Li.Li / (Li.pdf * selectionPMF);
+        float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * selectionPMF);
         return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist, GSLightHasFlag(gl, kGSLightFlagUseShadow));
     }
-
     return LightLiSample();
 }
 
@@ -1184,12 +1169,11 @@ void AddRadianceByCategory(
 bool SampleVisibleSceneLight<S : ISampler>(
     HitState hit,
     inout S rng,
-    float lightTotalImportance,
     out LightSampleContext ctx,
     out LightLiSample Li)
 {
     ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal);
-    Li = SampleSceneLight(ctx, rng.sample(), rng.sample2D(), lightTotalImportance);
+    Li = SampleSceneLight(ctx, rng.sample(), rng.sample2D());
     if (Li.pdf <= EPS)
         return false;
 
@@ -1236,7 +1220,7 @@ void AddLocalDirectLighting<S : ISampler>(
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit, rng, lighting.lightTotalImportance, ctx, Li))
+    if (!SampleVisibleSceneLight(hit, rng, ctx, Li))
     {
         lighting.lastLightCtx = ctx;
         return;
@@ -1276,7 +1260,7 @@ void AddDiffuseDirectLighting<S : ISampler>(
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit, rng, lighting.lightTotalImportance, ctx, Li))
+    if (!SampleVisibleSceneLight(hit, rng, ctx, Li))
     {
         lighting.lastLightCtx = ctx;
         return;
@@ -1395,9 +1379,7 @@ bool AddAnalyticLightHitEmission(
 
     if (bounce > 0 /* do not contribute to primary visibility */ && any(Le > 0.0f))
     {
-        float pLightSelection = lighting.lightTotalImportance > 0.0f
-            ? (gl.importance / lighting.lightTotalImportance)
-            : 0.0f;
+        float pLightSelection = EvalLightSelectionPMF(lighting.lastLightCtx, hit.lightIndex);
         float pdf = pLightSelection * pdfLi;
         float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
         float3 contrib = beta * Le * mis;
@@ -1422,9 +1404,8 @@ void AddEnvironmentMiss(
         return;
     }
 
-    float pdf = lighting.lightTotalImportance > 0.0f
-        ? (lighting.envImportance / lighting.lightTotalImportance) * lighting.env.PDF_Li(lighting.lastLightCtx, -view, true)
-        : 0.0f;
+    float pLightSelection = EvalLightSelectionPMF(lighting.lastLightCtx, 0u);
+    float pdf = pLightSelection * lighting.env.PDF_Li(lighting.lastLightCtx, -view, true);
     float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
     float3 contrib = beta * lighting.env.Le(-view) * mis;
     AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, false);
@@ -1487,8 +1468,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     // Serialized scenes keep the environment light as the first scene light.
     GSLight envLight = LoadSceneLight(0u);
     InfiniteLight env = MakeEnvironmentLight(envLight);
-    float lightTotalImportance = globalParams.sceneLightImportanceSum;
-    DirectLightingState lighting = DirectLightingState(env, envLight.importance, lightTotalImportance);
+    DirectLightingState lighting = DirectLightingState(env);
     uint diffuseBounces = 0;
     uint specularBounces = 0;
     uint transmissionBounces = 0;

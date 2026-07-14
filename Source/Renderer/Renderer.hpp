@@ -54,9 +54,15 @@ struct RendererUBO
     uint32_t matcapTextureIndex{UINT32_MAX};
     // Scene lights
     uint32_t firstLight{0u};
-    uint32_t firstLightAliasTable{0u};
     uint32_t numSceneLights{0u};
-    float sceneLightImportanceSum{0.0f};
+    uint32_t firstLightBVHNode{0u};
+    uint32_t numLightBVHNodes{0u};
+    uint32_t firstLightBVHLightIndex{0u};
+    uint32_t numLightBVHLightIndices{0u};
+    uint32_t firstLightBVHBitmask{0u};
+    uint32_t firstLightBVHGlobalIndex{0u};
+    uint32_t numLightBVHGlobalLights{0u};
+    uint32_t lightBVHValid{0u};
     uint32_t energyCompensation{1u};
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};

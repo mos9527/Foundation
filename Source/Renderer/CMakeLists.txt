@@ -10,7 +10,7 @@ add_subdirectory(Shaders)
 add_library(Foundation_GPUScene STATIC
     Animation.cpp
     GPUScene.cpp
-    
+    LightBVH.cpp
     Mesh.cpp
     Postprocess.cpp
     Precompute.cpp

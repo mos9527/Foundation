@@ -94,7 +94,6 @@ int main(int argc, char** argv)
     {
         GPUSceneDesc desc = CalculateSceneGPUDesc(scene, device->GetCapabilities());
         GPUScene gpu(device.Get(), GLOBAL_ALLOC, desc);
-        gpu.mLightSamplerType = GPUScene::LightSamplerType::Importance;
 
         FSceneGPUResources resources;
         UploadSceneResources(scene, gpu, resources);

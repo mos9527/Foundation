@@ -49,12 +49,95 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
     auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
     auto LightBuffer = renderer->CreateResource("Light Buffer", gpu->GetLightBuffer());
-    auto LightAliasTableBuffer = renderer->CreateResource("Light Alias Table Buffer", gpu->GetLightAliasTableBuffer());
+    auto LightBVHNodeBuffer = renderer->CreateResource("Light BVH Nodes", gpu->GetLightBVHNodeBuffer());
+    auto LightBVHLightIndexBuffer =
+        renderer->CreateResource("Light BVH Light Indices", gpu->GetLightBVHLightIndexBuffer());
+    auto LightBVHBitmaskBuffer = renderer->CreateResource("Light BVH Bitmasks", gpu->GetLightBVHBitmaskBuffer());
+    auto LightBVHGlobalIndexBuffer =
+        renderer->CreateResource("Light BVH Global Indices", gpu->GetLightBVHGlobalIndexBuffer());
+    auto LightBVHNodeIndexBuffer =
+        renderer->CreateResource("Light BVH Node Indices", gpu->GetLightBVHNodeIndexBuffer());
     auto SobolMatricesBuffer = renderer->CreateResource("Sobol Matrices Buffer", gpu->GetSobolMatricesBuffer());
     auto TexSampler = renderer->CreateSampler(MakeTextureSamplerDesc(cfg));
     uint32_t w = std::max(renderExtent.x, 1u);
     uint32_t h = std::max(renderExtent.y, 1u);
     constexpr RHIResourceFormat kPathTracerAOVFormat = RHIResourceFormat::R32G32B32A32SignedFloat;
+
+    struct LightBVHRefitPush
+    {
+        uint32_t firstNodeOffset;
+        uint32_t nodeCount;
+    };
+
+    renderer->CreatePass(
+        "Light BVH Refit Leaves", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+            r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
+            r->BindBufferUnordered(self, LightBVHNodeBuffer, RHIPipelineStageBits::ComputeShader, "lightBVHNodes");
+            r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, RHIPipelineStageBits::ComputeShader,
+                                     "lightBVHLightIndices");
+            r->BindBufferStorageRead(self, LightBVHNodeIndexBuffer, RHIPipelineStageBits::ComputeShader,
+                                     "gNodeIndices");
+            r->BindShader(self, RHIShaderStageBits::Compute, "updateLeafNodes",
+                          PathsResolve("Data/Shaders/ECSLightBVHRefit.spv"));
+            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(LightBVHRefitPush));
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            if (!gpu->NeedsLightBVHRefit())
+                return;
+            uint32_t levels = gpu->GetLightBVHRefitLevelCount();
+            if (levels == 0u)
+                return;
+            uint32_t leafLevel = levels - 1u;
+            uint32_t count = gpu->GetLightBVHRefitLevelNodeCount(leafLevel);
+            if (count == 0u)
+                return;
+            LightBVHRefitPush pc{gpu->GetLightBVHFirstNodeIndex() + gpu->GetLightBVHRefitLevelOffset(leafLevel),
+                                 count};
+            r->CmdSetPipeline(self, cmd);
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
+            cmd->Dispatch((count + 255u) / 256u, 1, 1);
+        });
+
+    renderer->CreatePass(
+        "Light BVH Refit Internals", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+            r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
+            r->BindBufferUnordered(self, LightBVHNodeBuffer, RHIPipelineStageBits::ComputeShader, "lightBVHNodes");
+            r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, RHIPipelineStageBits::ComputeShader,
+                                     "lightBVHLightIndices");
+            r->BindBufferStorageRead(self, LightBVHNodeIndexBuffer, RHIPipelineStageBits::ComputeShader,
+                                     "gNodeIndices");
+            r->BindShader(self, RHIShaderStageBits::Compute, "updateInternalNodes",
+                          PathsResolve("Data/Shaders/ECSLightBVHRefit.spv"));
+            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(LightBVHRefitPush));
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            if (!gpu->NeedsLightBVHRefit())
+                return;
+            uint32_t levels = gpu->GetLightBVHRefitLevelCount();
+            if (levels < 2u)
+                return;
+            r->CmdSetPipeline(self, cmd);
+            for (int level = static_cast<int>(levels) - 2; level >= 0; --level)
+            {
+                uint32_t count = gpu->GetLightBVHRefitLevelNodeCount(static_cast<uint32_t>(level));
+                if (count == 0u)
+                    continue;
+                LightBVHRefitPush pc{
+                    gpu->GetLightBVHFirstNodeIndex() + gpu->GetLightBVHRefitLevelOffset(static_cast<uint32_t>(level)),
+                    count};
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
+                cmd->Dispatch((count + 255u) / 256u, 1, 1);
+            }
+        });
+
     // AOV buffers
     auto Diffuse = renderer->CreateResource("Diffuse",
                                             RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
@@ -127,7 +210,10 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
         r->BindBufferStorageRead(self, InstanceBuffer, pipelineStage, "instances");
         r->BindBufferStorageRead(self, MaterialBuffer, pipelineStage, "materials");
         r->BindBufferStorageRead(self, LightBuffer, pipelineStage, "lights");
-        r->BindBufferStorageRead(self, LightAliasTableBuffer, pipelineStage, "lightAliasTable");
+        r->BindBufferStorageRead(self, LightBVHNodeBuffer, pipelineStage, "lightBVHNodes");
+        r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, pipelineStage, "lightBVHLightIndices");
+        r->BindBufferStorageRead(self, LightBVHBitmaskBuffer, pipelineStage, "lightBVHBitmasks");
+        r->BindBufferStorageRead(self, LightBVHGlobalIndexBuffer, pipelineStage, "lightBVHGlobalIndices");
         r->BindBufferStorageRead(self, SobolMatricesBuffer, pipelineStage, "sobolMatrices");
         r->BindTextureSampler(self, TexSampler, "textureSampler");
         r->BindTextureSampler(self, LUTSampler, "lutSampler");

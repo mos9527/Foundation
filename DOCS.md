@@ -38,7 +38,7 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 - Importance sampled environment maps
 - Anamorphic physical lens
 - Area, point, spot, and directional lights
-- Uniform/Power light sampling with alias tables 
+- Context-dependent Light BVH sampling for analytical lights
 
 ### Rasterizer
 - GPU-driven mesh shader pipeline with hierarchical continuous LOD
@@ -221,7 +221,7 @@ Done, awaiting Blog Update:
   - Not done for analytical lights (Point/Directional) as they are delta distributions and cannot be hit by BSDF rays.
     - Conversion to small disk lights is feasible, or another O(N) loop to evaluate all of those inline w/o going through scene BVH
     - Not worth it nonetheless. This is merely brute-forcing.
-- [x] Alias Sampling scene lights
+- [x] Light BVH sampling for scene lights
 - [x] Importance sampling Infinite Image Lights
 
 Done:
