@@ -69,6 +69,7 @@ struct RendererUBO
     uint32_t dbgMaterialFlags{0u};
     uint32_t adaptiveMinSamples{32u};
     float adaptiveThreshold{0.02f}; // 0 = disabled
+    float rasterRTShadowBias{0.01f};
 };
 #pragma pack(pop)
 

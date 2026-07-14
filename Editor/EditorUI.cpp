@@ -2865,6 +2865,10 @@ void FRunningImGui()
                 const unsigned values[] = {kEnableRasterRTShadows};
                 ImGui::SeparatorText(PSI_COG " Options");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values);
+                ImGui::BeginDisabled((GEditor.rendererConfig.viewFlags & kEnableRasterRTShadows) == 0u);
+                ImGui::SliderFloat("RT Shadow Bias", &GEditor.shaderGlobals.rasterRTShadowBias,
+                                   0.0f, 0.05f, "%.4f");
+                ImGui::EndDisabled();
             }
             {
                 ImGui::SeparatorText(PSI_COG " Raster Effects");

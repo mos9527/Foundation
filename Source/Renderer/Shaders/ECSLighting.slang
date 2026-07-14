@@ -182,7 +182,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
             if ((flags & kEnableRasterRTShadows) != 0 && GSLightHasFlag(gl, kGSLightFlagUseShadow)) {
                 if (lightType <= 2 /* Anything not area lights */) {
                     float3 shadowNormalFF = dot(l, normalWS) < 0.0f ? -normalWS : normalWS;
-                    float3 shadowOrigin = OffsetRay(p, shadowNormalFF);
+                    float3 shadowOrigin = OffsetRay(
+                        p + shadowNormalFF * globalParams.rasterRTShadowBias, shadowNormalFF);
                     vis = shadow(shadowOrigin, l, lightDist) ? 0.0f : 1.0f;
                 }
             }
