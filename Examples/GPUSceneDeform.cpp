@@ -210,7 +210,7 @@ int main(int argc, char** argv)
             key.dpdv = float3(0.0f, 0.0f, 2.0f);
             key.direction = float3(0.0f, -1.0f, 0.0f);
             key.importance = key.power;
-            gpu.EndScene(tables);
+            gpu.EndScene(tables, ubo.frameNumber);
             gpu.BuildUBO(ubo);
         };
         AuthorFrame();
@@ -317,6 +317,7 @@ int main(int argc, char** argv)
                 dst[i] = EvalGridVertex(gridVertices[i], animTime);
             gpu.EndDynamicGeometryUpdate();
 
+            ubo.frameNumber = renderer->GetFrame();
             AuthorFrame();
 
             Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);

@@ -107,6 +107,13 @@ struct GSInstance
     uint32_t materialIndex; // In Material buffer (offset)
     uint32_t resourceIndex; // Debug use
     uint32_t type{kGSInstanceTypeMesh};
+    // Previous-frame object state for motion vectors (same camera; object/deform motion only).
+    float3 prevTransform{0, 0, 0};
+    quat prevRotation{0, 0, 0, 1};
+    float3 prevScale{1, 1, 1};
+    uint32_t prevResourceOffset{0};
+    // Set to the commit frame when this instance contributes motion; otherwise UINT32_MAX.
+    uint32_t motionFrame{UINT32_MAX};
 };
 // XXX: Uber. Super, even. Surely this works for all our needs...
 struct GSMaterial
@@ -183,7 +190,7 @@ struct GSCurveSegment
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
-static_assert(sizeof(GSInstance) == 56);
+static_assert(sizeof(GSInstance) == 104);
 static_assert(sizeof(GSMaterial) == 192);
 static_assert(sizeof(GSLight) == 88);
 static_assert(sizeof(GSCurveSet) == 20);
@@ -386,9 +393,11 @@ public:
     /**
      * @brief Commits the filled spans: patches instance geometry fields, snapshots the
      *        tables for TLAS/picking/@ref Collect, and computes the light alias table.
+     * @param frameNumber Renderer frame used to stamp motion contributors and keep a
+     *                    per-frame history baseline across repeated commits.
      * @return Ring-buffer offsets/counts to populate the UBO with.
      */
-    UpdateResult EndScene(GPUSceneTables& tables);
+    UpdateResult EndScene(GPUSceneTables& tables, uint32_t frameNumber);
 
     struct MemoryStat
     {

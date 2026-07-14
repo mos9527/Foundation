@@ -18,6 +18,8 @@ struct RendererUBO
     float4x4 proj;
     float4x4 inverseView;
     float4x4 inverseViewProj;
+    float4x4 previousViewProj;
+    uint32_t cameraHistoryFrame{UINT32_MAX};
     float4 projPlanes; // ij:left, kl:top
     float aperture{0.0f}; // Aperture radius in world units
     float focalDistance{1e1};
@@ -72,6 +74,22 @@ struct RendererUBO
     float rasterRTShadowBias{0.01f};
 };
 #pragma pack(pop)
+
+inline void UpdateRendererCameraUBO(RendererUBO& ubo, uint32_t frameNumber, float4x4 const& view,
+                                    float4x4 const& proj)
+{
+    if (ubo.cameraHistoryFrame != frameNumber)
+    {
+        ubo.previousViewProj =
+            ubo.cameraHistoryFrame == UINT32_MAX ? proj * view : ubo.proj * ubo.view;
+        ubo.cameraHistoryFrame = frameNumber;
+    }
+    ubo.frameNumber = frameNumber;
+    ubo.view = view;
+    ubo.proj = proj;
+    ubo.inverseView = inverse(view);
+    ubo.inverseViewProj = inverse(proj * view);
+}
 
 
 static const int kViewOverdraw = 1 << 0;
@@ -151,6 +169,7 @@ struct RasterEffectContext
     ResourceHandle gbuffer2{kInvalidHandle};
     ResourceHandle depth{kInvalidHandle};
     ResourceHandle instanceID{kInvalidHandle};
+    ResourceHandle motionVectors{kInvalidHandle};
     ResourceHandle hiz{kInvalidHandle};
     ResourceHandle hizSampler{kInvalidHandle};
     ResourceHandle diffuse{kInvalidHandle};
@@ -206,7 +225,8 @@ struct RendererOutputs
     ResourceHandle specular{kInvalidHandle};
     ResourceHandle depth{kInvalidHandle};
     ResourceHandle instanceID{kInvalidHandle};
-    ResourceHandle debugOutput{kInvalidHandle};    
+    ResourceHandle motionVectors{kInvalidHandle};
+    ResourceHandle debugOutput{kInvalidHandle};
 };
 
 struct PostprocessUBO

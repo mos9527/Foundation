@@ -1097,11 +1097,17 @@ void Renderer::BuildPipelineState(PassHandle pass)
             attachments.push_back({.blending = blending, .renderTarget = {.format = desc.format}});
         }
         pso_desc.attachments = attachments;
-        pso_desc.depthStencil.depthTest = pso_desc.depthStencil.depthWrite = tracked.dsv != kInvalidHandle;
-        if (pso_desc.depthStencil.depthTest)
+        // Preserve PassSetRasterizerFlags depthTest/Write/Compare when a DSV is bound.
+        // Without a DSV, force depth off regardless of the pass defaults.
+        if (tracked.dsv != kInvalidHandle)
         {
             auto& [dsv_handle, desc] = mSetup->trackedViews[tracked.dsv];
             pso_desc.depthStencil.depthFormat = desc.format;
+        }
+        else
+        {
+            pso_desc.depthStencil.depthTest = false;
+            pso_desc.depthStencil.depthWrite = false;
         }
         auto const compileStart = std::chrono::steady_clock::now();
         tracked.pso = mDevice->CreatePipelineState(pso_desc);

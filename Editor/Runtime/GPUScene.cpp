@@ -303,7 +303,7 @@ void FillGSMaterial(GSMaterial& dst, FMaterial const& src, FSceneGPUResources co
 } // namespace
 
 GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources const& resources,
-                                        RendererUBO& globals, bool resetAccumulation)
+                                        RendererUBO& globals, bool resetAccumulation, uint32_t frameNumber)
 {
     auto instances = scene.GetInstances();
     auto materials = scene.GetMaterials();
@@ -350,7 +350,8 @@ GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FS
     for (size_t i = 0; i < lights.size(); ++i)
         FLightToGSLight(lights[i], tables.lights[i], gpu, gpu.mLightSamplerType);
 
-    GPUScene::UpdateResult result = gpu.EndScene(tables);
+    uint32_t const motionFrame = frameNumber != UINT32_MAX ? frameNumber : globals.frameNumber;
+    GPUScene::UpdateResult result = gpu.EndScene(tables, motionFrame);
     gpu.BuildUBO(globals);
     if (resetAccumulation)
         globals.ptAccumulatedFrames = 0;

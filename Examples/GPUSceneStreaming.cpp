@@ -290,7 +290,7 @@ int main(int argc, char** argv)
             key.direction = float3(0.0f, -1.0f, 0.0f);
             key.importance = key.power;
 
-            gpu.EndScene(tables);
+            gpu.EndScene(tables, ubo.frameNumber);
             gpu.BuildUBO(ubo);
         };
         AuthorFrame(0.0f); // seed the tables (floor only) so the initial TLAS build is well-formed
@@ -433,6 +433,7 @@ int main(int argc, char** argv)
             camera.aspect = static_cast<float>(renderState.renderExtent.x) / static_cast<float>(renderState.renderExtent.y);
             bool cameraMoved = camera.Update(input, dt);
 
+            ubo.frameNumber = renderer->GetFrame();
             AuthorFrame(animTime);
 
             Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);

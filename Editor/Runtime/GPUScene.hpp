@@ -32,5 +32,7 @@ void UploadSceneEnvironment(FImportedScene const& scene, FLight const& environme
 
 // Fills and commits the GPUScene instance/material/light tables from `scene`, resolving instance
 // geometry and material textures through `resources`, then rebuilds the UBO.
+// `frameNumber` stamps motion-vector contributors (defaults to `globals.frameNumber`).
 GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources const& resources,
-                                        RendererUBO& globals, bool resetAccumulation = true);
+                                        RendererUBO& globals, bool resetAccumulation = true,
+                                        uint32_t frameNumber = UINT32_MAX);

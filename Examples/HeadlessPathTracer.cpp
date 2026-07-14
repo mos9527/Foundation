@@ -254,7 +254,7 @@ int main(int argc, char** argv)
             key.direction = float3(0.0f, -1.0f, 0.0f);
             key.importance = key.power;
 
-            gpu.EndScene(tables);
+            gpu.EndScene(tables, ubo.frameNumber);
             gpu.BuildUBO(ubo);
         };
         AuthorScene();

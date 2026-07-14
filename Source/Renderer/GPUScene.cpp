@@ -336,7 +336,9 @@ struct GPUSceneImpl
     [[nodiscard]] Result Poll();
     Result UploadEnvMap(FTexture const& source);
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
-    UpdateResult EndScene(GPUSceneTables& tables);
+    UpdateResult EndScene(GPUSceneTables& tables, uint32_t frameNumber);
+    Vector<GSInstance> mMotionBaseline; // last rendered commit used for prev TRS/offset
+    uint32_t mMotionCommitFrame{UINT32_MAX};
     void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
     [[nodiscard]] String DbgGetBufferStatistics() const;
     [[nodiscard]] TLASBuildResult BuildTLAS(RHICommandList* cmd, bool update);
@@ -432,7 +434,8 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     mUploadGeometryQueue(std::bit_ceil(static_cast<size_t>(desc.geometryBudget) + 1), allocator),
     mUploadTextureQueue(std::bit_ceil(static_cast<size_t>(desc.texturesBudget) + 1), allocator),
     mUploadBufferQueue(std::bit_ceil(static_cast<size_t>(kGPUSceneBufferQueueCapacity)), allocator),
-    mInstanceScratch(allocator), mTLASInstanceStride(mDevice->WriteAccelerationStructureInstanceData({}, nullptr)),
+    mInstanceScratch(allocator), mMotionBaseline(allocator),
+    mTLASInstanceStride(mDevice->WriteAccelerationStructureInstanceData({}, nullptr)),
     mTLASInstances(device, desc.tlasInstanceBudget * mTLASInstanceStride)
 {
     CHECK(mDevice != nullptr);
@@ -735,7 +738,7 @@ GPUScene::GPUSceneTables GPUSceneImpl::BeginScene(uint32_t instanceCount, uint32
     return tables;
 }
 
-GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
+GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t frameNumber)
 {
     CHECK_MSG(mTablesScratch.open, "EndScene called without a matching BeginScene");
     UpdateResult res{};
@@ -743,8 +746,23 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     res.numInstances = static_cast<uint32_t>(tables.instances.size());
     res.firstMaterial = tables.firstMaterial;
     res.numMaterials = static_cast<uint32_t>(tables.materials.size());
-    
+
     CHECK(tables.instances.size() == mTablesScratch.instanceCount);
+    // First commit of a new frame: promote the previous frame's final commit to the motion baseline
+    // so repeated commits within this frame still compare against last-rendered state.
+    if (frameNumber != mMotionCommitFrame)
+    {
+        mMotionBaseline = owner.mCommittedInstances;
+        mMotionCommitFrame = frameNumber;
+    }
+
+    auto const trsEqual = [](float3 const& aT, quat const& aR, float3 const& aS, float3 const& bT, quat const& bR,
+                             float3 const& bS)
+    {
+        return aT.x == bT.x && aT.y == bT.y && aT.z == bT.z && aR.x == bR.x && aR.y == bR.y && aR.z == bR.z &&
+            aR.w == bR.w && aS.x == bS.x && aS.y == bS.y && aS.z == bS.z;
+    };
+
     owner.mCommittedInstances.resize(tables.instances.size());
     for (size_t i = 0; i < tables.instances.size(); ++i)
     {
@@ -753,6 +771,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
         CHECK_MSG(g, "EndScene instance references invalid geometry (index {}, generation {})", desc.geometry.index,
                   desc.geometry.generation);
         uint32_t const resourceOffset = g->dynamic ? GetDynamicOffset(*g, mDynamicFrameSlot) : g->resourceOffset;
+        uint32_t const type = g->type | (g->dynamic ? kGSInstanceFlagDynamic : 0u);
         GSInstance inst{
             .transform = desc.transform,
             .rotation = desc.rotation,
@@ -760,8 +779,32 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
             .resourceOffset = resourceOffset,
             .materialIndex = desc.materialIndex,
             .resourceIndex = desc.geometry.index,
-            .type = g->type | (g->dynamic ? kGSInstanceFlagDynamic : 0u),
+            .type = type,
+            .prevTransform = desc.transform,
+            .prevRotation = desc.rotation,
+            .prevScale = desc.scale,
+            .prevResourceOffset = resourceOffset,
+            .motionFrame = UINT32_MAX,
         };
+        bool const haveBaseline = i < mMotionBaseline.size();
+        if (haveBaseline)
+        {
+            GSInstance const& prev = mMotionBaseline[i];
+            bool const sameIdentity = prev.resourceIndex == inst.resourceIndex && prev.type == inst.type;
+            if (sameIdentity)
+            {
+                inst.prevTransform = prev.transform;
+                inst.prevRotation = prev.rotation;
+                inst.prevScale = prev.scale;
+                inst.prevResourceOffset = prev.resourceOffset;
+                bool moved = !trsEqual(inst.transform, inst.rotation, inst.scale, prev.transform, prev.rotation,
+                                       prev.scale);
+                if (g->dynamic)
+                    moved = moved || inst.resourceOffset != prev.resourceOffset;
+                if (moved)
+                    inst.motionFrame = frameNumber;
+            }
+        }
         mTablesScratch.instancePtr[i] = inst; // ring (GPU)
         owner.mCommittedInstances[i] = inst; // committed snapshot
     }
@@ -2710,6 +2753,8 @@ void GPUSceneImpl::Reset()
     owner.mCommittedLights.clear();
     owner.mCommittedMaterials.clear();
     owner.mTLASInstanceMap.clear();
+    mMotionBaseline.clear();
+    mMotionCommitFrame = UINT32_MAX;
     mTablesScratch = {};
     mMaterialBuffer.Reset();
     mInstanceBuffer.Reset();
@@ -2770,7 +2815,10 @@ GPUScene::GPUSceneTables GPUScene::BeginScene(uint32_t instanceCount, uint32_t m
     return mImpl->BeginScene(instanceCount, materialCount, lightCount);
 }
 
-GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables) { return mImpl->EndScene(tables); }
+GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables, uint32_t frameNumber)
+{
+    return mImpl->EndScene(tables, frameNumber);
+}
 void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const { mImpl->DbgGetMemoryStatistics(outStats); }
 String GPUScene::DbgGetBufferStatistics() const { return mImpl->DbgGetBufferStatistics(); }
 GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update)

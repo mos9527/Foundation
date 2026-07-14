@@ -303,7 +303,7 @@ int main(int argc, char** argv)
             key.direction = float3(0.0f, -1.0f, 0.0f);
             key.importance = key.power; // only one light, so any positive importance works
 
-            gpu.EndScene(tables);
+            gpu.EndScene(tables, ubo.frameNumber);
             gpu.BuildUBO(ubo);
         };
         AuthorFrame(0.0f); // seed the tables so the initial TLAS build has instances
@@ -401,8 +401,9 @@ int main(int argc, char** argv)
 
             // Re-author the animated scene for this frame. The graph's TLAS-update pass refits
             // against these committed instances, so this is all the per-frame motion needs.
+            ubo.frameNumber = renderer->GetFrame();
             AuthorFrame(animTime);
-            Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);           
+            Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);
             Examples_NewFrame(window, renderer.get(), swapchain);
             // Advance path-tracer accumulation after the frame is submitted.
             if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)

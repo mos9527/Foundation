@@ -4,6 +4,7 @@
 // DAG/meshlets, so it never enters the meshlet pipeline (ECSCullInstances skips it); this is
 // its dedicated draw path. The per-draw absolute instance index is published in a parallel
 // buffer indexed by the draw (SV_DrawIndex) - firstInstance is unreliable across HLSL/Vulkan.
+// A second MDI set lists only motion contributors (deform slot / TRS changed this frame).
 #include "ICommon.slang"
 
 uniform UBO globalParams;
@@ -12,6 +13,9 @@ ByteAddressBuffer dynamicPrimitives; // current frame slot; header carries slot-
 RWStructuredBuffer<DrawIndexedIndirectCommand> outDrawCmds;
 RWStructuredBuffer<uint> outDrawInstanceIDs; // [drawIndex] -> absolute scene instance index
 RWStructuredBuffer<Atomic<uint>> outDrawCount;
+RWStructuredBuffer<DrawIndexedIndirectCommand> outMotionDrawCmds;
+RWStructuredBuffer<uint> outMotionDrawInstanceIDs;
+RWStructuredBuffer<Atomic<uint>> outMotionDrawCount;
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -34,4 +38,10 @@ void main(uint tid: SV_DispatchThreadID)
     cmd.firstInstance = 0;
     outDrawCmds[draw] = cmd;
     outDrawInstanceIDs[draw] = iid; // read by the VS via SV_DrawIndex
+    if (GSInstanceHasMotion(inst, globalParams.frameNumber))
+    {
+        uint motionDraw = outMotionDrawCount[0].add(1);
+        outMotionDrawCmds[motionDraw] = cmd;
+        outMotionDrawInstanceIDs[motionDraw] = iid;
+    }
 }

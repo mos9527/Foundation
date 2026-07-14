@@ -2874,6 +2874,7 @@ void FRunningImGui()
                 ImGui::SeparatorText(PSI_COG " Raster Effects");
                 if (ImGui::CollapsingHeader("GTAO", ImGuiTreeNodeFlags_DefaultOpen))
                 {
+                    ImGui::PushID("GTAO");
                     changed |= ImGui::Checkbox("Enable GTAO", &GEditor.rasterGTAO);
                     ImGui::BeginDisabled(!GEditor.rasterGTAO);
                     RasterGTAOConfig& gtao = GEditor.rasterGTAOConfig;
@@ -2888,6 +2889,23 @@ void FRunningImGui()
                     if (ImGui::SliderInt("Steps", &steps, 1, 16))
                         gtao.stepCount = static_cast<uint32_t>(steps);
                     ImGui::EndDisabled();
+                    ImGui::PopID();
+                }
+                if (ImGui::CollapsingHeader("Motion Blur", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    ImGui::PushID("MotionBlur");
+                    changed |= ImGui::Checkbox("Enable Motion Blur", &GEditor.rasterMotionBlur);
+                    ImGui::BeginDisabled(!GEditor.rasterMotionBlur);
+                    RasterMotionBlurConfig& mb = GEditor.rasterMotionBlurConfig;
+                    ImGui::SliderFloat("Intensity", &mb.intensity, 0.0f, 2.0f, "%.2f");
+                    int samples = static_cast<int>(mb.sampleCount);
+                    if (ImGui::SliderInt("Sample Count", &samples, 2, 32))
+                        mb.sampleCount = static_cast<uint32_t>(std::max(2, samples));
+                    ImGui::SliderFloat("Maximum Velocity", &mb.maximumVelocity, 1.0f, 1500.0f, "%.0f px");
+                    ImGui::SliderFloat("Minimum Velocity", &mb.minimumVelocity, 0.0f, 64.0f, "%.1f px");
+                    ImGui::SliderFloat("Depth Comparison Extent", &mb.depthComparisonExtent, 0.0f, 20.0f, "%.2f");
+                    ImGui::EndDisabled();
+                    ImGui::PopID();
                 }
             }
             if ((GEditor.rendererConfig.viewFlags & kViewMatcap) != 0u)

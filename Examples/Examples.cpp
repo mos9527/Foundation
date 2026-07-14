@@ -25,7 +25,11 @@ constexpr int kExampleUiCharHeight = 16;
 constexpr int kExampleUiDefaultColor = -1;
 constexpr int kExampleUiActiveColor = 0xff00ff00;
 const RasterGTAOConfig kExampleRasterGTAOConfig{};
-const RasterEffect kExampleRasterEffects[] = {MakeRasterGTAOEffect(&kExampleRasterGTAOConfig)};
+const RasterMotionBlurConfig kExampleRasterMotionBlurConfig{};
+const RasterEffect kExampleRasterEffects[] = {
+    MakeRasterGTAOEffect(&kExampleRasterGTAOConfig),
+    MakeRasterMotionBlurEffect(&kExampleRasterMotionBlurConfig),
+};
 
 constexpr RHISurfaceFormat kFormatPreferenceList[] = {
     {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
@@ -837,11 +841,7 @@ void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPU
 void Examples_GPUSceneFillCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera const& camera,
                                     RendererConfig const& config)
 {
-    ubo.frameNumber = renderer->GetFrame();
-    ubo.view = camera.view;
-    ubo.proj = camera.proj;
-    ubo.inverseView = inverse(camera.view);
-    ubo.inverseViewProj = inverse(camera.proj * camera.view);
+    UpdateRendererCameraUBO(ubo, renderer->GetFrame(), camera.view, camera.proj);
     ubo.zNear = camera.zNear;
     ubo.projPlanes = planeSymmetric(camera.proj);
     ubo.camPosition = float4(camera.position, 0.0f);

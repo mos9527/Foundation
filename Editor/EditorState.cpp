@@ -15,7 +15,7 @@ static ResourceHandle sPickResultBuffer;
 static RendererOutputs sRenderOutputs;
 static int2 sPickingPixel;
 static bool sPickingDoubleClick = false;
-static RasterEffect sEditorRasterEffects[1];
+static RasterEffect sEditorRasterEffects[2];
 
 int SceneInstanceIndexFromId(FUUID id)
 {
@@ -343,10 +343,12 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
         std::max(16u, static_cast<uint32_t>(renderExtent.y * GEditor.renderResolutionScale))
     };
     GEditor.rendererConfig.renderExtent = scaledExtent;
-    sEditorRasterEffects[0] = MakeRasterGTAOEffect(&GEditor.rasterGTAOConfig);
-    GEditor.rendererConfig.rasterEffects = GEditor.rasterGTAO
-        ? Span<const RasterEffect>(sEditorRasterEffects, sizeof(sEditorRasterEffects) / sizeof(sEditorRasterEffects[0]))
-        : Span<const RasterEffect>{};
+    size_t rasterEffectCount = 0;
+    if (GEditor.rasterGTAO)
+        sEditorRasterEffects[rasterEffectCount++] = MakeRasterGTAOEffect(&GEditor.rasterGTAOConfig);
+    if (GEditor.rasterMotionBlur)
+        sEditorRasterEffects[rasterEffectCount++] = MakeRasterMotionBlurEffect(&GEditor.rasterMotionBlurConfig);
+    GEditor.rendererConfig.rasterEffects = Span<const RasterEffect>(sEditorRasterEffects, rasterEffectCount);
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
     if (GEditor.rendererMode == ERendererMode::PathTracer)
         BuildPathTracerRenderGraph(renderer, &GEditor.shaderGlobals, context->gpuScene, GEditor.rendererConfig, outOutputs);
@@ -434,6 +436,7 @@ static void FRunning()
     auto* renderer = GContext->renderer;
     // New frame
     renderer->BeginExecute();
+    GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
     UpdateBackbufferViewport();
@@ -462,11 +465,7 @@ static void FRunning()
     if (followAnimatedCamera)
         GEditor.cameraUpdated |= ApplyAnimatedCameraToView();
     GEditor.camera.Update({});
-    GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
-    GEditor.shaderGlobals.view = GEditor.camera.view;
-    GEditor.shaderGlobals.proj = GEditor.camera.proj;
-    GEditor.shaderGlobals.inverseView = inverse(GEditor.shaderGlobals.view);
-    GEditor.shaderGlobals.inverseViewProj = inverse(GEditor.shaderGlobals.proj * GEditor.shaderGlobals.view);
+    UpdateRendererCameraUBO(GEditor.shaderGlobals, renderer->GetFrame(), GEditor.camera.view, GEditor.camera.proj);
     GEditor.shaderGlobals.zNear = GEditor.camera.zNear;
     GEditor.shaderGlobals.projPlanes = planeSymmetric(GEditor.shaderGlobals.proj);
 

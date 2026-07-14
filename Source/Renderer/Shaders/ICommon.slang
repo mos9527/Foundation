@@ -105,11 +105,19 @@ public struct GSInstance
     public uint32_t materialIndex; // In Material buffer (offset)
     public uint32_t resourceIndex; // Debug use
     public uint32_t type; // [7:0] 0=Mesh, 1=Curve; bit 8 = dynamic (see kGSInstanceFlag*)
+    // Previous-frame object state for motion vectors (same camera; object/deform motion only).
+    public float3 prevTransform;
+    public quat prevRotation;
+    public float3 prevScale;
+    public uint32_t prevResourceOffset;
+    // Set to the commit frame when this instance contributes motion; otherwise 0xFFFFFFFFu.
+    public uint32_t motionFrame;
 };
 // Geometry kind (mesh/curve), ignoring feature flags.
 public uint32_t GSInstanceType(GSInstance i) { return i.type & kGSInstanceTypeMask; }
 // True when the instance's primitive data lives in the dynamic (CPU-updateable) ring buffer.
 public bool GSInstanceIsDynamic(GSInstance i) { return (i.type & kGSInstanceFlagDynamic) != 0u; }
+public bool GSInstanceHasMotion(GSInstance i, uint32_t frame) { return i.motionFrame == frame; }
 public struct GSCurveSet
 {
     public uint32_t pointOffset;
@@ -227,6 +235,8 @@ public struct UBO
     public float4x4 proj;
     public float4x4 inverseView;
     public float4x4 inverseViewProj;
+    public float4x4 previousViewProj;
+    public uint32_t cameraHistoryFrame;
     public float4 projPlanes; // ij:left, kl:top
     public float aperture;
     public float focalDistance;
