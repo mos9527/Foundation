@@ -170,7 +170,7 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 21;
+static constexpr uint32_t kSceneVersion = 22;
 
 // One NLA strip: a source clip (referenced by its animation-group name id) placed on the timeline,
 // optionally retimed and looped within a source-clip window. Matches EXT_foundation_animation.

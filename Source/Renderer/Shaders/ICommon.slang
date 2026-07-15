@@ -128,21 +128,24 @@ public bool GSInstanceIsDynamic(GSInstance i) { return (i.type & kGSInstanceFlag
 public bool GSInstanceHasMotion(GSInstance i, uint32_t frame) { return i.motionFrame == frame; }
 public struct GSCurveSet
 {
-    public uint32_t pointOffset;
-    public uint32_t pointCount;
-    public uint32_t segmentOffset;
-    public uint32_t segmentCount;
-    public uint32_t aabbOffset;
+    public uint32_t vtxOffset;
+    public uint32_t vtxCount;
+    public uint32_t idxOffset;
+    public uint32_t idxCount;
+    public uint32_t leafOffset;
+    public uint32_t leafCount;
 };
-public struct GSCurvePoint
+public struct GSCurveDOTSVertex
 {
     public float3 position;
-    public float radius;
+    public float pad;
 };
-public struct GSCurveSegment
+public struct GSCurveLeaf
 {
-    public uint32_t p0;
-    public uint32_t p1;
+    public float3 p0;
+    public float r0;
+    public float3 p1;
+    public float r1;
     public float u0;
     public float u1;
 };

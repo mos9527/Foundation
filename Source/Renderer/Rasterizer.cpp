@@ -39,6 +39,7 @@ constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
+constexpr size_t kMaxCurveDraws = 4096; // curve (DOTS) instances drawn per frame (raster)
 constexpr size_t kDisableRTBuildFlags = kViewOverdraw | kViewMeshlet | kViewBaseColor | kViewNormal | kViewPosition | kViewMatcap;
 constexpr RHIResourceFormat kGBufferNormalFormat = RHIResourceFormat::A2B10G10R10Unorm;
 
@@ -585,6 +586,119 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 cmd->EndGraphics();
             });
     }
+    /* Curves (DOTS triangles): static Primitive-buffer MDI path, cull-disabled like the TLAS. */
+    ResourceHandle CurveMotionDrawCmds = kInvalidHandle;
+    ResourceHandle CurveMotionDrawCount = kInvalidHandle;
+    ResourceHandle CurveMotionDrawInstanceIDs = kInvalidHandle;
+    if (gpu->HasCurveGeometry())
+    {
+        auto CurveDrawCmds = renderer->CreateResource(
+            "Curve Draw Commands",
+            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                          .size = sizeof(DrawIndexedIndirectCommand) * kMaxCurveDraws});
+        auto CurveDrawCount = renderer->CreateResource(
+            "Curve Draw Count",
+            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
+        auto CurveDrawInstanceIDs = renderer->CreateResource(
+            "Curve Draw Instance IDs",
+            RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * kMaxCurveDraws});
+        CurveMotionDrawCmds = renderer->CreateResource(
+            "Curve Motion Draw Commands",
+            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                          .size = sizeof(DrawIndexedIndirectCommand) * kMaxCurveDraws});
+        CurveMotionDrawCount = renderer->CreateResource(
+            "Curve Motion Draw Count",
+            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
+        CurveMotionDrawInstanceIDs = renderer->CreateResource(
+            "Curve Motion Draw Instance IDs",
+            RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * kMaxCurveDraws});
+        renderer->CreatePass(
+            "Curve Draw Gen", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindBufferCopyDst(self, CurveDrawCount);
+                r->BindBufferCopyDst(self, CurveMotionDrawCount);
+                r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                              PathsResolve("Data/Shaders/ECSCurveIndirectDraw.spv"));
+                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
+                r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
+                r->BindBufferUnordered(self, CurveDrawCmds, RHIPipelineStageBits::ComputeShader, "outDrawCmds");
+                r->BindBufferUnordered(self, CurveDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
+                                       "outDrawInstanceIDs");
+                r->BindBufferUnordered(self, CurveDrawCount, RHIPipelineStageBits::ComputeShader, "outDrawCount");
+                r->BindBufferUnordered(self, CurveMotionDrawCmds, RHIPipelineStageBits::ComputeShader,
+                                       "outMotionDrawCmds");
+                r->BindBufferUnordered(self, CurveMotionDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
+                                       "outMotionDrawInstanceIDs");
+                r->BindBufferUnordered(self, CurveMotionDrawCount, RHIPipelineStageBits::ComputeShader,
+                                       "outMotionDrawCount");
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                cmd->FillBuffer(r->DerefResource(CurveDrawCount).Get<RHIBuffer*>(), 0u);
+                cmd->FillBuffer(r->DerefResource(CurveMotionDrawCount).Get<RHIBuffer*>(), 0u);
+                r->CmdSetPipeline(self, cmd);
+                r->CmdDispatch(self, cmd, {globals->numInstances, 1, 1});
+            });
+        using RasterizerState = RHIPipelineState::PipelineStateDesc::Rasterizer;
+        RasterizerState const curveRaster{.cullMode = RasterizerState::CullNone};
+        renderer->CreatePass(
+            "Curve GBuffer", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Vertex, "main", PathsResolve("Data/Shaders/EVSCurveDraw.spv"));
+                r->BindShader(self, RHIShaderStageBits::Fragment, "main", PathsResolve("Data/Shaders/EPSGBuffer.spv"),
+                              AsBytes(AsSpan(gbufferFlags)));
+                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
+                r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
+                r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
+                r->BindBufferStorageRead(self, CurveDrawInstanceIDs, RHIPipelineStageBits::AllGraphics,
+                                         "drawInstanceIDs");
+                r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
+                r->BindTextureRTV(self, GBufferRT0,
+                                  {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindTextureRTV(self, GBufferRT1,
+                                  {.format = kGBufferNormalFormat,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindTextureRTV(self, GBufferRT2,
+                                  {.format = RHIResourceFormat::B10G11R11Ufloat,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindTextureRTV(self, InstanceIDBuffer,
+                                  {.format = RHIResourceFormat::R32Uint,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
+                                  {.format = RHIResourceFormat::R32Uint,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindTextureDSV(self, Depth,
+                                  {.format = RHIResourceFormat::D32SignedFloat,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                r->BindBufferIndirectRead(self, CurveDrawCmds);
+                r->BindBufferIndirectRead(self, CurveDrawCount);
+                r->BindTextureSampler(self, TexSampler, "textureSampler");
+                r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
+                r->PassSetRasterizerFlags(self, curveRaster);
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                RHIExtent2D wh{w, h};
+                r->CmdBeginGraphics(self, cmd, wh,
+                                    {{{RHIAttachmentLoadOp::Load},
+                                      {RHIAttachmentLoadOp::Load},
+                                      {RHIAttachmentLoadOp::Load},
+                                      {RHIAttachmentLoadOp::Load}}},
+                                    {RHIAttachmentLoadOp::Load});
+                r->CmdSetPipeline(self, cmd);
+                cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
+                r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
+                cmd->BindIndexBuffer(gpu->GetPrimitiveBuffer(), 0, RHIResourceFormat::R32Uint);
+                auto* cmds = r->DerefResource(CurveDrawCmds).Get<RHIBuffer*>();
+                auto* count = r->DerefResource(CurveDrawCount).Get<RHIBuffer*>();
+                cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxCurveDraws, sizeof(DrawIndexedIndirectCommand));
+                cmd->EndGraphics();
+            });
+    }
     renderer->CreatePass(
         "Camera Motion Vectors", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -682,6 +796,49 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                     auto* cmds = r->DerefResource(motionCmds).Get<RHIBuffer*>();
                     auto* count = r->DerefResource(motionCount).Get<RHIBuffer*>();
                     cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxDynamicDraws,
+                                                  sizeof(DrawIndexedIndirectCommand));
+                    cmd->EndGraphics();
+                });
+        }
+        if (gpu->HasCurveGeometry())
+        {
+            auto motionCmds = CurveMotionDrawCmds;
+            auto motionCount = CurveMotionDrawCount;
+            auto motionIDs = CurveMotionDrawInstanceIDs;
+            using RasterizerState = RHIPipelineState::PipelineStateDesc::Rasterizer;
+            RasterizerState const curveRaster{.cullMode = RasterizerState::CullNone};
+            renderer->CreatePass(
+                "Motion Vectors [Curves]", RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindShader(self, RHIShaderStageBits::Vertex, "main",
+                                  PathsResolve("Data/Shaders/EVSCurveMotionDraw.spv"));
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "main",
+                                  PathsResolve("Data/Shaders/EPSMotionVector.spv"));
+                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
+                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
+                    r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
+                    r->BindBufferStorageRead(self, motionIDs, RHIPipelineStageBits::AllGraphics, "drawInstanceIDs");
+                    r->BindTextureRTV(self, MotionVectorRT,
+                                      {.format = RHIResourceFormat::R16G16SignedFloat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureDSV(self, Depth,
+                                      {.format = RHIResourceFormat::D32SignedFloat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                    r->BindBufferIndirectRead(self, motionCmds);
+                    r->BindBufferIndirectRead(self, motionCount);
+                    r->PassSetRasterizerFlags(self, curveRaster, motionDepth);
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    RHIExtent2D wh{w, h};
+                    r->CmdBeginGraphics(self, cmd, wh, {{{RHIAttachmentLoadOp::Load}}}, {RHIAttachmentLoadOp::Load});
+                    r->CmdSetPipeline(self, cmd);
+                    cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
+                    cmd->BindIndexBuffer(gpu->GetPrimitiveBuffer(), 0, RHIResourceFormat::R32Uint);
+                    auto* cmds = r->DerefResource(motionCmds).Get<RHIBuffer*>();
+                    auto* count = r->DerefResource(motionCount).Get<RHIBuffer*>();
+                    cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxCurveDraws,
                                                   sizeof(DrawIndexedIndirectCommand));
                     cmd->EndGraphics();
                 });

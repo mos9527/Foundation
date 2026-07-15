@@ -16,6 +16,9 @@ RWTexture2D<float4> diffuseOutput;
 RWTexture2D<float4> specularOutput;
 RaytracingAccelerationStructure AS;
 
+static const uint kMeshMask = 0x01;
+static const uint kCurveMask = 0x04;
+
 bool shadow(float3 p, float3 l, float tMax = INF)
 {
     RayDesc ray;
@@ -24,7 +27,7 @@ bool shadow(float3 p, float3 l, float tMax = INF)
     ray.TMin = EPS_TMin;
     ray.TMax = tMax;
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
-    q.TraceRayInline(AS, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, ray);
+    q.TraceRayInline(AS, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, kMeshMask | kCurveMask, ray);
     while (q.Proceed()){
         // Not alpha tested. A hit is a shadow.
         q.CommitNonOpaqueTriangleHit();

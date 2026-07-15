@@ -6599,34 +6599,8 @@ static int cgltf_parse_json_node(cgltf_options* options, jsmntok_t const* tokens
 				}
 				else if (cgltf_json_strcmp(tokens+i, json_chunk, "EXT_foundation_curves") == 0)
 				{
-					++i;
-
-					CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
-
-					int data_size = tokens[i].size;
-					++i;
-
-					for (int m = 0; m < data_size; ++m)
-					{
-						CGLTF_CHECK_KEY(tokens[i]);
-
-						if (cgltf_json_strcmp(tokens + i, json_chunk, "curve") == 0)
-						{
-							++i;
-							CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_PRIMITIVE);
-							out_node->curve = CGLTF_PTRINDEX(cgltf_curve, cgltf_json_to_int(tokens + i, json_chunk));
-							++i;
-						}
-						else
-						{
-							i = cgltf_skip_json(tokens, i + 1);
-						}
-
-						if (i < 0)
-						{
-							return i;
-						}
-					}
+					/* Deprecated: curves are now standard LINES + _RADIUS mesh primitives. */
+					i = cgltf_skip_json(tokens, i + 1);
 				}
 				else if (cgltf_json_strcmp(tokens + i, json_chunk, "EXT_mesh_gpu_instancing") == 0)
 				{
@@ -7649,31 +7623,8 @@ static int cgltf_parse_json_root(cgltf_options* options, jsmntok_t const* tokens
 				}
 				else if (cgltf_json_strcmp(tokens+i, json_chunk, "EXT_foundation_curves") == 0)
 				{
-					++i;
-
-					CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
-
-					int data_size = tokens[i].size;
-					++i;
-
-					for (int m = 0; m < data_size; ++m)
-					{
-						CGLTF_CHECK_KEY(tokens[i]);
-
-						if (cgltf_json_strcmp(tokens + i, json_chunk, "curves") == 0)
-						{
-							i = cgltf_parse_json_curves(options, tokens, i + 1, json_chunk, out_data);
-						}
-						else
-						{
-							i = cgltf_skip_json(tokens, i + 1);
-						}
-
-						if (i < 0)
-						{
-							return i;
-						}
-					}
+					/* Deprecated: curves are now standard LINES + _RADIUS mesh primitives. */
+					i = cgltf_skip_json(tokens, i + 1);
 				}
 				else if (cgltf_json_strcmp(tokens+i, json_chunk, "EXT_foundation_animation") == 0)
 				{

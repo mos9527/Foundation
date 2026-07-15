@@ -1,23 +1,20 @@
 #pragma once
 #include <Renderer/Curve.hpp>
 
-enum class FCurveBasis : uint32_t
+// One tapered line segment prior to DOTS bake (from glTF LINES + _RADIUS).
+struct FImportedCurveSegment
 {
-    Linear = 0,
-    Bezier = 1,
-    BSpline = 2,
-    CatmullRom = 3,
+    float3 p0;
+    float r0;
+    float3 p1;
+    float r1;
+    float u0;
+    float u1;
 };
-enum class FCurveRenderMode : uint32_t
-{
-    Capsule = 0,
-};
+
 struct FImportedCurve
 {
-    Vector<FCurvePoint> points;
-    Vector<uint32_t> curveVertexCounts;
-    FCurveBasis basis{FCurveBasis::Linear};
-    FCurveRenderMode renderMode{FCurveRenderMode::Capsule};
+    Vector<FImportedCurveSegment> segments;
 
-    FImportedCurve(Allocator* alloc) : points(alloc), curveVertexCounts(alloc) {}
+    FImportedCurve(Allocator* alloc) : segments(alloc) {}
 };
