@@ -22,6 +22,13 @@ static constexpr size_t kUploadStagingBudgetSlack = 32ull * (1ull << 20);
 static constexpr size_t kUploadStagingBuffers = 3u;
 static constexpr size_t kGPUSceneBufferQueueCapacity = 256u;
 
+static bool IsIntersectableLight(GSLight const& light)
+{
+    uint32_t type = light.flags & kGSLightTypeMask;
+    return type == kGSLightTypeDisk || type == kGSLightTypeRect ||
+        ((type == kGSLightTypePoint || type == kGSLightTypeSpot) && light.params.x > 0.0f);
+}
+
 static size_t GPUSceneTextureSubresourceFootprint(FTextureHeader const& metadata, uint32_t layer, uint32_t mip)
 {
     uint32_t const alignment = std::max(metadata.GetBpp() / 8, metadata.GetBlockSize());
@@ -198,6 +205,7 @@ struct GPUSceneImpl
     RHIDeviceScopedHandle<RHIBuffer> mLightGeometryBuffer;
     RHIDeviceScopedHandle<RHIAccelerationStructure> mRectBLAS;
     RHIDeviceScopedHandle<RHIAccelerationStructure> mDiskBLAS;
+    RHIDeviceScopedHandle<RHIAccelerationStructure> mSphereBLAS;
     RHIDeviceScopedHandle<RHIBuffer> mLightBLASBuffer;
     // TLAS
     uint32_t mTLASInstanceStride{0};
@@ -544,10 +552,12 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
         {
             RHIAccelerationStructureAABB rect;
             RHIAccelerationStructureAABB disk;
+            RHIAccelerationStructureAABB sphere;
         } geo;
         constexpr float kLightAABBThickness = 1e-3f;
         geo.rect = RHIAccelerationStructureAABB{-1.0f, -1.0f, -kLightAABBThickness, 1.0f, 1.0f, kLightAABBThickness};
         geo.disk = geo.rect;
+        geo.sphere = RHIAccelerationStructureAABB{-1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f};
 
         mLightGeometryBuffer = mDevice->CreateBuffer(
             {.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
@@ -576,6 +586,12 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
                                                                       .count = 1,
                                                                       .stride = sizeof(RHIAccelerationStructureAABB)}};
         RHIAccelerationStructureBuildRangeInfo diskRange{.primitiveCount = 1};
+        RHIAccelerationStructureGeometryInfo sphereGeoInfo{.type = RHIAccelerationGeometryType::AABBs,
+                                                           .aabbData = {.aabbBuffer = mLightGeometryBuffer.Get(),
+                                                                        .offset = offsetof(LightAABBs, sphere),
+                                                                        .count = 1,
+                                                                        .stride = sizeof(RHIAccelerationStructureAABB)}};
+        RHIAccelerationStructureBuildRangeInfo sphereRange{.primitiveCount = 1};
 
         RHIAccelerationStructureBuildDesc rectDesc{
             .type = RHIAccelerationStructureType::BottomLevel,
@@ -589,16 +605,25 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
             .operation = RHIAccelerationStructureBuildOp::Build,
             .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&diskGeoInfo, 1},
             .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&diskRange, 1}};
+        RHIAccelerationStructureBuildDesc sphereDesc{
+            .type = RHIAccelerationStructureType::BottomLevel,
+            .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace,
+            .operation = RHIAccelerationStructureBuildOp::Build,
+            .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&sphereGeoInfo, 1},
+            .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&sphereRange, 1}};
 
         StackArena<4096> sizeInfoArena;
         AllocatorStack sizeInfoScratch(sizeInfoArena);
         auto rectSize = mDevice->GetAccelerationStructureSizeInfo(rectDesc, sizeInfoScratch.Ptr());
         sizeInfoScratch.Reset(sizeInfoArena);
         auto diskSize = mDevice->GetAccelerationStructureSizeInfo(diskDesc, sizeInfoScratch.Ptr());
+        sizeInfoScratch.Reset(sizeInfoArena);
+        auto sphereSize = mDevice->GetAccelerationStructureSizeInfo(sphereDesc, sizeInfoScratch.Ptr());
 
         uint32_t rectOffset = 0;
         uint32_t diskOffset = AlignUp(rectSize.accelerationStructureSize, 256u);
-        uint32_t totalSize = diskOffset + diskSize.accelerationStructureSize;
+        uint32_t sphereOffset = AlignUp(diskOffset + diskSize.accelerationStructureSize, 256u);
+        uint32_t totalSize = sphereOffset + sphereSize.accelerationStructureSize;
 
         mLightBLASBuffer =
             mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
@@ -606,7 +631,8 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
                                        RHIBufferUsageBits::AccelerationStructureStorage,
                                    .size = totalSize});
 
-        uint32_t scratchSize = std::max(rectSize.buildScratchSize, diskSize.buildScratchSize);
+        uint32_t scratchSize =
+            std::max(std::max(rectSize.buildScratchSize, diskSize.buildScratchSize), sphereSize.buildScratchSize);
         auto scratch =
             mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
                                    .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
@@ -621,6 +647,10 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
                                                           .buffer = mLightBLASBuffer.Get(),
                                                           .offset = diskOffset,
                                                           .size = diskSize.accelerationStructureSize});
+        mSphereBLAS = mDevice->CreateAccelerationStructure({.type = RHIAccelerationStructureType::BottomLevel,
+                                                            .buffer = mLightBLASBuffer.Get(),
+                                                            .offset = sphereOffset,
+                                                            .size = sphereSize.accelerationStructureSize});
 
         ImmediateContext ctx(mDevice);
         auto* cmd = ctx.Get();
@@ -641,6 +671,17 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
         diskDesc.scratchBufferOffset = 0;
         diskDesc.dstAS = mDiskBLAS.Get();
         cmd->BuildAccelerationStructure({{{diskDesc}}});
+
+        cmd->BeginTransition();
+        cmd->SetBufferTransition(
+            scratch.Get(),
+            {.srcStage = RHIPipelineStageBits::AccelerationBuild, .dstStage = RHIPipelineStageBits::AccelerationBuild});
+        cmd->EndTransition();
+
+        sphereDesc.scratchBuffer = scratch.Get();
+        sphereDesc.scratchBufferOffset = 0;
+        sphereDesc.dstAS = mSphereBLAS.Get();
+        cmd->BuildAccelerationStructure({{{sphereDesc}}});
 
         cmd->End();
         ctx.Submit();
@@ -2536,17 +2577,16 @@ uint32_t GPUSceneImpl::CountLiveInstances() const { return static_cast<uint32_t>
 
 uint32_t GPUSceneImpl::CountTLASInstances() const
 {
-    uint32_t numAreaLights = 0;
+    uint32_t numLightInstances = 0;
     for (const auto& light : owner.mCommittedLights)
     {
-        uint32_t type = light.flags & kGSLightTypeMask;
-        if (type == 3 || type == 4)
-            numAreaLights++;
+        if (IsIntersectableLight(light))
+            numLightInstances++;
     }
     uint32_t numInstances = CountLiveInstances();
-    CHECK_MSG(numInstances <= UINT32_MAX - numAreaLights,
-              "TLAS instance count overflow: {} scene instances and {} area lights", numInstances, numAreaLights);
-    return numInstances + numAreaLights;
+    CHECK_MSG(numInstances <= UINT32_MAX - numLightInstances,
+              "TLAS instance count overflow: {} scene instances and {} light instances", numInstances, numLightInstances);
+    return numInstances + numLightInstances;
 }
 
 void GPUSceneImpl::EnsureTLASCapacity(uint32_t totalInstances)
@@ -2599,18 +2639,17 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
     uint32_t capacityInstances = CountTLASInstances();
     EnsureTLASCapacity(capacityInstances);
 
-    uint32_t areaLights = 0;
+    uint32_t lightInstances = 0;
     for (GSLight const& light : owner.mCommittedLights)
     {
-        uint32_t type = light.flags & kGSLightTypeMask;
-        if (type == 3 || type == 4)
-            ++areaLights;
+        if (IsIntersectableLight(light))
+            ++lightInstances;
     }
     uint32_t readyInstances = 0;
     for (GSInstance const& inst : owner.mCommittedInstances)
         if (GeometryReady(inst.resourceIndex))
             ++readyInstances;
-    uint32_t totalInstances = readyInstances + areaLights;
+    uint32_t totalInstances = readyInstances + lightInstances;
     if (totalInstances != owner.mLastTLASInstancesCount)
     {
         update = false;
@@ -2648,9 +2687,23 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
             .mask = 0x02, // LIGHT_MASK
         };
         uint32_t type = src->flags & kGSLightTypeMask;
+        if (type == kGSLightTypePoint || type == kGSLightTypeSpot)
+        {
+            mat3 basis(src->params.x);
+            std::memcpy(res.transformBasisRowMajor[0], &basis[0], sizeof(float) * 3);
+            std::memcpy(res.transformBasisRowMajor[1], &basis[1], sizeof(float) * 3);
+            std::memcpy(res.transformBasisRowMajor[2], &basis[2], sizeof(float) * 3);
+            res.transformTranslation[0] = src->position.x;
+            res.transformTranslation[1] = src->position.y;
+            res.transformTranslation[2] = src->position.z;
+            res.blas = mSphereBLAS.Get();
+            res.shaderBindingTableRecordOffset = kSphereLightSBTOffset;
+            return res;
+        }
+
         float3 u = src->dpdu;
         float3 v = src->dpdv;
-        if (type == 3) // Disk
+        if (type == kGSLightTypeDisk)
         {
             u *= src->params.x;
             v *= src->params.y;
@@ -2665,8 +2718,9 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         res.transformTranslation[0] = src->position.x;
         res.transformTranslation[1] = src->position.y;
         res.transformTranslation[2] = src->position.z;
-        res.blas = (type == 3) ? mDiskBLAS.Get() : mRectBLAS.Get();
-        res.shaderBindingTableRecordOffset = (type == 3) ? kDiskLightSBTOffset : kRectLightSBTOffset;
+        res.blas = (type == kGSLightTypeDisk) ? mDiskBLAS.Get() : mRectBLAS.Get();
+        res.shaderBindingTableRecordOffset =
+            (type == kGSLightTypeDisk) ? kDiskLightSBTOffset : kRectLightSBTOffset;
         return res;
     };
 
@@ -2691,8 +2745,7 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         for (uint32_t i = 0; i < owner.mCommittedLights.size(); ++i)
         {
             GSLight const& light = owner.mCommittedLights[i];
-            uint32_t type = light.flags & kGSLightTypeMask;
-            if (type == 3 || type == 4)
+            if (IsIntersectableLight(light))
             {
                 auto data = ConvertLight(&light, i);
                 pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);

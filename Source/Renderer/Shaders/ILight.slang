@@ -343,7 +343,8 @@ public struct PointLight : ILight {
     }
 
     public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
-        return {};
+        if (radius <= 0.0f || dot(n, w) <= 0.0f) return {};
+        return I / (Pi * radius * radius);
     }
 
     public SampledSpectrum Le(float3 w) {
@@ -429,7 +430,8 @@ public struct SpotLight : ILight {
     }
 
     public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
-        return {};
+        if (radius <= 0.0f || dot(n, w) <= 0.0f) return {};
+        return I * Falloff(w) / (Pi * radius * radius);
     }
 
     public SampledSpectrum Le(float3 w) {

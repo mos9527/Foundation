@@ -19,6 +19,7 @@ struct GPUSceneImpl;
 inline constexpr uint32_t kRectLightSBTOffset = 3u;
 inline constexpr uint32_t kDiskLightSBTOffset = 4u;
 inline constexpr uint32_t kCurveSBTOffset = 5u;
+inline constexpr uint32_t kSphereLightSBTOffset = 6u;
 inline constexpr uint32_t kGSInstanceTypeMesh = 0u;
 inline constexpr uint32_t kGSInstanceTypeCurve = 1u;
 // GSInstance::type low byte is the geometry kind; bit 8 flags CPU-updateable dynamic geometry

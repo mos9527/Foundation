@@ -419,7 +419,9 @@ enum HitKind
     Triangle = 1,
     Disk = 2,
     Rect = 3,
-    Curve = 4
+    Curve = 4,
+    Point = 5,
+    Spot = 6
 };
 
 struct HitPayload
@@ -451,6 +453,10 @@ struct HitRecord
 HitKind HitKindFromLight(GSLight light)
 {
     uint32_t type = GSLightType(light);
+    if (type == 1)
+        return HitKind::Point;
+    if (type == 2)
+        return HitKind::Spot;
     if (type == 3)
         return HitKind::Disk;
     if (type == 4)
@@ -460,7 +466,8 @@ HitKind HitKindFromLight(GSLight light)
 
 bool IsAnalyticLightHit(HitKind kind)
 {
-    return kind == HitKind::Disk || kind == HitKind::Rect;
+    return kind == HitKind::Point || kind == HitKind::Spot ||
+        kind == HitKind::Disk || kind == HitKind::Rect;
 }
 
 bool IsMaterialSurfaceHit(HitKind kind)
@@ -1362,7 +1369,22 @@ bool AddAnalyticLightHitEmission(
     SampledSpectrum Le = SampledSpectrum(0.0f);
     float pdfLi = 0.0f;
 
-    if (hit.kind == HitKind::Disk)
+    if (hit.kind == HitKind::Point)
+    {
+        PointLight light = PointLight(Lemit, gl.position, gl.params.x);
+        float3 normal = normalize(hitPoint - gl.position);
+        Le = light.L(hitPoint, normal, float3(0), view);
+        pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
+    }
+    else if (hit.kind == HitKind::Spot)
+    {
+        SpotLight light = SpotLight(Lemit, gl.position, gl.direction,
+            acos(gl.params.z), acos(gl.params.y), gl.params.x);
+        float3 normal = normalize(hitPoint - gl.position);
+        Le = light.L(hitPoint, normal, float3(0), view);
+        pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
+    }
+    else if (hit.kind == HitKind::Disk)
     {
         DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.params.xy, GSLightHasFlag(gl, kGSLightFlagTwoSided));
         float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
@@ -1747,6 +1769,30 @@ bool EvaluateLightIntersection(uint lightType, float3 ro, float3 rd, float rayTM
 {
     hitT = 0.0f;
     localPosition = float2(0.0f);
+    if (lightType == 1 || lightType == 2) // Point or Spot
+    {
+        float a = dot(rd, rd);
+        float b = dot(ro, rd);
+        float c = dot(ro, ro) - 1.0f;
+        float discriminant = b * b - a * c;
+        if (a <= 1e-12f || discriminant < 0.0f)
+            return false;
+
+        float root = sqrt(discriminant);
+        float t = (-b - root) / a;
+        if (t < rayTMin || t > rayTMax)
+        {
+            t = (-b + root) / a;
+            if (t < rayTMin || t > rayTMax)
+                return false;
+        }
+
+        float3 p = ro + rd * t;
+        hitT = t;
+        localPosition = p.xy;
+        return true;
+    }
+
     if (abs(rd.z) < 1e-7f)
         return false;
 

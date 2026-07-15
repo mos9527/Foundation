@@ -2295,13 +2295,14 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     desc.primitiveBudget = ByteGPUSceneBudget(primitiveBytes, desc.primitiveBudget, size_t(4));
     desc.curveAABBBudget = ByteGPUSceneBudget(curveAABBBytes, desc.curveAABBBudget, alignof(Foundation::RHI::RHIAccelerationStructureAABB));
 
-    size_t areaLightCount = 0;
+    size_t intersectableLightCount = 0;
     for (auto const& light : GetLights())
     {
-        if (light.type == FLightType::Disk || light.type == FLightType::Rect)
-            areaLightCount++;
+        if (light.type == FLightType::Disk || light.type == FLightType::Rect ||
+            ((light.type == FLightType::Point || light.type == FLightType::Spot) && light.radius > 0.0f))
+            intersectableLightCount++;
     }
-    const size_t tlasInstanceCount = GetInstances().size() + areaLightCount;
+    const size_t tlasInstanceCount = GetInstances().size() + intersectableLightCount;
     desc.instanceBudget = RingGPUSceneBudget(GetInstances().size());
     desc.tlasInstanceBudget = RingGPUSceneBudget(tlasInstanceCount);
     desc.materialBudget = RingGPUSceneBudget(GetMaterials().size());
