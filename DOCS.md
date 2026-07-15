@@ -207,13 +207,13 @@ Done, awaiting Blog Update:
   - [A Practical and Controllable Hair and Fur Model for Production Path Tracing [Chiang et al. 2016]](https://sci-hub.sg/storage/2024/5766/a1c3a0a1d0aeccafa669d9c39f33341d/chiang2016.pdf)
   - Impl based again based on PBRT's https://www.pbr-book.org/4ed/Reflection_Models/Scattering_from_Hair
 - [x] Curve (hair, fur) rendering
-  - Blender `POLY` splines ↔ standard glTF `LINES` + `_RADIUS` + `TEXCOORD_0` (via https://github.com/mos9527/Foundation-Blender-IO)
-  - Import bakes Disjoint Orthogonal Triangle Strips (DOTS)
+  - https://github.com/mos9527/Foundation/pull/15
+  - Blender `POLY` splines as standard glTF `LINES` + `_RADIUS` + `TEXCOORD_0` (via https://github.com/mos9527/Foundation-Blender-IO)
+  - Import bakes Disjoint Orthogonal Triangle Strips (DOTS)    
     - See also [Path-Traced Hair Rendering in Indiana Jones and the Great Circle](https://vulkan.org/user/pages/09.events/vulkanised-2026/1145-Jiho-Choi-NVIDIA%201.pdf)
     - https://github.com/NVIDIA-RTX/RTXCR is used as a reference implementation
-  - Hardware triangle BLAS traversal; shading reconstructs a tapered-cone normal / hair `h` after the hit
-  - Raster draws the same DOTS triangles via a cull-disabled indexed MDI pass (alongside skinned meshes)
   - [ ] TODO Possiblity to bind strands to mesh - therefore texturing it?
+  - [ ] TODO Support NV [LSS](https://developer.nvidia.com/blog/render-path-traced-hair-in-real-time-with-nvidia-geforce-rtx-50-series-gpus/)?
 - [x] Path Traced Skin BSSRDF
   - Disney BSSRDF from [PBRTv3](https://github.com/mmp/pbrt-v3/blob/master/src/materials/disney.cpp)
   - Uniformly selects exitance point on scattered path via AnyHit + reservoir sampling
@@ -225,6 +225,7 @@ Done, awaiting Blog Update:
     - Conversion to small disk lights is feasible, or another O(N) loop to evaluate all of those inline w/o going through scene BVH
     - Not worth it nonetheless. This is merely brute-forcing.
 - [x] Light BVH sampling for scene lights
+  - https://github.com/mos9527/Foundation/pull/14
   - https://fileadmin.cs.lth.se/graphics/research/papers/2019/dyn_manylight/MPC19_presentation.pdf, implementation referencing https://github.com/NVIDIAGameWorks/Falcor
   - Also PBRTv4's implementation in https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
 - [x] Importance sampling Infinite Image Lights
