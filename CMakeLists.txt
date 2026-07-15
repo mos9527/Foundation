@@ -82,18 +82,12 @@ file(MAKE_DIRECTORY ${ASSET_BUILD_DIR})
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/Source")
 
-find_package(Git)
-if(Git_FOUND)
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        OUTPUT_VARIABLE GIT_COMMIT_HASH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    add_compile_definitions(FOUNDATION_GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
-else()
-    add_compile_definitions(FOUNDATION_GIT_COMMIT_HASH="unknown")
-endif()
+include("${CMAKE_SOURCE_DIR}/DetectGitInfo.cmake")
+Foundation_DetectGitInfo()
+add_compile_definitions(
+    FOUNDATION_GIT_COMMIT_HASH="${FOUNDATION_GIT_COMMIT_HASH}"
+    FOUNDATION_GIT_COMMIT_SHORT="${FOUNDATION_GIT_COMMIT_SHORT}"
+)
 
 add_subdirectory(ThirdParty)
 add_subdirectory(Source)

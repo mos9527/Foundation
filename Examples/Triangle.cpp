@@ -7,7 +7,8 @@
 using namespace RenderUtils;
 int main(int argc, char** argv)
 {
-    SDL_Window* window = SDL_CreateWindow("Hello World", 1024, 768, Examples_SDLWindowFlagsVulkan);
+    SDL_Window* window =
+        SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("Hello World"), 1024, 768, Examples_SDLWindowFlagsVulkan);
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {
         .threadCount = 0 /* ST recording */
     });

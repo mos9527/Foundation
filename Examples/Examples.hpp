@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/BuildInfo.hpp>
 #include <Core/Paths.hpp>
 #include <RHIVulkan/Application.hpp>
 #include <RenderCore/Renderer.hpp>

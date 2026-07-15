@@ -111,7 +111,8 @@ struct StreamAsset
 
 int main(int argc, char** argv)
 {
-    SDL_Window* window = SDL_CreateWindow("GPUScene Async Streaming", 1280, 720, Examples_SDLWindowFlagsVulkan);
+    SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("GPUScene Async Streaming"), 1280, 720,
+                                          Examples_SDLWindowFlagsVulkan);
     RendererDesc rendererDesc{};
     auto [renderer0, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, rendererDesc);
     UniquePtr<Renderer> renderer(renderer0, StlDeleter<Renderer>{GLOBAL_ALLOC});

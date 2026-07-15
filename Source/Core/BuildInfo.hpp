@@ -1,0 +1,7 @@
+#pragma once
+
+#ifndef FOUNDATION_GIT_COMMIT_SHORT
+#define FOUNDATION_GIT_COMMIT_SHORT "unknown"
+#endif
+
+#define FOUNDATION_APPLICATION_TITLE(title) title " [git:" FOUNDATION_GIT_COMMIT_SHORT "]"

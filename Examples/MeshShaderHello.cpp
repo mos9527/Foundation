@@ -5,7 +5,8 @@
 using namespace RenderUtils;
 int main(int argc, char** argv)
 {
-    SDL_Window* window = SDL_CreateWindow("Mesh Shader Hello World", 800, 600, Examples_SDLWindowFlagsVulkan);
+    SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("Mesh Shader Hello World"), 800, 600,
+                                          Examples_SDLWindowFlagsVulkan);
     CSDebugTextData data{ .x = 16, .y = 16 };
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {});
     CHECK_MSG(device->GetCapabilities().meshShaders, "Mesh Shader support required, but is unavailable");

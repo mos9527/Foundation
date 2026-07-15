@@ -18,7 +18,8 @@ struct UBO
 #pragma pack(pop)
 int main(int argc, char** argv)
 {
-    SDL_Window* window = SDL_CreateWindow("Mesh Shader Hierarchical LOD", 800, 600, Examples_SDLWindowFlagsVulkan);
+    SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("Mesh Shader Hierarchical LOD"), 800, 600,
+                                          Examples_SDLWindowFlagsVulkan);
     UBO ubo{ .threshold = 0.01f};
     ExampleInputState input{};
     /* Setup */

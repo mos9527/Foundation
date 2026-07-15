@@ -1,6 +1,7 @@
 #include "ImGui.hpp"
 #include "Paths.hpp"
 #include "EditorState.hpp"
+#include <Core/BuildInfo.hpp>
 #include <argh.h>
 #include <algorithm>
 extern bool EditorProcessEvent(SDL_Event*);
@@ -71,7 +72,8 @@ int main(int argc, char** argv)
     }
     SDL_Rect disp;
     SDL_GetDisplayBounds(SDL_GetPrimaryDisplay(), &disp);
-    CreateContext(SDL_CreateWindow("Foundation Editor", disp.w / 2, disp.h / 2, kSDLWindowFlagsVulkan),
+    CreateContext(SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("Foundation Editor"), disp.w / 2, disp.h / 2,
+                                   kSDLWindowFlagsVulkan),
                   GLOBAL_ALLOC, RHIDevice::DeviceDesc{.id = static_cast<uint32_t>(gpuId)});
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);
