@@ -256,8 +256,6 @@ struct GPUSceneImpl
     Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mCurveBLASes;
     Vector<RHIDeviceScopedHandle<RHIBuffer>> mCurveBLASBuffers;
     Vector<uint32_t> mFreeCurveBLASSlots;
-    RHIDeviceScopedHandle<RHIBuffer> mCurveAABBBuffer;
-    char* mCurveAABBMapped{nullptr};
     // Light BLAS
     RHIDeviceScopedHandle<RHIBuffer> mLightGeometryBuffer;
     RHIDeviceScopedHandle<RHIAccelerationStructure> mRectBLAS;
@@ -273,8 +271,6 @@ struct GPUSceneImpl
     // Validates the TLAS fits the pre-allocated buffers (never grows them); aborts if exceeded.
     void EnsureTLASCapacity(uint32_t totalInstances);
 
-    // VMA-backed byte suballocator over mCurveAABBBuffer.
-    RHIDeviceScopedHandle<RHIVirtualAllocator> mCurveAABBAlloc;
     uint32_t AcquireMeshBLASSlot();
     uint32_t AcquireCurveBLASSlot();
 
@@ -326,7 +322,7 @@ struct GPUSceneImpl
         FBlobDeserializer blobs{Span<const unsigned char>{}};
         const FSerializedMesh* mesh{nullptr};
         const FSerializedCurve* curve{nullptr};
-        size_t footprint{0}; // staging bytes (primitive [+ curve AABB]); 0/1 when direct-mapped.
+        size_t footprint{0}; // staging bytes (primitive); 0/1 when direct-mapped.
     };
     struct PendingTextureUpload
     {
@@ -424,6 +420,15 @@ struct GPUSceneImpl
     }
     void AllocateDynamicBLAS(Geometry& g);
     [[nodiscard]] bool HasDynamicGeometry() const { return !mDynamicGeometrySlots.empty(); }
+    [[nodiscard]] bool HasCurveGeometry() const
+    {
+        for (Geometry const& g : mGeometry)
+        {
+            if (g.live && g.type == kGSInstanceTypeCurve && g.state == ResourceState::Ready)
+                return true;
+        }
+        return false;
+    }
     void BeginDynamicGeometryUpdate();
     Span<std::byte> UpdateDynamicGeometry(GeometryHandle handle);
     void EndDynamicGeometryUpdate();
@@ -439,10 +444,8 @@ size_t GPUScene::CalculateMeshPrimitiveSize(FSerializedMesh const& src)
 
 size_t GPUScene::CalculateCurvePrimitiveSize(FSerializedCurve const& src)
 {
-    return sizeof(GSCurveSet) + src.points.decodedSize + src.segments.decodedSize;
+    return sizeof(GSCurveSet) + src.vertices.decodedSize + src.indices.decodedSize + src.leaves.decodedSize;
 }
-
-size_t GPUScene::CalculateCurveAABBSize(FSerializedCurve const& src) { return src.aabbs.decodedSize; }
 
 // Threaded decode of one blob payload into its mapped staging/direct destination.
 struct GPUSceneBlobDecodeJob final : Foundation::Core::Job
@@ -482,8 +485,6 @@ void GPUSceneImpl::FlushDirectGeometryUpload()
         return;
     if (mPrimitiveAlloc->GetPeakUsage())
         owner.mPrimitiveBuffer->Flush(0, mPrimitiveAlloc->GetPeakUsage());
-    if (mCurveAABBAlloc->GetPeakUsage())
-        mCurveAABBBuffer->Flush(0, mCurveAABBAlloc->GetPeakUsage());
 }
 
 GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc, AllocatorStack* frameScratch) :
@@ -534,9 +535,8 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     mTexture2DSlots.reserve(desc.texturesBudget);
     mTexture3DSlots.reserve(kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack);
     mPrimitiveAlloc = mDevice->CreateVirtualAllocator(desc.primitiveBudget);
-    mCurveAABBAlloc = mDevice->CreateVirtualAllocator(desc.curveAABBBudget);
     auto caps = mDevice->GetCapabilities();
-    size_t directGeometryBudget = static_cast<size_t>(desc.primitiveBudget) + desc.curveAABBBudget;
+    size_t directGeometryBudget = static_cast<size_t>(desc.primitiveBudget);
     size_t minDirectGeometryHeapSize = std::max(directGeometryBudget, kMinDirectGeometryUploadHeapSize);
     mDirectGeometryUpload = caps.integratedGPU && caps.deviceLocalHostVisibleBuffers &&
         caps.deviceLocalHostVisibleHeapSize >= minDirectGeometryHeapSize;
@@ -548,18 +548,12 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     owner.mPrimitiveBuffer = mDevice->CreateBuffer(
         {.resource = geoDesc,
          .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
-             RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
+             RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly |
+             RHIBufferUsageBits::IndexBuffer,
          .size = desc.primitiveBudget});
-    geoDesc.shared = false;
-    mCurveAABBBuffer = mDevice->CreateBuffer(
-        {.resource = geoDesc,
-         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
-             RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
-         .size = desc.curveAABBBudget});
     if (mDirectGeometryUpload)
     {
         mPrimitiveMapped = owner.mPrimitiveBuffer->Map<char>();
-        mCurveAABBMapped = mCurveAABBBuffer->Map<char>();
         LOG(GPUScene, LogInfo, "Direct GPU Memory Access available ({} MiB budget used). Uploading via direct copy.",
             directGeometryBudget / (1u << 20));
     }
@@ -802,8 +796,6 @@ GPUSceneImpl::~GPUSceneImpl()
         mUploadThread.join();
     if (mPrimitiveAlloc)
         mPrimitiveAlloc->Clear();
-    if (mCurveAABBAlloc)
-        mCurveAABBAlloc->Clear();
     for (auto& g : mGeometry)
     {
         g.dynBLASBuffer.Reset();
@@ -1077,7 +1069,6 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     };
 
     size_t primitiveBytes = AddBufferSize(owner.mPrimitiveBuffer);
-    size_t curveAABBBytes = AddBufferSize(mCurveAABBBuffer);
     auto texture2DStats = mTexture2DPool.GetStats();
     auto texture3DStats = mTexture3DPool.GetStats();
     size_t instanceBytes = AddRingBufferSize(mInstanceBuffer);
@@ -1099,7 +1090,6 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     size_t defaultBufferBytes = AddBufferSize(owner.mFoundationDefaultBufferFloat);
 
     outStats.push_back({"Primitive Buffer (Buffer)", primitiveBytes});
-    outStats.push_back({"Curve AABB Buffer (Buffer)", curveAABBBytes});
     outStats.push_back({"Texture2D Pool (Texture)", texture2DStats.ownedTextureBytes});
     outStats.push_back({"Texture3D Pool (Texture)", texture3DStats.ownedTextureBytes});
     outStats.push_back({"Instance Buffer (Buffer)", instanceBytes});
@@ -1130,10 +1120,6 @@ String GPUSceneImpl::DbgGetBufferStatistics() const
                    owner.mPrimitiveBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
                    mPrimitiveAlloc->GetUsedBytes() / static_cast<float>(1 << 20u),
                    owner.mPrimitiveBuffer->mDesc.size / static_cast<float>(1 << 20u));
-    fmt::format_to(std::back_inserter(res), "Curve AABB Buffer: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
-                   mCurveAABBBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
-                   mCurveAABBAlloc->GetUsedBytes() / static_cast<float>(1 << 20u),
-                   mCurveAABBBuffer->mDesc.size / static_cast<float>(1 << 20u));
     fmt::format_to(std::back_inserter(res),
                    "Texture2D Pool: {:.1f} MB owned, {:.1f} MB referenced, used {} / {} bindings, owned {} textures\n",
                    texture2DStats.ownedTextureBytes / static_cast<float>(1 << 20u),
@@ -1231,26 +1217,25 @@ size_t GPUSceneImpl::StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src,
 
 GPUScene::Result GPUSceneImpl::ReserveCurve(FSerializedCurve const& src, GSCurveSet& outData, uint32_t& outOffset)
 {
-    static_assert(sizeof(FCurvePoint) == sizeof(GSCurvePoint));
-    static_assert(alignof(FCurvePoint) == alignof(GSCurvePoint));
-    static_assert(sizeof(FSerializedCurveSegment) == sizeof(GSCurveSegment));
-    static_assert(alignof(FSerializedCurveSegment) == alignof(GSCurveSegment));
-    static_assert(sizeof(FSerializedCurveAABB) == sizeof(RHIAccelerationStructureAABB));
-    static_assert(alignof(FSerializedCurveAABB) == alignof(RHIAccelerationStructureAABB));
+    static_assert(sizeof(FCurveDOTSVertex) == 16);
+    static_assert(sizeof(FCurveLeaf) == 40);
 
-    if (src.points.decodedSize == 0 || src.segments.count == 0)
+    if (src.vertices.decodedSize == 0 || src.indices.count == 0 || src.leaves.count == 0)
         return Result::InvalidInput;
-    CHECK_MSG(src.points.stride == sizeof(GSCurvePoint), "Serialized curve point stride mismatch");
-    CHECK_MSG(src.segments.stride == sizeof(GSCurveSegment), "Serialized curve segment stride mismatch");
-    CHECK_MSG(src.aabbs.stride == sizeof(RHIAccelerationStructureAABB), "Serialized curve AABB stride mismatch");
-    CHECK_MSG(src.points.decodedSize % sizeof(GSCurvePoint) == 0, "Serialized curve point blob size mismatch");
-    CHECK_MSG(src.segments.decodedSize == sizeof(GSCurveSegment) * src.segments.count,
-              "Serialized curve segment blob size mismatch");
-    CHECK_MSG(src.aabbs.count == src.segments.count, "Serialized curve AABB count mismatch");
-    CHECK_MSG(src.aabbs.decodedSize == sizeof(RHIAccelerationStructureAABB) * src.aabbs.count,
-              "Serialized curve AABB blob size mismatch");
+    CHECK_MSG(src.vertices.stride == sizeof(FCurveDOTSVertex), "Serialized curve vertex stride mismatch");
+    CHECK_MSG(src.indices.stride == sizeof(uint32_t), "Serialized curve index stride mismatch");
+    CHECK_MSG(src.leaves.stride == sizeof(FCurveLeaf), "Serialized curve leaf stride mismatch");
+    CHECK_MSG(src.vertices.decodedSize == sizeof(FCurveDOTSVertex) * src.vertices.count,
+              "Serialized curve vertex blob size mismatch");
+    CHECK_MSG(src.indices.decodedSize == sizeof(uint32_t) * src.indices.count,
+              "Serialized curve index blob size mismatch");
+    CHECK_MSG(src.leaves.decodedSize == sizeof(FCurveLeaf) * src.leaves.count,
+              "Serialized curve leaf blob size mismatch");
+    CHECK_MSG(src.indices.count % 3 == 0, "Serialized curve index count must be a multiple of 3");
+    CHECK_MSG(src.indices.count == src.leaves.count * 12,
+              "Serialized curve DOTS expects 12 indices per leaf; got {} indices for {} leaves", src.indices.count,
+              src.leaves.count);
 
-    const size_t pointCount = static_cast<size_t>(src.points.decodedSize / sizeof(GSCurvePoint));
     const size_t size = GPUScene::CalculateCurvePrimitiveSize(src);
     constexpr size_t kAlign = 4;
     uint64_t base = mPrimitiveAlloc->Allocate(size, kAlign);
@@ -1262,16 +1247,6 @@ GPUScene::Result GPUSceneImpl::ReserveCurve(FSerializedCurve const& src, GSCurve
     }
     outOffset = static_cast<uint32_t>(base);
 
-    const size_t aabbSize = GPUScene::CalculateCurveAABBSize(src);
-    uint64_t aabbBase = mCurveAABBAlloc->Allocate(aabbSize, alignof(RHIAccelerationStructureAABB));
-    if (aabbBase == RHIVirtualAllocator::kInvalidOffset)
-    {
-        mPrimitiveAlloc->Free(outOffset);
-        LOG(GPUScene, LogError, "Curve AABB buffer overflow. Need {} bytes, {} used of {}", aabbSize,
-            mCurveAABBAlloc->GetUsedBytes(), mCurveAABBAlloc->GetCapacity());
-        return Result::OutOfMemory;
-    }
-
     outData = GSCurveSet{};
     uint32_t cursor = 0;
     auto Skip = [&](size_t bytes)
@@ -1281,11 +1256,12 @@ GPUScene::Result GPUSceneImpl::ReserveCurve(FSerializedCurve const& src, GSCurve
         return off;
     };
     Skip(sizeof(GSCurveSet));
-    outData.pointCount = static_cast<uint32_t>(pointCount);
-    outData.pointOffset = outOffset + Skip(static_cast<size_t>(src.points.decodedSize));
-    outData.segmentCount = static_cast<uint32_t>(src.segments.count);
-    outData.segmentOffset = outOffset + Skip(static_cast<size_t>(src.segments.decodedSize));
-    outData.aabbOffset = static_cast<uint32_t>(aabbBase);
+    outData.vtxCount = static_cast<uint32_t>(src.vertices.count);
+    outData.vtxOffset = outOffset + Skip(static_cast<size_t>(src.vertices.decodedSize));
+    outData.idxCount = static_cast<uint32_t>(src.indices.count);
+    outData.idxOffset = outOffset + Skip(static_cast<size_t>(src.indices.decodedSize));
+    outData.leafCount = static_cast<uint32_t>(src.leaves.count);
+    outData.leafOffset = outOffset + Skip(static_cast<size_t>(src.leaves.decodedSize));
     CHECK_MSG(cursor == size, "Curve layout mismatch: expected {} got {}", size, cursor);
     return Result::InProgress;
 }
@@ -1294,32 +1270,26 @@ size_t GPUSceneImpl::StageCurve(ImmediateUpload* ctx, FSerializedCurve const& sr
                                 uint32_t offset, Vector<BlobCopyTask>& outWrites)
 {
     const size_t size = GPUScene::CalculateCurvePrimitiveSize(src);
-    const size_t aabbSize = GPUScene::CalculateCurveAABBSize(src);
     char* ptr = nullptr;
-    char* aabbPtr = nullptr;
     if (mDirectGeometryUpload)
     {
         CHECK(mPrimitiveMapped != nullptr);
-        CHECK(mCurveAABBMapped != nullptr);
         ptr = mPrimitiveMapped + offset;
-        aabbPtr = mCurveAABBMapped + header.aabbOffset;
     }
     else
     {
-        if (ctx->ptr + size + aabbSize > ctx->end)
+        if (ctx->ptr + size > ctx->end)
             return 0;
         ptr = ctx->Upload(owner.mPrimitiveBuffer.Get(), size, offset);
         CHECK(ptr != nullptr);
-        aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, header.aabbOffset);
-        CHECK(aabbPtr != nullptr);
     }
     std::memcpy(ptr, &header, sizeof(GSCurveSet));
     auto AppendBlobWrite = [&](FBlobRef const& blob, char* dstPtr)
     { outWrites.push_back({blob, dstPtr, static_cast<size_t>(blob.decodedSize)}); };
-    AppendBlobWrite(src.points, ptr + (header.pointOffset - offset));
-    AppendBlobWrite(src.segments, ptr + (header.segmentOffset - offset));
-    AppendBlobWrite(src.aabbs, aabbPtr);
-    return size + aabbSize;
+    AppendBlobWrite(src.vertices, ptr + (header.vtxOffset - offset));
+    AppendBlobWrite(src.indices, ptr + (header.idxOffset - offset));
+    AppendBlobWrite(src.leaves, ptr + (header.leafOffset - offset));
+    return size;
 }
 
 static bool IsTexture3DView(RHITextureDimension dimension) { return dimension == RHITextureDimension::E3D; }
@@ -1469,8 +1439,7 @@ GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedCurve
         g.state = ResourceState::Queued;
         g.live = true;
         outHandle = {slot, generation};
-        const size_t footprint =
-            GPUScene::CalculateCurvePrimitiveSize(source) + GPUScene::CalculateCurveAABBSize(source);
+        const size_t footprint = GPUScene::CalculateCurvePrimitiveSize(source);
         pending = {.handle = outHandle,
                    .blobs = *blobs,
                    .mesh = nullptr,
@@ -1731,9 +1700,9 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
         }
         else if (p.curve)
         {
-            IncludeBlobScratch(p.curve->points);
-            IncludeBlobScratch(p.curve->segments);
-            IncludeBlobScratch(p.curve->aabbs);
+            IncludeBlobScratch(p.curve->vertices);
+            IncludeBlobScratch(p.curve->indices);
+            IncludeBlobScratch(p.curve->leaves);
         }
     }
     size_t textureSubresCount = 0;
@@ -2144,18 +2113,25 @@ void GPUSceneImpl::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> 
     Vector<uint32_t> scratchOffsets(curves.size(), mAllocator);
     StackArena<4096> sizeInfoArena;
     AllocatorStack sizeInfoScratch(sizeInfoArena);
+    auto* primitiveBuffer = owner.mPrimitiveBuffer.Get();
     uint32_t scratchOffset = 0, blasOffset = 0;
     for (size_t i = 0; i < curves.size(); i++)
     {
         auto const& curve = curves[i];
         auto& geo = geometries[i];
         auto& range = buildRanges[i];
-        geo.type = RHIAccelerationGeometryType::AABBs;
-        geo.aabbData = RHIAccelerationStructureGeometryAABBData{.aabbBuffer = mCurveAABBBuffer.Get(),
-                                                                .offset = curve.aabbOffset,
-                                                                .count = curve.segmentCount,
-                                                                .stride = sizeof(RHIAccelerationStructureAABB)};
-        range = RHIAccelerationStructureBuildRangeInfo{.primitiveCount = curve.segmentCount};
+        geo.type = RHIAccelerationGeometryType::Triangles;
+        geo.triangleData = RHIAccelerationStructureGeometryTriangleData{
+            .vertexFormat = RHIResourceFormat::R32G32B32A32SignedFloat,
+            .vertexBuffer = primitiveBuffer,
+            .vertexOffset = curve.vtxOffset,
+            .vertexCount = curve.vtxCount,
+            .vertexStride = sizeof(FCurveDOTSVertex),
+            .indexFormat = RHIResourceFormat::R32Uint,
+            .indexBuffer = primitiveBuffer,
+            .indexOffset = curve.idxOffset,
+            .indexCount = curve.idxCount};
+        range = RHIAccelerationStructureBuildRangeInfo{.primitiveCount = curve.idxCount / 3};
         auto& desc = buildDesc[i];
         desc =
             RHIAccelerationStructureBuildDesc{.type = RHIAccelerationStructureType::BottomLevel,
@@ -2183,7 +2159,6 @@ void GPUSceneImpl::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> 
                               .alignment = 256});
 
     RHIBuffer* blasBuffer = mCurveBLASBuffers.back().Get();
-    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> newBLASes(curves.size(), mAllocator);
     auto* cmd = ctx->Get();
     cmd->Begin();
     for (size_t i = 0; i < curves.size(); i++)
@@ -2548,7 +2523,6 @@ void GPUSceneImpl::FreeGeometry(uint32_t slot)
         mPrimitiveAlloc->Free(g.resourceOffset);
         if (g.type == kGSInstanceTypeCurve)
         {
-            mCurveAABBAlloc->Free(g.curve.aabbOffset);
             if (g.blasSlot < mCurveBLASes.size())
             {
                 mCurveBLASes[g.blasSlot].Reset();
@@ -2730,6 +2704,7 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         {
             res.mask = 0x04; // CURVE_MASK
             res.shaderBindingTableRecordOffset = kCurveSBTOffset;
+            res.flags = RHIAccelerationGeometryInstanceFlagsBits::TriangleCullDisable;
         }
         else
         {
@@ -2987,7 +2962,6 @@ void GPUSceneImpl::Reset()
     mMeshletGlobalCounter = 0;
     owner.mLastTLASInstancesCount = 0;
     mPrimitiveAlloc->Clear();
-    mCurveAABBAlloc->Clear();
     if (mDynamicPrimitiveAlloc)
         mDynamicPrimitiveAlloc->Clear();
     mDynamicGeometrySlots.clear();
@@ -3053,6 +3027,7 @@ void GPUScene::Collect() { mImpl->Collect(); }
 void GPUScene::Reset() { mImpl->Reset(); }
 
 bool GPUScene::HasDynamicGeometry() const { return mImpl->HasDynamicGeometry(); }
+bool GPUScene::HasCurveGeometry() const { return mImpl->HasCurveGeometry(); }
 void GPUScene::BeginDynamicGeometryUpdate() { mImpl->BeginDynamicGeometryUpdate(); }
 Span<std::byte> GPUScene::UpdateDynamicGeometry(GeometryHandle handle) { return mImpl->UpdateDynamicGeometry(handle); }
 void GPUScene::EndDynamicGeometryUpdate() { mImpl->EndDynamicGeometryUpdate(); }

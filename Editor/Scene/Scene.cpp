@@ -49,16 +49,80 @@ FSerializedBounds BuildMeshBounds(FImportedMesh const& mesh)
 
 FSerializedBounds BuildCurveBounds(FImportedCurve const& curve)
 {
-    if (curve.points.empty())
+    if (curve.segments.empty())
         return {};
 
     FSerializedBounds bounds = FSerializedBounds::Empty();
-    for (FCurvePoint const& point : curve.points)
+    for (FImportedCurveSegment const& segment : curve.segments)
     {
-        bounds += point.position - float3(point.radius);
-        bounds += point.position + float3(point.radius);
+        bounds += segment.p0 - float3(segment.r0);
+        bounds += segment.p0 + float3(segment.r0);
+        bounds += segment.p1 - float3(segment.r1);
+        bounds += segment.p1 + float3(segment.r1);
     }
     return bounds;
+}
+
+const cgltf_accessor* FindCustomAttribute(const cgltf_primitive* prim, char const* name)
+{
+    for (size_t i = 0; i < prim->attributes_count; ++i)
+    {
+        cgltf_attribute const& attr = prim->attributes[i];
+        if (attr.type == cgltf_attribute_type_custom && attr.name && std::strcmp(attr.name, name) == 0)
+            return attr.data;
+    }
+    return nullptr;
+}
+
+bool IsLineCurvePrimitive(const cgltf_primitive* prim)
+{
+    if (!prim)
+        return false;
+    if (prim->type != cgltf_primitive_type_lines && prim->type != cgltf_primitive_type_line_strip &&
+        prim->type != cgltf_primitive_type_line_loop)
+        return false;
+    return FindCustomAttribute(prim, "_RADIUS") != nullptr;
+}
+
+// Volume-compensated DOTS radius scale: 1 / (sin(pi/4) / (pi/4)).
+static constexpr float kDOTSRadiusScale = 1.1107207345f;
+
+void EmitDOTSLeaf(FImportedCurveSegment const& segment, Vector<FCurveDOTSVertex>& vertices, Vector<uint32_t>& indices,
+                  Vector<FCurveLeaf>& leaves)
+{
+    float3 axis = segment.p1 - segment.p0;
+    float len2 = dot(axis, axis);
+    if (len2 <= 1e-12f || (segment.r0 <= 0.0f && segment.r1 <= 0.0f))
+        return;
+
+    float3 fwd = axis * (1.0f / std::sqrt(len2));
+    float3 s, t;
+    CoordinateSystem(fwd, s, t);
+    float sr0 = segment.r0 * kDOTSRadiusScale;
+    float sr1 = segment.r1 * kDOTSRadiusScale;
+
+    leaves.push_back(FCurveLeaf{.p0 = segment.p0,
+                                .r0 = segment.r0,
+                                .p1 = segment.p1,
+                                .r1 = segment.r1,
+                                .u0 = segment.u0,
+                                .u1 = segment.u1});
+
+    float3 axes[2] = {s, t};
+    for (float3 const& side : axes)
+    {
+        uint32_t base = static_cast<uint32_t>(vertices.size());
+        vertices.push_back(FCurveDOTSVertex{.position = segment.p0 + side * sr0, .pad = 0.0f});
+        vertices.push_back(FCurveDOTSVertex{.position = segment.p1 + side * sr1, .pad = 0.0f});
+        vertices.push_back(FCurveDOTSVertex{.position = segment.p1 - side * sr1, .pad = 0.0f});
+        vertices.push_back(FCurveDOTSVertex{.position = segment.p0 - side * sr0, .pad = 0.0f});
+        indices.push_back(base + 0);
+        indices.push_back(base + 1);
+        indices.push_back(base + 2);
+        indices.push_back(base + 0);
+        indices.push_back(base + 2);
+        indices.push_back(base + 3);
+    }
 }
 
 StringView Trim(StringView value)
@@ -513,10 +577,13 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
 
     for (auto const& curve : tables.curves)
     {
-        ValidateBlobArray<FCurvePoint>(header, curve.points, "curve.points");
-        ValidateBlobArray<FSerializedCurveSegment>(header, curve.segments, "curve.segments");
-        ValidateBlobArray<FSerializedCurveAABB>(header, curve.aabbs, "curve.aabbs");
-        CHECK_MSG(curve.segments.count == curve.aabbs.count, "FScene curve AABB count mismatch");
+        ValidateBlobArray<FCurveDOTSVertex>(header, curve.vertices, "curve.vertices");
+        ValidateBlobArray<uint32_t>(header, curve.indices, "curve.indices");
+        ValidateBlobArray<FCurveLeaf>(header, curve.leaves, "curve.leaves");
+        CHECK_MSG(curve.indices.count % 3 == 0, "FScene curve index count must be a multiple of 3");
+        CHECK_MSG(curve.indices.count == curve.leaves.count * 12,
+                  "FScene curve DOTS index/leaf count mismatch: {} indices for {} leaves", curve.indices.count,
+                  curve.leaves.count);
     }
 
     for (auto const& texture : tables.textures)
@@ -752,60 +819,92 @@ Optional<FTexture> LoadGLTFTexture(cgltf_texture* texture, StringView scenePath,
     return {};
 }
 
-FCurveBasis LoadGLTFCurveBasis(cgltf_curve_basis basis)
-{
-    switch (basis)
-    {
-    case cgltf_curve_basis_bezier:
-        return FCurveBasis::Bezier;
-    case cgltf_curve_basis_bspline:
-        return FCurveBasis::BSpline;
-    case cgltf_curve_basis_catmull_rom:
-        return FCurveBasis::CatmullRom;
-    case cgltf_curve_basis_linear:
-    default:
-        return FCurveBasis::Linear;
-    }
-}
-
-void LoadGLTFCurve(const cgltf_data* data, const cgltf_curve* src, FImportedCurve& curve, Allocator* scratchAlloc)
+void LoadGLTFLineCurve(const cgltf_primitive* prim, FImportedCurve& curve, Allocator* scratchAlloc)
 {
     CHECK(scratchAlloc != nullptr);
-    CHECK(src->points);
-    CHECK(src->curve_vertex_counts);
-    CHECK(src->points->type == cgltf_type_vec4);
-    CHECK(src->points->component_type == cgltf_component_type_r_32f);
-    CHECK(src->curve_vertex_counts->type == cgltf_type_scalar);
+    CHECK(IsLineCurvePrimitive(prim));
 
-    curve.basis = LoadGLTFCurveBasis(src->basis);
-    CHECK_MSG(curve.basis == FCurveBasis::Bezier, "EXT_foundation_curves import currently supports only Bezier curves");
-    curve.renderMode = FCurveRenderMode::Capsule;
+    auto* positionAcc = cgltf_find_accessor(prim, cgltf_attribute_type_position, 0);
+    auto* radiusAcc = FindCustomAttribute(prim, "_RADIUS");
+    auto* texcoordAcc = cgltf_find_accessor(prim, cgltf_attribute_type_texcoord, 0);
+    CHECK_MSG(positionAcc, "Curve LINES primitive missing POSITION");
+    CHECK_MSG(radiusAcc, "Curve LINES primitive missing _RADIUS");
+    CHECK_MSG(positionAcc->type == cgltf_type_vec3, "Curve POSITION must be VEC3");
+    CHECK_MSG(radiusAcc->type == cgltf_type_scalar, "Curve _RADIUS must be SCALAR");
 
-    size_t pointCount = src->points->count;
-    Vector<float> unpack(pointCount * 4, scratchAlloc);
-    cgltf_accessor_unpack_floats(src->points, unpack.data(), unpack.size());
-    curve.points.resize(pointCount);
-    for (size_t i = 0; i < pointCount; i++)
+    size_t pointCount = positionAcc->count;
+    CHECK_MSG(radiusAcc->count == pointCount, "Curve _RADIUS count ({}) != POSITION count ({})", radiusAcc->count,
+              pointCount);
+
+    Vector<float> positions(pointCount * 3, scratchAlloc);
+    Vector<float> radii(pointCount, scratchAlloc);
+    Vector<float> us(pointCount, 0.0f, scratchAlloc);
+    cgltf_accessor_unpack_floats(positionAcc, positions.data(), positions.size());
+    cgltf_accessor_unpack_floats(radiusAcc, radii.data(), radii.size());
+    if (texcoordAcc)
     {
-        curve.points[i] = FCurvePoint{
-            .position = {unpack[i * 4 + 0], unpack[i * 4 + 1], unpack[i * 4 + 2]},
-            .radius = unpack[i * 4 + 3],
-        };
+        CHECK_MSG(texcoordAcc->count == pointCount, "Curve TEXCOORD_0 count mismatch");
+        Vector<float> uvs(pointCount * 2, scratchAlloc);
+        cgltf_accessor_unpack_floats(texcoordAcc, uvs.data(), uvs.size());
+        for (size_t i = 0; i < pointCount; ++i)
+            us[i] = uvs[i * 2];
     }
 
-    curve.curveVertexCounts.resize(src->curve_vertex_counts->count);
-    uint64_t referencedPoints = 0;
-    for (size_t i = 0; i < src->curve_vertex_counts->count; i++)
+    auto EmitSegment = [&](uint32_t i0, uint32_t i1)
     {
-        cgltf_uint count = 0;
-        CHECK(cgltf_accessor_read_uint(src->curve_vertex_counts, i, &count, 1));
-        curve.curveVertexCounts[i] = count;
-        CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
-                  "Bezier curve strands must contain 3n + 1 controls, got {}", count);
-        referencedPoints += count;
+        CHECK_MSG(i0 < pointCount && i1 < pointCount, "Curve line index out of range");
+        float3 p0{positions[i0 * 3 + 0], positions[i0 * 3 + 1], positions[i0 * 3 + 2]};
+        float3 p1{positions[i1 * 3 + 0], positions[i1 * 3 + 1], positions[i1 * 3 + 2]};
+        if (dot(p1 - p0, p1 - p0) <= 1e-12f)
+            return;
+        curve.segments.push_back(FImportedCurveSegment{.p0 = p0,
+                                                       .r0 = std::max(radii[i0], 0.0f),
+                                                       .p1 = p1,
+                                                       .r1 = std::max(radii[i1], 0.0f),
+                                                       .u0 = us[i0],
+                                                       .u1 = us[i1]});
+    };
+
+    if (prim->type == cgltf_primitive_type_lines)
+    {
+        if (prim->indices)
+        {
+            size_t indexCount = prim->indices->count;
+            CHECK_MSG(indexCount % 2 == 0, "Indexed LINES index count must be even");
+            Vector<uint32_t> indices(indexCount, scratchAlloc);
+            cgltf_accessor_unpack_indices(prim->indices, indices.data(), sizeof(uint32_t), indexCount);
+            for (size_t i = 0; i + 1 < indexCount; i += 2)
+                EmitSegment(indices[i], indices[i + 1]);
+        }
+        else
+        {
+            CHECK_MSG(pointCount % 2 == 0, "Non-indexed LINES vertex count must be even");
+            for (size_t i = 0; i + 1 < pointCount; i += 2)
+                EmitSegment(static_cast<uint32_t>(i), static_cast<uint32_t>(i + 1));
+        }
     }
-    CHECK_MSG(referencedPoints == pointCount, "Curve strands reference {} points, but points accessor stores {}",
-              referencedPoints, pointCount);
+    else
+    {
+        Vector<uint32_t> order(scratchAlloc);
+        if (prim->indices)
+        {
+            size_t indexCount = prim->indices->count;
+            order.resize(indexCount);
+            cgltf_accessor_unpack_indices(prim->indices, order.data(), sizeof(uint32_t), indexCount);
+        }
+        else
+        {
+            order.resize(pointCount);
+            std::iota(order.begin(), order.end(), 0u);
+        }
+        CHECK_MSG(order.size() >= 2, "LINE_STRIP/LINE_LOOP requires at least two vertices");
+        for (size_t i = 0; i + 1 < order.size(); ++i)
+            EmitSegment(order[i], order[i + 1]);
+        if (prim->type == cgltf_primitive_type_line_loop)
+            EmitSegment(order.back(), order.front());
+    }
+
+    CHECK_MSG(!curve.segments.empty(), "Curve LINES primitive produced no valid segments");
 }
 
 size_t GetSceneWorkerCount()
@@ -1537,112 +1636,121 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         }
     }
 
-    /* Meshes */
-    size_t numSubmeshes = 0;
+    /* Meshes (triangles) and curves (LINES + _RADIUS) */
+    struct MeshPrimitiveResource
+    {
+        FInstanceType type{FInstanceType::Mesh};
+        uint32_t index{~0u}; // into meshes or curves table
+    };
+    size_t numTrianglePrimitives = 0;
+    size_t numCurvePrimitives = 0;
     for (size_t i = 0; i < data->meshes_count; i++)
-        numSubmeshes += data->meshes[i].primitives_count;
-    scene.mTables.meshes.reserve(numSubmeshes);
-    for (size_t i = 0; i < numSubmeshes; i++)
-        scene.mTables.meshes.emplace_back(scratchAlloc);
-    for (size_t i = 0; i < numSubmeshes; i++)
     {
-        scene.mTables.meshes[i].id = FUUID::Generate();
+        for (size_t p = 0; p < data->meshes[i].primitives_count; ++p)
+        {
+            auto* sub = data->meshes[i].primitives + p;
+            if (sub->type == cgltf_primitive_type_triangles)
+                ++numTrianglePrimitives;
+            else if (IsLineCurvePrimitive(sub))
+                ++numCurvePrimitives;
+            else
+                CHECK_MSG(false, "Unsupported glTF primitive mode {} (only triangles and LINES+_RADIUS curves)",
+                          static_cast<int>(sub->type));
+        }
     }
+
+    scene.mTables.meshes.reserve(numTrianglePrimitives);
+    for (size_t i = 0; i < numTrianglePrimitives; i++)
+        scene.mTables.meshes.emplace_back(scratchAlloc);
+    for (size_t i = 0; i < numTrianglePrimitives; i++)
+        scene.mTables.meshes[i].id = FUUID::Generate();
+
+    scene.mTables.curves.resize(numCurvePrimitives);
+    for (size_t i = 0; i < numCurvePrimitives; i++)
+        scene.mTables.curves[i].id = FUUID::Generate();
+
     Vector<FResourceBlobJobs> meshBlobJobs(scratchAlloc);
-    meshBlobJobs.reserve(numSubmeshes);
-    for (size_t i = 0; i < numSubmeshes; i++)
+    meshBlobJobs.reserve(numTrianglePrimitives);
+    for (size_t i = 0; i < numTrianglePrimitives; i++)
         meshBlobJobs.emplace_back(scratchAlloc);
-    Vector<Pair<size_t, size_t>> submeshIndices(scratchAlloc);
-    submeshIndices.reserve(data->meshes_count);
+    Vector<FResourceBlobJobs> curveBlobJobs(scratchAlloc);
+    curveBlobJobs.reserve(numCurvePrimitives);
+    for (size_t i = 0; i < numCurvePrimitives; i++)
+        curveBlobJobs.emplace_back(scratchAlloc);
+
+    Vector<Vector<MeshPrimitiveResource>> meshPrimitiveResources(scratchAlloc);
+    meshPrimitiveResources.reserve(data->meshes_count);
+    for (size_t i = 0; i < data->meshes_count; ++i)
+        meshPrimitiveResources.push_back(Vector<MeshPrimitiveResource>(scratchAlloc));
+
     uint32_t nextSubmesh = 0;
-    if (numSubmeshes != 0)
+    uint32_t nextCurve = 0;
+    size_t totalPrimitives = numTrianglePrimitives + numCurvePrimitives;
+    if (totalPrimitives != 0)
     {
-        ThreadPool pool(GetSceneWorkerCount(), GetSceneTaskQueueSize(numSubmeshes), scratchAlloc, "SceneMesh");
+        ThreadPool pool(GetSceneWorkerCount(), GetSceneTaskQueueSize(totalPrimitives), scratchAlloc, "SceneGeo");
         Vector<Future<void>> futures(scratchAlloc);
-        futures.reserve(numSubmeshes);
+        futures.reserve(totalPrimitives);
         for (size_t i = 0; i < data->meshes_count; i++)
         {
             auto& mesh = data->meshes[i];
             int32_t skinIndex = meshToSkin[i];
             bool const morphAnimated = meshMorphAnimated[i] != 0;
             const Vector<uint16_t>* remap = skinIndex >= 0 ? &skinRemap[skinIndex] : nullptr;
-            auto& [mmin, mmax] = submeshIndices.emplace_back(nextSubmesh, nextSubmesh);
+            meshPrimitiveResources[i].reserve(mesh.primitives_count);
             for (size_t p = 0; p < mesh.primitives_count; p++)
             {
                 auto* sub = mesh.primitives + p;
-                CHECK(sub->type == cgltf_primitive_type_triangles);
-                uint32_t meshIndex = nextSubmesh++;
-                futures.push_back(pool.Push(
-                    [&, meshIndex, sub, skinIndex, morphAnimated, remap]
-                    {
-                        FImportedMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc, remap, morphAnimated);
-                        // Deforming meshes (skinned or morph-animated) take the dynamic vertex/index
-                        // path: skip vertex reordering (which would desync the per-vertex binding /
-                        // morph deltas) and the DAG/meshlet build.
-                        bool const dynamic = !submesh.skin.empty() || morphAnimated;
-                        if (!dynamic)
+                if (sub->type == cgltf_primitive_type_triangles)
+                {
+                    uint32_t meshIndex = nextSubmesh++;
+                    meshPrimitiveResources[i].push_back(
+                        MeshPrimitiveResource{.type = FInstanceType::Mesh, .index = meshIndex});
+                    futures.push_back(pool.Push(
+                        [&, meshIndex, sub, skinIndex, morphAnimated, remap]
                         {
-                            LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
-                                submesh.vertices.size(), submesh.lods[0].indices.size());
-                            submesh.Optimize();
-                            submesh.ClusterizeDAG();
-                            LOG(Meshopt, LogInfo, "Optimized {}", meshIndex);
-                        }
-                        submesh.Quantize();
-                        BuildMeshBlobJobs(scene.mTables.meshes[meshIndex], meshBlobJobs[meshIndex].jobs, submesh,
-                                          submesh.skin.empty() ? kNilUUID : skinSkeletonIds[skinIndex]);
-                    }));
+                            FImportedMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc, remap, morphAnimated);
+                            bool const dynamic = !submesh.skin.empty() || morphAnimated;
+                            if (!dynamic)
+                            {
+                                LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
+                                    submesh.vertices.size(), submesh.lods[0].indices.size());
+                                submesh.Optimize();
+                                submesh.ClusterizeDAG();
+                                LOG(Meshopt, LogInfo, "Optimized {}", meshIndex);
+                            }
+                            submesh.Quantize();
+                            BuildMeshBlobJobs(scene.mTables.meshes[meshIndex], meshBlobJobs[meshIndex].jobs, submesh,
+                                              submesh.skin.empty() ? kNilUUID : skinSkeletonIds[skinIndex]);
+                        }));
+                }
+                else
+                {
+                    uint32_t curveIndex = nextCurve++;
+                    FUUID curveId = scene.mTables.curves[curveIndex].id;
+                    meshPrimitiveResources[i].push_back(
+                        MeshPrimitiveResource{.type = FInstanceType::Curve, .index = curveIndex});
+                    futures.push_back(pool.Push(
+                        [&, curveIndex, curveId, sub]
+                        {
+                            FImportedCurve curve(scratchAlloc);
+                            LoadGLTFLineCurve(sub, curve, scratchAlloc);
+                            BuildCurveBlobJobs(scene.mTables.curves[curveIndex], curveBlobJobs[curveIndex].jobs, curve);
+                            scene.mTables.curves[curveIndex].id = curveId;
+                        }));
+                }
             }
-            mmax = nextSubmesh;
         }
         pool.Join();
         for (Future<void>& future : futures)
             future.get();
         for (FResourceBlobJobs& jobs : meshBlobJobs)
             AppendResourceBlobJobs(blobJobs, jobs);
-    }
-    else
-    {
-        for (size_t i = 0; i < data->meshes_count; i++)
-            submeshIndices.emplace_back(nextSubmesh, nextSubmesh);
-    }
-    CHECK_MSG(nextSubmesh == numSubmeshes, "Serialized mesh count mismatch");
-
-    /* Curves */
-    scene.mTables.curves.resize(data->curves_count);
-    Vector<FUUID> curveIds(data->curves_count, kNilUUID, scratchAlloc);
-    for (size_t i = 0; i < data->curves_count; i++)
-    {
-        curveIds[i] = FUUID::Generate();
-        scene.mTables.curves[i].id = curveIds[i];
-    }
-    Vector<FResourceBlobJobs> curveBlobJobs(scratchAlloc);
-    curveBlobJobs.reserve(data->curves_count);
-    for (size_t i = 0; i < data->curves_count; i++)
-        curveBlobJobs.emplace_back(scratchAlloc);
-    if (data->curves_count != 0)
-    {
-        ThreadPool pool(GetSceneWorkerCount(), GetSceneTaskQueueSize(data->curves_count), scratchAlloc, "SceneCurve");
-        Vector<Future<void>> futures(scratchAlloc);
-        futures.reserve(data->curves_count);
-        for (size_t i = 0; i < data->curves_count; i++)
-        {
-            futures.push_back(pool.Push(
-                [&, i]
-                {
-                    FImportedCurve curve(scratchAlloc);
-                    LoadGLTFCurve(data, &data->curves[i], curve, scratchAlloc);
-                    BuildCurveBlobJobs(scene.mTables.curves[i], curveBlobJobs[i].jobs, curve);
-                    // BuildCurveBlobJobs resets the desc (desc = {}), so re-stamp the id afterwards.
-                    scene.mTables.curves[i].id = curveIds[i];
-                }));
-        }
-        pool.Join();
-        for (Future<void>& future : futures)
-            future.get();
         for (FResourceBlobJobs& jobs : curveBlobJobs)
             AppendResourceBlobJobs(blobJobs, jobs);
     }
+    CHECK_MSG(nextSubmesh == numTrianglePrimitives, "Serialized mesh count mismatch");
+    CHECK_MSG(nextCurve == numCurvePrimitives, "Serialized curve count mismatch");
 
     /* Blob compression and commit */
     Vector<FPreparedBlob> preparedBlobs(scratchAlloc);
@@ -1689,7 +1797,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             cgltf_node_transform_world(node, reinterpret_cast<float*>(&worldMat));
 
             auto meshIndex = cgltf_mesh_index(data, node->mesh);
-            auto [mmin, mmax] = submeshIndices[meshIndex];
+            auto const& primResources = meshPrimitiveResources[meshIndex];
 
             size_t instCount = 1;
             const cgltf_accessor* tAcc = nullptr;
@@ -1711,7 +1819,6 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             }
 
             FInstance instance{};
-            instance.type = FInstanceType::Mesh;
             instance.name = internString(node->name);
             instance.node = NodeJoint(i);
 
@@ -1752,29 +1859,21 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                     decompose(instWorld, xform.scale, xform.rotation, xform.transform);
                 }
                 instance.transform = xform;
-                for (size_t j = mmin; j < mmax; j++)
+                for (size_t p = 0; p < primResources.size(); ++p)
                 {
-                    auto* sub = node->mesh->primitives + j - mmin;
+                    auto* sub = node->mesh->primitives + p;
+                    auto const& resource = primResources[p];
                     instance.id = FUUID::Generate();
-                    instance.resource = scene.mTables.meshes[j].id;
+                    instance.type = resource.type;
+                    if (resource.type == FInstanceType::Curve)
+                        instance.resource = scene.mTables.curves[resource.index].id;
+                    else
+                        instance.resource = scene.mTables.meshes[resource.index].id;
                     instance.material = sub->material ? gltfMaterialIds[cgltf_material_index(data, sub->material)]
                                                        : kDefaultMaterialUUID;
                     scene.Add(instance);
                 }
             }
-        }
-        if (node->curve)
-        {
-            FInstance instance{};
-            getTransform(instance.transform);
-            instance.type = FInstanceType::Curve;
-            instance.id = FUUID::Generate();
-            instance.name = internString(node->name);
-            instance.node = NodeJoint(i);
-            instance.resource = curveIds[cgltf_curve_index(data, node->curve)];
-            instance.material = node->curve->material ? gltfMaterialIds[cgltf_material_index(data, node->curve->material)]
-                                                       : kDefaultMaterialUUID;
-            scene.Add(instance);
         }
         if (node->camera)
         {
@@ -1931,11 +2030,13 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             size_t const gmesh = cgltf_mesh_index(data, ch->target_node->mesh);
             if (!meshMorphAnimated[gmesh])
                 continue;
-            auto const& [mmin, mmax] = submeshIndices[gmesh];
-            for (size_t idx = mmin; idx < mmax; ++idx)
+            for (auto const& resource : meshPrimitiveResources[gmesh])
             {
+                if (resource.type != FInstanceType::Mesh)
+                    continue;
                 FMorphChannel mc(scratchAlloc);
-                if (BuildMorphChannel(ch, scene.mTables.meshes[idx].id, meshMorphTargetCount[gmesh], mc, clip.duration))
+                if (BuildMorphChannel(ch, scene.mTables.meshes[resource.index].id, meshMorphTargetCount[gmesh], mc,
+                                      clip.duration))
                     clip.morphChannels.push_back(std::move(mc));
             }
         }
@@ -2044,117 +2145,19 @@ void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, 
     }
 }
 
-uint32_t CalculateRenderableCurveSegmentCount(FImportedCurve const& curve)
+void BuildDOTSGeometry(FImportedCurve const& curve, Vector<FCurveDOTSVertex>& vertices, Vector<uint32_t>& indices,
+                       Vector<FCurveLeaf>& leaves)
 {
-    uint32_t segmentCount = 0;
-    for (uint32_t count : curve.curveVertexCounts)
-    {
-        switch (curve.basis)
-        {
-        case FCurveBasis::Bezier:
-            CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
-                      "Bezier curve strands must contain 3n + 1 controls, got {}", count);
-            segmentCount += (count - 1) / 3;
-            break;
-        case FCurveBasis::Linear:
-            segmentCount += count > 1 ? count - 1 : 0;
-            break;
-        default:
-            CHECK_MSG(false, "Unsupported curve basis {}", static_cast<uint32_t>(curve.basis));
-            break;
-        }
-    }
-    return segmentCount;
-}
-
-FSerializedCurveAABB BuildCurveAABB(float3 const& mn, float3 const& mx)
-{
-    return FSerializedCurveAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z};
-}
-
-void BuildCurveGeometry(FImportedCurve const& curve, Span<FSerializedCurveSegment> segments,
-                        Span<FSerializedCurveAABB> aabbs)
-{
-    CHECK_MSG(segments.size() == aabbs.size(), "Curve geometry output size mismatch");
-
-    uint32_t segmentCursor = 0;
-    auto WriteLineSegment = [&](uint32_t p0, uint32_t p1, float u0, float u1)
-    {
-        CHECK(segmentCursor < segments.size());
-        segments[segmentCursor] = FSerializedCurveSegment{.p0 = p0, .p1 = p1, .u0 = u0, .u1 = u1};
-
-        const auto& a = curve.points[p0];
-        const auto& b = curve.points[p1];
-        float radius = std::max(a.radius, b.radius);
-        float3 mn = min(a.position, b.position) - float3(radius);
-        float3 mx = max(a.position, b.position) + float3(radius);
-        aabbs[segmentCursor] = BuildCurveAABB(mn, mx);
-        segmentCursor++;
-    };
-    auto WriteBezierSpan = [&](uint32_t p0, uint32_t p1, float u0, float u1)
-    {
-        CHECK(segmentCursor < segments.size());
-        segments[segmentCursor] = FSerializedCurveSegment{.p0 = p0, .p1 = p1, .u0 = u0, .u1 = u1};
-
-        const auto& a = curve.points[p0];
-        const auto& b = curve.points[p0 + 1];
-        const auto& c = curve.points[p0 + 2];
-        const auto& d = curve.points[p1];
-        float radius = std::max(std::max(a.radius, b.radius), std::max(c.radius, d.radius));
-        float3 mn = min(min(a.position, b.position), min(c.position, d.position)) - float3(radius);
-        float3 mx = max(max(a.position, b.position), max(c.position, d.position)) + float3(radius);
-        aabbs[segmentCursor] = BuildCurveAABB(mn, mx);
-        segmentCursor++;
-    };
-
-    uint32_t pointCursor = 0;
-    for (uint32_t count : curve.curveVertexCounts)
-    {
-        CHECK_MSG(pointCursor + count <= curve.points.size(), "Curve set references more points than it stores");
-        if (count <= 1)
-        {
-            pointCursor += count;
-            continue;
-        }
-
-        switch (curve.basis)
-        {
-        case FCurveBasis::Bezier:
-        {
-            CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
-                      "Bezier curve strands must contain 3n + 1 controls, got {}", count);
-            uint32_t spanCount = (count - 1) / 3;
-            float invSpanCount = 1.0f / float(spanCount);
-            for (uint32_t i = 0; i < spanCount; ++i)
-            {
-                uint32_t p0 = pointCursor + i * 3;
-                uint32_t p1 = pointCursor + (i + 1) * 3;
-                WriteBezierSpan(p0, p1, float(i) * invSpanCount, float(i + 1) * invSpanCount);
-            }
-            break;
-        }
-        case FCurveBasis::Linear:
-        {
-            float invSegmentCount = 1.0f / float(count - 1);
-            for (uint32_t i = 0; i + 1 < count; ++i)
-            {
-                uint32_t p0 = pointCursor + i;
-                uint32_t p1 = pointCursor + i + 1;
-                WriteLineSegment(p0, p1, float(i) * invSegmentCount, float(i + 1) * invSegmentCount);
-            }
-            break;
-        }
-        default:
-            CHECK_MSG(false, "Unsupported curve basis {}", static_cast<uint32_t>(curve.basis));
-            break;
-        }
-        pointCursor += count;
-    }
-
-    CHECK_MSG(pointCursor == curve.points.size(), "Curve strands reference {} points, but points array stores {}",
-              pointCursor, curve.points.size());
-    CHECK_MSG(segmentCursor == segments.size(), "Curve segment count mismatch: expected {} got {}",
-              segments.size(), segmentCursor);
+    vertices.clear();
+    indices.clear();
+    leaves.clear();
+    vertices.reserve(curve.segments.size() * 8);
+    indices.reserve(curve.segments.size() * 12);
+    leaves.reserve(curve.segments.size());
+    for (FImportedCurveSegment const& segment : curve.segments)
+        EmitDOTSLeaf(segment, vertices, indices, leaves);
+    CHECK_MSG(!leaves.empty(), "DOTS bake produced no leaves");
+    CHECK_MSG(indices.size() == leaves.size() * 12, "DOTS index/leaf count mismatch");
 }
 
 void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, FUUID skeleton)
@@ -2205,19 +2208,16 @@ void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImp
 {
     desc = {};
     desc.bounds = BuildCurveBounds(curve);
-    uint32_t segmentCount = CalculateRenderableCurveSegmentCount(curve);
 
     Allocator* scratchAlloc = blobJobs.get_allocator().mResource;
-    Vector<FSerializedCurveSegment> segments(scratchAlloc);
-    Vector<FSerializedCurveAABB> aabbs(scratchAlloc);
-    segments.resize(segmentCount);
-    aabbs.resize(segmentCount);
-    BuildCurveGeometry(curve, Span<FSerializedCurveSegment>(segments.data(), segments.size()),
-                       Span<FSerializedCurveAABB>(aabbs.data(), aabbs.size()));
+    Vector<FCurveDOTSVertex> vertices(scratchAlloc);
+    Vector<uint32_t> indices(scratchAlloc);
+    Vector<FCurveLeaf> leaves(scratchAlloc);
+    BuildDOTSGeometry(curve, vertices, indices, leaves);
 
-    AppendArrayBlobJob(blobJobs, curve.points, FBlobCodec::LZ4, desc.points);
-    AppendArrayBlobJob(blobJobs, segments, FBlobCodec::LZ4, desc.segments);
-    AppendArrayBlobJob(blobJobs, aabbs, FBlobCodec::LZ4, desc.aabbs, alignof(FSerializedCurveAABB));
+    AppendArrayBlobJob(blobJobs, vertices, FBlobCodec::LZ4, desc.vertices);
+    AppendArrayBlobJob(blobJobs, indices, FBlobCodec::LZ4, desc.indices);
+    AppendArrayBlobJob(blobJobs, leaves, FBlobCodec::LZ4, desc.leaves);
 }
 
 FImportedScene::FImportedScene(MemoryMappedFile& file, Allocator* scratchAlloc)
@@ -2282,18 +2282,14 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
         primitiveBytes = AlignUp(primitiveBytes, size_t(4));
         primitiveBytes += GPUScene::CalculateMeshPrimitiveSize(mesh);
     }
-    size_t curveAABBBytes = 0;
     for (auto const& curve : GetCurves())
     {
         primitiveBytes = AlignUp(primitiveBytes, size_t(4));
         primitiveBytes += GPUScene::CalculateCurvePrimitiveSize(curve);
-
-        curveAABBBytes = AlignUp(curveAABBBytes, alignof(Foundation::RHI::RHIAccelerationStructureAABB));
-        curveAABBBytes += GPUScene::CalculateCurveAABBSize(curve);
     }
 
     desc.primitiveBudget = ByteGPUSceneBudget(primitiveBytes, desc.primitiveBudget, size_t(4));
-    desc.curveAABBBudget = ByteGPUSceneBudget(curveAABBBytes, desc.curveAABBBudget, alignof(Foundation::RHI::RHIAccelerationStructureAABB));
+    desc.curveAABBBudget = 0;
 
     size_t intersectableLightCount = 0;
     for (auto const& light : GetLights())

@@ -177,37 +177,26 @@ struct GSLight
 };
 struct GSCurveSet
 {
-    uint32_t pointOffset; // GSCurvePoint, in Primitive buffer (bytes)
-    uint32_t pointCount;
-    uint32_t segmentOffset; // GSCurveSegment, in Primitive buffer (bytes)
-    uint32_t segmentCount;
-    uint32_t aabbOffset; // RHIAccelerationStructureAABB, in curve AABB buffer (bytes)
-};
-struct GSCurvePoint
-{
-    float3 position;
-    float radius;
-};
-struct GSCurveSegment
-{
-    uint32_t p0;
-    uint32_t p1;
-    float u0;
-    float u1;
+    uint32_t vtxOffset; // FCurveDOTSVertex, in Primitive buffer (bytes)
+    uint32_t vtxCount;
+    uint32_t idxOffset; // uint32_t, in Primitive buffer (bytes)
+    uint32_t idxCount;  // 12 indices (4 tris) per leaf
+    uint32_t leafOffset; // FCurveLeaf, in Primitive buffer (bytes)
+    uint32_t leafCount;
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 104);
 static_assert(sizeof(GSMaterial) == 192);
 static_assert(sizeof(GSLight) == 88);
-static_assert(sizeof(GSCurveSet) == 20);
-static_assert(sizeof(GSCurvePoint) == 16);
-static_assert(sizeof(GSCurveSegment) == 16);
+static_assert(sizeof(GSCurveSet) == 24);
+static_assert(sizeof(FCurveDOTSVertex) == 16);
+static_assert(sizeof(FCurveLeaf) == 40);
 
 struct GPUSceneDesc
 {
     uint32_t primitiveBudget = 16 * (1u << 20); // 16MB
-    uint32_t curveAABBBudget = 16 * (1u << 20); // 16MB
+    uint32_t curveAABBBudget = 0; // unused; retained for ABI of CalculateGPUSceneDesc callers
     uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of GSInstance elements (ring)
     uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
     uint32_t lightBudget = static_cast<uint32_t>(1e4); // # of lights (ring)
@@ -269,7 +258,6 @@ public:
 
     [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FSerializedMesh const& src);
     [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FSerializedCurve const& src);
-    [[nodiscard]] static size_t CalculateCurveAABBSize(FSerializedCurve const& src);
 
     GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc, AllocatorStack* frameScratch = nullptr);
     ~GPUScene();
@@ -441,6 +429,8 @@ public:
      * guards the per-frame getters. */
     /** @brief True when at least one dynamic geometry is resident. */
     [[nodiscard]] bool HasDynamicGeometry() const;
+    /** @brief True when at least one ready curve (DOTS) geometry is resident. */
+    [[nodiscard]] bool HasCurveGeometry() const;
     /**
      * @brief Opens the per-frame dynamic-geometry update window and advances the ring to the next
      *        frame slot. Call exactly once per rendered frame before any @ref UpdateDynamicGeometry.
