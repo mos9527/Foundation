@@ -370,6 +370,8 @@ public:
         uint32_t numLightBVHGlobalLights{0u};
         uint32_t firstLightBVHNodeIndex{0u};
         uint32_t lightBVHValid{0u};
+        // After EndScene partition: lights[1 .. 1+numSunDiskLights) are non-delta directionals.
+        uint32_t numSunDiskLights{0u};
     };
 
     /**
@@ -498,11 +500,15 @@ public:
             return UINT32_MAX;
         return mTLASInstanceMap[pickID];
     }
+    /** @brief Scene/BeginScene light index (pre-partition). Remapped to committed GPU order. */
     [[nodiscard]] GSLight GetLight(uint32_t index) const
     {
-        CHECK_MSG(index < mCommittedLights.size(), "GetLight index {} out of range ({})", index,
+        CHECK_MSG(index < mLightInputToCommitted.size(), "GetLight index {} out of range ({})", index,
+                  mLightInputToCommitted.size());
+        uint32_t const committed = mLightInputToCommitted[index];
+        CHECK_MSG(committed < mCommittedLights.size(), "GetLight remap {} -> {} out of range ({})", index, committed,
                   mCommittedLights.size());
-        return mCommittedLights[index];
+        return mCommittedLights[committed];
     }
     [[nodiscard]] uint32_t GetLightCount() const { return static_cast<uint32_t>(mCommittedLights.size()); }
     [[nodiscard]] GSMaterial GetMaterial(uint32_t index) const
@@ -582,6 +588,8 @@ private:
     friend struct GPUSceneImpl;
     Vector<GSInstance> mCommittedInstances;
     Vector<GSLight> mCommittedLights;
+    // BeginScene fill index -> committed/GPU light index after EndScene partition.
+    Vector<uint32_t> mLightInputToCommitted;
     Vector<GSMaterial> mCommittedMaterials;
     UpdateResult mLastUpdateResult;
     // TLAS instanceID -> committed instance index

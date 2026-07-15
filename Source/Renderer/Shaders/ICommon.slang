@@ -286,6 +286,7 @@ public struct UBO
     public uint32_t firstLightBVHGlobalIndex;
     public uint32_t numLightBVHGlobalLights;
     public uint32_t lightBVHValid;
+    public uint32_t numSunDiskLights;
     public uint32_t energyCompensation;
     public uint32_t lightSamplerMode;
     // -- Path Tracing
@@ -295,6 +296,7 @@ public struct UBO
     public uint32_t ptMaxBouncesTransmission;
     public float ptFireflyClamp;
     public uint32_t ptSamplesPerPixel;
+    public uint32_t ptPrimaryLightVisibility;
     // -- Debug
     public uint32_t dbgShowOutline;
     public uint32_t dbgViewFlags;

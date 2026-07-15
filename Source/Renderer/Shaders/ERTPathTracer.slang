@@ -1399,13 +1399,15 @@ bool AddAnalyticLightHitEmission(
         pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
     }
 
-    if (bounce > 0 /* do not contribute to primary visibility */ && any(Le > 0.0f))
+    bool allowPrimary = globalParams.ptPrimaryLightVisibility != 0u;
+    if ((bounce > 0 || allowPrimary) && any(Le > 0.0f))
     {
         float pLightSelection = EvalLightSelectionPMF(lighting.lastLightCtx, hit.lightIndex);
         float pdf = pLightSelection * pdfLi;
         float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
         float3 contrib = beta * Le * mis;
-        AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, false);
+        bool direct = bounce == 0;
+        AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, direct);
     }
 
     return true;
@@ -1420,16 +1422,38 @@ void AddEnvironmentMiss(
     DirectLightingState lighting,
     inout PathRadiance radiance)
 {
+    float3 wi = -view;
+    float3 Le = lighting.env.Le(wi);
+    float pdf = EvalLightSelectionPMF(lighting.lastLightCtx, 0u) *
+        lighting.env.PDF_Li(lighting.lastLightCtx, wi, true);
+
+    // Sorted after EndScene: lights[1 .. 1+numSunDiskLights) are non-delta directionals.
+    for (uint i = 0u; i < globalParams.numSunDiskLights; ++i)
+    {
+        uint lightIndex = 1u + i;
+        GSLight gl = LoadSceneLight(lightIndex);
+        DistantLight sun = DistantLight(SampledSpectrum(gl.color * gl.power), gl.direction, gl.params.x);
+        float3 sunLe = sun.Le(wi);
+        if (!any(sunLe > 0.0f))
+            continue;
+
+        float pSel = EvalLightSelectionPMF(lighting.lastLightCtx, lightIndex);
+        pdf += pSel * sun.PDF_Li(lighting.lastLightCtx, wi, true);
+        if (bounce > 0 || globalParams.ptPrimaryLightVisibility != 0u)
+            Le += sunLe;
+    }
+
+    if (!any(Le > 0.0f))
+        return;
+
     if (bounce == 0)
     {
-        AddRadiance(radiance.specular, lighting.env.Le(-view), true);
+        AddRadiance(radiance.specular, Le, true);
         return;
     }
 
-    float pLightSelection = EvalLightSelectionPMF(lighting.lastLightCtx, 0u);
-    float pdf = pLightSelection * lighting.env.PDF_Li(lighting.lastLightCtx, -view, true);
     float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
-    float3 contrib = beta * lighting.env.Le(-view) * mis;
+    float3 contrib = beta * Le * mis;
     AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, false);
 }
 

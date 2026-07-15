@@ -2808,6 +2808,10 @@ void FRunningImGui()
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
+            if (ImGui::Checkbox("Primary Light Visibility", &GEditor.rendererConfig.ptPrimaryLightVisibility))
+            {
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
             ImGui::SeparatorText(PSI_RANDOM " Ray Bounce");
             ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesDiffuse), 0, 64);
             ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);

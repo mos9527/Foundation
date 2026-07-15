@@ -296,6 +296,9 @@ public struct DistantLight : ILight {
     }
 
     public SampledSpectrum Le(float3 w) {
+        if (isDelta) return {};
+        if (dot(w, -direction) >= cosThetaMax)
+            return LemitRadiance;
         return {};
     }
 

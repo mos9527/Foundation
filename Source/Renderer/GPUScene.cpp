@@ -29,6 +29,63 @@ static bool IsIntersectableLight(GSLight const& light)
         ((type == kGSLightTypePoint || type == kGSLightTypeSpot) && light.params.x > 0.0f);
 }
 
+static bool IsSunDiskLight(GSLight const& light)
+{
+    return GSLightTypeCPU(light) == kGSLightTypeDirectional && light.params.x > 0.0f;
+}
+
+// Stable order: environment, non-delta directionals, remaining. Writes input->committed remap.
+static uint32_t PartitionSceneLights(Span<GSLight> lights, Span<uint32_t> inputToCommitted, Allocator* scratch)
+{
+    uint32_t const count = static_cast<uint32_t>(lights.size());
+    CHECK_MSG(inputToCommitted.size() == count, "Light remap size mismatch");
+    if (count == 0u)
+        return 0u;
+
+    Vector<uint32_t> order(scratch);
+    order.reserve(count);
+    uint32_t envIndex = UINT32_MAX;
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        if (GSLightTypeCPU(lights[i]) == kGSLightTypeEnvironment)
+        {
+            envIndex = i;
+            break;
+        }
+    }
+    if (envIndex != UINT32_MAX)
+        order.push_back(envIndex);
+
+    uint32_t numSunDisks = 0u;
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        if (i == envIndex)
+            continue;
+        if (IsSunDiskLight(lights[i]))
+        {
+            order.push_back(i);
+            ++numSunDisks;
+        }
+    }
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        if (i == envIndex || IsSunDiskLight(lights[i]))
+            continue;
+        order.push_back(i);
+    }
+    CHECK_MSG(order.size() == count, "Light partition dropped or duplicated entries");
+
+    Vector<GSLight> sorted(scratch);
+    sorted.assign(lights.begin(), lights.end());
+    for (uint32_t committed = 0; committed < count; ++committed)
+    {
+        uint32_t const input = order[committed];
+        lights[committed] = sorted[input];
+        inputToCommitted[input] = committed;
+    }
+    return numSunDisks;
+}
+
 static size_t GPUSceneTextureSubresourceFootprint(FTextureHeader const& metadata, uint32_t layer, uint32_t mip)
 {
     uint32_t const alignment = std::max(metadata.GetBpp() / 8, metadata.GetBlockSize());
@@ -430,7 +487,8 @@ void GPUSceneImpl::FlushDirectGeometryUpload()
 }
 
 GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc, AllocatorStack* frameScratch) :
-    mCommittedInstances(allocator), mCommittedLights(allocator), mCommittedMaterials(allocator), mTLASInstanceMap(allocator)
+    mCommittedInstances(allocator), mCommittedLights(allocator), mLightInputToCommitted(allocator),
+    mCommittedMaterials(allocator), mTLASInstanceMap(allocator)
 {
     mImpl = ConstructUnique<GPUSceneImpl>(allocator, *this, device, allocator, desc, frameScratch);
 }
@@ -466,7 +524,7 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     }
 #endif
     static_assert(sizeof(GSLightBVHNode) == 48);
-    static_assert(offsetof(RendererUBO, firstLightBVHNode) + sizeof(uint32_t) * 8 ==
+    static_assert(offsetof(RendererUBO, firstLightBVHNode) + sizeof(uint32_t) * 9 ==
                   offsetof(RendererUBO, energyCompensation));
     mGeometry.reserve(desc.geometryBudget);
     mBLASes.reserve(desc.geometryBudget);
@@ -862,12 +920,17 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
     }
 
     owner.mCommittedMaterials.assign(tables.materials.begin(), tables.materials.end());
+
+    Allocator* scratch = mFrameScratch ? mFrameScratch : mAllocator;
+    owner.mLightInputToCommitted.resize(tables.lights.size());
+    res.numSunDiskLights =
+        PartitionSceneLights(tables.lights, Span<uint32_t>(owner.mLightInputToCommitted.data(), tables.lights.size()),
+                             scratch);
     owner.mCommittedLights.assign(tables.lights.begin(), tables.lights.end());
 
     mLightBVHNeedsRefit = false;
     if (!tables.lights.empty())
     {
-        Allocator* scratch = mFrameScratch ? mFrameScratch : mAllocator;
         Vector<uint32_t> membership(scratch);
         membership.reserve(tables.lights.size());
         for (GSLight const& light : tables.lights)
@@ -955,6 +1018,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
     {
         mLightBVHMembership.clear();
         mLightBVHRefitLevels.clear();
+        owner.mLightInputToCommitted.clear();
     }
     owner.mLastUpdateResult = res;
     mTablesScratch = {};
@@ -977,6 +1041,7 @@ void GPUScene::BuildUBO(RendererUBO& globals) const
     globals.firstLightBVHGlobalIndex = mLastUpdateResult.firstLightBVHGlobalIndex;
     globals.numLightBVHGlobalLights = mLastUpdateResult.numLightBVHGlobalLights;
     globals.lightBVHValid = mLastUpdateResult.lightBVHValid;
+    globals.numSunDiskLights = mLastUpdateResult.numSunDiskLights;
     globals.ggxLutEIndex = mLUTGGXEIndex.index;
     globals.ggxLutEavgIndex = mLUTGGXEavgIndex.index;
     globals.ggxLutEIORIndex = mLUTGGXEIORIndex.index;
@@ -2901,6 +2966,7 @@ void GPUSceneImpl::Reset()
     mFreeGeometrySlots.clear();
     owner.mCommittedInstances.clear();
     owner.mCommittedLights.clear();
+    owner.mLightInputToCommitted.clear();
     owner.mCommittedMaterials.clear();
     owner.mTLASInstanceMap.clear();
     mMotionBaseline.clear();

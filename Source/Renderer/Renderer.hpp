@@ -63,6 +63,8 @@ struct RendererUBO
     uint32_t firstLightBVHGlobalIndex{0u};
     uint32_t numLightBVHGlobalLights{0u};
     uint32_t lightBVHValid{0u};
+    // Non-delta directionals occupy lights[1 .. 1+numSunDiskLights) after GPUScene partition.
+    uint32_t numSunDiskLights{0u};
     uint32_t energyCompensation{1u};
     uint32_t lightSamplerMode{0u}; // kLightSamplerBVH / kLightSamplerUniform
     // -- Path Tracing
@@ -72,6 +74,7 @@ struct RendererUBO
     uint32_t ptMaxBouncesTransmission{12u};
     float ptFireflyClamp{2.0f}; // 10^x
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1.
+    uint32_t ptPrimaryLightVisibility{0u}; // Analytic lights + sun disks on bounce 0
     // -- Debug
     uint32_t dbgShowOutline{0u};
     uint32_t dbgViewFlags{0u};
@@ -210,6 +213,7 @@ struct RendererConfig
     bool ptShaderExecutionReordering{true};
     bool forceTextureLOD0{false};
     bool energyCompensation{true};
+    bool ptPrimaryLightVisibility{false};
     bool textureAnisoEnable{true};
     float textureAnisoLevel{16.0f};
     bool textureTrilinear{true};
