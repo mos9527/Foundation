@@ -279,7 +279,8 @@ public struct DistantLight : ILight {
             // https://en.wikipedia.org/wiki/Angular_diameter#Use_in_astronomy
             // Hello, penumbra and umbra
             this.isDelta = false;
-            this.cosThetaMax = cos(angularDiameter * 0.5f);
+            float angularRadius = clamp(angularDiameter * 0.5f, 1e-4f, Pi);
+            this.cosThetaMax = cos(angularRadius);
             this.pdfDir = UniformConePDF(cosThetaMax);
 
             // We're no longer a delta light and actually has a defined PDF. So add it here. 
@@ -330,6 +331,53 @@ public struct DistantLight : ILight {
     }
 };
 
+bool IntersectSphereLight(float3 origin, float3 wi, float3 center, float radius,
+                          out float distance, out float3 normal)
+{
+    float3 oc = origin - center;
+    float b = dot(oc, wi);
+    float c = dot(oc, oc) - radius * radius;
+    float discriminant = b * b - c;
+    if (discriminant <= 0.0f)
+        return false;
+    float root = sqrt(discriminant);
+    distance = -b - root;
+    if (distance <= 0.0f)
+        distance = -b + root;
+    if (distance <= 0.0f)
+        return false;
+    normal = (origin + distance * wi - center) / radius;
+    return dot(normal, -wi) > 0.0f;
+}
+
+float VisibleSpherePDF(float radius, float distanceSquared, out float cosThetaMax)
+{
+    float sinThetaMaxSquared = clamp(radius * radius / distanceSquared, 0.0f, 1.0f);
+    cosThetaMax = SafeSqrt(1.0f - sinThetaMaxSquared);
+    float oneMinusCosThetaMax = sinThetaMaxSquared / max(1.0f + cosThetaMax, 1e-20f);
+    return 1.0f / (2.0f * Pi * max(oneMinusCosThetaMax, 1e-20f));
+}
+
+bool SampleVisibleSphereLight(float3 origin, float3 center, float radius, float2 u,
+                              out float3 wi, out float distance, out float pdf)
+{
+    float3 toCenter = center - origin;
+    float distanceSquared = dot(toCenter, toCenter);
+    if (distanceSquared <= radius * radius)
+        return false;
+
+    float cosThetaMax;
+    pdf = VisibleSpherePDF(radius, distanceSquared, cosThetaMax);
+    float3 localWi = SampleUniformCone(cosThetaMax, u);
+    float3 axis = toCenter / sqrt(distanceSquared);
+    float3 tangent, bitangent;
+    CoordinateSystem(axis, tangent, bitangent);
+    wi = normalize(localWi.x * tangent + localWi.y * bitangent + localWi.z * axis);
+
+    float3 normal;
+    return IntersectSphereLight(origin, wi, center, radius, distance, normal);
+}
+
 public struct PointLight : ILight {
     SampledSpectrum I;
     float3 position;
@@ -362,50 +410,33 @@ public struct PointLight : ILight {
     public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
         if (radius <= 0.0f) return 0.0f;
 
-        float3 oc = ctx.p() - position;
-        float b = dot(oc, wi);
-        float c = dot(oc, oc) - radius * radius;
-        float discrim = b * b - c;
-        if (discrim <= 0.0f) return 0.0f;
-
-        float root = sqrt(discrim);
-        float t = -b - root;
-        if (t <= 0.0f) t = -b + root;
-        if (t <= 0.0f) return 0.0f;
-
-        float3 pLight = ctx.p() + t * wi;
-        float3 nLight = (pLight - position) / radius;
-        float cosTheta = dot(nLight, -wi);
-        if (cosTheta <= 0.0f) return 0.0f;
-
-        return (t * t) / (4.0f * Pi * radius * radius * cosTheta);
+        float distanceSquared = dot(position - ctx.p(), position - ctx.p());
+        if (distanceSquared <= radius * radius) return 0.0f;
+        float distance;
+        float3 normal;
+        if (!IntersectSphereLight(ctx.p(), wi, position, radius, distance, normal)) return 0.0f;
+        float cosThetaMax;
+        return VisibleSpherePDF(radius, distanceSquared, cosThetaMax);
     }
 
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
-        float3 pLight = position;
         bool isDelta = radius <= 0.0f;
 
         if (!isDelta) {
-            pLight += radius * SampleUniformSphere(u);
-        }
-
-        float3 wi = pLight - ctx.p();
-        float dist2 = dot(wi, wi);
-        if (dist2 == 0.0f) return LightLiSample();
-        
-        float dist = sqrt(dist2);
-        wi /= dist;
-
-        if (!isDelta) {
-            float3 nLight = (pLight - position) / radius;
-            float cosTheta = dot(nLight, -wi);
-            if (cosTheta <= 0.0f) return LightLiSample();
-
-            float pdf = dist2 / (4.0f * Pi * radius * radius * cosTheta);
+            float3 wi;
+            float dist;
+            float pdf;
+            if (!SampleVisibleSphereLight(ctx.p(), position, radius, u, wi, dist, pdf))
+                return LightLiSample();
             SampledSpectrum Li = I / (Pi * radius * radius);
             return LightLiSample(Li, wi, pdf, false, dist);
         }
-        
+
+        float3 wi = position - ctx.p();
+        float dist2 = dot(wi, wi);
+        if (dist2 == 0.0f) return LightLiSample();
+        float dist = sqrt(dist2);
+        wi /= dist;
         SampledSpectrum Li = I / dist2;
         return LightLiSample(Li, wi, 1.0f, true, dist);
     }
@@ -449,23 +480,13 @@ public struct SpotLight : ILight {
     public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
         if (radius <= 0.0f) return 0.0f;
 
-        float3 oc = ctx.p() - position;
-        float b = dot(oc, wi);
-        float c = dot(oc, oc) - radius * radius;
-        float discrim = b * b - c;
-        if (discrim <= 0.0f) return 0.0f;
-
-        float root = sqrt(discrim);
-        float t = -b - root;
-        if (t <= 0.0f) t = -b + root;
-        if (t <= 0.0f) return 0.0f;
-
-        float3 pLight = ctx.p() + t * wi;
-        float3 nLight = (pLight - position) / radius;
-        float cosTheta = dot(nLight, -wi);
-        if (cosTheta <= 0.0f) return 0.0f;
-
-        return (t * t) / (4.0f * Pi * radius * radius * cosTheta);
+        float distanceSquared = dot(position - ctx.p(), position - ctx.p());
+        if (distanceSquared <= radius * radius) return 0.0f;
+        float distance;
+        float3 normal;
+        if (!IntersectSphereLight(ctx.p(), wi, position, radius, distance, normal)) return 0.0f;
+        float cosThetaMax;
+        return VisibleSpherePDF(radius, distanceSquared, cosThetaMax);
     }
 
     float Falloff(float3 w) {
@@ -477,33 +498,26 @@ public struct SpotLight : ILight {
     }
 
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
-        float3 pLight = position;
         bool isDelta = radius <= 0.0f;
 
         if (!isDelta) {
-            pLight += radius * SampleUniformSphere(u);
-        }
-
-        float3 wi = pLight - ctx.p();
-        float dist2 = dot(wi, wi);
-        if (dist2 == 0.0f) return LightLiSample();
-        
-        float dist = sqrt(dist2);
-        wi /= dist;
-
-        if (!isDelta) {
-            float3 nLight = (pLight - position) / radius;
-            float cosTheta = dot(nLight, -wi);
-            if (cosTheta <= 0.0f) return LightLiSample();
-
+            float3 wi;
+            float dist;
+            float pdf;
+            if (!SampleVisibleSphereLight(ctx.p(), position, radius, u, wi, dist, pdf))
+                return LightLiSample();
             float falloff = Falloff(-wi);
             if (falloff == 0.0f) return LightLiSample();
 
-            float pdf = dist2 / (4.0f * Pi * radius * radius * cosTheta);
             SampledSpectrum Li = I * falloff / (Pi * radius * radius);
             return LightLiSample(Li, wi, pdf, false, dist);
         }
-        
+
+        float3 wi = position - ctx.p();
+        float dist2 = dot(wi, wi);
+        if (dist2 == 0.0f) return LightLiSample();
+        float dist = sqrt(dist2);
+        wi /= dist;
         float falloff = Falloff(-wi);
         if (falloff == 0.0f) return LightLiSample();
 
@@ -553,6 +567,7 @@ public struct DiskLight : ILight {
     }
 
     public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
+        if (area <= 0.0f || radius.x <= 0.0f || radius.y <= 0.0f) return 0.0f;
         float cosTheta = dot(normal, wi);
         if (cosTheta == 0.0f) return 0.0f;
         
@@ -575,6 +590,7 @@ public struct DiskLight : ILight {
     }
 
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
+        if (area <= 0.0f || radius.x <= 0.0f || radius.y <= 0.0f) return LightLiSample();
         // Sample point on disk
         float2 pd = SampleConcentricDisk(u);
         float3 pLight = position + pd.x * radius.x * dpdu + pd.y * radius.y * dpdv;
@@ -587,6 +603,7 @@ public struct DiskLight : ILight {
         wi /= dist;
 
         float cosTheta = dot(normal, -wi);
+        if (abs(cosTheta) <= 1e-8f) return LightLiSample();
         if (!twoSided && cosTheta <= 0.0f) return LightLiSample();
 
         // Solid angle PDF
@@ -634,6 +651,7 @@ public struct RectLight : ILight {
     }
 
     public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
+        if (area <= 0.0f) return 0.0f;
         float cosTheta = dot(normal, wi);
         if (cosTheta == 0.0f) return 0.0f;
         
@@ -648,6 +666,7 @@ public struct RectLight : ILight {
         
         float l2_u = dot(dpdu, dpdu);
         float l2_v = dot(dpdv, dpdv);
+        if (l2_u <= 0.0f || l2_v <= 0.0f) return 0.0f;
         float u = dot(d, dpdu) / l2_u;
         float v = dot(d, dpdv) / l2_v;
 
@@ -658,6 +677,7 @@ public struct RectLight : ILight {
     }
 
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
+        if (area <= 0.0f) return LightLiSample();
         float2 pd = u * 2.0f - 1.0f;
         float3 pRect = position + pd.x * dpdu + pd.y * dpdv;
         
@@ -669,6 +689,7 @@ public struct RectLight : ILight {
         wi /= dist;
 
         float cosTheta = dot(normal, -wi);
+        if (abs(cosTheta) <= 1e-8f) return LightLiSample();
         if (!twoSided && cosTheta <= 0.0f) return LightLiSample();
 
         // Solid angle PDF
@@ -765,6 +786,7 @@ public struct TriangleLight : ILight {
         wi /= dist;
 
         float cosTheta = dot(normal, -wi);
+        if (abs(cosTheta) <= 1e-8f) return LightLiSample();
         if (!twoSided && cosTheta <= 0.0f) return LightLiSample();
 
         float pdf = dist2 / (area * abs(cosTheta));
