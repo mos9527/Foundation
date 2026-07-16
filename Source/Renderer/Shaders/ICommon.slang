@@ -291,7 +291,6 @@ public struct UBO
     public uint32_t lightBVHValid;
     public uint32_t numSunDiskLights;
     public uint32_t energyCompensation;
-    public uint32_t lightSamplerMode;
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBouncesDiffuse;

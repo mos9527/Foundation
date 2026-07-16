@@ -14,6 +14,14 @@ import IMaterial;
 import IMath;
 import IBxDF;
 
+// Packed path-tracer compile options. Must match Renderer.hpp.
+static const uint kPTCompileOptionSamplerSobol = 1u << 1;
+static const uint kPTCompileOptionSamplerPCG = 1u << 2;
+static const uint kPTCompileOptionForceTextureLOD0 = 1u << 3;
+static const uint kPTCompileOptionLightSamplerUniform = 1u << 4;
+static const uint kPTCompileOptionEnergyCompensation = 1u << 5;
+[[SpecializationConstant]] uint ptCompileOptions;
+
 uniform UBO globalParams;
 
 // -- Scene
@@ -38,11 +46,6 @@ RWTexture2D<float4> adaptiveAux; // xyz = Half-samples, w = Convergence flag
 //   [7:6] hit class (miss, analytic light, triangle, curve)
 //   [5:0] mixed material/light key
 static const uint kSERCoherenceHintBits = 8u;
-// Packed path-tracer compile options. Must match Render.hpp.
-static const uint kPTCompileOptionSamplerSobol = 1u << 1;
-static const uint kPTCompileOptionSamplerPCG = 1u << 2;
-static const uint kPTCompileOptionForceTextureLOD0 = 1u << 3;
-[[SpecializationConstant]] uint ptCompileOptions;
 
 static const uint kRayTypeSurface = 0u;
 static const uint kRayTypeShadow = 1u;
@@ -620,7 +623,8 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out fl
     float subsurface = foldSubsurfaceToDiffuse ? 0.0f : material.subsurfaceFactor;
     return PrincipledMaterial(
         baseColor4.xyz, pbrMetalRough.z, pbrMetalRough.y,
-        material.ior, specularFactor, transmission, globalParams.energyCompensation != 0u, wo,
+        material.ior, specularFactor, transmission,
+        (ptCompileOptions & kPTCompileOptionEnergyCompensation) != 0u, wo,
         subsurface, material.subsurfaceColor, material.subsurfaceRadius, material.subsurfaceScale,
         anisotropyStrength, specularColorFactor, globalParams.ggxLutEIndex, globalParams.ggxLutEavgIndex, globalParams.ggxLutEIORIndex, globalParams.ggxLutEIORavgIndex, globalParams.ggxLutEIORInvIndex, globalParams.ggxLutEIORInvavgIndex,
         sheenWeight, sheenRoughness, sheenTint, globalParams.sheenLtcIndex,

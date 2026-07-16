@@ -66,7 +66,6 @@ struct RendererUBO
     // Non-delta directionals occupy lights[1 .. 1+numSunDiskLights) after GPUScene partition.
     uint32_t numSunDiskLights{0u};
     uint32_t energyCompensation{1u};
-    uint32_t lightSamplerMode{0u}; // kLightSamplerBVH / kLightSamplerUniform
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
     uint32_t ptMaxBouncesDiffuse{4u};
@@ -139,15 +138,20 @@ static constexpr uint32_t kLightSamplerUniform = 1u;
 static constexpr uint32_t kPTCompileOptionSamplerSobol = 1u << 1;
 static constexpr uint32_t kPTCompileOptionSamplerPCG = 1u << 2;
 static constexpr uint32_t kPTCompileOptionForceTextureLOD0 = 1u << 3;
+static constexpr uint32_t kPTCompileOptionLightSamplerUniform = 1u << 4;
+static constexpr uint32_t kPTCompileOptionEnergyCompensation = 1u << 5;
 
 static constexpr uint32_t kCameraProjectionPerspective = 0u;
 static constexpr uint32_t kCameraProjectionPanoramic = 1u;
 
-inline uint32_t PTPackCompileOptions(uint32_t sampler, bool forceTextureLOD0)
+inline uint32_t PTPackCompileOptions(uint32_t sampler, bool forceTextureLOD0, uint32_t lightSamplerMode,
+                                    bool energyCompensation)
 {
     uint32_t options = 0u;
     options |= sampler == kPTSamplerPCG ? kPTCompileOptionSamplerPCG : kPTCompileOptionSamplerSobol;
     options |= forceTextureLOD0 ? kPTCompileOptionForceTextureLOD0 : 0u;
+    options |= lightSamplerMode == kLightSamplerUniform ? kPTCompileOptionLightSamplerUniform : 0u;
+    options |= energyCompensation ? kPTCompileOptionEnergyCompensation : 0u;
     return options;
 }
 
@@ -207,7 +211,7 @@ struct RendererConfig
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
     RHIExtent2D renderExtent{0u, 0u};
     Span<RasterEffect const> rasterEffects{};
-    uint32_t ptSampler{kPTSamplerSobol};
+    uint32_t ptSampler{kPTSamplerPCG};
     uint32_t lightSamplerMode{kLightSamplerBVH};
     bool const* ptRenderPaused{nullptr}; // dynamic runtime pause gate, read by PT dispatch pass
     bool ptShaderExecutionReordering{true};

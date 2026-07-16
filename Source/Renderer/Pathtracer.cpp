@@ -201,7 +201,8 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
             : RHIPipelineStageBits::ComputeShader;
         r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
         r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "AS");
-        const uint ptCompileOptions = PTPackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0);
+        const uint ptCompileOptions =
+            PTPackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode, cfg.energyCompensation);
         const auto shader = PathsResolve(
             !shaderExecutionReordering ? "Data/Shaders/ERTPathTracer.spv" : "Data/Shaders/ERTPathTracer_SER.spv"
         );

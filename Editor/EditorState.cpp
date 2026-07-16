@@ -480,7 +480,6 @@ static void FRunning()
     GEditor.shaderGlobals.dbgMaterialFlags = GEditor.rendererConfig.materialFlags;
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
     GEditor.shaderGlobals.ptPrimaryLightVisibility = GEditor.rendererConfig.ptPrimaryLightVisibility ? 1u : 0u;
-    GEditor.shaderGlobals.lightSamplerMode = GEditor.rendererConfig.lightSamplerMode;
 
     // Skinned animation playback: wait for the scheduled poses, apply rigid transforms + CPU-skin
     // into the dynamic ring, then re-author the scene so dynamic instances encode the current ring

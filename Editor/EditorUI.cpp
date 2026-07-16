@@ -2807,6 +2807,7 @@ void FRunningImGui()
             if (ImGui::Checkbox("Energy Compensation", &GEditor.rendererConfig.energyCompensation))
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.state = FERunningEnter;
             }
             if (ImGui::Checkbox("Primary Light Visibility", &GEditor.rendererConfig.ptPrimaryLightVisibility))
             {
@@ -2822,8 +2823,8 @@ void FRunningImGui()
             if (ImGui::Combo("Light Sampler", &lightSampler, lightSamplerItems, 2))
             {
                 GEditor.rendererConfig.lightSamplerMode = static_cast<uint32_t>(lightSampler);
-                GEditor.shaderGlobals.lightSamplerMode = GEditor.rendererConfig.lightSamplerMode;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.state = FERunningEnter;
             }
             ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
             if (ImGui::SliderFloat("Adaptive Threshold", &GEditor.shaderGlobals.adaptiveThreshold, 0.0f, 1.0f, "%.4f"))
