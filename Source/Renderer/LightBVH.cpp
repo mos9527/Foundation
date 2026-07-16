@@ -72,7 +72,6 @@ struct BuildingData
     Vector<LightSortData> lightsData;
     Vector<uint32_t> lightIndices;
     Vector<uint64_t> lightBitmasks;
-    float currentNodeFlux = 0.0f;
 
     BuildingData(Vector<GSLightBVHNode>& bvhNodes, Allocator* allocator) :
         alloc(allocator), nodes(bvhNodes), lightsData(allocator), lightIndices(allocator), lightBitmasks(allocator)
@@ -300,18 +299,7 @@ SplitResult computeSplitWithBinnedSAH(BuildingData const& data, Range const& lig
     }
 
     if (!overallBest.second.isValid())
-    {
-        if (lightRange.length() <= parameters.maxLightsPerLeaf)
-            return {};
         return computeSplitWithEqual(data, lightRange, nodeBounds, parameters);
-    }
-
-    if (parameters.useLeafCreationCost && lightRange.length() <= parameters.maxLightsPerLeaf)
-    {
-        float leafCost = evalSAH(nodeBounds, lightRange.length(), parameters);
-        if (leafCost <= overallBest.first)
-            return {};
-    }
     return overallBest.second;
 }
 
@@ -439,20 +427,7 @@ SplitResult computeSplitWithBinnedSAOH(BuildingData const& data, Range const& li
     }
 
     if (!overallBest.second.isValid())
-    {
-        if (lightRange.length() <= parameters.maxLightsPerLeaf)
-            return {};
         return computeSplitWithEqual(data, lightRange, nodeBounds, parameters);
-    }
-
-    if (parameters.useLeafCreationCost && lightRange.length() <= parameters.maxLightsPerLeaf)
-    {
-        float cosTheta = kLightBVHInvalidCosConeAngle;
-        computeLightingCone(lightRange, data, cosTheta);
-        float leafCost = evalSAOH(nodeBounds, data.currentNodeFlux, cosTheta, parameters);
-        if (leafCost <= overallBest.first)
-            return {};
-    }
     return overallBest.second;
 }
 
@@ -485,9 +460,8 @@ uint32_t buildInternal(LightBVHOptions const& options, SplitFn splitHeuristic, u
         nodeFlux += data.lightsData[i].flux;
     }
     CHECK(nodeBounds.valid());
-    data.currentNodeFlux = nodeFlux;
 
-    bool trySplitting = lightRange.length() > (options.createLeavesASAP ? options.maxLightsPerLeaf : 1u);
+    bool trySplitting = lightRange.length() > 1u;
     SplitResult splitResult = trySplitting ? splitHeuristic(data, lightRange, nodeBounds, options) : SplitResult{};
 
     if (splitResult.isValid())
@@ -519,7 +493,7 @@ uint32_t buildInternal(LightBVHOptions const& options, SplitFn splitHeuristic, u
         return nodeIndex;
     }
 
-    CHECK(lightRange.length() <= options.maxLightsPerLeaf);
+    CHECK(lightRange.length() == 1u);
     uint32_t nodeIndex = static_cast<uint32_t>(data.nodes.size());
     data.nodes.push_back({});
     GSLightBVHNode& node = data.nodes.back();
@@ -711,8 +685,6 @@ LightBVHBuild BuildLightBVH(Span<GSLight const> lights, LightBVHOptions const& o
     LightBVHBuild bvh(alloc);
     bvh.lightBitmasks.assign(lights.size(), std::numeric_limits<uint64_t>::max());
 
-    CHECK_MSG(options.maxLightsPerLeaf > 0u && options.maxLightsPerLeaf < kLightBVHMaxLightsPerLeaf,
-              "maxLightsPerLeaf {} out of range", options.maxLightsPerLeaf);
     CHECK_MSG(options.binCount > 1u, "binCount must be > 1");
 
     BuildingData data(bvh.nodes, alloc);
@@ -1083,7 +1055,6 @@ bool LightBVHRunBuilderSelfTests(Allocator* alloc, String* outError)
     }
     {
         LightBVHOptions manyOpts = options;
-        manyOpts.maxLightsPerLeaf = 1u;
         manyOpts.splitHeuristic = LightBVHSplitHeuristic::Equal;
         Vector<GSLight> lights(alloc);
         lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0)));
@@ -1101,7 +1072,6 @@ bool LightBVHRunBuilderSelfTests(Allocator* alloc, String* outError)
     }
     {
         LightBVHOptions degenerateOpts = options;
-        degenerateOpts.maxLightsPerLeaf = 1u;
         degenerateOpts.splitHeuristic = LightBVHSplitHeuristic::BinnedSAH;
         Vector<GSLight> lights(alloc);
         for (uint32_t i = 0; i < 8; ++i)

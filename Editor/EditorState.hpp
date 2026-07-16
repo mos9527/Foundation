@@ -51,6 +51,7 @@ struct GizmoState
     float scaleSnap{0.1f};
     bool showBoundingBox{true};
     bool showLightGizmos{true};
+    bool showLightBVHBounds{false};
     bool showImGuizmo{true};
 };
 

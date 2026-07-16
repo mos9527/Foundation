@@ -532,6 +532,10 @@ public:
     [[nodiscard]] uint32_t GetLightBVHRefitLevelOffset(uint32_t level) const;
     [[nodiscard]] uint32_t GetLightBVHRefitLevelNodeCount(uint32_t level) const;
     [[nodiscard]] uint32_t GetLightBVHFirstNodeIndex() const;
+    [[nodiscard]] uint32_t GetLightBVHFirstNode() const;
+    [[nodiscard]] uint32_t GetLightBVHNodeCount() const;
+    [[nodiscard]] uint32_t GetLightBVHFirstDistantNode() const;
+    [[nodiscard]] uint32_t GetLightBVHDistantNodeCount() const;
     /* Textures */
     [[nodiscard]] BindlessPool* GetTexture2DPool();
     [[nodiscard]] BindlessPool* GetTexture3DPool();

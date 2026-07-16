@@ -1712,6 +1712,8 @@ void EditorDockSpaceAndMenuBar()
                 GEditor.state = FERunningEnter;
             if (ImGui::MenuItem("Light Gizmos", nullptr, &GEditor.gizmo.showLightGizmos))
                 GEditor.state = FERunningEnter;
+            if (ImGui::MenuItem("Light BVH Bounds", nullptr, &GEditor.gizmo.showLightBVHBounds))
+                GEditor.state = FERunningEnter;
             if (ImGui::MenuItem("ImGuizmo", nullptr, &GEditor.gizmo.showImGuizmo))
                 GEditor.state = FERunningEnter;
             ImGui::EndMenu();

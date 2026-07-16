@@ -3092,6 +3092,10 @@ uint32_t GPUScene::GetLightBVHRefitLevelNodeCount(uint32_t level) const
     return mImpl->mLightBVHRefitLevels[level].count;
 }
 uint32_t GPUScene::GetLightBVHFirstNodeIndex() const { return mLastUpdateResult.firstLightBVHNodeIndex; }
+uint32_t GPUScene::GetLightBVHFirstNode() const { return mLastUpdateResult.firstLightBVHNode; }
+uint32_t GPUScene::GetLightBVHNodeCount() const { return mLastUpdateResult.numLightBVHNodes; }
+uint32_t GPUScene::GetLightBVHFirstDistantNode() const { return mLastUpdateResult.firstLightBVHDistantNode; }
+uint32_t GPUScene::GetLightBVHDistantNodeCount() const { return mLastUpdateResult.numLightBVHDistantNodes; }
 BindlessPool* GPUScene::GetTexture2DPool() { return &mImpl->mTexture2DPool; }
 BindlessPool* GPUScene::GetTexture3DPool() { return &mImpl->mTexture3DPool; }
 BindlessPool const* GPUScene::GetTexture2DPool() const { return &mImpl->mTexture2DPool; }

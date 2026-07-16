@@ -31,13 +31,10 @@ enum class LightBVHSplitHeuristic : uint32_t
 struct LightBVHOptions
 {
     LightBVHSplitHeuristic splitHeuristic = LightBVHSplitHeuristic::BinnedSAOH;
-    uint32_t maxLightsPerLeaf = 10u;
     uint32_t binCount = 16u;
     float volumeEpsilon = 1e-3f;
     bool splitAlongLargest = false;
     bool useVolumeOverSA = false;
-    bool useLeafCreationCost = true;
-    bool createLeavesASAP = true;
     bool usePreintegration = true;
     bool useLightingCones = true;
 };

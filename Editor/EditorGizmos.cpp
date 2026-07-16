@@ -56,6 +56,10 @@ struct GizmoUBO
     float distanceFadeEnd{120.0f};
     float3 camPosition{};
     float2 screenSize{};
+    uint32_t firstLightBVHNode{};
+    uint32_t numLightBVHNodes{};
+    uint32_t firstLightBVHDistantNode{};
+    uint32_t numLightBVHDistantNodes{};
 };
 
 struct LightIconBindings
@@ -77,6 +81,7 @@ struct GizmoState
     ResourceHandle ubo{kInvalidHandle};
     ResourceHandle linearSampler{kInvalidHandle};
     PassHandle linePass{kInvalidHandle};
+    PassHandle lightBVHPass{kInvalidHandle};
     PassHandle spritePass{kInvalidHandle};
     Vector<GizmoVertex> vertices{GLOBAL_ALLOC};
     Vector<GizmoSpriteVertex> spriteVertices{GLOBAL_ALLOC};
@@ -456,7 +461,7 @@ namespace EditorGizmos
 
 void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D extent)
 {
-    if (!GEditor.gizmo.showBoundingBox && !GEditor.gizmo.showLightGizmos)
+    if (!GEditor.gizmo.showBoundingBox && !GEditor.gizmo.showLightGizmos && !GEditor.gizmo.showLightBVHBounds)
         return;
 
     CHECK(renderer);
@@ -505,6 +510,13 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
             params.distanceFadeStart = kGridHalfExtent * 0.25f;
             params.distanceFadeEnd = kGridHalfExtent;
             params.screenSize = float2(extent.x, extent.y);
+            if (GContext->gpuScene)
+            {
+                params.firstLightBVHNode = GContext->gpuScene->GetLightBVHFirstNode();
+                params.numLightBVHNodes = GContext->gpuScene->GetLightBVHNodeCount();
+                params.firstLightBVHDistantNode = GContext->gpuScene->GetLightBVHFirstDistantNode();
+                params.numLightBVHDistantNodes = GContext->gpuScene->GetLightBVHDistantNodeCount();
+            }
             auto* ubo = r->DerefResource(sGizmo.ubo).Get<RHIBuffer*>();
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(params)));
         });
@@ -558,6 +570,51 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
                 .Draw(sGizmo.vertexCount);
             cmd->EndGraphics();
         });
+
+    if (GEditor.gizmo.showLightBVHBounds && GContext->gpuScene)
+    {
+        auto lightBVHNodes =
+            renderer->CreateResource("Editor Light BVH Nodes", GContext->gpuScene->GetLightBVHNodeBuffer());
+        sGizmo.lightBVHPass = renderer->CreatePass(
+            "Editor Light BVH Bounds", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindBackbufferRTV(self,
+                                     RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
+                r->BindBufferStorageRead(self, lightBVHNodes, RHIPipelineStageBits::VertexShader, "lightBVHNodes");
+                r->BindBufferUniform(self, sGizmo.ubo,
+                                     RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::FragmentShader,
+                                     "globalParams");
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain",
+                              PathsResolve("Data/Shaders/Editor/EditorLightBVH.spv"));
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                              PathsResolve("Data/Shaders/Editor/EditorLightBVH.spv"));
+                r->BindTextureSampler(self, sGizmo.linearSampler, "linSampler");
+                if (depthTexture != kInvalidHandle)
+                {
+                    r->BindTextureSRV(self, depthTexture, "sceneDepth", RHIPipelineStageBits::FragmentShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                         .range = RHITextureSubresourceRange::Create(
+                                                             RHITextureAspectFlagBits::Color)});
+                }
+                r->PassSetTopology(self, RHIPipelineState::PipelineStateDesc::LineList);
+                r->PassSetRasterizerFlags(
+                    self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone},
+                    {.depthTest = false, .depthWrite = false});
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                uint32_t nodeCount = GContext->gpuScene->GetLightBVHNodeCount();
+                if (nodeCount == 0u)
+                    return;
+                r->CmdSetPipeline(self, cmd);
+                r->CmdBeginGraphics(self, cmd, extent, {{{RHIAttachmentLoadOp::Load}}});
+                cmd->SetViewport(0, 0, extent.x, extent.y, 0.0f, 1.0f, true)
+                    .SetScissor(0, 0, extent.x, extent.y)
+                    .Draw(nodeCount * 64u);
+                cmd->EndGraphics();
+            });
+    }
 
     sGizmo.spritePass = renderer->CreatePass(
         "Editor Gizmo Sprites", RHIDeviceQueueType::Graphics, 0u,
@@ -630,7 +687,7 @@ void BuildLightGizmos()
     if (!GEditor.showImGui || !GEditor.HasScene())
         return;
 
-    if (!GEditor.gizmo.showBoundingBox && !GEditor.gizmo.showLightGizmos)
+    if (!GEditor.gizmo.showBoundingBox && !GEditor.gizmo.showLightGizmos && !GEditor.gizmo.showLightBVHBounds)
         return;
 
     AppendXZGrid(sGizmo.vertices, GEditor.camera.center);
