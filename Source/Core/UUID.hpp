@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <functional>
 #include <string_view>
+#include "Hash.hpp"
 
 namespace Foundation::Core {
     // http://www.jstatsoft.org/v08/i14/paper
@@ -61,9 +62,6 @@ struct std::hash<Foundation::Core::FUUID>
 {
     size_t operator()(Foundation::Core::FUUID const& id) const noexcept
     {
-        // 128 -> 64 mix (boost::hash_combine shape, folding lo into a hi-derived seed).
-        size_t seed = std::hash<uint64_t>{}(id.hi);
-        seed ^= std::hash<uint64_t>{}(id.lo) + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2);
-        return seed;
+        return static_cast<size_t>(Foundation::Core::FNV1a64(id.hi, id.lo));
     }
 };
