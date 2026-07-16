@@ -124,7 +124,8 @@ float ComputeCosConeAngle(float3 coneDirection, float cosConeAngle, float3 other
 
     float currentAngle = SafeACos(cosConeAngle);
     float otherAngle = SafeACos(dot(coneDirection, otherDirection)) + SafeACos(otherCosConeAngle);
-    return cos(min(3.14159265358979323846f, max(currentAngle, otherAngle)));
+    float resultAngle = max(currentAngle, otherAngle);
+    return resultAngle < 3.14159265358979323846f ? cos(resultAngle) : kLightBVHInvalidCosConeAngle;
 }
 
 float3 ConeUnion(float3 aDirection, float aCosConeAngle, float3 bDirection, float bCosConeAngle,
@@ -141,7 +142,13 @@ float3 ConeUnion(float3 aDirection, float aCosConeAngle, float3 bDirection, floa
     direction = normalize(direction);
     float aAngle = SafeACos(dot(direction, aDirection)) + SafeACos(aCosConeAngle);
     float bAngle = SafeACos(dot(direction, bDirection)) + SafeACos(bCosConeAngle);
-    cosConeAngle = cos(min(3.14159265358979323846f, max(aAngle, bAngle)));
+    float resultAngle = max(aAngle, bAngle);
+    if (resultAngle >= 3.14159265358979323846f)
+    {
+        cosConeAngle = kLightBVHInvalidCosConeAngle;
+        return float3(0.0f);
+    }
+    cosConeAngle = cos(resultAngle);
     return direction;
 }
 
@@ -171,7 +178,7 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
         aabbMin = min(aabbMin, cMin);
         aabbMax = max(aabbMax, cMax);
         normalsSum += coneDir;
-        flux += max(0.0f, light.importance);
+        flux += ComputeLightProposalWeight(light);
     }
 
     node.origin = (aabbMax + aabbMin) * 0.5f;

@@ -199,7 +199,6 @@ int main(int argc, char** argv)
             env.flags = 5u; // Environment light, always present as the first light.
             env.color = float3(0.02f, 0.025f, 0.035f);
             env.power = 1.0f;
-            env.importance = 0.035f;
             GSLight& key = tables.lights[1];
             key = GSLight{};
             key.flags = 4u | kGSLightFlagUseShadow; // Rect area light
@@ -209,7 +208,6 @@ int main(int argc, char** argv)
             key.dpdu = float3(2.0f, 0.0f, 0.0f);
             key.dpdv = float3(0.0f, 0.0f, 2.0f);
             key.direction = float3(0.0f, -1.0f, 0.0f);
-            key.importance = key.power;
             gpu.EndScene(tables, ubo.frameNumber);
             gpu.BuildUBO(ubo);
         };

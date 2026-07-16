@@ -173,7 +173,6 @@ struct GSLight
     float4 params;
     float3 dpdu; // tangent u-axis (Rect: half-extent u)
     float3 dpdv; // tangent v-axis (Rect: half-extent v)
-    float importance;
 };
 struct GSCurveSet
 {
@@ -188,7 +187,7 @@ struct GSCurveSet
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 104);
 static_assert(sizeof(GSMaterial) == 192);
-static_assert(sizeof(GSLight) == 88);
+static_assert(sizeof(GSLight) == 84);
 static_assert(sizeof(GSCurveSet) == 24);
 static_assert(sizeof(FCurveDOTSVertex) == 16);
 static_assert(sizeof(FCurveLeaf) == 40);

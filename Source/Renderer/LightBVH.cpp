@@ -92,7 +92,8 @@ float computeCosConeAngle(float3 const& coneDir, float cosTheta, float3 const& o
 
     float const currentAngle = safeACos(cosTheta);
     float const otherAngle = safeACos(dot(coneDir, otherConeDir)) + safeACos(cosOtherTheta);
-    return std::cos(std::min(std::numbers::pi_v<float>, std::max(currentAngle, otherAngle)));
+    float const resultAngle = std::max(currentAngle, otherAngle);
+    return resultAngle < std::numbers::pi_v<float> ? std::cos(resultAngle) : kLightBVHInvalidCosConeAngle;
 }
 
 float3 coneUnionOld(float3 aDir, float aCosTheta, float3 bDir, float bCosTheta, float& cosResult)
@@ -108,7 +109,13 @@ float3 coneUnionOld(float3 aDir, float aCosTheta, float3 bDir, float bCosTheta, 
     dir = normalize(dir);
     float const aDiff = safeACos(dot(dir, aDir));
     float const bDiff = safeACos(dot(dir, bDir));
-    cosResult = std::cos(std::max(aDiff + std::acos(aCosTheta), bDiff + std::acos(bCosTheta)));
+    float const resultAngle = std::max(aDiff + safeACos(aCosTheta), bDiff + safeACos(bCosTheta));
+    if (resultAngle >= std::numbers::pi_v<float>)
+    {
+        cosResult = kLightBVHInvalidCosConeAngle;
+        return float3(0.0f);
+    }
+    cosResult = std::cos(resultAngle);
     return dir;
 }
 
@@ -240,7 +247,8 @@ SplitResult computeSplitWithBinnedSAH(BuildingData const& data, Range const& lig
         {
             float bmin = nodeBounds.minPoint[dimension];
             float bmax = nodeBounds.maxPoint[dimension];
-            float scale = static_cast<float>(parameters.binCount) / (bmax - bmin);
+            float w = bmax - bmin;
+            float scale = w > FLT_MIN ? static_cast<float>(parameters.binCount) / w : 0.0f;
             float p = ld.bounds.center()[dimension];
             return std::min(static_cast<uint32_t>((p - bmin) * scale), parameters.binCount - 1u);
         };
@@ -701,22 +709,20 @@ LightBVHBuild BuildLightBVH(Span<GSLight const> lights, LightBVHOptions const& o
     {
         GSLight const& light = lights[i];
         uint32_t type = GSLightTypeCPU(light);
+        float proposalWeight = ComputeLightProposalWeight(light);
         if (IsGlobalLightType(type))
         {
-            bvh.globalLightIndices.push_back(i);
+            if (proposalWeight > 0.0f)
+                bvh.globalLightIndices.push_back(i);
             continue;
         }
-        if (!IsFiniteLightType(type))
-            continue;
-
-        float flux = std::max(0.0f, light.importance);
-        if (options.usePreintegration && flux <= 0.0f)
+        if (!IsFiniteLightType(type) || proposalWeight <= 0.0f)
             continue;
 
         LightSortData sort{};
         ComputeAnalyticalLightBounds(light, sort.bounds.minPoint, sort.bounds.maxPoint, sort.center,
                                      sort.coneDirection, sort.cosConeAngle);
-        sort.flux = flux > 0.0f ? flux : 1.0f;
+        sort.flux = proposalWeight;
         sort.lightIndex = i;
         data.lightsData.push_back(sort);
     }
@@ -763,9 +769,13 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
     for (uint32_t i = 0; i < lights.size(); ++i)
     {
         uint32_t type = GSLightTypeCPU(lights[i]);
+        float proposalWeight = ComputeLightProposalWeight(lights[i]);
         if (IsGlobalLightType(type))
-            ++expectedGlobal;
-        else if (IsFiniteLightType(type) && lights[i].importance > 0.0f)
+        {
+            if (proposalWeight > 0.0f)
+                ++expectedGlobal;
+        }
+        else if (IsFiniteLightType(type) && proposalWeight > 0.0f)
             ++expectedFinite;
     }
 
@@ -829,7 +839,7 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
                 float cosCone = kLightBVHInvalidCosConeAngle;
                 ComputeAnalyticalLightBounds(lights[lightIndex], cMin, cMax, center, coneDir, cosCone);
                 leafBounds |= AABB{cMin, cMax};
-                leafFlux += std::max(0.0f, lights[lightIndex].importance);
+                leafFlux += ComputeLightProposalWeight(lights[lightIndex]);
 
                 uint64_t mask = bvh.lightBitmasks[lightIndex];
                 uint32_t replay = 0u;
@@ -848,8 +858,9 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
             if (any(lessThan(leafBounds.minPoint, aabbMin - float3(1e-3f))) ||
                 any(greaterThan(leafBounds.maxPoint, aabbMax + float3(1e-3f))))
                 return fail("leaf AABB does not cover children");
-            if (leafFlux > node.flux + 1e-3f)
-                return fail("leaf flux less than child sum");
+            float fluxTolerance = 1e-4f * std::max(1.0f, leafFlux);
+            if (std::abs(leafFlux - node.flux) > fluxTolerance)
+                return fail("leaf flux mismatch");
         }
         else
         {
@@ -864,7 +875,8 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
 
     for (uint32_t i = 0; i < lights.size(); ++i)
     {
-        if (IsFiniteLightType(GSLightTypeCPU(lights[i])) && lights[i].importance > 0.0f && !covered[i])
+        if (IsFiniteLightType(GSLightTypeCPU(lights[i])) && ComputeLightProposalWeight(lights[i]) > 0.0f &&
+            !covered[i])
             return fail("finite light missing from BVH");
     }
     return true;
@@ -872,7 +884,7 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
 
 namespace
 {
-GSLight MakeTestLight(uint32_t type, float3 position, float importance, float3 direction = float3(0, 0, -1))
+GSLight MakeTestLight(uint32_t type, float3 position, float3 direction = float3(0, 0, -1))
 {
     GSLight light{};
     light.flags = type | kGSLightFlagUseShadow;
@@ -880,7 +892,6 @@ GSLight MakeTestLight(uint32_t type, float3 position, float importance, float3 d
     light.power = 1.0f;
     light.position = position;
     light.direction = normalize(direction);
-    light.importance = importance;
     if (type == kGSLightTypePoint || type == kGSLightTypeSpot)
         light.params.x = 0.1f;
     if (type == kGSLightTypeSpot)
@@ -921,26 +932,42 @@ bool LightBVHRunBuilderSelfTests(Allocator* alloc, String* outError)
 
     {
         Vector<GSLight> lights(alloc);
-        lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0), 10.0f));
+        lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0)));
         if (!RunCase(alloc, lights, options, "env-only", outError))
             return false;
     }
     {
         Vector<GSLight> lights(alloc);
-        lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0), 10.0f));
-        lights.push_back(MakeTestLight(kGSLightTypePoint, float3(1, 2, 3), 4.0f));
+        GSLight env = MakeTestLight(kGSLightTypeEnvironment, float3(0));
+        env.color = float3(0.0f);
+        lights.push_back(env);
+        lights.push_back(MakeTestLight(kGSLightTypePoint, float3(1, 2, 3)));
+        LightBVHBuild bvh = BuildLightBVH(lights, options, alloc);
+        if (!ValidateLightBVH(bvh, lights, outError))
+            return false;
+        if (bvh.globalLightIndices.size() != 0u)
+        {
+            if (outError)
+                *outError = "black-env: expected no global proposal lights";
+            return false;
+        }
+    }
+    {
+        Vector<GSLight> lights(alloc);
+        lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0)));
+        lights.push_back(MakeTestLight(kGSLightTypePoint, float3(1, 2, 3)));
         if (!RunCase(alloc, lights, options, "one-point", outError))
             return false;
     }
     {
         Vector<GSLight> lights(alloc);
-        lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0), 10.0f));
-        lights.push_back(MakeTestLight(kGSLightTypeDirectional, float3(0), 8.0f, float3(0, -1, 0)));
-        lights.push_back(MakeTestLight(kGSLightTypePoint, float3(1, 0, 0), 2.0f));
-        lights.push_back(MakeTestLight(kGSLightTypeSpot, float3(0, 1, 0), 3.0f, float3(0, -1, 0)));
-        lights.push_back(MakeTestLight(kGSLightTypeDisk, float3(0, 2, 0), 5.0f, float3(0, -1, 0)));
-        lights.push_back(MakeTestLight(kGSLightTypeRect, float3(2, 0, 0), 6.0f, float3(-1, 0, 0)));
-        lights.push_back(MakeTestLight(kGSLightTypePoint, float3(5, 5, 5), 0.0f));
+        lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0)));
+        lights.push_back(MakeTestLight(kGSLightTypeDirectional, float3(0), float3(0, -1, 0)));
+        lights.push_back(MakeTestLight(kGSLightTypePoint, float3(1, 0, 0)));
+        lights.push_back(MakeTestLight(kGSLightTypeSpot, float3(0, 1, 0), float3(0, -1, 0)));
+        lights.push_back(MakeTestLight(kGSLightTypeDisk, float3(0, 2, 0), float3(0, -1, 0)));
+        lights.push_back(MakeTestLight(kGSLightTypeRect, float3(2, 0, 0), float3(-1, 0, 0)));
+        lights.push_back(MakeTestLight(kGSLightTypePoint, float3(5, 5, 5)));
         if (!RunCase(alloc, lights, options, "mixed", outError))
             return false;
     }
@@ -949,9 +976,9 @@ bool LightBVHRunBuilderSelfTests(Allocator* alloc, String* outError)
         manyOpts.maxLightsPerLeaf = 1u;
         manyOpts.splitHeuristic = LightBVHSplitHeuristic::Equal;
         Vector<GSLight> lights(alloc);
-        lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0), 1.0f));
+        lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0)));
         for (uint32_t i = 0; i < 8; ++i)
-            lights.push_back(MakeTestLight(kGSLightTypePoint, float3(float(i), 0, float(i * 2)), 1.0f + float(i)));
+            lights.push_back(MakeTestLight(kGSLightTypePoint, float3(float(i), 0, float(i * 2))));
         if (!RunCase(alloc, lights, manyOpts, "many-leaves", outError))
             return false;
         LightBVHBuild bvh = BuildLightBVH(lights, manyOpts, alloc);
@@ -959,6 +986,28 @@ bool LightBVHRunBuilderSelfTests(Allocator* alloc, String* outError)
         {
             if (outError)
                 *outError = "many-leaves: expected multiple leaf nodes";
+            return false;
+        }
+    }
+    {
+        LightBVHOptions degenerateOpts = options;
+        degenerateOpts.maxLightsPerLeaf = 1u;
+        degenerateOpts.splitHeuristic = LightBVHSplitHeuristic::BinnedSAH;
+        Vector<GSLight> lights(alloc);
+        for (uint32_t i = 0; i < 8; ++i)
+            lights.push_back(MakeTestLight(kGSLightTypePoint, float3(0)));
+        if (!RunCase(alloc, lights, degenerateOpts, "degenerate-sah", outError))
+            return false;
+    }
+    {
+        float cosResult = 1.0f;
+        float const wideCos = std::cos(std::numbers::pi_v<float> * 17.0f / 18.0f);
+        float3 const direction =
+            coneUnionOld(float3(1, 0, 0), wideCos, normalize(float3(-0.5f, 0.8660254f, 0)), wideCos, cosResult);
+        if (cosResult != kLightBVHInvalidCosConeAngle || !all(equal(direction, float3(0.0f))))
+        {
+            if (outError)
+                *outError = "cone-union-overflow: expected invalid cone";
             return false;
         }
     }

@@ -129,33 +129,6 @@ void UploadSceneEnvironment(FImportedScene const& scene, FLight const& environme
 
 namespace
 {
-float LightColorImportance(float3 color)
-{
-    return std::max(0.0f, std::max(color.x, std::max(color.y, color.z)));
-}
-
-// Matches the shader's quartic falloff integral over the penumbra.
-float SpotLightImportanceSolidAngle(float cosInner, float cosOuter)
-{
-    float cosFalloffStart = std::clamp(std::max(cosInner, cosOuter), -1.0f, 1.0f);
-    float cosTotalWidth = std::clamp(std::min(cosInner, cosOuter), -1.0f, cosFalloffStart);
-    return 2.0f * std::numbers::pi_v<float> *
-           ((1.0f - cosFalloffStart) + (cosFalloffStart - cosTotalWidth) / 5.0f);
-}
-
-float AreaLightFluxImportance(GSLight const& light)
-{
-    float area = 1.0f;
-    FLightType type = static_cast<FLightType>(light.flags & kGSLightTypeMask);
-    if (type == FLightType::Disk)
-        area = std::numbers::pi_v<float> * light.params.x * light.params.y;
-    else if (type == FLightType::Rect)
-        area = 4.0f * cross(light.dpdu, light.dpdv).length();
-
-    float sides = (light.flags & kGSLightFlagTwoSided) != 0 ? 2.0f : 1.0f;
-    return light.power * area * std::numbers::pi_v<float> * sides;
-}
-
 void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu)
 {
     dst = GSLight{};
@@ -213,30 +186,6 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu)
             dst.flags |= kGSLightFlagEnvironmentMap;
         dst.params.x = src.environmentAzimuthOffset;
     }
-
-    constexpr float kEnvDirectionalImportance = 10.0f;
-    float importance = 1.0f;
-    switch (src.type)
-    {
-    case FLightType::Environment:
-        importance = LightColorImportance(dst.color) * dst.power * kEnvDirectionalImportance;
-        break;
-    case FLightType::Directional:
-        importance = dst.power * kEnvDirectionalImportance;
-        break;
-    case FLightType::Point:
-        importance = dst.power * 4.0f * std::numbers::pi_v<float>;
-        break;
-    case FLightType::Spot:
-        importance = dst.power * SpotLightImportanceSolidAngle(dst.params.y, dst.params.z);
-        break;
-    case FLightType::Disk:
-    case FLightType::Rect:
-        importance = AreaLightFluxImportance(dst);
-        break;
-    }
-    importance *= LightColorImportance(dst.color);
-    dst.importance = std::max(0.0f, importance);
 }
 
 void FillGSMaterial(GSMaterial& dst, FMaterial const& src, FSceneGPUResources const& resources,

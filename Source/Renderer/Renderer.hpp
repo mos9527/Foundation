@@ -211,9 +211,9 @@ struct RendererConfig
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
     RHIExtent2D renderExtent{0u, 0u};
     Span<RasterEffect const> rasterEffects{};
-    uint32_t ptSampler{kPTSamplerPCG};
+    uint32_t ptSampler{kPTSamplerSobol};
     uint32_t lightSamplerMode{kLightSamplerBVH};
-    bool const* ptRenderPaused{nullptr}; // dynamic runtime pause gate, read by PT dispatch pass
+    bool const* ptRenderPaused{nullptr};
     bool ptShaderExecutionReordering{true};
     bool forceTextureLOD0{false};
     bool energyCompensation{true};

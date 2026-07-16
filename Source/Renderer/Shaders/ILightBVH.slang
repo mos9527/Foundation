@@ -108,11 +108,6 @@ float ComputeNodeImportance(float3 posW, float3 normalW, bool upperHemisphere, G
     return (flux * NdotL) * orientationWeight / (distance * distance);
 }
 
-float ComputeGlobalLightImportance(GSLight light)
-{
-    return max(0.0f, light.importance);
-}
-
 float ComputeFiniteRootImportance(float3 posW, float3 normalW, bool upperHemisphere)
 {
     if (globalParams.lightBVHValid == 0u || globalParams.numLightBVHNodes == 0u)
@@ -128,7 +123,7 @@ float EvalMixtureTotal(float3 posW, float3 normalW, bool upperHemisphere, out fl
     for (uint i = 0; i < globalParams.numLightBVHGlobalLights; ++i)
     {
         uint lightIndex = lightBVHGlobalIndices[globalParams.firstLightBVHGlobalIndex + i];
-        total += ComputeGlobalLightImportance(lights[globalParams.firstLight + lightIndex]);
+        total += ComputeLightProposalWeight(lights[globalParams.firstLight + lightIndex]);
     }
     return total;
 }
@@ -179,7 +174,7 @@ bool PickLeafLight(uint leafNodeIndex, float u, out float pdf, out uint lightInd
     for (uint i = 0; i < count; ++i)
     {
         uint idx = lightBVHLightIndices[globalParams.firstLightBVHLightIndex + offset + i];
-        total += max(0.0f, lights[globalParams.firstLight + idx].importance);
+        total += ComputeLightProposalWeight(lights[globalParams.firstLight + idx]);
     }
     if (total <= 0.0f)
         return false;
@@ -189,16 +184,14 @@ bool PickLeafLight(uint leafNodeIndex, float u, out float pdf, out uint lightInd
     for (uint i = 0; i < count; ++i)
     {
         uint idx = lightBVHLightIndices[globalParams.firstLightBVHLightIndex + offset + i];
-        float w = max(0.0f, lights[globalParams.firstLight + idx].importance);
-        cdf += w;
-        if (uScaled < cdf)
+        float weight = ComputeLightProposalWeight(lights[globalParams.firstLight + idx]);
+        cdf += weight;
+        if (uScaled < cdf || i + 1u == count)
         {
-            pdf = w / total;
             lightIndex = idx;
-            return true;
+            pdf = weight / total;
+            return pdf > 0.0f;
         }
-        lightIndex = idx;
-        pdf = w / total;
     }
     return true;
 }
@@ -209,16 +202,16 @@ float EvalLeafLightPdf(uint leafNodeIndex, uint lightIndex)
     uint count = LightBVHNodeLightCount(node);
     uint offset = LightBVHNodeLightOffset(node);
     float total = 0.0f;
-    float chosen = 0.0f;
+    float selected = 0.0f;
     for (uint i = 0; i < count; ++i)
     {
         uint idx = lightBVHLightIndices[globalParams.firstLightBVHLightIndex + offset + i];
-        float w = max(0.0f, lights[globalParams.firstLight + idx].importance);
-        total += w;
+        float weight = ComputeLightProposalWeight(lights[globalParams.firstLight + idx]);
+        total += weight;
         if (idx == lightIndex)
-            chosen = w;
+            selected = weight;
     }
-    return total > 0.0f ? chosen / total : 0.0f;
+    return total > 0.0f ? selected / total : 0.0f;
 }
 
 float EvalFiniteTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere, uint lightIndex, out uint leafNodeIndex)
@@ -274,10 +267,7 @@ public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
     GSLight gl = lights[globalParams.firstLight + lightIndex];
     uint type = GSLightType(gl);
     if (type == kGSLightTypeDirectional || type == kGSLightTypeEnvironment)
-    {
-        float w = ComputeGlobalLightImportance(gl);
-        return w / total;
-    }
+        return ComputeLightProposalWeight(gl) / total;
 
     if (finiteWeight <= 0.0f || globalParams.lightBVHValid == 0u)
         return 0.0f;
@@ -314,16 +304,16 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
         return false;
 
     float uScaled = u * total;
-    float cdf = 0.0f;
+    float globalWeight = 0.0f;
     for (uint i = 0; i < globalParams.numLightBVHGlobalLights; ++i)
     {
         uint idx = lightBVHGlobalIndices[globalParams.firstLightBVHGlobalIndex + i];
-        float w = ComputeGlobalLightImportance(lights[globalParams.firstLight + idx]);
-        cdf += w;
-        if (uScaled < cdf)
+        float weight = ComputeLightProposalWeight(lights[globalParams.firstLight + idx]);
+        globalWeight += weight;
+        if (uScaled < globalWeight)
         {
             lightIndex = idx;
-            selectionPMF = w / total;
+            selectionPMF = weight / total;
             return selectionPMF > 0.0f;
         }
     }
@@ -331,7 +321,7 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
     if (finiteWeight <= 0.0f || globalParams.lightBVHValid == 0u)
         return false;
 
-    float uFinite = (uScaled - cdf) / finiteWeight;
+    float uFinite = (uScaled - globalWeight) / finiteWeight;
     uFinite = saturate(uFinite);
     float leafPdf;
     uint leafNodeIndex;

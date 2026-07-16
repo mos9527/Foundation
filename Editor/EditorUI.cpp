@@ -2182,7 +2182,6 @@ void FLightingPanel()
             auto& lights = GEditor.Scene().mTables.lights;
             uint32_t lightCapacity = GContext->gpuScene ? GContext->gpuScene->GetLightCapacity() : 0u;
             bool canAddLight = GContext->gpuScene && lights.size() < lightCapacity;
-            uint32_t gpuLightCount = GContext->gpuScene ? GContext->gpuScene->GetLightCount() : 0u;
             if (!canAddLight)
                 ImGui::BeginDisabled();
             if (ImModalButton(canAddLight ? PSI_PLUS_SIGN " Add Light" : "(Lights Full)"))
@@ -2348,13 +2347,6 @@ void FLightingPanel()
 
                 // Color + Power
                 lightChanged |= ImHDRColorEdit(isEnvironment ? "Ambient" : "Color", light.color, light.power);
-                if (GContext->gpuScene && i < static_cast<int>(gpuLightCount))
-                {
-                    float importance = GContext->gpuScene->GetLight(static_cast<uint32_t>(i)).importance;
-                    ImGui::BeginDisabled();
-                    ImGui::InputFloat("Proposal Weight", &importance, 0.0f, 0.0f, "%.6g");
-                    ImGui::EndDisabled();
-                }
 
                 if (isEnvironment)
                 {

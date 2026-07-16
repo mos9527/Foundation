@@ -2,7 +2,10 @@
 #include <Core/Container.hpp>
 #include <Core/Logging.hpp>
 #include <Math/Math.hpp>
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <numbers>
 #include "GPUScene.hpp"
 
 using namespace Foundation;
@@ -144,6 +147,41 @@ struct LightBVHBuild
 {
     return type == kGSLightTypePoint || type == kGSLightTypeSpot || type == kGSLightTypeDisk ||
            type == kGSLightTypeRect;
+}
+
+[[nodiscard]] inline bool HasLightEmission(GSLight const& light)
+{
+    return light.power > 0.0f && any(greaterThan(light.color, float3(0.0f)));
+}
+
+[[nodiscard]] inline float ComputeLightProposalWeight(GSLight const& light)
+{
+    float colorWeight = (std::abs(light.color.x) + std::abs(light.color.y) + std::abs(light.color.z)) / 3.0f;
+    float radiometricWeight = std::max(0.0f, light.power) * colorWeight;
+    uint32_t type = GSLightTypeCPU(light);
+    if (type == kGSLightTypeDirectional)
+        return radiometricWeight;
+    if (type == kGSLightTypeEnvironment)
+        return radiometricWeight * std::numbers::pi_v<float>;
+    if (type == kGSLightTypePoint)
+        return radiometricWeight * (4.0f * std::numbers::pi_v<float>);
+    if (type == kGSLightTypeSpot)
+    {
+        float cosInner = std::clamp(std::max(light.params.y, light.params.z), -1.0f, 1.0f);
+        float cosOuter = std::clamp(std::min(light.params.y, light.params.z), -1.0f, cosInner);
+        float solidAngle = 2.0f * std::numbers::pi_v<float> *
+            ((1.0f - cosInner) + (cosInner - cosOuter) / 5.0f);
+        return radiometricWeight * solidAngle;
+    }
+    if (type == kGSLightTypeDisk || type == kGSLightTypeRect)
+    {
+        float area = type == kGSLightTypeDisk
+            ? std::numbers::pi_v<float> * light.params.x * light.params.y
+            : 4.0f * length(cross(light.dpdu, light.dpdv));
+        float sides = (light.flags & kGSLightFlagTwoSided) != 0u ? 2.0f : 1.0f;
+        return radiometricWeight * area * std::numbers::pi_v<float> * sides;
+    }
+    return 0.0f;
 }
 
 void ComputeAnalyticalLightBounds(GSLight const& light, float3& aabbMin, float3& aabbMax, float3& center,

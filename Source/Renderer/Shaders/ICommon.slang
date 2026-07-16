@@ -225,13 +225,37 @@ public struct GSLight
     public float4 params;
     public float3 dpdu;         // tangent u-axis (Rect: half-extent u)
     public float3 dpdv;         // tangent v-axis (Rect: half-extent v)
-    public float importance;
 };
 public uint32_t GSLightType(GSLight light) {
     return light.flags & kGSLightTypeMask;
 }
 public bool GSLightHasFlag(GSLight light, uint32_t flag) {
     return (light.flags & flag) != 0u;
+}
+public float ComputeLightProposalWeight(GSLight light) {
+    float colorWeight = dot(abs(light.color), float3(1.0f / 3.0f));
+    float radiometricWeight = max(0.0f, light.power) * colorWeight;
+    uint type = GSLightType(light);
+    if (type == kGSLightTypeDirectional)
+        return radiometricWeight;
+    if (type == kGSLightTypeEnvironment)
+        return radiometricWeight * Pi;
+    if (type == kGSLightTypePoint)
+        return radiometricWeight * (4.0f * Pi);
+    if (type == kGSLightTypeSpot) {
+        float cosInner = clamp(max(light.params.y, light.params.z), -1.0f, 1.0f);
+        float cosOuter = clamp(min(light.params.y, light.params.z), -1.0f, cosInner);
+        float solidAngle = 2.0f * Pi * ((1.0f - cosInner) + (cosInner - cosOuter) / 5.0f);
+        return radiometricWeight * solidAngle;
+    }
+    if (type == kGSLightTypeDisk || type == kGSLightTypeRect) {
+        float area = type == kGSLightTypeDisk
+            ? Pi * light.params.x * light.params.y
+            : 4.0f * length(cross(light.dpdu, light.dpdv));
+        float sides = GSLightHasFlag(light, kGSLightFlagTwoSided) ? 2.0f : 1.0f;
+        return radiometricWeight * area * Pi * sides;
+    }
+    return 0.0f;
 }
 public struct UBO
 {

@@ -928,15 +928,21 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
         for (GSLight const& light : tables.lights)
         {
             uint32_t const type = GSLightTypeCPU(light);
-            uint32_t const finiteMember = IsFiniteLightType(type) && light.importance > 0.0f ? 1u << 31u : 0u;
-            membership.push_back(type | finiteMember);
+            bool const active = ComputeLightProposalWeight(light) > 0.0f;
+            uint32_t const finiteMember = IsFiniteLightType(type) && active ? 1u << 31u : 0u;
+            uint32_t const globalMember = IsGlobalLightType(type) && active ? 1u << 30u : 0u;
+            membership.push_back(type | finiteMember | globalMember);
         }
 
         bool membershipChanged = membership.size() != mLightBVHMembership.size() ||
             !std::equal(membership.begin(), membership.end(), mLightBVHMembership.begin());
+        bool hasFiniteMembers = std::any_of(
+            membership.begin(), membership.end(), [](uint32_t value) { return (value & (1u << 31u)) != 0u; });
+        bool canReuse = !membershipChanged &&
+            (!hasFiniteMembers ||
+             (owner.mLastUpdateResult.lightBVHValid != 0u && owner.mLastUpdateResult.numLightBVHNodes != 0u));
 
-        if (!membershipChanged && owner.mLastUpdateResult.lightBVHValid != 0u &&
-            owner.mLastUpdateResult.numLightBVHNodes != 0u)
+        if (canReuse)
         {
             res.firstLight = tables.firstLight;
             res.numLights = static_cast<uint32_t>(tables.lights.size());
@@ -949,7 +955,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
             res.numLightBVHGlobalLights = owner.mLastUpdateResult.numLightBVHGlobalLights;
             res.firstLightBVHNodeIndex = owner.mLastUpdateResult.firstLightBVHNodeIndex;
             res.lightBVHValid = owner.mLastUpdateResult.lightBVHValid;
-            mLightBVHNeedsRefit = true;
+            mLightBVHNeedsRefit = hasFiniteMembers;
         }
         else
         {

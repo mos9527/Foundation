@@ -241,7 +241,6 @@ int main(int argc, char** argv)
             env.flags = kGSLightTypeEnvironment;
             env.color = float3(0.0f);
             env.power = 1.0f;
-            env.importance = 0.0f;
 
             GSLight& key = tables.lights[1];
             key = GSLight{};
@@ -252,7 +251,6 @@ int main(int argc, char** argv)
             key.dpdu = float3(0.70f, 0.0f, 0.0f);
             key.dpdv = float3(0.0f, 0.0f, 0.70f);
             key.direction = float3(0.0f, -1.0f, 0.0f);
-            key.importance = key.power;
 
             gpu.EndScene(tables, ubo.frameNumber);
             gpu.BuildUBO(ubo);

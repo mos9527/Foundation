@@ -291,7 +291,6 @@ int main(int argc, char** argv)
             env.flags = 5u; // Environment light, always present as the first light.
             env.color = float3(0.0f);
             env.power = 1.0f;
-            env.importance = 0.0f;
 
             GSLight& key = tables.lights[1];
             key = GSLight{};
@@ -302,7 +301,6 @@ int main(int argc, char** argv)
             key.dpdu = float3(0.70f, 0.0f, 0.0f);
             key.dpdv = float3(0.0f, 0.0f, 0.70f);
             key.direction = float3(0.0f, -1.0f, 0.0f);
-            key.importance = key.power; // only one light, so any positive importance works
 
             gpu.EndScene(tables, ubo.frameNumber);
             gpu.BuildUBO(ubo);
