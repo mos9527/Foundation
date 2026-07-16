@@ -313,6 +313,8 @@ public struct UBO
     public uint32_t firstLightBVHGlobalIndex;
     public uint32_t numLightBVHGlobalLights;
     public uint32_t lightBVHValid;
+    public uint32_t firstLightBVHDistantNode;
+    public uint32_t numLightBVHDistantNodes;
     public uint32_t numSunDiskLights;
     public uint32_t energyCompensation;
     // -- Path Tracing

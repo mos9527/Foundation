@@ -357,6 +357,8 @@ public:
         uint32_t numLightBVHGlobalLights{0u};
         uint32_t firstLightBVHNodeIndex{0u};
         uint32_t lightBVHValid{0u};
+        uint32_t firstLightBVHDistantNode{0u};
+        uint32_t numLightBVHDistantNodes{0u};
         // After EndScene partition: lights[1 .. 1+numSunDiskLights) are non-delta directionals.
         uint32_t numSunDiskLights{0u};
     };

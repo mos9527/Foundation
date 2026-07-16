@@ -3,6 +3,7 @@
 #include <Core/AllocatorStack.hpp>
 #include <Core/Atomic.hpp>
 #include <Core/AtomicQueue.hpp>
+#include <Core/Hash.hpp>
 #include <Core/Thread.hpp>
 #include <Core/ThreadPool.hpp>
 #include <algorithm>
@@ -220,6 +221,7 @@ struct GPUSceneImpl
     UploadGPURingBuffer<GSLight> mLightBuffer;
     UploadGPURingBuffer<GSLightBVHNode> mLightBVHNodeBuffer;
     Vector<uint32_t> mLightBVHMembership;
+    uint64_t mDistantLightSignature{kFNV1a64OffsetBasis};
     Vector<LightBVHRefitLevel> mLightBVHRefitLevels;
     bool mLightBVHNeedsRefit{false};
     UploadGPURingBuffer<uint32_t> mLightBVHLightIndexBuffer;
@@ -525,7 +527,7 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     }
 #endif
     static_assert(sizeof(GSLightBVHNode) == 48);
-    static_assert(offsetof(RendererUBO, firstLightBVHNode) + sizeof(uint32_t) * 9 ==
+    static_assert(offsetof(RendererUBO, firstLightBVHNode) + sizeof(uint32_t) * 11 ==
                   offsetof(RendererUBO, energyCompensation));
     mGeometry.reserve(desc.geometryBudget);
     mBLASes.reserve(desc.geometryBudget);
@@ -924,6 +926,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
     if (!tables.lights.empty())
     {
         Vector<uint32_t> membership(scratch);
+        uint64_t distantSignature = kFNV1a64OffsetBasis;
         membership.reserve(tables.lights.size());
         for (GSLight const& light : tables.lights)
         {
@@ -932,10 +935,17 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
             uint32_t const finiteMember = IsFiniteLightType(type) && active ? 1u << 31u : 0u;
             uint32_t const globalMember = IsGlobalLightType(type) && active ? 1u << 30u : 0u;
             membership.push_back(type | finiteMember | globalMember);
+            if (type == kGSLightTypeDirectional && active)
+            {
+                distantSignature = FNV1a64Combine(
+                    distantSignature, light.direction.x, light.direction.y, light.direction.z, light.params.x,
+                    light.color.x, light.color.y, light.color.z, light.power);
+            }
         }
 
         bool membershipChanged = membership.size() != mLightBVHMembership.size() ||
             !std::equal(membership.begin(), membership.end(), mLightBVHMembership.begin());
+        membershipChanged = membershipChanged || distantSignature != mDistantLightSignature;
         bool hasFiniteMembers = std::any_of(
             membership.begin(), membership.end(), [](uint32_t value) { return (value & (1u << 31u)) != 0u; });
         bool canReuse = !membershipChanged &&
@@ -955,6 +965,8 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
             res.numLightBVHGlobalLights = owner.mLastUpdateResult.numLightBVHGlobalLights;
             res.firstLightBVHNodeIndex = owner.mLastUpdateResult.firstLightBVHNodeIndex;
             res.lightBVHValid = owner.mLastUpdateResult.lightBVHValid;
+            res.firstLightBVHDistantNode = owner.mLastUpdateResult.firstLightBVHDistantNode;
+            res.numLightBVHDistantNodes = owner.mLastUpdateResult.numLightBVHDistantNodes;
             mLightBVHNeedsRefit = hasFiniteMembers;
         }
         else
@@ -969,6 +981,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
             res.numLights = static_cast<uint32_t>(tables.lights.size());
             res.lightBVHValid = bvh.valid ? 1u : 0u;
             mLightBVHMembership.assign(membership.begin(), membership.end());
+            mDistantLightSignature = distantSignature;
             mLightBVHRefitLevels = bvh.refitLevels;
 
             if (!bvh.nodes.empty())
@@ -977,6 +990,11 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
                 std::memcpy(nodePtr, bvh.nodes.data(), bvh.nodes.size() * sizeof(GSLightBVHNode));
                 res.firstLightBVHNode = nodeOff;
                 res.numLightBVHNodes = static_cast<uint32_t>(bvh.nodes.size());
+                if (bvh.distantRootNode != UINT32_MAX)
+                {
+                    res.firstLightBVHDistantNode = nodeOff + bvh.distantRootNode;
+                    res.numLightBVHDistantNodes = bvh.distantNodeCount;
+                }
             }
             if (!bvh.lightIndices.empty())
             {
@@ -1015,6 +1033,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
     else
     {
         mLightBVHMembership.clear();
+        mDistantLightSignature = kFNV1a64OffsetBasis;
         mLightBVHRefitLevels.clear();
         owner.mLightInputToCommitted.clear();
     }
@@ -1039,6 +1058,8 @@ void GPUScene::BuildUBO(RendererUBO& globals) const
     globals.firstLightBVHGlobalIndex = mLastUpdateResult.firstLightBVHGlobalIndex;
     globals.numLightBVHGlobalLights = mLastUpdateResult.numLightBVHGlobalLights;
     globals.lightBVHValid = mLastUpdateResult.lightBVHValid;
+    globals.firstLightBVHDistantNode = mLastUpdateResult.firstLightBVHDistantNode;
+    globals.numLightBVHDistantNodes = mLastUpdateResult.numLightBVHDistantNodes;
     globals.numSunDiskLights = mLastUpdateResult.numSunDiskLights;
     globals.ggxLutEIndex = mLUTGGXEIndex.index;
     globals.ggxLutEavgIndex = mLUTGGXEavgIndex.index;
@@ -2962,6 +2983,7 @@ void GPUSceneImpl::Reset()
     mLightBVHGlobalIndexBuffer.Reset();
     mLightBVHNodeIndexBuffer.Reset();
     mLightBVHMembership.clear();
+    mDistantLightSignature = kFNV1a64OffsetBasis;
     mLightBVHRefitLevels.clear();
     mLightBVHNeedsRefit = false;
     owner.mLastUpdateResult = {};

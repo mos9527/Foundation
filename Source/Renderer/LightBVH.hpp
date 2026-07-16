@@ -19,6 +19,7 @@ inline constexpr uint32_t kLightBVHLightOffsetBits = 31u - kLightBVHLightCountBi
 inline constexpr uint32_t kLightBVHMaxLightsPerLeaf = 1u << kLightBVHLightCountBits;
 inline constexpr uint32_t kLightBVHMaxLightOffset = 1u << kLightBVHLightOffsetBits;
 inline constexpr uint32_t kLightBVHLeafBit = 1u << 31;
+inline constexpr float kLightBVHMinSunAngularRadius = 1e-4f;
 
 enum class LightBVHSplitHeuristic : uint32_t
 {
@@ -124,6 +125,9 @@ struct LightBVHBuild
     Vector<uint32_t> nodeIndices;
     Vector<LightBVHRefitLevel> refitLevels;
     LightBVHStats stats{};
+    uint32_t distantRootNode = UINT32_MAX;
+    uint32_t distantNodeCount = 0;
+    uint32_t finiteLightIndexCount = 0;
     bool valid = false;
 
     explicit LightBVHBuild(Allocator* alloc) :
