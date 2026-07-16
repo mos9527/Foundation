@@ -1438,8 +1438,6 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             };
             material.subsurfaceScale = mat->subsurface.subsurface_scale;
         }
-        material.hairBetaM = material.roughnessFactor;
-        material.hairBetaN = material.roughnessFactor;
         LoadFoundationMaterialExtension(mat, material);
         scene.Add(material);
     }

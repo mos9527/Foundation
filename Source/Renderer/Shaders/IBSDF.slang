@@ -825,6 +825,7 @@ float HairNp(float phi, int p, float s, float gammaO, float gammaT)
     return HairTrimmedLogistic(dphi, s, -Pi, Pi);
 }
 
+// See also https://github.com/mmp/pbrt-v4/blob/5f7a606806a4ac7b939131ded9d7a30ebd02416e/src/pbrt/bxdfs.cpp#L548
 float3 HairSigmaAFromReflectance(float3 c, float betaN)
 {
     c = clamp(c, float3(1e-3f), float3(0.999f));

@@ -79,6 +79,15 @@ bool ImBitmaskOptionPicker(unsigned& value, const char* (&labels)[N], const unsi
 {
     return ImBitmaskOptionPicker(value, labels, masks, N, solo, columns);
 }
+float LinearToSRGB(float linear);
+float SRGBToLinear(float srgb);
+float3 LinearToSRGB(float3 linear);
+float3 SRGBToLinear(float3 srgb);
+
+// ColorEdit for scene-linear RGB: shows/edits sRGB display values, writes linear.
+bool ImLinearColorEdit3(const char* label, float3& linearRgb);
+bool ImLinearColorEdit4(const char* label, float4& linearRgba);
+// Chromaticity RGB is display-encoded; power stays linear intensity.
 bool ImHDRColorEdit(const char* label, float3& color, float& power, float maxScale = 100.0f);
 
 // One row (track) drawn by ImTimeline. `muted` only dims the row visually.

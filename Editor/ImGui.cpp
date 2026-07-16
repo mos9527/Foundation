@@ -1,5 +1,6 @@
 #include "ImGui.hpp"
 #include <Fonts/PlexSansIcon.h>
+#include <cmath>
 #include <cstdio>
 // Only useful if you're manipulating the DrawList which has positions
 // that are _NOT_ window local
@@ -554,13 +555,60 @@ ImTimelineResult ImTimeline(const char* strId, Span<const ImTimelineRow> rows, S
     return result;
 }
 
+float LinearToSRGB(float linear)
+{
+    linear = std::max(linear, 0.0f);
+    return (linear <= 0.0031308f) ? (linear * 12.92f) : (1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f);
+}
+
+float SRGBToLinear(float srgb)
+{
+    srgb = std::max(srgb, 0.0f);
+    return (srgb <= 0.04045f) ? (srgb / 12.92f) : std::pow((srgb + 0.055f) / 1.055f, 2.4f);
+}
+
+float3 LinearToSRGB(float3 linear)
+{
+    return float3{LinearToSRGB(linear.x), LinearToSRGB(linear.y), LinearToSRGB(linear.z)};
+}
+
+float3 SRGBToLinear(float3 srgb)
+{
+    return float3{SRGBToLinear(srgb.x), SRGBToLinear(srgb.y), SRGBToLinear(srgb.z)};
+}
+
+bool ImLinearColorEdit3(const char* label, float3& linearRgb)
+{
+    float3 display = LinearToSRGB(linearRgb);
+    if (!ImGui::ColorEdit3(label, &display.x, ImGuiColorEditFlags_Float))
+        return false;
+    linearRgb = SRGBToLinear(display);
+    return true;
+}
+
+bool ImLinearColorEdit4(const char* label, float4& linearRgba)
+{
+    float display[4] = {
+        LinearToSRGB(linearRgba.x),
+        LinearToSRGB(linearRgba.y),
+        LinearToSRGB(linearRgba.z),
+        linearRgba.w,
+    };
+    if (!ImGui::ColorEdit4(label, display, ImGuiColorEditFlags_Float))
+        return false;
+    linearRgba.x = SRGBToLinear(display[0]);
+    linearRgba.y = SRGBToLinear(display[1]);
+    linearRgba.z = SRGBToLinear(display[2]);
+    linearRgba.w = display[3];
+    return true;
+}
+
 bool ImHDRColorEdit(const char* label, float3& color, float& power, float maxScale)
 {
     bool changed = false;
     ImGui::PushID(label);
 
-    changed |= ImGui::ColorEdit3(label, &color.x, ImGuiColorEditFlags_Float);
-    // Build a "<label> Power" string for the slider
+    changed |= ImLinearColorEdit3(label, color);
     char sliderLabel[128];
     snprintf(sliderLabel, sizeof(sliderLabel), "%s Power", label);
     changed |= ImGui::SliderFloat(sliderLabel, &power, 0.0f, maxScale, "%.3f", ImGuiSliderFlags_Logarithmic);

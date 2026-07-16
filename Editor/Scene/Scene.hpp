@@ -92,27 +92,32 @@ struct FMaterial
     FUUID clearcoatTexture{};
     // Linear. G channel per KHR_materials_clearcoat.
     FUUID clearcoatRoughnessTexture{};
+    // Linear RGB. A is opacity (linear).
     float4 baseColorFactor;
+    // Linear RGB. W is intensity multiplier (linear).
     float4 emissiveFactor;
     float metallicFactor;
     float roughnessFactor;
     float transmissionFactor;
     float ior = 1.5f;
     float specularFactor = 1.0f;
+    // Linear RGB.
     float3 specularColorFactor{1.0f, 1.0f, 1.0f};
     float anisotropyStrength = 0.0f;
     float anisotropyRotation = 0.0f;
+    // Linear RGB.
     float3 sheenColorFactor{0.0f, 0.0f, 0.0f};
     float sheenRoughnessFactor = 0.0f;
     float clearcoatFactor = 0.0f;
     float clearcoatRoughnessFactor = 0.0f;
     float subsurfaceFactor = 0.0f;
     float subsurfaceScale = 0.05f;
+    // Linear RGB.
     float3 subsurfaceColor{1.0f, 1.0f, 1.0f};
     float3 subsurfaceRadius{1.0f, 0.2f, 0.1f};
     FMaterialShaderBlock shaderBlockID = FMaterialShaderBlock::Principled;
-    float hairBetaM = 0.3f;
-    float hairBetaN = 0.3f;
+    float hairBetaM = 0.25f;
+    float hairBetaN = 0.5f;
     float hairAlpha = 2.0f;
 };
 enum class FLightType : uint32_t
@@ -131,8 +136,8 @@ struct FLight
     FUUID id{};
     FUUID name{};
     FLightType type{FLightType::Directional};
-    float3 color{1,1,1};            // Normalized RGB color
-    float power{1.0f};              // Radiant power (type-dependent unit)
+    float3 color{1,1,1};            // Linear normalized RGB chromaticity
+    float power{1.0f};              // Radiant power (type-dependent unit, linear)
     float angularDiameter{0.0f};    // For directional lights, the apparent size of the light source disk (radians). 0 = punctual. 
     float radius{0.0f};             // Point/Spot emitter sphere radius. 0 = punctual.
     float spotInnerConeAngle{0.0f}; // radians

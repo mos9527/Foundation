@@ -1319,6 +1319,62 @@ static void DrawMaterialTextureSlot(const char* label, FMaterial& material, FUUI
     ImGui::PopID();
 }
 
+static bool DrawHairColorPresets(float4& baseColor)
+{
+    struct HairColorPreset
+    {
+        char const* name;
+        float3 color;
+    };
+    // Display sRGB literals; convert to linear on apply.
+    static constexpr HairColorPreset presets[] = {
+        {"Blond",        {0.94f, 0.87f, 0.52f}},
+        {"Dark blond",   {0.63f, 0.43f, 0.24f}},
+        {"Medium brown", {0.38f, 0.19f, 0.06f}},
+        {"Dark brown",   {0.12f, 0.06f, 0.03f}},
+        {"Black",        {0.015f, 0.010f, 0.008f}},
+        {"Auburn",       {0.42f, 0.14f, 0.09f}},
+        {"Red",          {0.67f, 0.25f, 0.025f}},
+        {"Gray",         {0.50f, 0.50f, 0.48f}},
+        {"White",        {0.90f, 0.90f, 0.86f}},
+    };
+
+    bool changed = false;
+    if (ImGui::BeginTable("##HairColorPresets", 3, ImGuiTableFlags_SizingStretchSame))
+    {
+        for (HairColorPreset const& preset : presets)
+        {
+            ImGui::TableNextColumn();
+            ImGui::PushID(preset.name);
+
+            ImVec4 color{preset.color.x, preset.color.y, preset.color.z, 1.0f};
+            ImVec4 hovered{
+                std::min(color.x * 1.15f, 1.0f),
+                std::min(color.y * 1.15f, 1.0f),
+                std::min(color.z * 1.15f, 1.0f),
+                1.0f};
+            float luminance = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
+            ImGui::PushStyleColor(ImGuiCol_Text, luminance > 0.45f ? ImVec4{0.05f, 0.05f, 0.05f, 1.0f}
+                                                                   : ImVec4{0.95f, 0.95f, 0.95f, 1.0f});
+            ImGui::PushStyleColor(ImGuiCol_Button, color);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hovered);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, color);
+            if (ImGui::Button(preset.name, ImVec2{-FLT_MIN, 0.0f}))
+            {
+                float3 const linear = SRGBToLinear(preset.color);
+                baseColor.x = linear.x;
+                baseColor.y = linear.y;
+                baseColor.z = linear.z;
+                changed = true;
+            }
+            ImGui::PopStyleColor(4);
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    return changed;
+}
+
 static bool IsTexturePreviewFormatSupported(RHIResourceFormat format)
 {
     switch (format)
@@ -1806,62 +1862,71 @@ void FHierarchyPanel()
                         changed = true;
                     }
 
-                    ImGui::SeparatorText("Principled");
                     char propLabel[64];
-                    changed |= ImGui::ColorEdit4(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Base Color", material.baseColorTexture),
-                                                 &material.baseColorFactor.x);
+                    ImGui::SeparatorText("Common");
+                    changed |= ImLinearColorEdit4(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Base Color", material.baseColorTexture),
+                                                 material.baseColorFactor);
                     changed |= ImHDRColorEdit(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Emissive", material.emissiveTexture),
                                               reinterpret_cast<float3&>(material.emissiveFactor), material.emissiveFactor.w /* otherwise unused */);
-                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Metallic", material.metallicRoughnessTexture),
-                                                  &material.metallicFactor, 0.0f, 1.0f, "%.3f");
-                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Roughness", material.metallicRoughnessTexture),
-                                                  &material.roughnessFactor, 0.0f, 1.0f, "%.3f");
                     changed |= ImGui::DragFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Normal Scale", material.normalTexture),
                                                 &material.normalScale, 0.01f, -8.0f, 8.0f, "%.3f");
-                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Transmission", material.transmissionTexture),
-                                                  &material.transmissionFactor, 0.0f, 1.0f, "%.3f");
                     changed |= ImGui::SliderFloat("IOR", &material.ior, 1.0f, 3.0f, "%.3f");
-                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Specular", material.specularTexture),
-                                                  &material.specularFactor, 0.0f, 1.0f, "%.3f");
-                    changed |= ImGui::DragFloat3(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Specular Color", material.specularColorTexture),
-                                                 &material.specularColorFactor.x, 0.01f, 0.0f, FLT_MAX, "%.3f");
-                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Anisotropy Strength", material.anisotropyTexture),
-                                                  &material.anisotropyStrength, 0.0f, 1.0f, "%.3f");
                     changed |= ImGui::DragFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Anisotropy Rotation", material.anisotropyTexture),
                                                 &material.anisotropyRotation, 0.01f, -FLT_MAX, FLT_MAX, "%.3f rad");
 
-                    ImGui::SeparatorText("Sheen");
-                    float sheenWeight = std::clamp(std::max({material.sheenColorFactor.x, material.sheenColorFactor.y, material.sheenColorFactor.z}), 0.0f, 1.0f);
-                    float3 sheenTint = sheenWeight > 1e-6f ? material.sheenColorFactor / sheenWeight : float3{1.0f, 1.0f, 1.0f};
-                    bool sheenChanged = false;
-                    sheenChanged |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Weight", material.sheenColorTexture),
-                                                       &sheenWeight, 0.0f, 1.0f, "%.3f");
-                    sheenChanged |= ImGui::ColorEdit3(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Tint", material.sheenColorTexture),
-                                                      &sheenTint.x);
-                    if (sheenChanged)
+                    if (material.shaderBlockID == FMaterialShaderBlock::Principled)
                     {
-                        material.sheenColorFactor = std::clamp(sheenWeight, 0.0f, 1.0f) * Math::clamp(sheenTint, float3{0.0f, 0.0f, 0.0f}, float3{1.0f, 1.0f, 1.0f});
-                        changed = true;
+                        ImGui::SeparatorText("Principled");
+                        changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Metallic", material.metallicRoughnessTexture),
+                                                      &material.metallicFactor, 0.0f, 1.0f, "%.3f");
+                        changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Roughness", material.metallicRoughnessTexture),
+                                                      &material.roughnessFactor, 0.0f, 1.0f, "%.3f");
+                        changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Transmission", material.transmissionTexture),
+                                                      &material.transmissionFactor, 0.0f, 1.0f, "%.3f");
+                        changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Specular", material.specularTexture),
+                                                      &material.specularFactor, 0.0f, 1.0f, "%.3f");
+                        changed |= ImGui::DragFloat3(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Specular Color", material.specularColorTexture),
+                                                     &material.specularColorFactor.x, 0.01f, 0.0f, FLT_MAX, "%.3f");
+                        changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Anisotropy Strength", material.anisotropyTexture),
+                                                      &material.anisotropyStrength, 0.0f, 1.0f, "%.3f");
+
+                        ImGui::SeparatorText("Sheen");
+                        float sheenWeight = std::clamp(std::max({material.sheenColorFactor.x, material.sheenColorFactor.y, material.sheenColorFactor.z}), 0.0f, 1.0f);
+                        float3 sheenTint = sheenWeight > 1e-6f ? material.sheenColorFactor / sheenWeight : float3{1.0f, 1.0f, 1.0f};
+                        bool sheenChanged = false;
+                        sheenChanged |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Weight", material.sheenColorTexture),
+                                                           &sheenWeight, 0.0f, 1.0f, "%.3f");
+                        sheenChanged |= ImLinearColorEdit3(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Tint", material.sheenColorTexture),
+                                                           sheenTint);
+                        if (sheenChanged)
+                        {
+                            material.sheenColorFactor = std::clamp(sheenWeight, 0.0f, 1.0f) * Math::clamp(sheenTint, float3{0.0f, 0.0f, 0.0f}, float3{1.0f, 1.0f, 1.0f});
+                            changed = true;
+                        }
+                        changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Roughness", material.sheenRoughnessTexture),
+                                                      &material.sheenRoughnessFactor, 0.0f, 1.0f, "%.3f");
+
+                        ImGui::SeparatorText("Clearcoat");
+                        changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Clearcoat Weight", material.clearcoatTexture),
+                                                      &material.clearcoatFactor, 0.0f, 1.0f, "%.3f");
+                        changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Clearcoat Roughness", material.clearcoatRoughnessTexture),
+                                                      &material.clearcoatRoughnessFactor, 0.0f, 1.0f, "%.3f");
+
+                        ImGui::SeparatorText("Subsurface");
+                        changed |= ImGui::SliderFloat("Weight", &material.subsurfaceFactor, 0.0f, 1.0f, "%.3f");
+                        changed |= ImLinearColorEdit3("Color", material.subsurfaceColor);
+                        changed |= ImGui::DragFloat3("Radius", &material.subsurfaceRadius.x, 0.001f, 0.0f, FLT_MAX, "%.4f");
+                        changed |= ImGui::SliderFloat("Scale", &material.subsurfaceScale, 0.0f, 1.0f, "%.4f");
                     }
-                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Roughness", material.sheenRoughnessTexture),
-                                                  &material.sheenRoughnessFactor, 0.0f, 1.0f, "%.3f");
-
-                    ImGui::SeparatorText("Clearcoat");
-                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Clearcoat Weight", material.clearcoatTexture),
-                                                  &material.clearcoatFactor, 0.0f, 1.0f, "%.3f");
-                    changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Clearcoat Roughness", material.clearcoatRoughnessTexture),
-                                                  &material.clearcoatRoughnessFactor, 0.0f, 1.0f, "%.3f");
-
-                    ImGui::SeparatorText("Hair");
-                    changed |= ImGui::SliderFloat("Beta M", &material.hairBetaM, 0.0f, 1.0f, "%.3f");
-                    changed |= ImGui::SliderFloat("Beta N", &material.hairBetaN, 0.0f, 1.0f, "%.3f");
-                    changed |= ImGui::DragFloat("Alpha", &material.hairAlpha, 0.1f, -20.0f, 20.0f, "%.2f deg");
-
-                    ImGui::SeparatorText("Subsurface");
-                    changed |= ImGui::SliderFloat("Weight", &material.subsurfaceFactor, 0.0f, 1.0f, "%.3f");
-                    changed |= ImGui::ColorEdit3("Color", &material.subsurfaceColor.x);
-                    changed |= ImGui::DragFloat3("Radius", &material.subsurfaceRadius.x, 0.001f, 0.0f, FLT_MAX, "%.4f");
-                    changed |= ImGui::SliderFloat("Scale", &material.subsurfaceScale, 0.0f, 1.0f, "%.4f");
+                    else
+                    {
+                        ImGui::SeparatorText("Hair Color Presets");
+                        changed |= DrawHairColorPresets(material.baseColorFactor);
+                        ImGui::SeparatorText("Hair");
+                        changed |= ImGui::SliderFloat("Beta M", &material.hairBetaM, 0.0f, 1.0f, "%.3f");
+                        changed |= ImGui::SliderFloat("Beta N", &material.hairBetaN, 0.0f, 1.0f, "%.3f");
+                        changed |= ImGui::DragFloat("Alpha", &material.hairAlpha, 0.1f, -90.0f, 90.0f, "%.2f deg");
+                    }
 
                     ImGui::EndTabItem();
                 }
@@ -1869,16 +1934,19 @@ void FHierarchyPanel()
                 {
                     DrawMaterialTextureSlot("Base Color", material, &FMaterial::baseColorTexture);
                     DrawMaterialTextureSlot("Emissive", material, &FMaterial::emissiveTexture);
-                    DrawMaterialTextureSlot("Metallic/Roughness", material, &FMaterial::metallicRoughnessTexture);
                     DrawMaterialTextureSlot("Normal", material, &FMaterial::normalTexture, ImGuiImplFoundationImageSamplerNearest);
-                    DrawMaterialTextureSlot("Transmission", material, &FMaterial::transmissionTexture);
-                    DrawMaterialTextureSlot("Specular", material, &FMaterial::specularTexture);
-                    DrawMaterialTextureSlot("Specular Color", material, &FMaterial::specularColorTexture);
                     DrawMaterialTextureSlot("Anisotropy", material, &FMaterial::anisotropyTexture);
-                    DrawMaterialTextureSlot("Sheen Color", material, &FMaterial::sheenColorTexture);
-                    DrawMaterialTextureSlot("Sheen Roughness", material, &FMaterial::sheenRoughnessTexture);
-                    DrawMaterialTextureSlot("Clearcoat", material, &FMaterial::clearcoatTexture);
-                    DrawMaterialTextureSlot("Clearcoat Roughness", material, &FMaterial::clearcoatRoughnessTexture);
+                    if (material.shaderBlockID == FMaterialShaderBlock::Principled)
+                    {
+                        DrawMaterialTextureSlot("Metallic/Roughness", material, &FMaterial::metallicRoughnessTexture);
+                        DrawMaterialTextureSlot("Transmission", material, &FMaterial::transmissionTexture);
+                        DrawMaterialTextureSlot("Specular", material, &FMaterial::specularTexture);
+                        DrawMaterialTextureSlot("Specular Color", material, &FMaterial::specularColorTexture);
+                        DrawMaterialTextureSlot("Sheen Color", material, &FMaterial::sheenColorTexture);
+                        DrawMaterialTextureSlot("Sheen Roughness", material, &FMaterial::sheenRoughnessTexture);
+                        DrawMaterialTextureSlot("Clearcoat", material, &FMaterial::clearcoatTexture);
+                        DrawMaterialTextureSlot("Clearcoat Roughness", material, &FMaterial::clearcoatRoughnessTexture);
+                    }
 
                     ImGui::EndTabItem();
                 }
