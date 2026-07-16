@@ -1375,6 +1375,124 @@ static bool DrawHairColorPresets(float4& baseColor)
     return changed;
 }
 
+static bool DrawPrincipledMaterialPresets(FMaterial& material)
+{
+    struct MaterialPreset
+    {
+        char const* name;
+        float3 baseColorSRGB;
+        float metallic = 0.0f;
+        float roughness = 0.5f;
+        float transmission = 0.0f;
+        float ior = 1.5f;
+        float specular = 1.0f;
+        float3 specularColor{1.0f};
+        float anisotropyStrength = 0.0f;
+        float anisotropyRotation = 0.0f;
+        float3 sheenColor{0.0f};
+        float sheenRoughness = 0.0f;
+        float clearcoat = 0.0f;
+        float clearcoatRoughness = 0.0f;
+        float subsurface = 0.0f;
+        float subsurfaceScale = 0.05f;
+        float3 subsurfaceColorSRGB{1.0f};
+        float3 subsurfaceRadius{1.0f, 0.2f, 0.1f};
+    };
+    static constexpr MaterialPreset presets[] = {
+        {.name = "Matte", .baseColorSRGB = {0.60f, 0.60f, 0.60f}, .roughness = 0.9f},
+        {.name = "Plastic", .baseColorSRGB = {0.12f, 0.32f, 0.80f}, .roughness = 0.28f, .ior = 1.46f},
+        {.name = "Rubber", .baseColorSRGB = {0.025f, 0.025f, 0.025f}, .roughness = 0.82f, .ior = 1.52f},
+        {.name = "Glass", .baseColorSRGB = {0.96f, 0.99f, 1.0f}, .roughness = 0.02f, .transmission = 1.0f},
+        {.name = "Gold", .baseColorSRGB = {1.0f, 0.71f, 0.22f}, .metallic = 1.0f, .roughness = 0.2f},
+        {.name = "Copper", .baseColorSRGB = {0.95f, 0.45f, 0.22f}, .metallic = 1.0f, .roughness = 0.24f},
+        {.name = "Brushed steel",
+         .baseColorSRGB = {0.72f, 0.74f, 0.76f},
+         .metallic = 1.0f,
+         .roughness = 0.34f,
+         .anisotropyStrength = 0.8f},
+        {.name = "Car paint",
+         .baseColorSRGB = {0.55f, 0.015f, 0.02f},
+         .roughness = 0.24f,
+         .clearcoat = 1.0f,
+         .clearcoatRoughness = 0.06f},
+        {.name = "Ceramic",
+         .baseColorSRGB = {0.92f, 0.90f, 0.84f},
+         .roughness = 0.18f,
+         .ior = 1.54f,
+         .clearcoat = 0.15f,
+         .clearcoatRoughness = 0.08f},
+        {.name = "Satin",
+         .baseColorSRGB = {0.16f, 0.06f, 0.24f},
+         .roughness = 0.42f,
+         .anisotropyStrength = 0.35f,
+         .sheenColor = {0.35f, 0.18f, 0.45f},
+         .sheenRoughness = 0.3f},
+        {.name = "Wax",
+         .baseColorSRGB = {0.90f, 0.58f, 0.28f},
+         .roughness = 0.48f,
+         .subsurface = 0.7f,
+         .subsurfaceScale = 0.12f,
+         .subsurfaceColorSRGB = {1.0f, 0.38f, 0.12f},
+         .subsurfaceRadius = {1.0f, 0.35f, 0.15f}},
+        {.name = "Skin",
+         .baseColorSRGB = {0.72f, 0.38f, 0.28f},
+         .roughness = 0.52f,
+         .subsurface = 1.0f,
+         .subsurfaceScale = 0.08f,
+         .subsurfaceColorSRGB = {1.0f, 1.0f, 1.0f},
+         .subsurfaceRadius = {1.0f, 0.35f, 0.2f}},
+    };
+
+    bool changed = false;
+    if (ImGui::BeginTable("##PrincipledMaterialPresets", 3, ImGuiTableFlags_SizingStretchSame))
+    {
+        for (MaterialPreset const& preset : presets)
+        {
+            ImGui::TableNextColumn();
+            ImGui::PushID(preset.name);
+
+            ImVec4 color{preset.baseColorSRGB.x, preset.baseColorSRGB.y, preset.baseColorSRGB.z, 1.0f};
+            ImVec4 hovered{
+                std::min(color.x * 1.15f, 1.0f),
+                std::min(color.y * 1.15f, 1.0f),
+                std::min(color.z * 1.15f, 1.0f),
+                1.0f};
+            float const luminance = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
+            ImGui::PushStyleColor(ImGuiCol_Text, luminance > 0.45f ? ImVec4{0.05f, 0.05f, 0.05f, 1.0f}
+                                                                   : ImVec4{0.95f, 0.95f, 0.95f, 1.0f});
+            ImGui::PushStyleColor(ImGuiCol_Button, color);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hovered);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, color);
+            bool const clicked = ImGui::Button(preset.name, ImVec2{-FLT_MIN, 0.0f});
+            ImGui::PopStyleColor(4);
+            ImGui::PopID();
+            if (!clicked)
+                continue;
+
+            material.baseColorFactor = float4(SRGBToLinear(preset.baseColorSRGB), material.baseColorFactor.w);
+            material.metallicFactor = preset.metallic;
+            material.roughnessFactor = preset.roughness;
+            material.transmissionFactor = preset.transmission;
+            material.ior = preset.ior;
+            material.specularFactor = preset.specular;
+            material.specularColorFactor = preset.specularColor;
+            material.anisotropyStrength = preset.anisotropyStrength;
+            material.anisotropyRotation = preset.anisotropyRotation;
+            material.sheenColorFactor = preset.sheenColor;
+            material.sheenRoughnessFactor = preset.sheenRoughness;
+            material.clearcoatFactor = preset.clearcoat;
+            material.clearcoatRoughnessFactor = preset.clearcoatRoughness;
+            material.subsurfaceFactor = preset.subsurface;
+            material.subsurfaceScale = preset.subsurfaceScale;
+            material.subsurfaceColor = SRGBToLinear(preset.subsurfaceColorSRGB);
+            material.subsurfaceRadius = preset.subsurfaceRadius;
+            changed = true;
+        }
+        ImGui::EndTable();
+    }
+    return changed;
+}
+
 static bool IsTexturePreviewFormatSupported(RHIResourceFormat format)
 {
     switch (format)
@@ -1917,6 +2035,9 @@ void FHierarchyPanel()
                         changed |= ImLinearColorEdit3("Color", material.subsurfaceColor);
                         changed |= ImGui::DragFloat3("Radius", &material.subsurfaceRadius.x, 0.001f, 0.0f, FLT_MAX, "%.4f");
                         changed |= ImGui::SliderFloat("Scale", &material.subsurfaceScale, 0.0f, 1.0f, "%.4f");
+
+                        ImGui::SeparatorText("Material Presets");
+                        changed |= DrawPrincipledMaterialPresets(material);
                     }
                     else
                     {
