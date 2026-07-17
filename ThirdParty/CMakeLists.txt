@@ -111,10 +111,8 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-FetchContent_Declare(
-    cgltf
-    SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/cgltf"
-)
+add_library(cgltf INTERFACE)
+target_include_directories(cgltf INTERFACE "${CMAKE_CURRENT_LIST_DIR}")
 
 FetchContent_Declare(
     meshoptimizer

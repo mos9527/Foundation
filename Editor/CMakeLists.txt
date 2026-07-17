@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.26)
 
 FetchContent_MakeAvailable(stb)
 FetchContent_MakeAvailable(fast_obj)
-FetchContent_MakeAvailable(cgltf)
 FetchContent_MakeAvailable(lz4)
 FetchContent_MakeAvailable(bc7enc)
 FetchContent_MakeAvailable(argh)
@@ -32,11 +31,11 @@ target_link_libraries(
         Foundation_GPUScene
         Foundation_Math
         Foundation_Core
+        cgltf
 )
 target_include_directories(
         Editor_Assets PUBLIC
         "${fast_obj_SOURCE_DIR}"
-        "${cgltf_SOURCE_DIR}"
         ..
 )
 add_library(Editor_Context)

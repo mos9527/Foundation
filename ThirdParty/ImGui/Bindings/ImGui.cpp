@@ -397,7 +397,7 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
 
     ImVec4* colors = style.Colors;
-    const ImVec4 accentColor = ImVec4(0.18f, 0.68f, 0.16f, 1.00f);
+    const ImVec4 accentColor = ImVec4(0.68f, 0.18f, 0.16f, 1.00f);
     float accentH, accentS, accentV;
     ImGui::ColorConvertRGBtoHSV(accentColor.x, accentColor.y, accentColor.z, accentH, accentS, accentV);
     auto saturate = [](float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); };
@@ -431,7 +431,6 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     colors[ImGuiCol_Button] = ImVec4(0.22f, 0.22f, 0.21f, 1.00f);
     colors[ImGuiCol_Header] = ImVec4(0.24f, 0.24f, 0.23f, 1.00f);
     colors[ImGuiCol_Separator] = ImVec4(0.09f, 0.09f, 0.09f, 0.85f);
-    accent(1.0f, 0.85f);
     colors[ImGuiCol_ResizeGrip] = accent(1.0f, 0.62f, 0.35f);
     colors[ImGuiCol_ResizeGripHovered] = accent(1.0f, 0.76f, 0.65f);
     colors[ImGuiCol_ResizeGripActive] = accent(1.0f, 0.96f, 0.90f);
