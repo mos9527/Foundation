@@ -3,7 +3,7 @@
 #include "Examples.hpp"
 
 #include <Renderer/RasterEffects.hpp>
-#include <Renderer/Presenter.hpp>
+#include <RenderCore/Presenter.hpp>
 #include <argh.h>
 #include <algorithm>
 #include <cmath>
@@ -899,8 +899,7 @@ bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presen
 {
     try
     {
-        const uint32_t image = presenter->AcquireNextImage();
-        renderer->BeginExecute(image, presenter->GetImageAcquireSemaphore().Get());
+        renderer->BeginExecute(presenter);
         renderer->ExecuteFrame();
         renderer->EndExecute();
         presenter->Present(renderer->GetRenderCompleteSemaphore().Get());

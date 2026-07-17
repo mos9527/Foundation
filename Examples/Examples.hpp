@@ -51,7 +51,10 @@ constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_
 //   -g, --gpu <id>    Select GPU device index
 //   -l, --list-gpus   List available GPU devices and exit
 //
+namespace Foundation::RenderCore
+{
 class Presenter;
+}
 using ExampleVulkanContext =
     std::tuple<Renderer*, VulkanApplication*, RHIApplicationScopedHandle<RHIDevice>, RHIDeviceScopedHandle<RHISurface>, RHIDeviceScopedHandle<RHISwapchain>, Presenter*>;
 

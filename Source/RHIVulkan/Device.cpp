@@ -213,6 +213,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     REQUEST_BASE_FEATURE(samplerAnisotropy)
     REQUEST_BASE_FEATURE(fragmentStoresAndAtomics)
     REQUEST_BASE_FEATURE(shaderInt16)
+    // uint64_t bitmask in ILightBVH.slang (light BVH traversal PDF)
+    REQUEST_BASE_FEATURE(shaderInt64)
     // GPU-driven multi-draw of dynamic (CPU-updateable) geometry in the raster gbuffer pass
     // (DrawIndexedIndirectCount with drawCount > 1; per-draw instance id read via SV_DrawIndex,
     // backed by shaderDrawParameters above).
@@ -982,13 +984,35 @@ void VulkanDeviceQueryPool::Reset() { mQueryPool.reset(0, mDesc.count); }
 
 Span<const uint64_t> VulkanDeviceQueryPool::GetResults(bool wait)
 {
-    // For timestamps of culled passes, they are never written. If we wait, the GPU hangs.
-    // Since we already waited for fences before calling GetResults in Renderer,
-    // all written queries are guaranteed to be available.
-    // We use PARTIAL_BIT so unwritten queries simply return 0 or remain untouched,
-    // and we don't hang waiting for them.
     std::fill(mResults.begin(), mResults.end(), 0ull);
-    VkResult res = vkGetQueryPoolResults(
+
+    // VK_QUERY_RESULT_PARTIAL_BIT is illegal for VK_QUERY_TYPE_TIMESTAMP pools
+    // (VUID-vkGetQueryPoolResults-queryType-09439). For timestamps of culled passes the
+    // query is never written, so we also cannot use VK_QUERY_RESULT_WAIT_BIT (the GPU would
+    // hang forever waiting for a query that never completes). To safely read available
+    // timestamps while leaving culled (unavailable) slots as 0, query each slot individually:
+    // available slots return their value, unavailable slots report VK_NOT_READY and are left 0.
+    if (mDesc.type == QueryPoolDesc::Timestamp)
+    {
+        for (uint32_t i = 0; i < mDesc.count; ++i)
+        {
+            const VkResult res = vkGetQueryPoolResults(
+                *mDevice.GetVkDevice(), *mQueryPool, i, 1, sizeof(uint64_t), &mResults[i], sizeof(uint64_t),
+                (wait ? VK_QUERY_RESULT_WAIT_BIT : 0u) | VK_QUERY_RESULT_64_BIT);
+            if (res == VK_NOT_READY)
+            {
+                if (wait)
+                    CHECK_MSG(false, "Timestamp query {} not ready after wait", i);
+                continue; // Culled pass: leave as 0
+            }
+            CHECK(res == VK_SUCCESS);
+        }
+        return mResults;
+    }
+
+    // Non-timestamp pools may use PARTIAL_BIT so unwritten queries simply return 0 or remain
+    // untouched, and we don't hang waiting for them.
+    const VkResult res = vkGetQueryPoolResults(
         *mDevice.GetVkDevice(), *mQueryPool, 0, mDesc.count, sizeof(uint64_t) * mDesc.count, mResults.data(),
         sizeof(uint64_t), (wait ? VK_QUERY_RESULT_WAIT_BIT : VK_QUERY_RESULT_PARTIAL_BIT) | VK_QUERY_RESULT_64_BIT);
     if (res == VK_NOT_READY && !wait)

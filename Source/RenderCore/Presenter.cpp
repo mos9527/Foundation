@@ -3,6 +3,8 @@
 #include <Core/Logging.hpp>
 #include <tracy/Tracy.hpp>
 
+namespace Foundation::RenderCore
+{
 Presenter::Presenter(RHIDevice* device, RHIDeviceHandle<RHISwapchain> swapchain, Allocator* alloc) :
     mDevice(device), mSwapchain(swapchain), mSyncs(alloc)
 {
@@ -38,5 +40,4 @@ void Presenter::Present(RHIDeviceSemaphore* waitSemaphore)
 
 RHIDeviceHandle<RHIDeviceSemaphore> Presenter::GetImageAcquireSemaphore() const
 { return mSyncs[mCurrentSync]; }
-
-
+} // namespace Foundation::RenderCore

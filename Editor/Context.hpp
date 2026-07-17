@@ -10,7 +10,10 @@ using namespace RHI;
 using namespace RenderCore;
 using namespace Core;
 class GPUScene;
+namespace Foundation::RenderCore
+{
 class Presenter;
+}
 static constexpr size_t kEditorFrameScratchSize = 4 << 20;
 
 struct FContext

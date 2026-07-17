@@ -10,6 +10,11 @@
 #include "Runtime/GPUScene.hpp"
 #include "Scene/Scene.hpp"
 
+namespace Foundation::RenderCore
+{
+class Presenter;
+}
+
 enum class ERendererMode
 {
     PathTracer = 0u,
@@ -245,4 +250,4 @@ void FRendering(RendererOutputs const& outputs);
 // Acquire swapchain image + BeginExecute. Returns image index for EditorEndFrame.
 uint32_t EditorBeginFrame(Renderer* renderer, Presenter* presenter);
 // EndExecute + Present + present timing mark.
-void EditorEndFrame(Renderer* renderer, Presenter* presenter, uint32_t swapImageIndex);
+void EditorEndFrame(Renderer* renderer, Presenter* presenter);

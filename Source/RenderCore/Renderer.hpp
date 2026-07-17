@@ -5,6 +5,11 @@
 #include "RenderPass.hpp"
 #include "RenderResource.hpp"
 #include "Shader.hpp"
+
+namespace Foundation::RenderCore
+{
+class Presenter;
+}
 /**
  * @brief Core functionalities for rendering, including the Frame Graph implementation.
  */
@@ -278,6 +283,20 @@ namespace Foundation::RenderCore
          * @brief Executes all barriers for a pass
          */
         void ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierList cmd);
+        /**
+         * @brief Core implementation of @ref BeginExecute.
+         *
+         * Resets the temporary execution allocator and selects the acquired swapchain image
+         * (when a swapchain is bound).
+         *
+         * @param swapImageIndex Image index from @ref RHISwapchain::GetNextImage. Ignored when headless.
+         * @param imageAcquire   Binary semaphore signaled by @ref RHISwapchain::GetNextImage. May be
+         *                       null (headless); stored and waited on by the last graphics submit.
+         *
+         * @note This is the private core; the public entry points are @ref BeginExecute() (headless)
+         *       and @ref BeginExecute(Presenter*) (present loop).
+         */
+        void BeginExecute(uint32_t swapImageIndex, RHIDeviceSemaphore* imageAcquire);
         /**
          * @brief Sets backbuffer views and sync primitives
          */
@@ -953,18 +972,25 @@ namespace Foundation::RenderCore
          */
         void WaitForFrame();
         /**
-         * @brief Resets the temporary execution allocator and selects the acquired swapchain image
-         *        (when a swapchain is bound).
+         * @brief Begins execution for a headless (no swapchain) frame.
          *
-         * @param swapImageIndex Image index from @ref RHISwapchain::GetNextImage. Ignored when headless.
-         *
-         * See also @ref GetSync(), @ref GetSwap()
+         * Resets the temporary execution allocator and selects the default swap index (0) with no
+         * acquire semaphore. This is the public entry point for headless renderers; see
+         * @ref IsPresentEnabled().
          *
          * @note This MUST be called before entering Execute* functions.
-         * @note Acquire/Present are performed by the caller; see @ref GetImageAcquireSemaphore /
-         *       @ref GetRenderCompleteSemaphore.
+         * @note This delegates to the private core @ref BeginExecute(uint32_t, RHIDeviceSemaphore*)
+         *       with default arguments.
          */
-        void BeginExecute(uint32_t swapImageIndex = 0, RHIDeviceSemaphore* imageAcquire = nullptr);
+        void BeginExecute();
+        /**
+         * @brief Convenience overload for the common present loop.
+         * Waits for the previous frame (@ref WaitForFrame), acquires the next swapchain image
+         * via the presenter, then begins execution. The wait happens *before* the acquire so the
+         * acquire semaphore (reused per synchronization slot) is guaranteed free.
+         * @return The acquired swapchain image index.
+         */
+        uint32_t BeginExecute(Presenter* presenter);
         /**
          * @brief Executes all passes in the render graph for one frame.
          *
@@ -980,8 +1006,10 @@ namespace Foundation::RenderCore
          * @note This MUST be called after BeginExecute(), and before EndExecute().
          *
          * @code{.cpp}
-         *  auto image = swapchain->GetNextImage(-1, renderer->GetImageAcquireSemaphore(), {});
-         *  BeginExecute(image);
+         *  // Headless:
+         *  BeginExecute();
+         *  // Present loop:
+         *  uint32_t image = renderer.BeginExecute(presenter);
          *  // ...Additional pre-frame logic...
          *  ExecuteFrame();
          *  // ...Additional post-frame logic...

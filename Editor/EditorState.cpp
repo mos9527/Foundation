@@ -5,7 +5,7 @@
 #include <Renderer/RasterEffects.hpp>
 #include "EditorGizmos.hpp"
 #include "EditorState.hpp"
-#include <Renderer/Presenter.hpp>
+#include <RenderCore/Presenter.hpp>
 #include <imgui.h>
 #include <ImGuizmo.h>
 using namespace RenderUtils;
@@ -20,12 +20,10 @@ static RasterEffect sEditorRasterEffects[2];
 
 uint32_t EditorBeginFrame(Renderer* renderer, Presenter* presenter)
 {
-    const uint32_t image = presenter->AcquireNextImage();
-    renderer->BeginExecute(image, presenter->GetImageAcquireSemaphore().Get());
-    return image;
+    return renderer->BeginExecute(presenter);
 }
 
-void EditorEndFrame(Renderer* renderer, Presenter* presenter, uint32_t swapImageIndex)
+void EditorEndFrame(Renderer* renderer, Presenter* presenter)
 {
     renderer->EndExecute();
     presenter->Present(renderer->GetRenderCompleteSemaphore().Get());
@@ -409,7 +407,7 @@ static void FNoScene()
         SetupIdleRenderer(GContext);
         renderer = GContext->renderer;
     }
-    const uint32_t swapImage = EditorBeginFrame(renderer, GContext->presenter);
+    EditorBeginFrame(renderer, GContext->presenter);
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
     {
@@ -435,7 +433,7 @@ static void FNoScene()
     GEditor.camera.UpdateMovement(dt);
     GEditor.camera.Update({});
     renderer->ExecuteFrame();
-    EditorEndFrame(renderer, GContext->presenter, swapImage);
+    EditorEndFrame(renderer, GContext->presenter);
 }
 
 static void FRunningEnter()
@@ -456,7 +454,7 @@ static void FRunning()
 {
     auto* renderer = GContext->renderer;
     // New frame
-    const uint32_t swapImage = EditorBeginFrame(renderer, GContext->presenter);
+    EditorBeginFrame(renderer, GContext->presenter);
     GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
@@ -527,7 +525,7 @@ static void FRunning()
     RefreshPostprocessState(renderExtent);
     EditorGizmos::BuildLightGizmos();
     renderer->ExecuteFrame();
-    EditorEndFrame(renderer, GContext->presenter, swapImage);
+    EditorEndFrame(renderer, GContext->presenter);
     // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
     if (sPickingPixel.x >= 0)
     {

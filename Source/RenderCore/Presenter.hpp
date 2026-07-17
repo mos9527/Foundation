@@ -3,8 +3,13 @@
 #include <chrono>
 #include <vector>
 
+// Preserved for backwards compatibility with translation units that previously
+// included the Presenter header (which brought these into global scope).
 using namespace Foundation;
 using namespace RHI;
+
+namespace Foundation::RenderCore
+{
 class Presenter
 {
 public:
@@ -42,3 +47,4 @@ private:
     uint32_t mCurrentSwap = 0;
     uint32_t mFrameSwaps = 0;
 };
+} // namespace Foundation::RenderCore

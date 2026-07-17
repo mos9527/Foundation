@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <fstream>
 #include <tracy/Tracy.hpp>
+#include "Presenter.hpp"
 
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
@@ -1486,6 +1487,21 @@ void Renderer::BeginExecute(uint32_t swapImageIndex, RHIDeviceSemaphore* imageAc
             queryPool->Reset();
         }
     }
+}
+
+void Renderer::BeginExecute()
+{
+    BeginExecute(0, nullptr);
+}
+
+uint32_t Renderer::BeginExecute(Presenter* presenter)
+{
+    // Wait for the previous frame *before* acquiring, so the acquire semaphore (reused per
+    // synchronization slot) has no pending signal/wait operations at vkAcquireNextImageKHR time.
+    WaitForFrame();
+    const uint32_t image = presenter->AcquireNextImage();
+    BeginExecute(image, presenter->GetImageAcquireSemaphore().Get());
+    return image;
 }
 
 void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
