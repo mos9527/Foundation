@@ -1184,11 +1184,12 @@ void AddRadianceByCategory(
 
 bool SampleVisibleSceneLight<S : ISampler>(
     HitState hit,
+    bool upperHemisphere,
     inout S rng,
     out LightSampleContext ctx,
     out LightLiSample Li)
 {
-    ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal);
+    ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal, upperHemisphere);
     Li = SampleSceneLight(ctx, rng.sample(), rng.sample2D());
     if (Li.pdf <= EPS)
         return false;
@@ -1236,7 +1237,7 @@ void AddLocalDirectLighting<S : ISampler>(
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit, rng, ctx, Li))
+    if (!SampleVisibleSceneLight(hit, !bsdf.HasTransmission(), rng, ctx, Li))
     {
         lighting.lastLightCtx = ctx;
         return;
@@ -1276,7 +1277,7 @@ void AddDiffuseDirectLighting<S : ISampler>(
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit, rng, ctx, Li))
+    if (!SampleVisibleSceneLight(hit, true, rng, ctx, Li))
     {
         lighting.lastLightCtx = ctx;
         return;

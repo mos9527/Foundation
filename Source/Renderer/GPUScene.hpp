@@ -614,6 +614,7 @@ private:
     TextureHandle mEnvMapConditionalCDFIndex;
     uint32_t mEnvMapPrefilteredMips{0u};
     Array<float3, 9> mEnvSHCoeffs{};
+    float mEnvMapAverageRadiance{1.0f};
 
     UniquePtr<GPUSceneImpl> mImpl;
 };

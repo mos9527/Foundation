@@ -36,7 +36,7 @@ static bool IsSunDiskLight(GSLight const& light)
 }
 
 // Stable order: environment, non-delta directionals, remaining. Writes input->committed remap.
-static uint32_t PartitionSceneLights(Span<GSLight> lights, Span<uint32_t> inputToCommitted, Allocator* scratch)
+static uint32_t PartitionSceneLights(Span<GSLight> lights, Span<uint32_t> inputToCommitted, float envMapAverageRadiance, Allocator* scratch)
 {
     uint32_t const count = static_cast<uint32_t>(lights.size());
     CHECK_MSG(inputToCommitted.size() == count, "Light remap size mismatch");
@@ -55,7 +55,10 @@ static uint32_t PartitionSceneLights(Span<GSLight> lights, Span<uint32_t> inputT
         }
     }
     if (envIndex != UINT32_MAX)
+    {
+        lights[envIndex].params.y = envMapAverageRadiance;
         order.push_back(envIndex);
+    }
 
     uint32_t numSunDisks = 0u;
     for (uint32_t i = 0; i < count; ++i)
@@ -919,7 +922,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
     owner.mLightInputToCommitted.resize(tables.lights.size());
     res.numSunDiskLights =
         PartitionSceneLights(tables.lights, Span<uint32_t>(owner.mLightInputToCommitted.data(), tables.lights.size()),
-                             scratch);
+                             owner.mEnvMapAverageRadiance, scratch);
     owner.mCommittedLights.assign(tables.lights.begin(), tables.lights.end());
 
     mLightBVHNeedsRefit = false;
@@ -2863,6 +2866,7 @@ GPUScene::Result GPUSceneImpl::UploadEnvMap(FTexture const& source)
     }
 
     PiecewiseConstant2D cdf(f, width, height, mAllocator);
+    owner.mEnvMapAverageRadiance = cdf.Int() * pi<float>() / 2.0f;
 
     auto UploadR32Texture = [this](Span<const float> values, uint32_t texWidth, uint32_t texHeight,
                                    TextureHandle& outTexture, const char* debugName) -> Result

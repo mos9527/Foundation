@@ -161,9 +161,14 @@ struct LightBVHBuild
     float radiometricWeight = std::max(0.0f, light.power) * colorWeight;
     uint32_t type = GSLightTypeCPU(light);
     if (type == kGSLightTypeDirectional)
+    {
         return radiometricWeight;
+    }
     if (type == kGSLightTypeEnvironment)
-        return radiometricWeight * std::numbers::pi_v<float>;
+    {
+        float averageRadiance = light.params.y > 0.0f ? light.params.y : 1.0f;
+        return radiometricWeight * averageRadiance * std::numbers::pi_v<float>;
+    }
     if (type == kGSLightTypePoint)
         return radiometricWeight * (4.0f * std::numbers::pi_v<float>);
     if (type == kGSLightTypeSpot)

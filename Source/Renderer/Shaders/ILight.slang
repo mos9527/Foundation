@@ -18,10 +18,12 @@ public struct LightSampleContext {
     public float3 pi; // Surface interaction point
     public float3 n;  // Geometric normal at pi
     public float3 ns; // Shading normal at pi
-    public __init(float3 pi, float3 n, float3 ns) {
+    public bool upperHemisphere;
+    public __init(float3 pi, float3 n, float3 ns, bool upperHemisphere = true) {
         this.pi = pi;
         this.n = n;
         this.ns = ns;
+        this.upperHemisphere = upperHemisphere;
     }
     public float3 p() { return pi; }
 };

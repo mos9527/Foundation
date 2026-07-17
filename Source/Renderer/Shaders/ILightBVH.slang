@@ -115,25 +115,38 @@ float ComputeFiniteRootImportance(float3 posW, float3 normalW, bool upperHemisph
     return ComputeNodeImportance(posW, normalW, upperHemisphere, root);
 }
 
-float ComputeDistantNodeImportance(GSLightBVHNode node)
+float ComputeDistantNodeImportance(float3 posW, float3 normalW, bool upperHemisphere, GSLightBVHNode node)
 {
-    // Flux-only. Receiver-cone culling can drive sun selection PMF to 0 while a specular
-    // BSDF still hits the disk; MIS then keeps full Le (= E/Ω) → fireflies.
-    return node.flux;
+    float flux = node.flux;
+    float NdotL = 1.0f;
+    float cosThetaCone = node.cosConeAngle;
+    
+    if (cosThetaCone != kLightBVHInvalidCosConeAngle && cosThetaCone > 0.0f)
+    {
+        float cosThetaL = clamp(dot(normalW, node.coneDirection), -1.0f, 1.0f);
+        float sinThetaL = sqrt(max(0.0f, 1.0f - cosThetaL * cosThetaL));
+        float sinThetaCone = sqrt(max(0.0f, 1.0f - cosThetaCone * cosThetaCone));
+        NdotL = saturate(CosSubClamped(sinThetaL, cosThetaL, sinThetaCone, cosThetaCone));
+    }
+    
+    if (!upperHemisphere)
+        NdotL = 1.0f; // Disable culling for volumes / non-surface
+
+    return flux * NdotL;
 }
 
-float ComputeDistantRootImportance()
+float ComputeDistantRootImportance(float3 posW, float3 normalW, bool upperHemisphere)
 {
     if (globalParams.numLightBVHDistantNodes == 0u)
         return 0.0f;
-    return ComputeDistantNodeImportance(lightBVHNodes[globalParams.firstLightBVHDistantNode]);
+    return ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[globalParams.firstLightBVHDistantNode]);
 }
 
 float EvalMixtureTotal(float3 posW, float3 normalW, bool upperHemisphere, out float finiteWeight,
                        out float distantWeight)
 {
     finiteWeight = ComputeFiniteRootImportance(posW, normalW, upperHemisphere);
-    distantWeight = ComputeDistantRootImportance();
+    distantWeight = ComputeDistantRootImportance(posW, normalW, upperHemisphere);
     return finiteWeight + distantWeight;
 }
 
@@ -171,7 +184,7 @@ bool TraverseLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout f
     return true;
 }
 
-bool TraverseDistantLightBVH(inout float u, out float pdf, out uint leafNodeIndex)
+bool TraverseDistantLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout float u, out float pdf, out uint leafNodeIndex)
 {
     pdf = 1.0f;
     leafNodeIndex = globalParams.firstLightBVHDistantNode;
@@ -180,8 +193,8 @@ bool TraverseDistantLightBVH(inout float u, out float pdf, out uint leafNodeInde
     {
         uint leftIndex = leafNodeIndex + 1u;
         uint rightIndex = globalParams.firstLightBVHNode + LightBVHNodeRightChild(node);
-        float leftImp = ComputeDistantNodeImportance(lightBVHNodes[leftIndex]);
-        float rightImp = ComputeDistantNodeImportance(lightBVHNodes[rightIndex]);
+        float leftImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
+        float rightImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
         float sum = leftImp + rightImp;
         if (sum <= 0.0f)
             return false;
@@ -290,7 +303,7 @@ float EvalFiniteTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere, 
     return pdf;
 }
 
-float EvalDistantTraversalPdf(uint lightIndex, out uint leafNodeIndex)
+float EvalDistantTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere, uint lightIndex, out uint leafNodeIndex)
 {
     uint2 bits2 = lightBVHBitmasks[globalParams.firstLightBVHBitmask + lightIndex];
     uint64_t bitmask = ((uint64_t)bits2.y << 32) | bits2.x;
@@ -301,8 +314,8 @@ float EvalDistantTraversalPdf(uint lightIndex, out uint leafNodeIndex)
     {
         uint leftIndex = leafNodeIndex + 1u;
         uint rightIndex = globalParams.firstLightBVHNode + LightBVHNodeRightChild(node);
-        float leftImp = ComputeDistantNodeImportance(lightBVHNodes[leftIndex]);
-        float rightImp = ComputeDistantNodeImportance(lightBVHNodes[rightIndex]);
+        float leftImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
+        float rightImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
         float sum = leftImp + rightImp;
         if (sum <= 0.0f)
             return 0.0f;
@@ -326,7 +339,7 @@ public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
 
     float3 posW = ctx.p();
     float3 normalW = ctx.ns;
-    bool upperHemisphere = true;
+    bool upperHemisphere = ctx.upperHemisphere;
     float finiteWeight;
     float distantWeight;
     float total = EvalMixtureTotal(posW, normalW, upperHemisphere, finiteWeight, distantWeight);
@@ -340,7 +353,7 @@ public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
         if (distantWeight <= 0.0f || globalParams.numLightBVHDistantNodes == 0u)
             return 0.0f;
         uint leafNodeIndex;
-        float traversalPdf = EvalDistantTraversalPdf(lightIndex, leafNodeIndex);
+        float traversalPdf = EvalDistantTraversalPdf(posW, normalW, upperHemisphere, lightIndex, leafNodeIndex);
         return (distantWeight / total) * traversalPdf * EvalLeafLightPdf(leafNodeIndex, lightIndex);
     }
 
@@ -372,7 +385,7 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
 
     float3 posW = ctx.p();
     float3 normalW = ctx.ns;
-    bool upperHemisphere = true;
+    bool upperHemisphere = ctx.upperHemisphere;
     float finiteWeight;
     float distantWeight;
     float total = EvalMixtureTotal(posW, normalW, upperHemisphere, finiteWeight, distantWeight);
@@ -385,7 +398,7 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
         float uDistant = saturate(uScaled / distantWeight);
         float traversalPdf;
         uint leafNodeIndex;
-        if (!TraverseDistantLightBVH(uDistant, traversalPdf, leafNodeIndex))
+        if (!TraverseDistantLightBVH(posW, normalW, upperHemisphere, uDistant, traversalPdf, leafNodeIndex))
             return false;
         float pickPdf;
         if (!PickLeafLight(leafNodeIndex, uDistant, pickPdf, lightIndex))

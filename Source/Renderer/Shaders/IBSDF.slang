@@ -709,6 +709,7 @@ public interface IBSDF {
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags,
                                out AOVCategory category);
     public bool IsDirac();
+    public bool HasTransmission();
 };
 
 static const int HairPMax = 3;
@@ -847,6 +848,7 @@ float HairSpectrumAverage(float3 v)
 // - https://sci-hub.sg/storage/2024/5766/a1c3a0a1d0aeccafa669d9c39f33341d/chiang2016.pdf
 public struct HairBSDF : IBSDF
 {
+    public bool HasTransmission() { return true; }
     float h;
     float eta;
     float3 sigmaA;
@@ -1155,6 +1157,7 @@ public struct HairBSDF : IBSDF
 };
 
 public struct PrincipledBSDF : IBSDF {
+    public bool HasTransmission() { return hasTrans; }
     // Lobe instances
     DiffuseBSDF   diffuse;
     GlassBSDF     glass;
