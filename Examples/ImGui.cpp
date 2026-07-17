@@ -30,8 +30,8 @@ int main(int argc, char** argv)
         ImGui_ImplFoundation_NewFrame();
         ImGui::NewFrame();
         ImGui::ShowDemoWindow();
-        Examples_NewFrame(window, renderer, presenter, swapchain);
+        Examples_NewFrame(renderer);
     }
     ImGui_ImplFoundation_Shutdown();
-    Examples_DestroyVulkan(window, renderer, app, device, swapchain);
+    Examples_DestroyVulkan(window, renderer, app, device, surface, swapchain);
 }
