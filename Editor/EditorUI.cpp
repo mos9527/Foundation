@@ -2928,7 +2928,15 @@ void FRunningImGui()
                 }
             }
             ImGui::SeparatorText(PSI_BOLT " Path Tracer");
-            if (ImModalButton(PSI_BOLT " Fast", 0, 3))
+            if (ImModalButton(PSI_CODE " Direct", 0, 4))
+            {
+                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 0;
+                GEditor.shaderGlobals.ptMaxBouncesSpecular = 0;
+                GEditor.shaderGlobals.ptMaxBouncesTransmission = 0;
+                GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
+            if (ImModalButton(PSI_BOLT " Fast", 1, 4))
             {
                 GEditor.shaderGlobals.ptMaxBouncesDiffuse = 4;
                 GEditor.shaderGlobals.ptMaxBouncesSpecular = 4;
@@ -2936,7 +2944,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
-            if (ImModalButton(PSI_FIRE " Full", 1, 3))
+            if (ImModalButton(PSI_FIRE " Full", 2, 4))
             {
                 GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
                 GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
@@ -2944,7 +2952,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
-            if (ImModalButton(PSI_BEAKER " Über", 2, 3))
+            if (ImModalButton(PSI_BEAKER " Über", 3, 4))
             {
                 GEditor.shaderGlobals.ptMaxBouncesDiffuse = 100;
                 GEditor.shaderGlobals.ptMaxBouncesSpecular = 100;
