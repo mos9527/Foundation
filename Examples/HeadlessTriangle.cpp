@@ -1,7 +1,7 @@
 // Headless Triangle - renders the Hello World triangle into an explicit offscreen
 // RTV (no SDL window, no swapchain, no Vulkan WSI) and validates the result via
 // texture readback. Mirrors Examples/Triangle.cpp but uses the headless Renderer path
-// (Examples_InitVulkan with desc.present = false).
+// (Examples_InitVulkan with window == nullptr).
 #include "Examples.hpp"
 #include <RenderCore/ImmediateContext.hpp>
 using namespace Foundation;
@@ -17,9 +17,8 @@ namespace
 
 int main(int argc, char** argv)
 {
-    RendererDesc rendererDesc{
-        .present = false, .threadCount = 0, .framesInFlight = 1, .renderExtent = kExtent};
-    auto [renderer, app, device, swapchain] =
+    RendererDesc rendererDesc{.threadCount = 0};
+    auto [renderer, app, device, swapchain, presenter] =
         Examples_InitVulkan(nullptr /* no window */, argc, argv, rendererDesc);
 
     renderer->BeginSetup();
@@ -41,13 +40,12 @@ int main(int argc, char** argv)
             r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, sizeof(float));
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
-            auto const img_wh = r->GetRenderExtent();
-            r->CmdBeginGraphics(self, cmd, img_wh,
+            r->CmdBeginGraphics(self, cmd, kExtent,
                                 {{RHIColorAttachmentLoad{.loadOp = RHIAttachmentLoadOp::Clear, .clearColor = {0, 0, 0, 0}}}});
             r->CmdSetPipeline(self, cmd);
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, 0.0f);
-            cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
-                .SetScissor(0, 0, img_wh.x, img_wh.y)
+            cmd->SetViewport(0, 0, kExtent.x, kExtent.y)
+                .SetScissor(0, 0, kExtent.x, kExtent.y)
                 .Draw(3)
                 .EndGraphics();
         }

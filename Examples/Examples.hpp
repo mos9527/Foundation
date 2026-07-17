@@ -50,8 +50,9 @@ constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_
 //   -g, --gpu <id>    Select GPU device index
 //   -l, --list-gpus   List available GPU devices and exit
 //
+class Presenter;
 using ExampleVulkanContext =
-    std::tuple<Renderer*, VulkanApplication*, RHIApplicationScopedHandle<RHIDevice>, RHIDeviceScopedHandle<RHISwapchain>>;
+    std::tuple<Renderer*, VulkanApplication*, RHIApplicationScopedHandle<RHIDevice>, RHIDeviceScopedHandle<RHISwapchain>, Presenter*>;
 
 struct ExampleClickableRegion
 {
@@ -159,10 +160,9 @@ struct ExampleGPUSceneRenderState
     RHIExtent2D renderExtent{};
 };
 
-// Pass desc.present = false (with desc.renderExtent set) to initialize headlessly:
-// no SDL window or Vulkan WSI is required, no swapchain is created, and the returned
-// swapchain handle is invalid. This works on software backends (e.g. Lavapipe) without
-// surface extensions. In that case `window` is ignored and may be nullptr.
+// Pass window == nullptr to initialize headlessly: no SDL window or Vulkan WSI is required,
+// no swapchain is created, and the returned swapchain handle is invalid. This works on
+// software backends (e.g. Lavapipe) without surface extensions.
 ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc = {});
 
 // Drains all pending SDL events into the frame input state, resizing the swapchain as needed.
@@ -196,7 +196,7 @@ void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPU
 void Examples_GPUSceneFillCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera const& camera,
                                     RendererConfig const& config);
 void Examples_NewFrame(Renderer* renderer);
-bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swapchain);
+bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presenter, RHIDeviceScopedHandle<RHISwapchain>& swapchain);
 void Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app,
                             RHIApplicationScopedHandle<RHIDevice>& device,
                             RHIDeviceScopedHandle<RHISwapchain>& swapchain);

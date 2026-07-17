@@ -2663,14 +2663,10 @@ void FRunningImGui()
                 static Vector<ImProfilerHistogram> histograms(GLOBAL_ALLOC);
                 static ImProfilerHistogram frametime(kFrametimeSamples, GLOBAL_ALLOC);
                 static bool pause = false;
-                static float presentTimingMS = 0.0f;
                 static float gpuTimingMS = 0.0f;
                 static int lanes = 0;
                 float frametimeAvg = frametime.mean * 1e-6f;
-                ImGui::Text("CPU to Present: %.3fms\nP2P: %.3fms (%.1f FPS)\nGPU: %.3fms\n"
-                            "CPU/GPU dt: %.3fms",
-                            presentTimingMS, frametimeAvg * 1e3f, 1 / frametimeAvg, gpuTimingMS,
-                            frametimeAvg * 1e3f - gpuTimingMS);
+                ImGui::Text("GPU Profiler: CPU %.2f ms (%.1f FPS) / GPU %.2f ms", frametimeAvg * 1e3f, 1 / frametimeAvg, gpuTimingMS);
                 auto ClearHistogramData = []
                 {
                     for (auto& hist : histograms)
@@ -2702,12 +2698,9 @@ void FRunningImGui()
                             histograms.emplace_back(kHistogramSamples, GLOBAL_ALLOC);
                         histograms[i].push(sample.endTick - sample.startTick);
                     }
-                    float presentTimingRes;
                     lanes = ImProfilerAssignLanes(samples, frameScratch);
                     gpuTimingMS = (samples.back().endTick - samples.front().startTick) * 1e-6;
                     gpuTimingMS *= gpuTimingRes;
-                    presentTimingMS = renderer->DbgProfilePresentTiming(renderer->GetSync(), presentTimingRes) * 1e-6;
-                    presentTimingMS *= presentTimingRes;
                     frametime.push(ImGui::GetIO().DeltaTime * 1e6f);
                 }
                 int selectedID = -1;
@@ -3188,7 +3181,7 @@ void FRunningImGui()
 void FRendering(RendererOutputs const& outputs)
 {
     auto* renderer = GContext->renderer;
-    renderer->BeginExecute();
+    const uint32_t swapImage = EditorBeginFrame(renderer, GContext->presenter);
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
 
@@ -3270,7 +3263,7 @@ void FRendering(RendererOutputs const& outputs)
     GEditor.postprocessGlobals.viewLutIndex =
         Postprocess::ResolvePostprocessViewLutIndex(GEditor.viewLUTSdrHandle, GEditor.viewLUTHdrHandle, GContext->enableHDR);
     renderer->ExecuteFrame();
-    renderer->EndExecute();
+    EditorEndFrame(renderer, GContext->presenter, swapImage);
     GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
 
     bool timeLimitReached = GEditor.renderTask.targetTimeSeconds > 0 && elapsed >= GEditor.renderTask.targetTimeSeconds;

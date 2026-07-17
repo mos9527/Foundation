@@ -5,6 +5,7 @@
 #include <Renderer/RasterEffects.hpp>
 #include "EditorGizmos.hpp"
 #include "EditorState.hpp"
+#include <Renderer/Presenter.hpp>
 #include <imgui.h>
 #include <ImGuizmo.h>
 using namespace RenderUtils;
@@ -16,6 +17,19 @@ static RendererOutputs sRenderOutputs;
 static int2 sPickingPixel;
 static bool sPickingDoubleClick = false;
 static RasterEffect sEditorRasterEffects[2];
+
+uint32_t EditorBeginFrame(Renderer* renderer, Presenter* presenter)
+{
+    const uint32_t image = presenter->AcquireNextImage();
+    renderer->BeginExecute(image, presenter->GetImageAcquireSemaphore().Get());
+    return image;
+}
+
+void EditorEndFrame(Renderer* renderer, Presenter* presenter, uint32_t swapImageIndex)
+{
+    renderer->EndExecute();
+    presenter->Present(renderer->GetRenderCompleteSemaphore().Get());
+}
 
 int SceneInstanceIndexFromId(FUUID id)
 {
@@ -115,6 +129,11 @@ void DestroyEditorRenderer(FContext* context)
     EditorGizmos::Shutdown();
     Destruct(context->allocator, context->renderer);
     context->renderer = nullptr;
+    if (context->presenter)
+    {
+        Destruct(context->allocator, context->presenter);
+        context->presenter = nullptr;
+    }
 }
 
 static Renderer* BeginEditorRendererSetup(FContext* context, uint32_t threadCount)
@@ -127,6 +146,8 @@ static Renderer* BeginEditorRendererSetup(FContext* context, uint32_t threadCoun
     desc.pipelineCache = context->psoCache.Get();
     auto* renderer = context->renderer = Construct<Renderer>(context->allocator, desc, context->device,
                                                              context->swapchain, context->allocator);
+    if (context->swapchain.IsValid())
+        context->presenter = Construct<Presenter>(context->allocator, context->device.Get(), context->swapchain, context->allocator);
     renderer->BeginSetup();
     return renderer;
 }
@@ -388,7 +409,7 @@ static void FNoScene()
         SetupIdleRenderer(GContext);
         renderer = GContext->renderer;
     }
-    renderer->BeginExecute();
+    const uint32_t swapImage = EditorBeginFrame(renderer, GContext->presenter);
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
     {
@@ -414,7 +435,7 @@ static void FNoScene()
     GEditor.camera.UpdateMovement(dt);
     GEditor.camera.Update({});
     renderer->ExecuteFrame();
-    renderer->EndExecute();
+    EditorEndFrame(renderer, GContext->presenter, swapImage);
 }
 
 static void FRunningEnter()
@@ -435,7 +456,7 @@ static void FRunning()
 {
     auto* renderer = GContext->renderer;
     // New frame
-    renderer->BeginExecute();
+    const uint32_t swapImage = EditorBeginFrame(renderer, GContext->presenter);
     GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
@@ -506,7 +527,7 @@ static void FRunning()
     RefreshPostprocessState(renderExtent);
     EditorGizmos::BuildLightGizmos();
     renderer->ExecuteFrame();
-    renderer->EndExecute();
+    EditorEndFrame(renderer, GContext->presenter, swapImage);
     // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
     if (sPickingPixel.x >= 0)
     {

@@ -46,6 +46,7 @@ target_link_libraries(
         Editor_Context PUBLIC
         Editor_Assets
         Foundation_GPUScene
+        Foundation_Presenter
         Foundation_RHIVulkan
         Foundation_RenderCore
         Foundation_RenderUtils

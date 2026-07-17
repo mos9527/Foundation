@@ -14,7 +14,7 @@ int main(int argc, char** argv)
     SDL_Window* window =
         SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("Material Gallery"), 1280, 720, Examples_SDLWindowFlagsVulkan);
     RendererDesc rendererDesc{};
-    auto [renderer0, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, rendererDesc);
+    auto [renderer0, app, device, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, rendererDesc);
     UniquePtr<Renderer> renderer(renderer0, StlDeleter<Renderer>{GLOBAL_ALLOC});
     {
         // GPUScene owns all GPU-resident scene data and lives for the full example scope.
@@ -403,7 +403,7 @@ int main(int argc, char** argv)
             ubo.frameNumber = renderer->GetFrame();
             AuthorFrame(animTime);
             Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, renderState.config);
-            Examples_NewFrame(window, renderer.get(), swapchain);
+            Examples_NewFrame(window, renderer.get(), presenter, swapchain);
             // Advance path-tracer accumulation after the frame is submitted.
             if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;

@@ -8,7 +8,7 @@ int main(int argc, char** argv)
 {
     SDL_Window* window =
         SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("DebugText Example"), 800, 600, Examples_SDLWindowFlagsVulkan);
-    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {
+    auto [renderer, app, device, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, {
         .threadCount = 0 /* ST recording */
     });
     CSDebugTextData lines[5]{};
@@ -21,7 +21,7 @@ int main(int argc, char** argv)
     while (!Examples_ShouldClose(window, renderer, swapchain))
     {
         lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
-        Examples_NewFrame(window, renderer, swapchain);
+        Examples_NewFrame(window, renderer, presenter, swapchain);
     }
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);
 }

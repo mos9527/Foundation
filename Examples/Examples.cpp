@@ -3,6 +3,7 @@
 #include "Examples.hpp"
 
 #include <Renderer/RasterEffects.hpp>
+#include <Renderer/Presenter.hpp>
 #include <argh.h>
 #include <algorithm>
 #include <cmath>
@@ -576,7 +577,7 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
         fmt::println("\t-l, --list-gpus\t\tList available GPU devices");
         std::exit(0);
     }
-    const bool headless = !desc.present;
+    const bool headless = window == nullptr;
     if (cmdl[{"-l", "--list-gpus"}])
     {
         auto* app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
@@ -631,7 +632,10 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
             .path = std::move(psoCachePath),
         });
     }
-    return std::make_tuple(renderer, app, std::move(device), std::move(swap));
+    Presenter* presenter = nullptr;
+    if (swap.IsValid())
+        presenter = Construct<Presenter>(GLOBAL_ALLOC, device.Get(), swap, GLOBAL_ALLOC);
+    return std::make_tuple(renderer, app, std::move(device), std::move(swap), presenter);
 }
 
 bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap,
@@ -857,11 +861,15 @@ void Examples_NewFrame(Renderer* renderer)
     renderer->EndExecute();
 }
 
-bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swapchain)
+bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presenter, RHIDeviceScopedHandle<RHISwapchain>& swapchain)
 {
     try
     {
-        Examples_NewFrame(renderer);
+        const uint32_t image = presenter->AcquireNextImage();
+        renderer->BeginExecute(image, presenter->GetImageAcquireSemaphore().Get());
+        renderer->ExecuteFrame();
+        renderer->EndExecute();
+        presenter->Present(renderer->GetRenderCompleteSemaphore().Get());
         return true;
     }
     catch (RHISwapchainResizeException&)
@@ -930,7 +938,11 @@ ResourceHandle Examples_InsertBasicTonemapPasses(Renderer* renderer, RendererOut
     CHECK_MSG(outputs.diffuse != kInvalidHandle, "Basic tonemap pass missing diffuse output");
     RHIExtent2D extent = outputs.extent;
     if (extent.x == 0u || extent.y == 0u)
-        extent = renderer->GetRenderExtent();
+    {
+        CHECK_MSG(renderer->IsPresentEnabled(),
+                  "Basic tonemap pass requires outputs.extent when running headlessly");
+        extent = renderer->GetSwapchainExtent();
+    }
     const uint32_t w = extent.x;
     const uint32_t h = extent.y;
     constexpr RHIResourceFormat kOutputFormat = RHIResourceFormat::R8G8B8A8Unorm;

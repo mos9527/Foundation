@@ -3,7 +3,7 @@
 // progress to stdout, then reads back the tonemapped framebuffer, writes it to render.png
 // and opens it with the OS default viewer.
 //
-// Validates the headless present=false Renderer path end-to-end through GPUScene + the
+// Validates the headless (null swapchain) Renderer path end-to-end through GPUScene + the
 // path-tracer render graph + the simplified tonemap pass, including cross-frame accumulation.
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp> // RendererUBO + BuildPathTracerRenderGraph
@@ -34,9 +34,8 @@ namespace
 
 int main(int argc, char** argv)
 {
-    RendererDesc rendererDesc{
-        .present = false, .threadCount = 0, .framesInFlight = 1, .renderExtent = kExtent};
-    auto [renderer0, app, device, swapchain] = Examples_InitVulkan(nullptr, argc, argv, rendererDesc);
+    RendererDesc rendererDesc{.threadCount = 0};
+    auto [renderer0, app, device, swapchain, presenter] = Examples_InitVulkan(nullptr, argc, argv, rendererDesc);
     UniquePtr<Renderer> renderer(renderer0, StlDeleter<Renderer>{GLOBAL_ALLOC});
 
     {
@@ -278,8 +277,8 @@ int main(int argc, char** argv)
         RendererOutputs handles{};
         renderer->BeginSetup();
         BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
-        // Headless (present=false): the tonemap writes only to the explicit RTV (no backbuffer
-        // blit). We capture that handle to read it back after convergence.
+        // Headless: the tonemap writes only to the explicit RTV (no backbuffer blit).
+        // We capture that handle to read it back after convergence.
         const ResourceHandle postprocess = Examples_InsertBasicTonemapPasses(renderer.get(), handles, true);
         renderer->EndSetup();
 

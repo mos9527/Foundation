@@ -9,6 +9,7 @@ using namespace RHI;
 using namespace RenderCore;
 using namespace Core;
 class GPUScene;
+class Presenter;
 static constexpr size_t kEditorFrameScratchSize = 4 << 20;
 
 struct FContext
@@ -38,6 +39,7 @@ struct FContext
 
     GPUScene* gpuScene{};
     Renderer* renderer{};
+    Presenter* presenter{};
 
     // Persistent worker pool for main-thread fork-join work (e.g. CPU skinning via ParallelFor).
     UniquePtr<ThreadPool> jobs;

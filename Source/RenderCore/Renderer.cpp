@@ -38,24 +38,9 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> dev
             "queues (timestampValidBits == 0). Disabling profilePasses.");
         mDesc.profilePasses = false;
     }
-    // Validate presentation mode against the swapchain handle.
-    if (mDesc.present)
-    {
-        CHECK_MSG(mSwapchain.IsValid(),
-                  "Renderer created with present=true but no swapchain was provided. "
-                  "For headless rendering, construct with present=false and an explicit renderExtent.");
-    }
-    else
-    {
-        CHECK_MSG(!mSwapchain.IsValid(),
-                  "Renderer created with present=false but a swapchain was provided. "
-                  "Headless rendering does not use a swapchain.");
-    }
     LOG(Renderer, LogDebug, "** Renderer Init **");
     LOG(Renderer, LogDebug, "Async Compute:\t{}", mDesc.asyncCompute ? "Supported" : "No Support");
-    LOG(Renderer, LogDebug, "Presentation:\t{}", mDesc.present ? "Swapchain" : "Headless");
-    if (!mDesc.present)
-        LOG(Renderer, LogDebug, "Headless extent:\t{}x{}", mDesc.renderExtent.x, mDesc.renderExtent.y);
+    LOG(Renderer, LogDebug, "Presentation:\t{}", mSwapchain.IsValid() ? "Swapchain" : "Headless");
     const char* kRaytracingSupportLevels[] = {"No Support", "Inline RT", "RT Pipeline",
                                               "RT Pipeline w/ Shader Execution Reordering"};
     auto const& caps = device->GetCapabilities();
@@ -75,12 +60,11 @@ void Renderer::BeginSetup()
     CHECK_MSG(mState == State::Undefined, "Bad Setup state. Current state is {}. Note that the Renderer can only be set up once.", mState);
     mState = State::Setup;
     mSetup = ConstructUnique<RendererSetup>(mAllocator, mAllocator);
-    if (mDesc.present)
+    if (mSwapchain.IsValid())
         SetSwapchain(mSwapchain);
     else
     {
-        // Headless: frames-in-flight come from the desc, not a swapchain.
-        mFrameSwaps = std::max<uint32_t>(mDesc.framesInFlight, 1u);
+        mFrameSwaps = 1;
         SetFrameSyncObjects();
     }
 }
@@ -342,8 +326,8 @@ void Renderer::BindBackbufferRTV(PassHandle pass,
                                  RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending) const
 {
     CHECK(mState == State::Setup);
-    CHECK_MSG(mDesc.present,
-              "BindBackbufferRTV is not available in a headless Renderer (present=false). "
+    CHECK_MSG(mSwapchain.IsValid(),
+              "BindBackbufferRTV is not available in a headless Renderer (no swapchain). "
               "Render into an explicit texture via BindTextureRTV instead.");
     auto& tpass = mSetup->trackedPasses[pass];
     tpass.backbufferRTV = blending;
@@ -355,8 +339,8 @@ void Renderer::BindBackbufferRTV(PassHandle pass,
 void Renderer::BindBackbufferUAV(PassHandle pass, int set_index) const
 {
     CHECK(mState == State::Setup);
-    CHECK_MSG(mDesc.present,
-              "BindBackbufferUAV is not available in a headless Renderer (present=false). "
+    CHECK_MSG(mSwapchain.IsValid(),
+              "BindBackbufferUAV is not available in a headless Renderer (no swapchain). "
               "Write to an explicit texture via BindTextureUAV instead.");
     auto& tpass = mSetup->trackedPasses[pass];
     tpass.backbufferUAV = set_index;
@@ -1214,8 +1198,8 @@ void Renderer::FinalizeResources()
             [&](RHIAccelerationStructure* const ptr) { mResources->resources[handle] = ptr; },
             [&](auto const&) { throw std::runtime_error("Unhandled resource type at creation time"); });
     }
-    // Add back buffers (if we need to present)
-    if (mDesc.present)
+    // Add back buffers (if a swapchain is bound)
+    if (mSwapchain.IsValid())
     {
         for (size_t i = 0; i < mFrameSwaps; i++)
         {
@@ -1344,12 +1328,6 @@ void Renderer::SetFrameSyncObjects()
     {
         mSwaps[i].render = mDevice->CreateSemaphore(false);
         mSwaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
-        // The present (acquire) semaphore is only needed for WSI presentation.
-        if (mDesc.present)
-        {
-            mSwaps[i].present = mDevice->CreateSemaphore(false);
-            mSwaps[i].present->DebugSetObjectName(fmt::format("Present Semaphore of Swap {}", i).c_str());
-        }
         mSwaps[i].graphicsFence = mDevice->CreateFence(true);
         mSwaps[i].graphicsFence->DebugSetObjectName(fmt::format("Graphics Fence of Swap {}", i).c_str());
         mSwaps[i].computeFence = mDevice->CreateFence(true);
@@ -1363,8 +1341,8 @@ void Renderer::SetFrameSyncObjects()
 
 void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
 {
-    CHECK_MSG(mDesc.present, "Cannot set swapchain when the renderer is not created with Present support");
     CHECK_MSG(swapchain.IsValid(), "Cannot set swapchain when swapchain is not valid");
+    mSwapchain = swapchain;
     mFrameSwaps = swapchain->GetImages().size();
     LOG(Renderer, LogInfo, "Swapchain uses {} back buffers", mFrameSwaps);
     if (mState == State::Execute)
@@ -1408,9 +1386,17 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
             mSetup->trackedResources[mSwaps[i].backbuffer].ResetStates();
         }
     }
-    mSwapchain = swapchain;
     // Reset semaphores index and swapchain frame count
     mFrameSwapped = mCurrentSwap = mCurrentSync = 0;
+    mExecuteSlotReady = false;
+}
+
+RHIDeviceHandle<RHIDeviceSemaphore> Renderer::GetRenderCompleteSemaphore() const
+{
+    CHECK_MSG(mSwapchain.IsValid(), "GetRenderCompleteSemaphore requires a bound swapchain");
+    CHECK_MSG(mCurrentSwap < mSwaps.size() && mSwaps[mCurrentSwap].render.IsValid(),
+              "Render complete semaphore not initialized");
+    return mSwaps[mCurrentSwap].render.View();
 }
 
 void Renderer::WaitForPreviousFrame()
@@ -1441,41 +1427,45 @@ void Renderer::WaitForPreviousFrame()
     mDevice->WaitForFences(wait, true, -1);
 }
 
-void Renderer::BeginExecute()
+void Renderer::WaitForExecuteSlot()
+{
+    CHECK_MSG(mState == State::PostSetup,
+              "Renderer bad state ({}). WaitForExecuteSlot() must be called before BeginExecute().", mState);
+    if (mExecuteSlotReady)
+        return;
+    ZoneScopedN("Wait for GPU");
+    Vector<RHIDeviceFence*> wait(mAllocator);
+    wait.reserve(2);
+    if (mSetup && mSetup->executionAnyGraphics)
+        wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
+    if (mSetup && mSetup->executionAnyCompute)
+        wait.push_back(mSwaps[mCurrentSync].computeFence.Get());
+    if (!wait.empty())
+    {
+        mDevice->WaitForFences(wait, true, -1);
+        mDevice->ResetFences(wait);
+    }
+    mExecuteSlotReady = true;
+}
+
+void Renderer::BeginExecute(uint32_t swapImageIndex, RHIDeviceSemaphore* imageAcquire)
 {
     CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", mState);
     ZoneScoped;
+    if (!mExecuteSlotReady)
+        WaitForExecuteSlot();
+    mExecuteSlotReady = false;
+    mExecuteImageAcquire = imageAcquire;
     mState = State::Execute;
     // Reset per-frame arena
     mExecuteAlloc.Reset(mExecuteArena);
     mExecuteSubmits = Construct<Vector<Pair<RHIDeviceQueueType, RHIDeviceQueue::SubmitDesc>>>(mExecuteAlloc.Ptr(),
         mExecuteAlloc.Ptr());
     mExecuteSubmits->reserve(mSetup->executionGroups.size());
-    Vector<RHIDeviceFence*> wait(mExecuteAlloc.Ptr());
-    wait.reserve(2);
-    if (mSetup->executionAnyGraphics)
-        wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
-    if (mSetup->executionAnyCompute)
-        wait.push_back(mSwaps[mCurrentSync].computeFence.Get());
-    if (wait.size())
+    if (mSwapchain.IsValid())
     {
-        ZoneScopedN("Wait for GPU");
-        mDevice->WaitForFences(wait, true, -1);
-        mDevice->ResetFences(wait);
-    }
-    if (mDesc.present && mSetup->executionAnyGraphics)
-    {
-        ZoneScopedN("Acquire Next Image");
-        try
-        {
-            mCurrentSwap = mSwapchain->GetNextImage(-1, mSwaps[mCurrentSync].present, {});
-        }
-        catch (RHISwapchainResizeException&)
-        {
-            mState = State::PostSetup;
-            throw;
-        }
-        CHECK_MSG(mCurrentSwap < mFrameSwaps, "Invalid swapchain image index {}", mCurrentSwap);
+        CHECK_MSG(swapImageIndex < mFrameSwaps, "Invalid swapchain image index {}", swapImageIndex);
+        mCurrentSwap = swapImageIndex;
     }
     {
         ZoneScopedN("Reset Cmds");
@@ -1805,8 +1795,8 @@ void Renderer::ExecuteFrame()
             if (passes[handle].used)
                 active.emplace_back(handle);
         // Record all the active tasks
-        // If this is the last group and present is needed
-        const bool needPresent = static_cast<size_t>(group.groupIndex) == groups.size() - 1 && mDesc.present;
+        // If this is the last group and a swapchain backbuffer needs Present-layout + WSI sync
+        const bool needPresent = static_cast<size_t>(group.groupIndex) == groups.size() - 1 && mSwapchain.IsValid();
         // Graphics then Compute - some resources (e.g. depth) needs to be transitioned on
         // and only on the most capable queue.
         size_t groupIndex = group.groupIndex;
@@ -2002,7 +1992,7 @@ void Renderer::ExecuteFrame()
                           "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
                 waitStage->push_back(allStages | RHIPipelineStageBits::BottomOfPipe);
                 auto pPresentSemaphores = ConstructSpan<RHIDeviceSemaphore*>(mExecuteAlloc.Ptr(), 2);
-                pPresentSemaphores[0] = mSwaps[mCurrentSync].present.Get();
+                pPresentSemaphores[0] = mExecuteImageAcquire;
                 pPresentSemaphores[1] = mSwaps[GetSwap()].render.Get();
                 mExecuteSubmits->push_back({RHIDeviceQueueType::Graphics,
                                             {.timelineWaits = *wait,
@@ -2059,24 +2049,6 @@ void Renderer::EndExecute()
             q->Submit({{submits}}, f);
             ctr++;
         }
-    }
-    // Present if needed
-    if (mDesc.present && mSetup->executionAnyGraphics)
-    {
-        ZoneScopedN("Present");
-        try
-        {
-            mGraphicsQueue->Present(
-                {.imageIndex = GetSwap(), .swapchain = mSwapchain.Get(), .waits = {{mSwaps[GetSwap()].render.Get()}}});
-        }
-        catch (RHISwapchainResizeException&)
-        {
-            mState = State::PostSetup;
-            throw;
-        }
-        auto p2p = std::chrono::steady_clock::now() - mSwaps[mCurrentSync].dbgSwapLastPresentTick;
-        mSwaps[mCurrentSync].dbgSwapLastPresentTick = std::chrono::steady_clock::now();
-        mSwaps[mCurrentSync].dbgSwapLastPresentToPresentTicks = p2p.count();
     }
     mCurrentSync = (mCurrentSync + 1) % mFrameSwaps;
     mFrameSwapped++;
@@ -2279,10 +2251,4 @@ Span<const uint64_t> Renderer::DbgProfilePassTiming(uint64_t sync, float& resolu
         return mSwaps[sync].dbgQueryPassTimestampsResults;
     }
     return {};
-}
-
-uint64_t Renderer::DbgProfilePresentTiming(uint64_t sync, float& resolutionNS) const
-{
-    resolutionNS = 1 / (std::chrono::steady_clock::period::num * (1e9f / std::chrono::steady_clock::period::den));
-    return mSwaps[sync].dbgSwapLastPresentToPresentTicks;
 }

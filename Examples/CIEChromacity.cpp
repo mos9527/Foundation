@@ -160,7 +160,7 @@ int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("CIE Chromaticity Example"), 1024, 768,
                                           Examples_SDLWindowFlagsVulkan);
-    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {
+    auto [renderer, app, device, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, {
         .threadCount = 0 /* ST recording */
     });
 
@@ -296,7 +296,7 @@ int main(int argc, char** argv)
                                  : "CPU line raster: X(red), Y(green), Z(blue), normalized");
         Examples_Text(input, fmt::format("center=({:.4f}, {:.4f}) range=({:.4f}, {:.4f})", activeView.centerX,
                                          activeView.centerY, activeView.rangeX, activeView.rangeY));
-        Examples_NewFrame(window, renderer, swapchain);
+        Examples_NewFrame(window, renderer, presenter, swapchain);
     }
 
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);

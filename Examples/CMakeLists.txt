@@ -6,7 +6,7 @@ add_subdirectory(Shaders)
 add_subdirectory(Samples)
 
 add_library(Example_Common STATIC Examples.cpp)
-target_link_libraries(Example_Common PUBLIC Foundation_RenderCore Foundation_RHIVulkan Foundation_RenderUtils Foundation_Rasterizer Foundation_Pathtracer ThirdParty_STB argh)
+target_link_libraries(Example_Common PUBLIC Foundation_Presenter Foundation_RenderCore Foundation_RHIVulkan Foundation_RenderUtils Foundation_Rasterizer Foundation_Pathtracer ThirdParty_STB argh)
 target_include_directories(Example_Common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (ANDROID)

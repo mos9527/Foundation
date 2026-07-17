@@ -9,7 +9,7 @@ int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("MipGeneration Example"), 512, 512,
                                           Examples_SDLWindowFlagsVulkan);
-    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv,
+    auto [renderer, app, device, swapchain, presenter] = Examples_InitVulkan(window, argc, argv,
                                                                   {
                                                                       .asyncCompute = false, /* Nothing to overlap */
                                                                       .threadCount = 0, /* ST recording */
@@ -111,7 +111,7 @@ int main(int argc, char** argv)
             Examples_Text(input, fmt::format("Mip Generation FPS: {}", fps.Update()));
             Examples_Slider(input, "Preview LOD", previewLod, 0.0f, maxPreviewLod, 1.0f);
             previewLod = std::round(previewLod);
-            Examples_NewFrame(window, renderer, swapchain);
+            Examples_NewFrame(window, renderer, presenter, swapchain);
         }
         texture.Release(); // Release - destructs with the device
     }

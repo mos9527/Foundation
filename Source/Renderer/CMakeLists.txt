@@ -53,3 +53,12 @@ target_link_libraries(Foundation_Pathtracer PUBLIC
     Foundation_RenderUtils
 )
 target_include_directories(Foundation_Pathtracer PUBLIC ..)
+
+add_library(Foundation_Presenter STATIC
+    Presenter.cpp
+)
+target_link_libraries(Foundation_Presenter PUBLIC
+    Foundation_RenderCore
+    Foundation_RHICore
+)
+target_include_directories(Foundation_Presenter PUBLIC ..)

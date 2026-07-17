@@ -31,39 +31,10 @@ namespace Foundation::RenderCore
          */
         bool asyncCompute{true};
         /**
-         * @brief Enable presentation support.
-         *
-         * @note Enabling this implies a valid @ref RHISwapchain handle is provided to the @ref Renderer
-         *       on creation (see @ref Renderer::Renderer), otherwise an exception is thrown.
-         *
-         * @note When disabled, the Renderer runs headlessly: no @ref RHISwapchain is required, the
-         *       backbuffer is not acquired or presented, and passes that bind the backbuffer
-         *       (@ref BindBackbufferRTV / @ref BindBackbufferUAV) will throw at setup time. The render
-         *       graph must instead write to explicit textures created via @ref CreateResource.
-         */
-        bool present{true};
-        /**
          * @brief Number of worker threads to use for recording command lists.
          * @note Set this to 0 to disable multithreaded command recording.
          */
         uint32_t threadCount{4u};
-        /**
-         * @brief Number of frames that may be simultaneously in-flight when running headlessly
-         *        (@ref present == false).
-         *
-         * @note Ignored when @ref present is true; in that case the frame count is derived from the
-         *       swapchain image count. Headless multi-buffering governs sync slots only — callers are
-         *       responsible for per-frame output resources or calling @ref WaitForPreviousFrame() before
-         *       consuming GPU-written data (e.g. readback).
-         */
-        uint32_t framesInFlight{2u};
-        /**
-         * @brief Fixed render extent used when running headlessly (@ref present == false).
-         *
-         * @note Ignored when @ref present is true; queried via @ref GetSwapchainExtent() in that case.
-         *       Headless callers should read it back through @ref GetRenderExtent().
-         */
-        RHIExtent2D renderExtent{};
         /**
          * @brief Optional PSO cache to potentially speed up pipeline state recompilation
          *        in Setup time.
@@ -188,6 +159,8 @@ namespace Foundation::RenderCore
         uint32_t mFrameSwaps{1}; // Max frames in flight
         uint32_t mCurrentSync{0};
         uint32_t mCurrentSwap{0};
+        bool mExecuteSlotReady{false}; // WaitForExecuteSlot already waited/reset current sync
+        RHIDeviceSemaphore* mExecuteImageAcquire{nullptr};
 
         UniquePtr<ExecuteResources> mResources;
         RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mDescPool;
@@ -197,7 +170,7 @@ namespace Foundation::RenderCore
         {
             // Index of this swap
             const size_t swapIndex;
-            RHIDeviceScopedHandle<RHIDeviceSemaphore> render{}, present{};
+            RHIDeviceScopedHandle<RHIDeviceSemaphore> render{};
             RHIDeviceScopedHandle<RHIDeviceFence> graphicsFence{}, computeFence{};
             // Texture view for the backbuffer
             RHITextureScopedHandle<RHITextureView> view{};
@@ -207,9 +180,7 @@ namespace Foundation::RenderCore
             // [Profiling] Timestamp Query Pool
             RHIDeviceScopedHandle<RHIDeviceQueryPool> dbgQueryPool{};
             Vector<uint64_t> dbgQueryPassTimestampsResults;
-            // [Profiling] Present timings
-            std::chrono::steady_clock::time_point dbgSwapLastPresentTick{};
-            uint64_t dbgSwapLastPresentToPresentTicks{0};
+
             FrameSyncObjects(size_t swapIndex, Allocator* alloc) :
                 swapIndex(swapIndex), dbgQueryPassTimestampsResults(alloc)
             {
@@ -719,31 +690,8 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] RHIDevice* GetDevice() const { return mDevice.Get(); }
         /**
-         * @brief Get the extents the renderer is rendering at.
-         *
-         * When presentation is enabled, this is the current swapchain extent. When running headlessly,
-         * this is the fixed @ref RendererDesc::renderExtent provided at construction.
-         */
-        [[nodiscard]] RHIExtent2D GetRenderExtent() const
-        {
-            if (mDesc.present)
-            {
-                CHECK(mSwapchain && "Swapchain not initialized");
-                return mSwapchain->mDesc.extents;
-            }
-            return mDesc.renderExtent;
-        }
-        /**
-         * @brief Get the render extents as a 3D extent with depth 1.
-         */
-        [[nodiscard]] RHIExtent3D GetRenderExtent3D() const
-        {
-            auto xy = GetRenderExtent();
-            return {xy.x, xy.y, 1};
-        }
-        /**
          * @brief Get the current swapchain extents.
-         * @note Only valid when presentation is enabled. Prefer @ref GetRenderExtent() for headless-safe code.
+         * @note Requires a bound swapchain. Headless callers should track extents themselves.
          */
         [[nodiscard]] RHIExtent2D GetSwapchainExtent() const
         {
@@ -752,7 +700,7 @@ namespace Foundation::RenderCore
         }
         /**
          * @brief Get the current swapchain extents as a 3D extent with depth 1.
-         * @note Only valid when presentation is enabled. Prefer @ref GetRenderExtent3D() for headless-safe code.
+         * @note Requires a bound swapchain. Headless callers should track extents themselves.
          */
         [[nodiscard]] RHIExtent3D GetSwapchainExtent3D() const
         {
@@ -956,13 +904,15 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] bool IsAsyncComputeEnabled() const { return mDesc.asyncCompute; }
         /**
-         * @brief Returns whether the swapchain is enabled.
+         * @brief Returns whether a swapchain is bound.
          *
-         * If this returns false, no backbuffer will be acquired or presented,
-         * and any passes that attempt to bind the backbuffer (@ref BindBackbufferRTV /
+         * If this returns false, the Renderer is headless: no backbuffer waits/signals are
+         * scheduled, and any passes that attempt to bind the backbuffer (@ref BindBackbufferRTV /
          * @ref BindBackbufferUAV) will throw at setup time.
+         *
+         * Acquire/Present are always the caller's responsibility when a swapchain is bound.
          */
-        [[nodiscard]] bool IsPresentEnabled() const { return mDesc.present; }
+        [[nodiscard]] bool IsPresentEnabled() const { return mSwapchain.IsValid(); }
         /**
          * @brief Update the swapchain to a new one.
          * You must call this when the window is resized or the swapchain is invalidated.
@@ -977,6 +927,12 @@ namespace Foundation::RenderCore
         * @brief Returns the currently used @ref RHISwapchain object.
         */
         RHISwapchain* GetSwapchain() const { return mSwapchain.Get(); }
+
+        /**
+         * @brief Binary semaphore signaled when GPU work for the current swap image is complete.
+         */
+        [[nodiscard]] RHIDeviceHandle<RHIDeviceSemaphore> GetRenderCompleteSemaphore() const;
+
         /**
          * @brief Blocks until the most recently submitted frame has finished executing on the GPU.
          *
@@ -998,42 +954,60 @@ namespace Foundation::RenderCore
          */
         void WaitForPreviousFrame();
         /**
-         * @brief Resets the temporary execution allocator , and waits for the possibly multi-buffered
-         * next frame to finish rendering.
+         * @brief Waits for (and resets) the fences of the next sync slot to execute.
+         *
+         * Must be called before @ref RHISwapchain::GetNextImage when a swapchain is bound, so the
+         * acquire semaphore for this slot is safe to reuse. @ref BeginExecute will skip a redundant
+         * wait if this was already called for the current slot.
+         *
+         * Headless callers may skip this; @ref BeginExecute waits automatically.
+         */
+        void WaitForExecuteSlot();
+        /**
+         * @brief Resets the temporary execution allocator and selects the acquired swapchain image
+         *        (when a swapchain is bound).
+         *
+         * @param swapImageIndex Image index from @ref RHISwapchain::GetNextImage. Ignored when headless.
          *
          * See also @ref GetSync(), @ref GetSwap()
          *
          * @note This MUST be called before entering Execute* functions.
+         * @note Acquire/Present are performed by the caller; see @ref GetImageAcquireSemaphore /
+         *       @ref GetRenderCompleteSemaphore.
          */
-        void BeginExecute();
+        void BeginExecute(uint32_t swapImageIndex = 0, RHIDeviceSemaphore* imageAcquire = nullptr);
         /**
          * @brief Executes all passes in the render graph for one frame.
          *
-         * This includes recording command lists, submitting them to the appropriate queues,
-         * and presenting the swapchain if enabled.
+         * This includes recording command lists and submitting them to the appropriate queues.
+         * When a swapchain is bound, the last submit waits on the acquire semaphore and signals
+         * the render-complete semaphore; the caller must Present afterward.
          *
          * @note This is asynchronously executed - the function will return
          *       once all passes have been *scheduled* for recording.
          *       @ref EndExecute() is the synchronization point for the frame.
          *       Meaning - if work is required during the frame, you can do it *after*
          *       @ref ExecuteFrame() and *before* @ref EndExecute() to overlap recording work.
-         * @note This MUST be called after BeginExecuteImpl(), and before EndExecuteImpl().
+         * @note This MUST be called after BeginExecute(), and before EndExecute().
          *
          * @code{.cpp}
-         *  // With the above Execute... functions, a correct usage may look like this:
-         *  BeginExecute();
+         *  WaitForExecuteSlot();
+         *  auto image = swapchain->GetNextImage(-1, renderer->GetImageAcquireSemaphore(), {});
+         *  BeginExecute(image);
          *  // ...Additional pre-frame logic...
          *  ExecuteFrame();
          *  // ...Additional post-frame logic...
          *  EndExecute();
+         *  queue->Present({.imageIndex = image, .swapchain = swapchain,
+         *                  .waits = {{renderer->GetRenderCompleteSemaphore().Get()}}});
          *  @endcode
          */
         void ExecuteFrame();
         /**
-         * @brief Ends the execution phase and performs GPU submission, possibly with a @ref RHIDeviceQueue::Present
-         * @note This MUST be called after ExecuteFrame(), and before BeginExecuteImpl() of the next frame.
+         * @brief Ends the execution phase and performs GPU submission.
+         * @note This MUST be called after ExecuteFrame(), and before BeginExecute() of the next frame.
          * @note This function will block until all command list recording is finished, but will NOT wait for GPU.
-         * @throws @ref RHISwapchainResizeException if swapchain is resized and has not been recreated.
+         * @note Does not Present; the caller must Present using @ref GetRenderCompleteSemaphore.
          */
         void EndExecute();
 #pragma endregion
@@ -1050,12 +1024,7 @@ namespace Foundation::RenderCore
          * @note  A span of size 0 is ALWAYS returned if no timing information is available.
          */
         Span<const uint64_t> DbgProfilePassTiming(uint64_t sync, float& resolutionNS) const;
-        /**
-         * @brief Retrieves the total ticks between two subsequent swapchain presents by @ref EndExecute,
-         *        measured on CPU with system's high-resolution timer.
-         *        The value is refreshed upon @ref EndExecute() call.
-         */
-        uint64_t DbgProfilePresentTiming(uint64_t sync, float& resolutionNS) const;
+
 #pragma endregion
     };
     ENUM_NAME_CONV_BEGIN(Renderer::State)

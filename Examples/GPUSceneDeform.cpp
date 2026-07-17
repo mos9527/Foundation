@@ -71,7 +71,7 @@ int main(int argc, char** argv)
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("GPUScene Dynamic Geometry (BLAS refit)"),
                                           1280, 720, Examples_SDLWindowFlagsVulkan);
     RendererDesc rendererDesc{};
-    auto [renderer0, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, rendererDesc);
+    auto [renderer0, app, device, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, rendererDesc);
     UniquePtr<Renderer> renderer(renderer0, StlDeleter<Renderer>{GLOBAL_ALLOC});
 
     // --- Build the deforming grid's fixed topology + static (x,z,uv) attributes -------------
@@ -325,7 +325,7 @@ int main(int argc, char** argv)
                                              gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount(), refitMode,
                                              fps.Update(), paused ? "   [PAUSED]" : ""));
 
-            Examples_NewFrame(window, renderer.get(), swapchain);
+            Examples_NewFrame(window, renderer.get(), presenter, swapchain);
             if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
             if (cameraMoved || !paused)

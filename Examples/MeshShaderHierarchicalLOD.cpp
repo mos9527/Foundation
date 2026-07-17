@@ -23,7 +23,7 @@ int main(int argc, char** argv)
     UBO ubo{ .threshold = 0.01f};
     ExampleInputState input{};
     /* Setup */
-    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {});
+    auto [renderer, app, device, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, {});
     CHECK_MSG(device->GetCapabilities().meshShaders, "Mesh Shader support required, but is unavailable");
     auto meshData = device->CreateBuffer({
         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer,
@@ -154,7 +154,7 @@ int main(int argc, char** argv)
         camera.aspect = swapchain->GetAspectRatio();
         camera.Update(input, dt);
         ubo.view = camera.view, ubo.proj = camera.proj, ubo.zNear = camera.zNear;
-        Examples_NewFrame(window, renderer, swapchain);
+        Examples_NewFrame(window, renderer, presenter, swapchain);
     }
     meshData.Release(); // Release - destructs with the device
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);
