@@ -1,8 +1,15 @@
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+#include "Application.hpp"
+#include "Device.hpp"
+#include "Swapchain.hpp"
+#include "Surface.hpp"
+
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
 vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc desc)
 {
-    auto const& surface = mDevice.GetVkSurface();
+    auto const& surface = static_cast<VulkanSurface*>(desc.surface.Get())->GetVkSurface();
     auto surface_caps = mDevice.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface);
     auto present_modes = mDevice.GetVkPhysicalDevice().getSurfacePresentModesKHR(surface);
     // Validate requested parameters

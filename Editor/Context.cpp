@@ -154,7 +154,9 @@ void UpdateSwapchain(FContext* context)
     context->device->WaitIdle();
     if (context->swapchain)
         context->swapchain.Reset();
-    auto supportedFormats = context->device->GetSwapchainSupportedFormats();
+    if (!context->surface)
+        context->surface = context->device->CreateSurface(RHISurface::SurfaceDesc{.windowHandle = context->window});
+    auto supportedFormats = context->surface->GetSupportedFormats();
     auto firstHDR = Ranges::FirstOf(Views::all(kFormatPreferenceListHDR) |
                                   Views::filter(Ranges::ContainedBy(supportedFormats)));
     auto firstSDR = Ranges::FirstOf(Views::all(kFormatPreferenceListSDR) |
@@ -171,7 +173,7 @@ void UpdateSwapchain(FContext* context)
     CHECK_MSG(format.has_value(), "No supported swapchain format found!");
     auto present =
         Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
-                        Views::filter(Ranges::ContainedBy(context->device->GetSwapchainSupportedPresentModes())));
+                        Views::filter(Ranges::ContainedBy(context->surface->GetSupportedPresentModes())));
     CHECK_MSG(present.has_value(), "No supported presentation mode found!");
     LOG(Editor, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format, format.value().colorSpace);
     LOG(Editor, LogDebug, "Selected swapchain present mode: {}", present.value());
@@ -181,6 +183,7 @@ void UpdateSwapchain(FContext* context)
         .extents = RHIExtent3D{w, h, 1},
         .minBufferCount = 3,
         .presentMode = present.value(),
+        .surface = context->surface,
     });
 }
 
@@ -200,7 +203,7 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::Dev
     context->window = window;
     UpdateWindowHDRState(context);
     context->application = ConstructBase<RHIApplication, VulkanApplication>(allocator, allocator);
-    context->device = context->application->CreateDevice(deviceDesc, window);
+    context->device = context->application->CreateDevice(deviceDesc);
     context->psoCachePath = PipelineCachePathForDevice(*context->device.Get());
     
     // Clear stale caches
@@ -257,6 +260,7 @@ void DestroyContext(FContext* context)
     }
     context->psoCache.Reset();
     context->swapchain.Reset();
+    context->surface.Reset();
     context->device.Reset();
     Destruct(context->allocator, context->application);
     Destruct(context->allocator, context);

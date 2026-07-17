@@ -35,7 +35,7 @@ namespace
 int main(int argc, char** argv)
 {
     RendererDesc rendererDesc{.threadCount = 0};
-    auto [renderer0, app, device, swapchain, presenter] = Examples_InitVulkan(nullptr, argc, argv, rendererDesc);
+    auto [renderer0, app, device, surface, swapchain, presenter] = Examples_InitVulkan(nullptr, argc, argv, rendererDesc);
     UniquePtr<Renderer> renderer(renderer0, StlDeleter<Renderer>{GLOBAL_ALLOC});
 
     {
@@ -355,7 +355,7 @@ int main(int argc, char** argv)
         // GPUScene tears down here (end of scope); renderer/app/device tear down below.
     }
 
-    Examples_DestroyVulkan(nullptr, renderer.release(), app, device, swapchain);
+    Examples_DestroyVulkan(nullptr, renderer.release(), app, device, surface, swapchain);
     fmt::println("HeadlessPathTracer: OK");
     return 0;
 }

@@ -16,7 +16,7 @@ int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("BindlessSimple Example"), 800, 600,
                                           Examples_SDLWindowFlagsVulkan);
-    auto [renderer, app, device, swapchain, presenter] =
+    auto [renderer, app, device, surface, swapchain, presenter] =
         Examples_InitVulkan(window, argc, argv,
                             {
                                 .asyncCompute = false, .threadCount = 0, /* ST recording */
@@ -107,11 +107,11 @@ int main(int argc, char** argv)
         renderer->EndSetup();
 
         ExampleFpsCounter fps;
-        while (!Examples_ShouldClose(window, renderer, swapchain))
+        while (!Examples_ShouldClose(window, renderer, surface, swapchain))
         {
             lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
-            Examples_NewFrame(window, renderer, presenter, swapchain);
+            Examples_NewFrame(window, renderer, presenter, surface, swapchain);
         }
     }
-    Examples_DestroyVulkan(window, renderer, app, device, swapchain);
+    Examples_DestroyVulkan(window, renderer, app, device, surface, swapchain);
 }

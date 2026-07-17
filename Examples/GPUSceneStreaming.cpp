@@ -114,7 +114,7 @@ int main(int argc, char** argv)
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("GPUScene Async Streaming"), 1280, 720,
                                           Examples_SDLWindowFlagsVulkan);
     RendererDesc rendererDesc{};
-    auto [renderer0, app, device, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, rendererDesc);
+    auto [renderer0, app, device, surface, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, rendererDesc);
     UniquePtr<Renderer> renderer(renderer0, StlDeleter<Renderer>{GLOBAL_ALLOC});
 
     constexpr uint32_t kBlobCount = 96u; // total procedural meshes that can be streamed in
@@ -364,7 +364,7 @@ int main(int argc, char** argv)
         while (true)
         {
             Examples_BeginFrameInput(input);
-            if (Examples_PollEvents(window, renderer.get(), swapchain, input))
+            if (Examples_PollEvents(window, renderer.get(), surface, swapchain, input))
                 break;
 
             uint64_t now = SDL_GetTicksNS();
@@ -449,7 +449,7 @@ int main(int argc, char** argv)
                                                   : streaming ? "   [streaming...]"
                                                               : ""));
 
-            Examples_NewFrame(window, renderer.get(), presenter, swapchain);
+            Examples_NewFrame(window, renderer.get(), presenter, surface, swapchain);
             if (renderState.mode == ExampleGPUSceneRenderMode::PathTracer)
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
             // The scene changes whenever it streams, a wave spawns, the camera moves, or the blobs
@@ -460,6 +460,6 @@ int main(int argc, char** argv)
 
         device->WaitIdle();
     }
-    Examples_DestroyVulkan(window, renderer.release(), app, device, swapchain);
+    Examples_DestroyVulkan(window, renderer.release(), app, device, surface, swapchain);
     return 0;
 }

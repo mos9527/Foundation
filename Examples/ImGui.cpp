@@ -10,7 +10,7 @@ int main(int argc, char** argv)
 {
     SDL_Window* window =
         SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("ImGui Example"), 800, 600, Examples_SDLWindowFlagsVulkan);
-    auto [renderer, app, device, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, {
+    auto [renderer, app, device, surface, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, {
         .threadCount = 0 /* ST recording */
     });
     CSDebugTextData lines[5]{};
@@ -28,7 +28,7 @@ int main(int argc, char** argv)
     while (true)
     {
         Examples_BeginFrameInput(input);
-        if (Examples_PollEvents(window, renderer, swapchain, input, nullptr, ImGui_ImplFoundation_ProcessEvent))
+        if (Examples_PollEvents(window, renderer, surface, swapchain, input, nullptr, ImGui_ImplFoundation_ProcessEvent))
             break;
         lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
         ImGui_ImplFoundation_NewFrame();
@@ -59,8 +59,8 @@ int main(int argc, char** argv)
             try
             {
                 swapchain.Reset();
-                device->RefreshPresentationSurface();
-                if (Examples_CreateSwapchain(window, device.Get(), swapchain))
+                surface.Reset();
+                if (Examples_CreateSwapchain(window, device.Get(), surface, swapchain))
                 {
                     renderer->SetSwapchain(swapchain);
                 }
@@ -72,6 +72,6 @@ int main(int argc, char** argv)
         }
     }
     ImGui_ImplFoundation_Shutdown();
-    Examples_DestroyVulkan(window, renderer, app, device, swapchain);
+    Examples_DestroyVulkan(window, renderer, app, device, surface, swapchain);
     return 0;
 }

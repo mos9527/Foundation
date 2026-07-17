@@ -154,13 +154,12 @@ Span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const
     return {mDevices.begin(), mDevices.end()};
 }
 
-RHIApplicationScopedHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice::DeviceDesc const& desc,
-                                                                            SDL_Window* window)
+RHIApplicationScopedHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice::DeviceDesc const& desc)
 {
     CHECK_MSG(desc.id < mPhysicalDevices.size(), "Invalid device id. Total {} devices, requested {}", mPhysicalDevices.size(), desc.id);
     auto& phys_device = mPhysicalDevices[desc.id];
     LOG(VulkanApplication, LogInfo, "Using device {} (#{})", mDevices[desc.id].name, desc.id);
-    Handle handle = mStorage.CreateObject<VulkanDevice>(*this, phys_device, window);
+    Handle handle = mStorage.CreateObject<VulkanDevice>(*this, phys_device);
     return {this, handle};
 }
 RHIDevice* VulkanApplication::GetDevice(Handle handle) const { return mStorage.GetObjectPtr<RHIDevice>(handle); }

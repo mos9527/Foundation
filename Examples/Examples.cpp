@@ -389,7 +389,7 @@ void ProcessTouchMotion(ExampleInputState& input, ExampleTouchState& movedTouch)
 }
 
 void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState& input,
-                  Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap)
+                  Renderer* renderer, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swap)
 {
     switch (event.type)
     {
@@ -398,7 +398,7 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
     case SDL_EVENT_WINDOW_RESTORED:
         try
         {
-            if (Examples_CreateSwapchain(window, swap.mFactory, swap))
+            if (Examples_CreateSwapchain(window, swap.mFactory, surface, swap))
                 renderer->SetSwapchain(swap);
         }
         catch (std::exception const& e)
@@ -407,9 +407,9 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
             try
             {
                 RHIDevice* device = swap.mFactory;
-                swap.Reset();
-                device->RefreshPresentationSurface();
-                if (Examples_CreateSwapchain(window, device, swap))
+            swap.Reset();
+            surface.Reset();
+            if (Examples_CreateSwapchain(window, device, surface, swap))
                     renderer->SetSwapchain(swap);
             }
             catch (std::exception const& refreshError)
@@ -517,7 +517,7 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
 }
 } // namespace
 
-bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISwapchain>& outSwap)
+bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISurface>& outSurface, RHIDeviceScopedHandle<RHISwapchain>& outSwap)
 {
     int w, h;
     SDL_GetWindowSizeInPixels(window, &w, &h);
@@ -527,10 +527,13 @@ bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceSc
     device->WaitIdle();
     if (outSwap)
         outSwap.Reset();
+    if (!outSurface)
+        outSurface = device->CreateSurface(RHISurface::SurfaceDesc{.windowHandle = window});
+
     auto format = Ranges::FirstOf(Views::all(kFormatPreferenceList) |
-                                  Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedFormats())));
+                                  Views::filter(Ranges::ContainedBy(outSurface->GetSupportedFormats())));
     auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
-                                   Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedPresentModes())));
+                                   Views::filter(Ranges::ContainedBy(outSurface->GetSupportedPresentModes())));
     CHECK_MSG(format.has_value(), "No supported swapchain format found!");
     LOG(RenderApplication, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format,
         format.value().colorSpace);
@@ -542,6 +545,7 @@ bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceSc
         .extents = RHIExtent3D{w, h, 1},
         .minBufferCount = 3,
         .presentMode = present.value(),
+        .surface = outSurface,
     });
     return true;
 }
@@ -603,11 +607,11 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
 #endif
     }
     auto app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
-    auto device = headless ? app->CreateDevice({.id = static_cast<uint32_t>(gpuId)})
-                           : app->CreateDevice({.id = static_cast<uint32_t>(gpuId)}, window);
+    auto device = app->CreateDevice({.id = static_cast<uint32_t>(gpuId)});
     RHIDeviceScopedHandle<RHISwapchain> swap;
+    RHIDeviceScopedHandle<RHISurface> surface;
     if (!headless)
-        Examples_CreateSwapchain(window, *device, swap);
+        Examples_CreateSwapchain(window, device.Get(), surface, swap);
     RHIDeviceScopedHandle<RHIPipelineStateCache> psoCache;
     String psoCachePath;
     if (!desc.pipelineCache)
@@ -635,11 +639,12 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     Presenter* presenter = nullptr;
     if (swap.IsValid())
         presenter = Construct<Presenter>(GLOBAL_ALLOC, device.Get(), swap, GLOBAL_ALLOC);
-    return std::make_tuple(renderer, app, std::move(device), std::move(swap), presenter);
+    return std::make_tuple(renderer, app, std::move(device), std::move(surface), std::move(swap), presenter);
 }
 
-bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap,
-                         ExampleInputState& input, SDL_Event* outLastEvent, void (*processEvent)(SDL_Event*))
+bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swap,
+                         ExampleInputState& input, SDL_Event* outLastEvent,
+                         void (*processEvent)(SDL_Event*))
 {
     bool shouldClose = false;
     SDL_Event event{};
@@ -663,13 +668,13 @@ bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScoped
             shouldClose = true;
             continue;
         }
-        ProcessEvent(window, event, input, renderer, swap);
+        ProcessEvent(window, event, input, renderer, surface, swap);
     }
     UpdateMoveVector(input);
     return shouldClose;
 }
 
-bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap,
+bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swap,
                           SDL_Event* outEvent)
 {
     ExampleInputState input{};
@@ -688,7 +693,7 @@ bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScope
         return false;
     if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
         return true;
-    ProcessEvent(window, event, input, renderer, swap);
+    ProcessEvent(window, event, input, renderer, surface, swap);
     return false;
 }
 
@@ -861,7 +866,7 @@ void Examples_NewFrame(Renderer* renderer)
     renderer->EndExecute();
 }
 
-bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presenter, RHIDeviceScopedHandle<RHISwapchain>& swapchain)
+bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presenter, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swapchain)
 {
     try
     {
@@ -879,8 +884,8 @@ bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presen
         {
             RHIDevice* device = swapchain.mFactory;
             swapchain.Reset();
-            device->RefreshPresentationSurface();
-            if (Examples_CreateSwapchain(window, device, swapchain))
+            surface.Reset();
+            if (Examples_CreateSwapchain(window, device, surface, swapchain))
                 renderer->SetSwapchain(swapchain);
         }
         catch (std::exception const& e)
@@ -893,6 +898,7 @@ bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presen
 
 void Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app,
                             RHIApplicationScopedHandle<RHIDevice>& device,
+                            RHIDeviceScopedHandle<RHISurface>& surface,
                             RHIDeviceScopedHandle<RHISwapchain>& swapchain)
 {
     if (device)
@@ -911,8 +917,10 @@ void Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplic
     if (psoCacheIt != psoCacheContexts.end())
         psoCacheContexts.erase(psoCacheIt);
     swapchain.Reset();
+    surface.Reset();
     device.Reset();
-    Destruct(GLOBAL_ALLOC, app);
+    if (app)
+        Destruct(GLOBAL_ALLOC, app);
     if (window)
         SDL_DestroyWindow(window);
 }

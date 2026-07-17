@@ -4,6 +4,7 @@
 #include "PipelineState.hpp"
 #include "Resource.hpp"
 #include "Shader.hpp"
+#include "Surface.hpp"
 #include "Swapchain.hpp"
 
 namespace Foundation::RHI
@@ -256,13 +257,15 @@ namespace Foundation::RHI
 
         [[nodiscard]] virtual RHIDeviceCapabilities GetCapabilities() const = 0;
         [[nodiscard]] virtual RHIPipelineStateCacheKey GetPipelineCacheKey() const = 0;
-        [[nodiscard]] virtual Span<RHISurfaceFormat const> GetSwapchainSupportedFormats() const = 0;
-        [[nodiscard]] virtual Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const = 0;
+        [[nodiscard]] virtual RHIDeviceScopedHandle<RHISurface>
+        CreateSurface(RHISurface::SurfaceDesc const& desc) = 0;
+        [[nodiscard]] virtual RHISurface* GetSurface(Handle handle) const = 0;
+        virtual void DestroySurface(Handle handle) = 0;
+
         [[nodiscard]] virtual RHIDeviceScopedHandle<RHISwapchain>
         CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) = 0;
         [[nodiscard]] virtual RHISwapchain* GetSwapchain(Handle handle) const = 0;
         virtual void DestroySwapchain(Handle handle) = 0;
-        virtual void RefreshPresentationSurface() {}
 
         [[nodiscard]] virtual RHIDeviceScopedHandle<RHIPipelineStateCache>
         CreatePipelineCache(RHIPipelineStateCache::PipelineStateCacheDesc const& desc) = 0;
@@ -383,6 +386,13 @@ namespace Foundation::RHI
                 mDevice->WaitIdle();
         }
         ~RHIDeviceIdleGuard() { WaitIdle(); }
+    };
+
+    template<>
+    struct RHIObjectTraits<RHIDevice, RHISurface>
+    {
+        static RHISurface* Get(const RHIDevice* device, Handle handle) { return device->GetSurface(handle); }
+        static void Destroy(RHIDevice* device, Handle handle) { device->DestroySurface(handle); }
     };
 
     template <>

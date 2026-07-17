@@ -5,6 +5,7 @@ namespace Foundation::RHI {
     class RHITexture;
     class RHIDeviceSemaphore;
     class RHIDeviceFence;
+    class RHISurface;
     struct RHISwapchainResizeException : std::exception {
         using std::exception::exception;
     };
@@ -31,6 +32,8 @@ namespace Foundation::RHI {
             uint32_t minBufferCount;
             // Present mode for the swap chain.
             RHISwapchainPresentMode presentMode;
+            // The surface to present to.
+            RHIDeviceHandle<RHISurface> surface;
         } mDesc;
         [[nodiscard]] virtual Span<RHITexture* const> GetImages() const = 0;
         [[nodiscard]] virtual Span<RHITextureView* const> GetViews() const = 0;

@@ -26,11 +26,7 @@ namespace Foundation::RHI {
         ~VulkanApplication() override;
         Span<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
 
-        RHIApplicationScopedHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc, SDL_Window* window) override;
-        RHIApplicationScopedHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc)
-        {
-            return CreateDevice(desc, nullptr);
-        }
+        RHIApplicationScopedHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc) override;
         RHIDevice* GetDevice(Handle handle) const override;
         void DestroyDevice(Handle handle) override;
 

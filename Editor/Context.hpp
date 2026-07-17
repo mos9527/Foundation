@@ -2,6 +2,7 @@
 #include <Core/AllocatorStack.hpp>
 #include <Core/ThreadPool.hpp>
 #include <RenderCore/Renderer.hpp>
+#include <RHICore/Surface.hpp>
 #include <SDL3/SDL.h>
 
 using namespace Foundation;
@@ -33,6 +34,7 @@ struct FContext
 
     RHIApplication* application{};
     RHIApplicationScopedHandle<RHIDevice> device;
+    RHIDeviceScopedHandle<RHISurface> surface;
     RHIDeviceScopedHandle<RHISwapchain> swapchain;
     RHIDeviceScopedHandle<RHIPipelineStateCache> psoCache;
     String psoCachePath;

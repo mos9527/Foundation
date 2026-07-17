@@ -16,6 +16,7 @@ namespace Foundation::RHI {
     class VulkanDevice;
     class VulkanSwapchain : public RHISwapchain {
         const VulkanDevice& mDevice;
+        RHIDeviceHandle<RHISurface> mSurface;
         vk::raii::SwapchainKHR mSwapchain{ nullptr };
         std::array<uint32_t, 2> mQueueFamilyIndices{};
         UniquePtr<RHIObjectPool<VulkanTexture>> mImages;

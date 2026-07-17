@@ -3,6 +3,7 @@
 #include <Core/Paths.hpp>
 #include <RHIVulkan/Application.hpp>
 #include <RenderCore/Renderer.hpp>
+#include <RHICore/Surface.hpp>
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp>
 #include <Renderer/Postprocess.hpp>
@@ -52,7 +53,7 @@ constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_
 //
 class Presenter;
 using ExampleVulkanContext =
-    std::tuple<Renderer*, VulkanApplication*, RHIApplicationScopedHandle<RHIDevice>, RHIDeviceScopedHandle<RHISwapchain>, Presenter*>;
+    std::tuple<Renderer*, VulkanApplication*, RHIApplicationScopedHandle<RHIDevice>, RHIDeviceScopedHandle<RHISurface>, RHIDeviceScopedHandle<RHISwapchain>, Presenter*>;
 
 struct ExampleClickableRegion
 {
@@ -166,12 +167,12 @@ struct ExampleGPUSceneRenderState
 ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc = {});
 
 // Drains all pending SDL events into the frame input state, resizing the swapchain as needed.
-bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap,
+bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swap,
                          ExampleInputState& input, SDL_Event* outLastEvent = nullptr,
                          void (*processEvent)(SDL_Event*) = nullptr);
 
 // Compatibility wrapper for simple examples that only need close/resize and optionally the last event.
-bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISwapchain>& swap,
+bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swap,
                           SDL_Event* outEvent = nullptr);
 
 void Examples_BeginFrameInput(ExampleInputState& input);
@@ -196,11 +197,12 @@ void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPU
 void Examples_GPUSceneFillCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera const& camera,
                                     RendererConfig const& config);
 void Examples_NewFrame(Renderer* renderer);
-bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presenter, RHIDeviceScopedHandle<RHISwapchain>& swapchain);
+bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presenter, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swapchain);
 void Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app,
                             RHIApplicationScopedHandle<RHIDevice>& device,
+                            RHIDeviceScopedHandle<RHISurface>& surface,
                             RHIDeviceScopedHandle<RHISwapchain>& swapchain);
-bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISwapchain>& outSwapchain);
+bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISurface>& outSurface, RHIDeviceScopedHandle<RHISwapchain>& outSwapchain);
 
 // Writes an 8-bit-per-channel image (e.g. from a readback buffer) to a PNG at `path`,
 // then opens it with the OS default viewer via SDL_OpenURL. `strideBytes` defaults to

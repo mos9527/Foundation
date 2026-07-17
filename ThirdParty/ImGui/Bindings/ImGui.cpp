@@ -52,7 +52,7 @@ struct ImGuiImplFoundationBd
     Foundation::RHI::RHIColorSpace colorSpace{};
     
     Vector<ImGuiImplFoundationFrameData> frames{GLOBAL_ALLOC};
-    Vector<Foundation::RHI::RHIDeviceScopedHandle<Foundation::RHI::RHIDeviceSemaphore>> imGuiRenderCompleteSemaphores{GLOBAL_ALLOC};
+    Vector<Foundation::RHI::RHIDeviceScopedHandle<Foundation::RHI::RHIDeviceSemaphore>> frameSemaphores{GLOBAL_ALLOC};
 };
 static UniquePtr<ImGuiImplFoundationBd> gBackendData = nullptr;
 
@@ -466,14 +466,14 @@ Foundation::RHI::RHIDeviceSemaphore* ImGui_ImplFoundation_EndFrame(
 
     auto* bd = gBackendData.get();
     
-    if (currentSwap >= bd->imGuiRenderCompleteSemaphores.size())
+    if (currentSwap >= bd->frameSemaphores.size())
     {
-        size_t oldSize = bd->imGuiRenderCompleteSemaphores.size();
-        bd->imGuiRenderCompleteSemaphores.resize(currentSwap + 1);
+        size_t oldSize = bd->frameSemaphores.size();
+        bd->frameSemaphores.resize(currentSwap + 1);
         for (size_t i = oldSize; i <= currentSwap; ++i)
-            bd->imGuiRenderCompleteSemaphores[i] = bd->device->CreateSemaphore({});
+            bd->frameSemaphores[i] = bd->device->CreateSemaphore({});
     }
-    auto* imGuiRenderComplete = bd->imGuiRenderCompleteSemaphores[currentSwap].Get();
+    auto* imGuiRenderComplete = bd->frameSemaphores[currentSwap].Get();
 
     ImGui_ImplFoundation_RenderDrawData(
         ImGui::GetDrawData(),

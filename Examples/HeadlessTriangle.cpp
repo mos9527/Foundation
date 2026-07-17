@@ -18,7 +18,7 @@ namespace
 int main(int argc, char** argv)
 {
     RendererDesc rendererDesc{.threadCount = 0};
-    auto [renderer, app, device, swapchain, presenter] =
+    auto [renderer, app, device, surface, swapchain, presenter] =
         Examples_InitVulkan(nullptr /* no window */, argc, argv, rendererDesc);
 
     renderer->BeginSetup();
@@ -99,7 +99,7 @@ int main(int argc, char** argv)
     LOG(HeadlessTriangle, LogInfo, "Readback: {}/{} pixels non-clear", drawnPixels, kExtent.x * kExtent.y);
     CHECK_MSG(drawnPixels > 0, "Headless triangle produced no visible pixels; rendering pipeline is broken.");
 
-    Examples_DestroyVulkan(nullptr, renderer, app, device, swapchain);
+    Examples_DestroyVulkan(nullptr, renderer, app, device, surface, swapchain);
     fmt::println("HeadlessTriangle: OK");
     return 0;
 }

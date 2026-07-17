@@ -122,14 +122,8 @@ namespace Foundation::RHI
     {
         const VulkanApplication& mApp;
 
-        SDL_Window* mWindow;
-
         vk::raii::PhysicalDevice mPhysicalDevice{nullptr};
         vk::raii::Device mDevice{nullptr};
-        vk::raii::SurfaceKHR mSurface{nullptr};
-
-        Vector<RHISurfaceFormat> mSwapchainFormats;
-        Vector<RHISwapchainPresentMode> mSwapchainPresentModes;
 
         VmaAllocator mVkAllocator{nullptr};
         // Device Object storage
@@ -145,13 +139,11 @@ namespace Foundation::RHI
         RHIPipelineStateCacheKey mPipelineCacheKey{};
         RHIDeviceCapabilities mDeviceCaps{};
         uint32_t mGraphicsQueueFamilyIndex{};
-
-        void CreatePresentationSurface();
-        void RefreshSwapchainSupport();
     public:
+        [[nodiscard]] uint32_t GetGraphicsQueueFamilyIndex() const { return mGraphicsQueueFamilyIndex; }
+        [[nodiscard]] const VulkanApplication& GetApp() const { return mApp; }
         [[nodiscard]] Mutex& GetQueueSubmitMutex() const { return mQueueSubmitMutex; }
-        VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice,
-                     SDL_Window* window = nullptr);
+        VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice);
         ~VulkanDevice() override;
 
         RHIDeviceCapabilities GetCapabilities() const override { return mDeviceCaps; }
@@ -159,12 +151,14 @@ namespace Foundation::RHI
 
         RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const override;
 
-        Span<RHISurfaceFormat const> GetSwapchainSupportedFormats() const override;
-        Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const override;
+        [[nodiscard]] RHIDeviceScopedHandle<RHISurface>
+        CreateSurface(RHISurface::SurfaceDesc const& desc) override;
+        [[nodiscard]] RHISurface* GetSurface(Handle handle) const override;
+        void DestroySurface(Handle handle) override;
+
         RHIDeviceScopedHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
         RHISwapchain* GetSwapchain(Handle handle) const override;
         void DestroySwapchain(Handle handle) override;
-        void RefreshPresentationSurface() override;
 
         RHIDeviceScopedHandle<RHIPipelineStateCache>
         CreatePipelineCache(RHIPipelineStateCache::PipelineStateCacheDesc const& desc) override;
@@ -254,9 +248,8 @@ namespace Foundation::RHI
         Allocator* GetAllocator() const;
 
         auto const& GetVkQueues() const { return mQueues; }
-        auto const& GetVkDevice() const { return mDevice; }
-        auto const& GetVkSurface() const { return mSurface; }
-        auto const& GetVkPhysicalDevice() const { return mPhysicalDevice; }
+        [[nodiscard]] auto const& GetVkDevice() const { return mDevice; }
+        [[nodiscard]] auto const& GetVkPhysicalDevice() const { return mPhysicalDevice; }
         auto const& GetVkPhysicalDeviceProperties() const { return mPhysicalDeviceProperties; }
         auto const& GetVkAllocator() const { return mVkAllocator; }
         [[nodiscard]] vk::AllocationCallbacks const* GetVkAllocationCallbacks() const;
