@@ -2011,18 +2011,8 @@ void FHierarchyPanel()
                                                       &material.anisotropyStrength, 0.0f, 1.0f, "%.3f");
 
                         ImGui::SeparatorText("Sheen");
-                        float sheenWeight = std::clamp(std::max({material.sheenColorFactor.x, material.sheenColorFactor.y, material.sheenColorFactor.z}), 0.0f, 1.0f);
-                        float3 sheenTint = sheenWeight > 1e-6f ? material.sheenColorFactor / sheenWeight : float3{1.0f, 1.0f, 1.0f};
-                        bool sheenChanged = false;
-                        sheenChanged |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Weight", material.sheenColorTexture),
-                                                           &sheenWeight, 0.0f, 1.0f, "%.3f");
-                        sheenChanged |= ImLinearColorEdit3(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Tint", material.sheenColorTexture),
-                                                           sheenTint);
-                        if (sheenChanged)
-                        {
-                            material.sheenColorFactor = std::clamp(sheenWeight, 0.0f, 1.0f) * Math::clamp(sheenTint, float3{0.0f, 0.0f, 0.0f}, float3{1.0f, 1.0f, 1.0f});
-                            changed = true;
-                        }
+                        changed |= ImLinearColorEdit3(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Color", material.sheenColorTexture),
+                                                      material.sheenColorFactor);
                         changed |= ImGui::SliderFloat(MaterialTexturePropLabel(propLabel, sizeof(propLabel), "Sheen Roughness", material.sheenRoughnessTexture),
                                                       &material.sheenRoughnessFactor, 0.0f, 1.0f, "%.3f");
 
