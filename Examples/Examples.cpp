@@ -142,35 +142,6 @@ std::vector<PipelineCacheContext>& PipelineCacheContexts()
     return contexts;
 }
 
-bool CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISwapchain>& outSwap)
-{
-    int w, h;
-    SDL_GetWindowSizeInPixels(window, &w, &h);
-    if (w <= 0 || h <= 0)
-        return false;
-    LOG(RenderApplication, LogDebug, "Creating swapchain ({}x{})", w, h);
-    device->WaitIdle();
-    if (outSwap)
-        outSwap.Reset();
-    auto format = Ranges::FirstOf(Views::all(kFormatPreferenceList) |
-                                  Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedFormats())));
-    auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
-                                   Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedPresentModes())));
-    CHECK_MSG(format.has_value(), "No supported swapchain format found!");
-    LOG(RenderApplication, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format,
-        format.value().colorSpace);
-    CHECK_MSG(present.has_value(), "No supported presentation mode found!");
-    LOG(RenderApplication, LogDebug, "Selected swapchain present mode: {}", present.value());
-    outSwap = device->CreateSwapchain(RHISwapchain::SwapchainDesc{
-        .format = format.value().format,
-        .colorSpace = format.value().colorSpace,
-        .extents = RHIExtent3D{w, h, 1},
-        .minBufferCount = 3,
-        .presentMode = present.value(),
-    });
-    return true;
-}
-
 #if defined(__ANDROID__)
 // Bridges Foundation::Core::PathsResolve to SDL's APK-asset loader. Registered
 // in Examples_InitVulkan so shaders/bundled assets are lazily materialized out
@@ -427,7 +398,7 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
     case SDL_EVENT_WINDOW_RESTORED:
         try
         {
-            if (CreateSwapchain(window, swap.mFactory, swap))
+            if (Examples_CreateSwapchain(window, swap.mFactory, swap))
                 renderer->SetSwapchain(swap);
         }
         catch (std::exception const& e)
@@ -438,7 +409,7 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
                 RHIDevice* device = swap.mFactory;
                 swap.Reset();
                 device->RefreshPresentationSurface();
-                if (CreateSwapchain(window, device, swap))
+                if (Examples_CreateSwapchain(window, device, swap))
                     renderer->SetSwapchain(swap);
             }
             catch (std::exception const& refreshError)
@@ -546,6 +517,35 @@ void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState&
 }
 } // namespace
 
+bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISwapchain>& outSwap)
+{
+    int w, h;
+    SDL_GetWindowSizeInPixels(window, &w, &h);
+    if (w <= 0 || h <= 0)
+        return false;
+    LOG(RenderApplication, LogDebug, "Creating swapchain ({}x{})", w, h);
+    device->WaitIdle();
+    if (outSwap)
+        outSwap.Reset();
+    auto format = Ranges::FirstOf(Views::all(kFormatPreferenceList) |
+                                  Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedFormats())));
+    auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
+                                   Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedPresentModes())));
+    CHECK_MSG(format.has_value(), "No supported swapchain format found!");
+    LOG(RenderApplication, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format,
+        format.value().colorSpace);
+    CHECK_MSG(present.has_value(), "No supported presentation mode found!");
+    LOG(RenderApplication, LogDebug, "Selected swapchain present mode: {}", present.value());
+    outSwap = device->CreateSwapchain(RHISwapchain::SwapchainDesc{
+        .format = format.value().format,
+        .colorSpace = format.value().colorSpace,
+        .extents = RHIExtent3D{w, h, 1},
+        .minBufferCount = 3,
+        .presentMode = present.value(),
+    });
+    return true;
+}
+
 void Examples_ReportFatalException()
 {
     try
@@ -607,7 +607,7 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
                            : app->CreateDevice({.id = static_cast<uint32_t>(gpuId)}, window);
     RHIDeviceScopedHandle<RHISwapchain> swap;
     if (!headless)
-        CreateSwapchain(window, *device, swap);
+        Examples_CreateSwapchain(window, *device, swap);
     RHIDeviceScopedHandle<RHIPipelineStateCache> psoCache;
     String psoCachePath;
     if (!desc.pipelineCache)
@@ -880,7 +880,7 @@ bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presen
             RHIDevice* device = swapchain.mFactory;
             swapchain.Reset();
             device->RefreshPresentationSurface();
-            if (CreateSwapchain(window, device, swapchain))
+            if (Examples_CreateSwapchain(window, device, swapchain))
                 renderer->SetSwapchain(swapchain);
         }
         catch (std::exception const& e)

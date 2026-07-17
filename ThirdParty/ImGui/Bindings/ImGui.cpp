@@ -1,6 +1,7 @@
 #include "ImGui.hpp"
 #include "Fonts/PlexSansIcon.h"
 #include <filesystem>
+#include <fstream>
 #include <Core/Paths.hpp>
 #include "tracy/Tracy.hpp"
 
@@ -27,24 +28,80 @@ void ImGui_ImplFoundation_MemFree(void* ptr, void*) { return GLOBAL_ALLOC->Deall
 struct ImGuiImplFoundationBd
 {
     RHIDevice* device;
+    RHIDeviceQueue* queue;
     size_t vtxBufferOffset = 0;
     size_t idxBufferOffset = 0;
-} gBackendData;
-void ImGui_ImplFoundation_Init(RHIDevice* device, SDL_Window* window)
+    
+    RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> descriptorSetLayout;
+    RHIDeviceScopedHandle<RHIShaderModule> vsModule;
+    RHIDeviceScopedHandle<RHIShaderModule> fsModule;
+    std::vector<char> vsSource;
+    std::vector<char> fsSource;
+    RHIDeviceScopedHandle<RHIPipelineState> pipeline;
+    RHIDeviceScopedHandle<RHIDeviceSampler> linSampler;
+    RHIDeviceScopedHandle<RHIDeviceSampler> nearSampler;
+    RHIDeviceScopedHandle<RHIBuffer> vtxBuffer;
+    RHIDeviceScopedHandle<RHIBuffer> idxBuffer;
+    
+    struct ImGuiImplFoundationFrameData
+    {
+        Foundation::RHI::RHIDeviceScopedHandle<Foundation::RHI::RHICommandPool> commandPool;
+        Foundation::RHI::RHICommandPoolScopedHandle<Foundation::RHI::RHICommandList> commandList;
+    };
+    Foundation::RHI::RHIResourceFormat rtvFormat{};
+    Foundation::RHI::RHIColorSpace colorSpace{};
+    
+    Vector<ImGuiImplFoundationFrameData> frames{GLOBAL_ALLOC};
+    Vector<Foundation::RHI::RHIDeviceScopedHandle<Foundation::RHI::RHIDeviceSemaphore>> imGuiRenderCompleteSemaphores{GLOBAL_ALLOC};
+};
+static UniquePtr<ImGuiImplFoundationBd> gBackendData = nullptr;
+
+void ImGui_ImplFoundation_Init(Foundation::RHI::RHIDevice* device, SDL_Window* window)
 {
     // Reference being the official Vulkan implementation - sans Viewport support to keep things _really_ simple
     ImGuiIO& io = ImGui::GetIO();
     IM_ASSERT(io.BackendRendererUserData == nullptr && "Already initialized a renderer backend!");
-    gBackendData.device = device;
-    gBackendData.vtxBufferOffset = gBackendData.idxBufferOffset = 0;
-    io.BackendRendererUserData = static_cast<void*>(&gBackendData);
-    io.BackendRendererName = "imgui_impl_foundation";
-    io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset; // We can honor the ImDrawCmd::VtxOffset field,
-                                                               // allowing for large meshes.
-    io.BackendFlags |=
-        ImGuiBackendFlags_RendererHasTextures; // We can honor ImGuiPlatformIO::Textures[] requests during render.
+    gBackendData = ConstructUnique<ImGuiImplFoundationBd>(GLOBAL_ALLOC);
+    gBackendData->device = device;
+    gBackendData->queue = device->GetDeviceQueue(Foundation::RHI::RHIDeviceQueueType::Graphics);
+    gBackendData->vtxBufferOffset = gBackendData->idxBufferOffset = 0;
+    gBackendData->frames = Vector<ImGuiImplFoundationBd::ImGuiImplFoundationFrameData>(GLOBAL_ALLOC);
+    
+    // Create samplers
+    gBackendData->linSampler = device->CreateSampler({});
+    gBackendData->nearSampler = device->CreateSampler({.filter = {.minFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor,
+                                                                        .magFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor}});
+    // Create buffers
+    gBackendData->vtxBuffer = device->CreateBuffer(
+        RHIBufferDesc{.resource = {.heap = RHIDeviceHeapType::Upload, .hostAccess = RHIResourceHostAccess::WriteOnly},
+                      .usage = RHIBufferUsageBits::VertexBuffer | RHIBufferUsageBits::TransferDestination,
+                      .size = kVertexBufferSize});
+    gBackendData->idxBuffer = device->CreateBuffer(
+        RHIBufferDesc{.resource = {.heap = RHIDeviceHeapType::Upload, .hostAccess = RHIResourceHostAccess::WriteOnly},
+                      .usage = RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::TransferDestination,
+                      .size = kIndexBufferSize});
+    
     gImGuiTexturePool = ConstructUnique<BindlessPool>(GLOBAL_ALLOC, device, GLOBAL_ALLOC,
                                                       BindlessPool::BindlessPoolDesc{.maxBindings = kMaxTextures});
+                                                      
+    auto loadShader = [](std::filesystem::path const& path) {
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
+        CHECK_MSG(file.is_open(), "Failed to open shader {}", path.string());
+        std::vector<char> source(static_cast<size_t>(file.tellg()));
+        file.seekg(0);
+        CHECK_MSG(file.read(source.data(), static_cast<std::streamsize>(source.size())), "Failed to read shader {}", path.string());
+        return source;
+    };
+    gBackendData->vsSource = loadShader(PathsResolve("Data/Shaders/ImGui.spv"));
+    gBackendData->fsSource = loadShader(PathsResolve("Data/Shaders/ImGui.spv"));
+    gBackendData->vsModule = device->CreateShaderModule({.source = gBackendData->vsSource});
+    gBackendData->fsModule = device->CreateShaderModule({.source = gBackendData->fsSource});
+    
+    io.BackendRendererUserData = static_cast<void*>(gBackendData.get());
+    io.BackendRendererName = "imgui_impl_foundation";
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
+        
     // Init windowing backend
     ImGui_ImplSDL3_InitForOther(window);
 }
@@ -56,7 +113,7 @@ void ImGui_ImplFoundation_NewFrame()
 {
     ImGui_ImplSDL3_NewFrame();
 }
-void ImGui_ImplFoundation_Shutdown() { gImGuiTexturePool.reset(); }
+void ImGui_ImplFoundation_Shutdown() { gImGuiTexturePool.reset(); gBackendData.reset(); }
 // Tagged pointer.
 Pair<uint32_t, ImGui_ImplFoundation_ImageSampler> ImGui_ImplFoundation_DecodeImTextureID(ImTextureID id)
 {
@@ -191,69 +248,89 @@ struct PushConstants
 };
 #pragma pack(pop)
 
-void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHandle vtxBuffer,
-                                        ResourceHandle idxBuffer, ResourceHandle linSampler,
-                                        ResourceHandle nearSampler)
+void ImGui_ImplFoundation_RenderDrawData(ImDrawData* draw_data, Foundation::RHI::RHITextureView* rtv, Foundation::RHI::RHIResourceFormat rtvFormat, Foundation::RHI::RHIColorSpace colorSpace, bool clear, uint32_t currentSwap,
+                                         Foundation::RHI::RHIDeviceSemaphore* waitSemaphore,
+                                         Foundation::RHI::RHIPipelineStage waitStage,
+                                         Foundation::RHI::RHIDeviceSemaphore* signalSemaphore)
 {
-    r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
-    r->BindBufferCopyDst(self, vtxBuffer);
-    r->BindBufferCopyDst(self, idxBuffer);
-    r->BindPushConstant(self, RHIShaderStageBits::Vertex, 0, sizeof(PushConstants));
-    // Specialization constant
-    uint flags{};
-    // We can output to these colorspaces:
-    const int kFlagsOutputSrgb = 1 << 0;
-    const int kFlagsOutputSt2084 = 1 << 1;
-    // As for formats, disallow sRGB backbuffers since these doesn't make scene for UI elements *and* we'd always tonemap to sRGB space
-    // (output in SDR therefore *requires* UNORM backbuffers)
-    // HDR-wise we'd only support ST2084/PQ and it happily takes RGB10A2 formats.
-    CHECK_MSG(!IsFormatSRGB(r->GetSwapchain()->mDesc.format), "sRGB backbuffers are not supported by ImGui. Please use UNORM formats instead.");
-    switch (r->GetSwapchain()->mDesc.colorSpace)
-    {       
-    case RHIColorSpace::Hdr10St2084:
-        flags |= kFlagsOutputSt2084;
-        break;
-    case RHIColorSpace::SrgbNonLinear:
-    default:
-        flags |= kFlagsOutputSrgb;
-        break;
-    }
-    r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("Data/Shaders/ImGui.spv"), AsBytes(AsSpan(flags)));
-    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/ImGui.spv"), AsBytes(AsSpan(flags)));
-    r->BindDescriptorSet(self, "textures", gImGuiTexturePool->GetDescriptorSetLayout());
-    // We have fixed samplers for ImGui - quite enough for UI elements
-    r->BindTextureSampler(self, linSampler, "linSampler");
-    r->BindTextureSampler(self, nearSampler, "nearSampler");
-    r->BindVertexInput(
-        self,
-        {.bindings = {{{sizeof(ImDrawVert), false}}},
-         .attributes = {{
-             {.location = 0, .offset = offsetof(ImDrawVert, pos), .format = RHIResourceFormat::R32G32SignedFloat},
-             {.location = 1, .offset = offsetof(ImDrawVert, uv), .format = RHIResourceFormat::R32G32SignedFloat},
-             {.location = 2, .offset = offsetof(ImDrawVert, col), .format = RHIResourceFormat::R8G8B8A8Unorm},
-         }}});
-    // No culling
-    r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});    
-}
-void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clear, RHICommandList* cmd,
-                                         ResourceHandle vtxBuffer, ResourceHandle idxBuffer)
-{
-    auto const& img_wh = r->GetSwapchainExtent();
-    ImGui::Render();
-    ImDrawData* draw_data = ImGui::GetDrawData();
     // Upload textures
     if (draw_data->Textures != nullptr)
         for (ImTextureData* tex : *draw_data->Textures)
             if (tex->Status != ImTextureStatus_OK)
                 ImGui_ImplFoundation_ImplUpdateTexture(tex);
-    // Upload vertex/index buffers
-    auto* vtx = r->DerefResource(vtxBuffer).Get<RHIBuffer*>();
-    auto* idx = r->DerefResource(idxBuffer).Get<RHIBuffer*>();
-    // Map. We're using a ring buffer here.
-    auto* bd = static_cast<ImGuiImplFoundationBd*>(ImGui::GetIO().BackendRendererUserData);
-    // Bump or rewind
+                
+    auto* bd = gBackendData.get();
+    
+    if (bd->rtvFormat != rtvFormat || bd->colorSpace != colorSpace)
     {
-        int vtxBufferSize = kVertexBufferSize - bd->vtxBufferOffset, idxBufferSize = kIndexBufferSize - bd->idxBufferOffset;
+        bd->rtvFormat = rtvFormat;
+        bd->colorSpace = colorSpace;
+        
+        const int kFlagsOutputSrgb = 1 << 0;
+        const int kFlagsOutputSt2084 = 1 << 1;
+        uint flags{};
+        switch (bd->colorSpace)
+        {       
+        case RHIColorSpace::Hdr10St2084: flags |= kFlagsOutputSt2084; break;
+        case RHIColorSpace::SrgbNonLinear:
+        default: flags |= kFlagsOutputSrgb; break;
+        }
+
+        RHIPipelineState::PipelineStateDesc psoDesc{};
+        psoDesc.type = RHIDevicePipelineType::Graphics;
+        
+        RHIPipelineState::PipelineStateDesc::VertexInput::Binding vtxBinding{.stride = sizeof(ImDrawVert), .perInstance = false};
+        RHIVertexAttribute vtxAttribs[] = {
+            {.location = 0, .offset = offsetof(ImDrawVert, pos), .format = RHIResourceFormat::R32G32SignedFloat},
+            {.location = 1, .offset = offsetof(ImDrawVert, uv), .format = RHIResourceFormat::R32G32SignedFloat},
+            {.location = 2, .offset = offsetof(ImDrawVert, col), .format = RHIResourceFormat::R8G8B8A8Unorm}
+        };
+        psoDesc.vertexInput.bindings = {&vtxBinding, 1};
+        psoDesc.vertexInput.attributes = vtxAttribs;
+        psoDesc.topology = RHIPipelineState::PipelineStateDesc::TriangleList;
+        psoDesc.rasterizer.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone;
+        psoDesc.depthStencil.depthTest = false;
+        psoDesc.depthStencil.depthWrite = false;
+        
+        RHIPipelineState::PipelineStateDesc::Attachment attachment{};
+        attachment.blending = RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending();
+        attachment.renderTarget.format = bd->rtvFormat;
+        psoDesc.attachments = {&attachment, 1};
+        
+        RHIPipelineState::PipelineStateDesc::ShaderStage stages[2] = {
+            {{RHIShaderStageBits::Vertex, "vertMain", AsBytes(AsSpan(flags))}, bd->vsModule.Get()},
+            {{RHIShaderStageBits::Fragment, "fragMain", AsBytes(AsSpan(flags))}, bd->fsModule.Get()}
+        };
+        psoDesc.shaderStages = stages;
+        
+        RHIDeviceDescriptorSetLayout* layouts[] = {gImGuiTexturePool->GetDescriptorSetLayout()};
+        psoDesc.descriptorSetLayouts = layouts;
+        
+        RHIPipelineState::PipelineStateDesc::PushConstant pc = {RHIShaderStageBits::Vertex, 0, sizeof(PushConstants)};
+        psoDesc.pushConstants = {&pc, 1};
+        
+        bd->pipeline = bd->device->CreatePipelineState(psoDesc);
+    }
+    
+    if (currentSwap >= bd->frames.size())
+    {
+        for (uint32_t i = (uint32_t)bd->frames.size(); i <= currentSwap; ++i)
+        {
+            ImGuiImplFoundationBd::ImGuiImplFoundationFrameData fd;
+            fd.commandPool = bd->device->CreateCommandPool({
+                .queue = bd->queue,
+                .type = Foundation::RHI::RHICommandPoolType::Persistent
+            });
+            fd.commandList = fd.commandPool->CreateCommandList();
+            bd->frames.push_back(std::move(fd));
+        }
+    }
+    
+    auto& frameData = bd->frames[currentSwap];
+    
+    // Bump or rewind vertex/index buffers
+    {
+        int vtxBufferSize = kVertexBufferSize - (int)bd->vtxBufferOffset, idxBufferSize = kIndexBufferSize - (int)bd->idxBufferOffset;
         for (const ImDrawList* draw_list : draw_data->CmdLists)
         {
             vtxBufferSize -= draw_list->VtxBuffer.size() * sizeof(ImDrawVert);
@@ -264,11 +341,15 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
         if (idxBufferSize < 0)
             bd->idxBufferOffset = 0;
     }
+    
+    auto* vtx = bd->vtxBuffer.Get();
+    auto* idx = bd->idxBuffer.Get();
     auto pVtx = vtx->Map<char>() + bd->vtxBufferOffset;
     auto pIdx = idx->Map<char>() + bd->idxBufferOffset;
     auto* vtx_dst = reinterpret_cast<ImDrawVert*>(pVtx);
     auto* idx_dst = reinterpret_cast<ImDrawIdx*>(pIdx);
     size_t vtx_offset = bd->vtxBufferOffset, idx_offset = bd->idxBufferOffset;
+    
     for (const ImDrawList* draw_list : draw_data->CmdLists)
     {
         std::memcpy(vtx_dst, draw_list->VtxBuffer.Data, draw_list->VtxBuffer.Size * sizeof(ImDrawVert));
@@ -278,63 +359,73 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
         vtx_dst += draw_list->VtxBuffer.Size;
         idx_dst += draw_list->IdxBuffer.Size;
     }
-    vtx->Flush(), idx->Flush();
-    // Implementations guarantee that mapped, flushed resources are available at
-    // the time of the next device queue submit - so extra barriers are not needed.
-    r->CmdSetPipeline(self, cmd);
-    r->CmdBindDescriptorSet(self, cmd, "textures", gImGuiTexturePool->GetDescriptorSet());
-    r->CmdBeginGraphics(self, cmd, img_wh, {{{clear ? RHIAttachmentLoadOp::Clear : RHIAttachmentLoadOp::Load}}});
-    // Setup states
-    int fb_width = img_wh.x, fb_height = img_wh.y;
-    cmd->SetViewport(0, 0, fb_width, fb_height); // Full screen
-    cmd->BindVertexBuffer(0, {{vtx}}, {{vtx_offset}});
-    cmd->BindIndexBuffer(idx, idx_offset, RHIResourceFormat::R16Uint);
-    // Setup scale and translation:
-    // Our visible imgui space lies from draw_data->DisplayPps (top left) to
-    // draw_data->DisplayPos+data_data->DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
+    vtx->Flush();
+    idx->Flush();
+    
+    // Reset pool and start recording
+    frameData.commandPool->ResetAllCommandLists();
+    auto* cmd = frameData.commandList.Get();
+    cmd->Begin(nullptr);
+    
+    cmd->DebugBegin("ImGui");
+    
+    cmd->SetPipeline({.pipeline = bd->pipeline.Get(), .type = Foundation::RHI::RHIDevicePipelineType::Graphics});
+    
+    Foundation::RHI::RHIDeviceDescriptorSet* sets[] = {gImGuiTexturePool->GetDescriptorSet()};
+    cmd->BindDescriptorSet(Foundation::RHI::RHIDevicePipelineType::Graphics, bd->pipeline.Get(), sets, 0);
+    
+    int fb_width = static_cast<int>(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
+    int fb_height = static_cast<int>(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
+    
+    RHICommandList::GraphicsDesc::Attachment colorAttachment{
+        .imageView = rtv,
+        .loadOp = clear ? RHIAttachmentLoadOp::Clear : RHIAttachmentLoadOp::Load,
+    };
+    cmd->BeginGraphics({.colorAttachments = {&colorAttachment, 1},
+                        .width = static_cast<uint32_t>(fb_width),
+                        .height = static_cast<uint32_t>(fb_height)});
+                       
+    cmd->SetViewport(0, 0, fb_width, fb_height);
+    
+    Foundation::RHI::RHIBuffer* vtxBuffers[] = {vtx};
+    size_t vtxOffsets[] = {vtx_offset};
+    cmd->BindVertexBuffer(0, vtxBuffers, vtxOffsets);
+    cmd->BindIndexBuffer(idx, idx_offset, Foundation::RHI::RHIResourceFormat::R16Uint);
+    
     PushConstants pc{
         .s = {2.0f / draw_data->DisplaySize.x, 2.0f / draw_data->DisplaySize.y},
         .t = {-1.0f - draw_data->DisplayPos.x * (2.0f / draw_data->DisplaySize.x),
               -1.0f - draw_data->DisplayPos.y * (2.0f / draw_data->DisplaySize.y)},
-        .textureId = 0 // Updated per-draw
+        .textureId = 0
     };
-    // Render command list
-    // Will project scissor/clipping rectangles into framebuffer space
-    ImVec2 clip_off = draw_data->DisplayPos; // (0,0) unless using multi-viewports
-    ImVec2 clip_scale = draw_data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
+    
+    ImVec2 clip_off = draw_data->DisplayPos;
+    ImVec2 clip_scale = draw_data->FramebufferScale;
     int global_vtx_offset = 0, global_idx_offset = 0;
+    
     for (const ImDrawList* draw_list : draw_data->CmdLists)
     {
         for (int cmd_i = 0; cmd_i < draw_list->CmdBuffer.Size; cmd_i++)
         {
             const ImDrawCmd* pcmd = &draw_list->CmdBuffer[cmd_i];
-            // if (pcmd->UserCallback != nullptr) /* No Support */
-            // Project scissor/clipping rectangles into framebuffer space
             ImVec2 clip_min((pcmd->ClipRect.x - clip_off.x) * clip_scale.x,
                             (pcmd->ClipRect.y - clip_off.y) * clip_scale.y);
             ImVec2 clip_max((pcmd->ClipRect.z - clip_off.x) * clip_scale.x,
                             (pcmd->ClipRect.w - clip_off.y) * clip_scale.y);
-            // Clamp to viewport as vkCmdSetScissor() won't accept values that are off bounds
             clip_min.x = std::clamp(clip_min.x, 0.0f, static_cast<float>(fb_width));
             clip_min.y = std::clamp(clip_min.y, 0.0f, static_cast<float>(fb_height));
             if (clip_max.x <= clip_min.x || clip_max.y <= clip_min.y)
                 continue;
-            cmd->SetScissor(clip_min.x, clip_min.y, clip_max.x - clip_min.x, clip_max.y - clip_min.y);
-            // All textures live in the @ref TexturePool - akin to D3D12's ResourceDescriptorHeap
-            // Whether they exist or not - push it
+                
+            cmd->SetScissor(static_cast<uint32_t>(clip_min.x), static_cast<uint32_t>(clip_min.y), 
+                            static_cast<uint32_t>(clip_max.x - clip_min.x), static_cast<uint32_t>(clip_max.y - clip_min.y));
+            
             auto [textureId, samplerId] = ImGui_ImplFoundation_DecodeImTextureID(pcmd->GetTexID());
             pc.textureId = textureId;
-            switch (samplerId)
-            {
-            case ImGuiImplFoundationImageSamplerLinear:
-                pc.samplerId = 0;
-                break;
-            case ImGuiImplFoundationImageSamplerNearest:
-                pc.samplerId = 1;
-                break;
-            }
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex, 0, pc);
-            // Draw!
+            pc.samplerId = samplerId == ImGuiImplFoundationImageSamplerNearest ? 1 : 0;
+            
+            cmd->PushConstant(bd->pipeline.Get(), RHIShaderStageBits::Vertex, 0, AsBytes(AsSpan(pc)));
+            
             cmd->DrawIndexed(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset,
                              pcmd->VtxOffset + global_vtx_offset, 0);
         }
@@ -342,26 +433,63 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
         global_vtx_offset += draw_list->VtxBuffer.Size;
     }
     cmd->EndGraphics();
+    
+    cmd->DebugEnd();
+    cmd->End();
+    
+    Foundation::RHI::RHIDeviceQueue::SubmitDesc submitDesc{};
+    if (waitSemaphore)
+    {
+        submitDesc.waits = {&waitSemaphore, 1};
+        submitDesc.waitsStages = {&waitStage, 1};
+    }
+    if (signalSemaphore)
+    {
+        submitDesc.signals = {&signalSemaphore, 1};
+    }
+    Foundation::RHI::RHICommandList* cmdLists[] = {cmd};
+    submitDesc.cmdLists = {cmdLists, 1};
+    
+    bd->queue->Submit({&submitDesc, 1});
 }
-void ImGui_ImplFoundation_ImplCreateResources(Renderer* renderer, ResourceHandle& outVtxBuffer,
-                                              ResourceHandle& outIdxBuffer,
-                                              ResourceHandle& outLinearSampler, ResourceHandle& outNearestSampler)
+
+Foundation::RHI::RHIDeviceSemaphore* ImGui_ImplFoundation_EndFrame(
+    Foundation::RHI::RHITextureView* rtv,
+    Foundation::RHI::RHIResourceFormat rtvFormat,
+    Foundation::RHI::RHIColorSpace colorSpace,
+    uint32_t currentSwap,
+    bool clear,
+    Foundation::RHI::RHIDeviceSemaphore* waitSemaphore)
 {
-    outVtxBuffer = renderer->CreateResource(
-        "ImGui Vertex Buffer",
-        RHIBufferDesc{.resource = {.heap = RHIDeviceHeapType::Upload, .hostAccess = RHIResourceHostAccess::WriteOnly},
-                      .usage = RHIBufferUsageBits::VertexBuffer | RHIBufferUsageBits::TransferDestination,
-                      .size = kVertexBufferSize});
-    outIdxBuffer = renderer->CreateResource(
-        "ImGui Index Buffer",
-        RHIBufferDesc{.resource = {.heap = RHIDeviceHeapType::Upload, .hostAccess = RHIResourceHostAccess::WriteOnly},
-                      .usage = RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::TransferDestination,
-                      .size = kIndexBufferSize});
-    outLinearSampler = renderer->CreateSampler({});
-    outNearestSampler =
-        renderer->CreateSampler({.filter = {.minFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor,
-                                            .magFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor}});
+    // Safety net: render ImGui if it hasn't been rendered yet this frame.
+    ImGui::Render();
+
+    auto* bd = gBackendData.get();
+    
+    if (currentSwap >= bd->imGuiRenderCompleteSemaphores.size())
+    {
+        size_t oldSize = bd->imGuiRenderCompleteSemaphores.size();
+        bd->imGuiRenderCompleteSemaphores.resize(currentSwap + 1);
+        for (size_t i = oldSize; i <= currentSwap; ++i)
+            bd->imGuiRenderCompleteSemaphores[i] = bd->device->CreateSemaphore({});
+    }
+    auto* imGuiRenderComplete = bd->imGuiRenderCompleteSemaphores[currentSwap].Get();
+
+    ImGui_ImplFoundation_RenderDrawData(
+        ImGui::GetDrawData(),
+        rtv,
+        rtvFormat,
+        colorSpace,
+        clear,
+        currentSwap,
+        waitSemaphore,
+        Foundation::RHI::RHIPipelineStageBits::RenderTargetOutput,
+        imGuiRenderComplete
+    );
+
+    return imGuiRenderComplete;
 }
+
 void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
 {
     ImGui::SetAllocatorFunctions(ImGui_ImplFoundation_MemAlloc, ImGui_ImplFoundation_MemFree);

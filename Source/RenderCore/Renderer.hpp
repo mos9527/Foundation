@@ -172,8 +172,8 @@ namespace Foundation::RenderCore
             const size_t swapIndex;
             RHIDeviceScopedHandle<RHIDeviceSemaphore> render{};
             RHIDeviceScopedHandle<RHIDeviceFence> graphicsFence{}, computeFence{};
-            // Texture view for the backbuffer
-            RHITextureScopedHandle<RHITextureView> view{};
+            // Texture view for the backbuffer is owned by the Swapchain now.
+            // We just need the descriptor set layout here.
             RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> viewSet{};
             // Tracked backbuffer handle
             ResourceHandle backbuffer{kInvalidHandle};

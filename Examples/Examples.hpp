@@ -200,6 +200,7 @@ bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presen
 void Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app,
                             RHIApplicationScopedHandle<RHIDevice>& device,
                             RHIDeviceScopedHandle<RHISwapchain>& swapchain);
+bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISwapchain>& outSwapchain);
 
 // Writes an 8-bit-per-channel image (e.g. from a readback buffer) to a PNG at `path`,
 // then opens it with the OS default viewer via SDL_OpenURL. `strideBytes` defaults to

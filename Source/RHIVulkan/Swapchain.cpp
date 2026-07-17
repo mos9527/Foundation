@@ -56,11 +56,16 @@ void VulkanSwapchain::Instantiate() {
     mImages.reset();
     mImages = ConstructUnique<RHIObjectPool<VulkanTexture>>(mDevice.GetAllocator(), mDevice.GetAllocator());
     mImagesPtrs.clear();
+    mViews.clear();
+    mViewsPtrs.clear();
     mSwapchain = vk::raii::SwapchainKHR(device, create_info, mDevice.GetVkAllocationCallbacks());
     auto images = mSwapchain.getImages();
     for (auto& image : images) {
         const Handle handle = mImages->CreateObject<VulkanTexture>(mDevice, RHITextureDesc{}, vk::raii::Image(device, image, mDevice.GetVkAllocationCallbacks()), true /*shared=true*/);
-        mImagesPtrs.push_back(mImages->GetObjectPtr(handle));
+        auto* texture = mImages->GetObjectPtr(handle);
+        mImagesPtrs.push_back(texture);
+        mViews.push_back(texture->CreateTextureView({.format = mDesc.format, .range = RHITextureSubresourceRange::Create()}));
+        mViewsPtrs.push_back(mViews.back().Get());
     }
     // Update actual extents
     mDesc.extents.x = create_info.imageExtent.width;
@@ -68,11 +73,15 @@ void VulkanSwapchain::Instantiate() {
     mDesc.minBufferCount = create_info.minImageCount;
 }
 VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const& desc)
-    : RHISwapchain(device, desc), mDevice(device), mImagesPtrs(device.GetAllocator()) {
+    : RHISwapchain(device, desc), mDevice(device), mImagesPtrs(device.GetAllocator()),
+      mViews(device.GetAllocator()), mViewsPtrs(device.GetAllocator()) {
     Instantiate();
 }
 Span<RHITexture* const> VulkanSwapchain::GetImages() const {
     return mImagesPtrs;
+}
+Span<RHITextureView* const> VulkanSwapchain::GetViews() const {
+    return mViewsPtrs;
 }
 RHIExtent2D VulkanSwapchain::GetExtents() const
 {

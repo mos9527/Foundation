@@ -245,4 +245,4 @@ void FRendering(RendererOutputs const& outputs);
 // Acquire swapchain image + BeginExecute. Returns image index for EditorEndFrame.
 uint32_t EditorBeginFrame(Renderer* renderer, Presenter* presenter);
 // EndExecute + Present + present timing mark.
-void EditorEndFrame(Renderer* renderer, Presenter* presenter, uint32_t swapImageIndex);
+void EditorEndFrame(Renderer* renderer, Presenter* presenter, uint32_t swapImageIndex, bool clear);

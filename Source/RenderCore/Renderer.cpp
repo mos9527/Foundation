@@ -1358,8 +1358,7 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
     {
         auto* backbuffer = swapchain->GetImages()[i];
         backbuffer->DebugSetObjectName(fmt::format("Backbuffer {}", i).c_str());
-        mSwaps[i].view = backbuffer->CreateTextureView(
-            RHITextureViewDesc{.format = swapchain->mDesc.format, .range = RHITextureSubresourceRange::Create()});
+        auto* backbufferView = swapchain->GetViews()[i];
         // Create one descriptor set per backbuffer
         // Ideally - we should use Push Descriptors for these - alas we're stuck with Vulkan 1.3 for now.
         // @ref CmdSetPipeline would set these up automatically if a pass wants backbuffer UAV/SRV.
@@ -1370,7 +1369,7 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
         mSwaps[i].viewSet = mSwapDescriptorPool->CreateDescriptorSet(mSwapDescriptorSetLayout);
         mSwaps[i].viewSet->Update(
         {.type = RHIDescriptorType::StorageImage,
-         .images = {{{.imageView = mSwaps[i].view.Get(), .layout = RHITextureLayout::General}}}});
+         .images = {{{.imageView = backbufferView, .layout = RHITextureLayout::General}}}});
         if (mSwaps[i].backbuffer == kInvalidHandle)
         {
             // First time setup
@@ -2107,7 +2106,7 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
               rtv_loads.size(), rtv_count);
     if (tpass.backbufferRTV)
     {
-        rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(),
+        rtvs.push_back({.imageView = mSwapchain->GetViews()[GetSwap()],
                         .loadOp    = rtv_loads[0].loadOp,
                         .storeOp   = RHIAttachmentStoreOp::Store,
                         .clearColor = rtv_loads[0].clearColor});
