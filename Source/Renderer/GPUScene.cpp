@@ -933,12 +933,12 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, uint32_t f
             uint32_t const type = GSLightTypeCPU(light);
             bool const active = ComputeLightProposalWeight(light) > 0.0f;
             uint32_t const finiteMember = IsFiniteLightType(type) && active ? 1u << 31u : 0u;
-            uint32_t const globalMember = IsGlobalLightType(type) && active ? 1u << 30u : 0u;
-            membership.push_back(type | finiteMember | globalMember);
-            if (type == kGSLightTypeDirectional && active)
+            uint32_t const distantMember = IsDistantLightType(type) && active ? 1u << 30u : 0u;
+            membership.push_back(type | finiteMember | distantMember);
+            if (IsDistantLightType(type) && active)
             {
                 distantSignature = FNV1a64Combine(
-                    distantSignature, light.direction.x, light.direction.y, light.direction.z, light.params.x,
+                    distantSignature, type, light.direction.x, light.direction.y, light.direction.z, light.params.x,
                     light.color.x, light.color.y, light.color.z, light.power);
             }
         }

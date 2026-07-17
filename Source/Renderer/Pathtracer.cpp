@@ -53,8 +53,6 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
     auto LightBVHLightIndexBuffer =
         renderer->CreateResource("Light BVH Light Indices", gpu->GetLightBVHLightIndexBuffer());
     auto LightBVHBitmaskBuffer = renderer->CreateResource("Light BVH Bitmasks", gpu->GetLightBVHBitmaskBuffer());
-    auto LightBVHGlobalIndexBuffer =
-        renderer->CreateResource("Light BVH Global Indices", gpu->GetLightBVHGlobalIndexBuffer());
     auto LightBVHNodeIndexBuffer =
         renderer->CreateResource("Light BVH Node Indices", gpu->GetLightBVHNodeIndexBuffer());
     auto SobolMatricesBuffer = renderer->CreateResource("Sobol Matrices Buffer", gpu->GetSobolMatricesBuffer());
@@ -225,7 +223,6 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
         r->BindBufferStorageRead(self, LightBVHNodeBuffer, pipelineStage, "lightBVHNodes");
         r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, pipelineStage, "lightBVHLightIndices");
         r->BindBufferStorageRead(self, LightBVHBitmaskBuffer, pipelineStage, "lightBVHBitmasks");
-        r->BindBufferStorageRead(self, LightBVHGlobalIndexBuffer, pipelineStage, "lightBVHGlobalIndices");
         r->BindBufferStorageRead(self, SobolMatricesBuffer, pipelineStage, "sobolMatrices");
         r->BindTextureSampler(self, TexSampler, "textureSampler");
         r->BindTextureSampler(self, LUTSampler, "lutSampler");

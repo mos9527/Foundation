@@ -139,7 +139,7 @@ struct LightBVHBuild
     return light.flags & kGSLightTypeMask;
 }
 
-[[nodiscard]] inline bool IsGlobalLightType(uint32_t type)
+[[nodiscard]] inline bool IsDistantLightType(uint32_t type)
 {
     return type == kGSLightTypeDirectional || type == kGSLightTypeEnvironment;
 }

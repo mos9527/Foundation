@@ -611,6 +611,16 @@ void ComputeDirectionalLightBounds(GSLight const& light, float3& aabbMin, float3
     center = coneDirection;
     cosConeAngle = std::cos(std::min(angularRadius, std::numbers::pi_v<float>));
 }
+
+void ComputeEnvironmentLightBounds(float3& aabbMin, float3& aabbMax, float3& center, float3& coneDirection,
+                                   float& cosConeAngle)
+{    
+    coneDirection = float3(0.0f, 0.0f, 1.0f);
+    cosConeAngle = kLightBVHInvalidCosConeAngle;
+    center = coneDirection;
+    aabbMin = float3(-1.0f);
+    aabbMax = float3(1.0f);
+}
 } // namespace
 
 void ComputeAnalyticalLightBounds(GSLight const& light, float3& aabbMin, float3& aabbMax, float3& center,
@@ -702,19 +712,17 @@ LightBVHBuild BuildLightBVH(Span<GSLight const> lights, LightBVHOptions const& o
         GSLight const& light = lights[i];
         uint32_t type = GSLightTypeCPU(light);
         float proposalWeight = ComputeLightProposalWeight(light);
-        if (type == kGSLightTypeEnvironment)
-        {
-            if (proposalWeight > 0.0f)
-                bvh.globalLightIndices.push_back(i);
-            continue;
-        }
-        if (type == kGSLightTypeDirectional)
+        if (IsDistantLightType(type))
         {
             if (proposalWeight > 0.0f)
             {
                 LightSortData sort{};
-                ComputeDirectionalLightBounds(light, sort.bounds.minPoint, sort.bounds.maxPoint, sort.center,
-                                              sort.coneDirection, sort.cosConeAngle);
+                if (type == kGSLightTypeEnvironment)
+                    ComputeEnvironmentLightBounds(sort.bounds.minPoint, sort.bounds.maxPoint, sort.center,
+                                                  sort.coneDirection, sort.cosConeAngle);
+                else
+                    ComputeDirectionalLightBounds(light, sort.bounds.minPoint, sort.bounds.maxPoint, sort.center,
+                                                  sort.coneDirection, sort.cosConeAngle);
                 sort.flux = proposalWeight;
                 sort.lightIndex = i;
                 distantData.lightsData.push_back(sort);
@@ -777,8 +785,7 @@ LightBVHBuild BuildLightBVH(Span<GSLight const> lights, LightBVHOptions const& o
             bvh.lightBitmasks[light.lightIndex] = distantData.lightBitmasks[light.lightIndex];
     }
     bvh.stats.byteSize = static_cast<uint32_t>(bvh.nodes.size() * sizeof(GSLightBVHNode));
-    bvh.stats.globalLightCount =
-        static_cast<uint32_t>(bvh.globalLightIndices.size() + distantData.lightsData.size());
+    bvh.stats.globalLightCount = static_cast<uint32_t>(distantData.lightsData.size());
     return bvh;
 }
 
@@ -794,28 +801,20 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
     if (bvh.lightBitmasks.size() != lights.size())
         return fail("lightBitmasks size mismatch");
 
-    uint32_t expectedGlobal = 0;
     uint32_t expectedDistant = 0;
     uint32_t expectedFinite = 0;
     for (uint32_t i = 0; i < lights.size(); ++i)
     {
         uint32_t type = GSLightTypeCPU(lights[i]);
         float proposalWeight = ComputeLightProposalWeight(lights[i]);
-        if (type == kGSLightTypeEnvironment && proposalWeight > 0.0f)
-            ++expectedGlobal;
-        else if (type == kGSLightTypeDirectional && proposalWeight > 0.0f)
+        if (IsDistantLightType(type) && proposalWeight > 0.0f)
             ++expectedDistant;
         else if (IsFiniteLightType(type) && proposalWeight > 0.0f)
             ++expectedFinite;
     }
 
-    if (bvh.globalLightIndices.size() != expectedGlobal)
-        return fail("global light count mismatch");
-    for (uint32_t idx : bvh.globalLightIndices)
-    {
-        if (idx >= lights.size() || GSLightTypeCPU(lights[idx]) != kGSLightTypeEnvironment)
-            return fail("invalid global light index");
-    }
+    if (!bvh.globalLightIndices.empty())
+        return fail("global light list should be empty (env lives in distant BVH)");
 
     if (bvh.valid != (expectedFinite != 0))
         return fail("finite BVH validity mismatch");
@@ -929,7 +928,7 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
                 {
                     uint32_t lightIndex = bvh.lightIndices[offset + i];
                     if (lightIndex >= lights.size() ||
-                        GSLightTypeCPU(lights[lightIndex]) != kGSLightTypeDirectional || covered[lightIndex])
+                        !IsDistantLightType(GSLightTypeCPU(lights[lightIndex])) || covered[lightIndex])
                         return fail("invalid or duplicate distant light");
                     covered[lightIndex] = 1u;
                     uint32_t replay = bvh.distantRootNode;
@@ -956,7 +955,7 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
         }
         for (uint32_t i = 0; i < lights.size(); ++i)
         {
-            if (GSLightTypeCPU(lights[i]) == kGSLightTypeDirectional &&
+            if (IsDistantLightType(GSLightTypeCPU(lights[i])) &&
                 ComputeLightProposalWeight(lights[i]) > 0.0f && !covered[i])
                 return fail("distant light missing from BVH");
         }
@@ -1017,6 +1016,27 @@ bool LightBVHRunBuilderSelfTests(Allocator* alloc, String* outError)
         lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0)));
         if (!RunCase(alloc, lights, options, "env-only", outError))
             return false;
+        LightBVHBuild bvh = BuildLightBVH(lights, options, alloc);
+        if (bvh.distantRootNode == UINT32_MAX || bvh.distantNodeCount == 0u || !bvh.globalLightIndices.empty())
+        {
+            if (outError)
+                *outError = "env-only: expected env in distant BVH";
+            return false;
+        }
+    }
+    {
+        Vector<GSLight> lights(alloc);
+        lights.push_back(MakeTestLight(kGSLightTypeEnvironment, float3(0)));
+        lights.push_back(MakeTestLight(kGSLightTypeDirectional, float3(0), float3(0, -1, 0)));
+        if (!RunCase(alloc, lights, options, "env-sun", outError))
+            return false;
+        LightBVHBuild bvh = BuildLightBVH(lights, options, alloc);
+        if (bvh.distantNodeCount < 2u || bvh.lightIndices.size() != 2u)
+        {
+            if (outError)
+                *outError = "env-sun: expected both emitters in distant BVH";
+            return false;
+        }
     }
     {
         Vector<GSLight> lights(alloc);
@@ -1027,10 +1047,10 @@ bool LightBVHRunBuilderSelfTests(Allocator* alloc, String* outError)
         LightBVHBuild bvh = BuildLightBVH(lights, options, alloc);
         if (!ValidateLightBVH(bvh, lights, outError))
             return false;
-        if (bvh.globalLightIndices.size() != 0u)
+        if (bvh.distantRootNode != UINT32_MAX || !bvh.globalLightIndices.empty())
         {
             if (outError)
-                *outError = "black-env: expected no global proposal lights";
+                *outError = "black-env: expected no distant/global proposal lights";
             return false;
         }
     }

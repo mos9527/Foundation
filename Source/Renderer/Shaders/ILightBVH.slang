@@ -38,7 +38,6 @@ public uint LightBVHNodeLightOffset(GSLightBVHNode node)
 StructuredBuffer<GSLightBVHNode> lightBVHNodes;
 StructuredBuffer<uint> lightBVHLightIndices;
 StructuredBuffer<uint2> lightBVHBitmasks;
-StructuredBuffer<uint> lightBVHGlobalIndices;
 
 float CosSubClamped(float sinThetaA, float cosThetaA, float sinThetaB, float cosThetaB)
 {
@@ -140,13 +139,7 @@ float EvalMixtureTotal(float3 posW, float3 normalW, bool upperHemisphere, out fl
 {
     finiteWeight = ComputeFiniteRootImportance(posW, normalW, upperHemisphere);
     distantWeight = ComputeDistantRootImportance(normalW, upperHemisphere);
-    float total = finiteWeight + distantWeight;
-    for (uint i = 0; i < globalParams.numLightBVHGlobalLights; ++i)
-    {
-        uint lightIndex = lightBVHGlobalIndices[globalParams.firstLightBVHGlobalIndex + i];
-        total += ComputeLightProposalWeight(lights[globalParams.firstLight + lightIndex]);
-    }
-    return total;
+    return finiteWeight + distantWeight;
 }
 
 bool TraverseLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout float u, out float pdf,
@@ -348,9 +341,7 @@ public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
 
     GSLight gl = lights[globalParams.firstLight + lightIndex];
     uint type = GSLightType(gl);
-    if (type == kGSLightTypeEnvironment)
-        return ComputeLightProposalWeight(gl) / total;
-    if (type == kGSLightTypeDirectional)
+    if (type == kGSLightTypeDirectional || type == kGSLightTypeEnvironment)
     {
         if (distantWeight <= 0.0f || globalParams.numLightBVHDistantNodes == 0u)
             return 0.0f;
@@ -395,23 +386,9 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
         return false;
 
     float uScaled = u * total;
-    float globalWeight = 0.0f;
-    for (uint i = 0; i < globalParams.numLightBVHGlobalLights; ++i)
+    if (distantWeight > 0.0f && uScaled < distantWeight)
     {
-        uint idx = lightBVHGlobalIndices[globalParams.firstLightBVHGlobalIndex + i];
-        float weight = ComputeLightProposalWeight(lights[globalParams.firstLight + idx]);
-        globalWeight += weight;
-        if (uScaled < globalWeight)
-        {
-            lightIndex = idx;
-            selectionPMF = weight / total;
-            return selectionPMF > 0.0f;
-        }
-    }
-
-    if (distantWeight > 0.0f && uScaled < globalWeight + distantWeight)
-    {
-        float uDistant = saturate((uScaled - globalWeight) / distantWeight);
+        float uDistant = saturate(uScaled / distantWeight);
         float traversalPdf;
         uint leafNodeIndex;
         if (!TraverseDistantLightBVH(normalW, upperHemisphere, uDistant, traversalPdf, leafNodeIndex))
@@ -426,7 +403,7 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
     if (finiteWeight <= 0.0f || globalParams.lightBVHValid == 0u)
         return false;
 
-    float uFinite = (uScaled - globalWeight - distantWeight) / finiteWeight;
+    float uFinite = (uScaled - distantWeight) / finiteWeight;
     uFinite = saturate(uFinite);
     float leafPdf;
     uint leafNodeIndex;

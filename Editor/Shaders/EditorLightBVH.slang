@@ -44,6 +44,10 @@ struct VertexOutput
     float3 worldPos : TEXCOORD1;
 };
 
+static const float kPi = 3.14159265358979323846f;
+// Keep sun cones readable even when the stored angular radius is tiny.
+static const float kDistantVizMinHalfAngle = 12.0f * kPi / 180.0f;
+
 uint2 BoxEdge(uint edge)
 {
     switch (edge)
@@ -76,16 +80,31 @@ float3 BoxVertex(GSLightBVHNode node, uint lane)
     return node.origin + signValue * node.extent;
 }
 
-float3 DistantVertex(GSLightBVHNode node, uint lane)
+float3 SphereWireVertex(float3 axis, float3 tangent, float3 bitangent, float distance, uint lane)
 {
-    float3 axis = length(node.coneDirection) > 1e-6f ? normalize(node.coneDirection) : float3(0, 0, -1);
-    float3 helper = abs(axis.z) < 0.999f ? float3(0, 0, 1) : float3(0, 1, 0);
-    float3 tangent = normalize(cross(helper, axis));
-    float3 bitangent = cross(axis, tangent);
-    float cosAngle = node.cosConeAngle != -1.0f ? clamp(node.cosConeAngle, -1.0f, 1.0f) : 0.0f;
-    float sinAngle = sqrt(max(0.0f, 1.0f - cosAngle * cosAngle));
-    float distance = max(8.0f, globalParams.distanceFadeStart * 0.5f);
+    // 0..47: equator (24 segments). 48..63: 4 meridians (apex <-> equator).
+    if (lane < 48u)
+    {
+        uint ringIndex = (lane >> 1u) + (lane & 1u);
+        float phi = (2.0f * kPi) * float(ringIndex % 24u) / 24.0f;
+        float3 radial = cos(phi) * tangent + sin(phi) * bitangent;
+        return globalParams.camPosition + distance * radial;
+    }
 
+    uint meridian = (lane - 48u) >> 2u;
+    uint end = (lane - 48u) & 1u;
+    float phi = (2.0f * kPi) * float(meridian) / 4.0f;
+    float3 radial = cos(phi) * tangent + sin(phi) * bitangent;
+    if (((lane - 48u) & 2u) == 0u)
+        return end == 0u ? globalParams.camPosition + distance * axis :
+                           globalParams.camPosition + distance * radial;
+    return end == 0u ? globalParams.camPosition - distance * axis :
+                       globalParams.camPosition + distance * radial;
+}
+
+float3 ConeWireVertex(float3 axis, float3 tangent, float3 bitangent, float cosAngle, float distance, uint lane)
+{
+    float sinAngle = sqrt(max(0.0f, 1.0f - cosAngle * cosAngle));
     uint ringIndex;
     if (lane < 48u)
     {
@@ -100,9 +119,28 @@ float3 DistantVertex(GSLightBVHNode node, uint lane)
         ringIndex = ray * 3u;
     }
 
-    float phi = 6.28318530717958647692f * float(ringIndex % 24u) / 24.0f;
+    float phi = (2.0f * kPi) * float(ringIndex % 24u) / 24.0f;
     float3 radial = cos(phi) * tangent + sin(phi) * bitangent;
     return globalParams.camPosition + distance * (cosAngle * axis + sinAngle * radial);
+}
+
+float3 DistantVertex(GSLightBVHNode node, uint lane)
+{
+    float3 axis = length(node.coneDirection) > 1e-6f ? normalize(node.coneDirection) : float3(0, 0, 1);
+    float3 helper = abs(axis.z) < 0.999f ? float3(0, 0, 1) : float3(0, 1, 0);
+    float3 tangent = normalize(cross(helper, axis));
+    float3 bitangent = cross(axis, tangent);
+    float distance = max(8.0f, globalParams.distanceFadeStart * 0.5f);
+
+    bool fullSphere = node.cosConeAngle == -1.0f;
+    if (fullSphere)
+        return SphereWireVertex(axis, tangent, bitangent, distance, lane);
+
+    float cosAngle = clamp(node.cosConeAngle, -1.0f, 1.0f);
+    float vizCos = cos(kDistantVizMinHalfAngle);
+    // Wider cone = smaller cos; never let the ring collapse to a point.
+    cosAngle = min(cosAngle, vizCos);
+    return ConeWireVertex(axis, tangent, bitangent, cosAngle, distance, lane);
 }
 
 [shader("vertex")]
@@ -115,10 +153,13 @@ VertexOutput vertMain(uint vertexID : SV_VertexID)
     bool distant = globalParams.numLightBVHDistantNodes != 0u &&
         nodeIndex >= globalParams.firstLightBVHDistantNode;
     bool leaf = (node.header & (1u << 31u)) != 0u;
+    bool fullSphere = distant && node.cosConeAngle == -1.0f;
 
     float3 position = distant ? DistantVertex(node, lane) : BoxVertex(node, lane);
     float4 color = distant
-        ? (leaf ? float4(0.25f, 0.75f, 1.0f, 0.9f) : float4(0.55f, 0.35f, 1.0f, 0.45f))
+        ? (fullSphere
+            ? (leaf ? float4(0.35f, 0.85f, 1.0f, 0.95f) : float4(0.55f, 0.45f, 1.0f, 0.55f))
+            : (leaf ? float4(1.0f, 0.85f, 0.2f, 0.95f) : float4(1.0f, 0.55f, 0.15f, 0.55f)))
         : (leaf ? float4(0.2f, 1.0f, 0.35f, 0.8f) : float4(1.0f, 0.65f, 0.15f, 0.35f));
     if (!distant && lane >= 24u)
         color.a = 0.0f;
