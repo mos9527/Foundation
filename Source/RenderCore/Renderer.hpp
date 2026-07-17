@@ -159,7 +159,6 @@ namespace Foundation::RenderCore
         uint32_t mFrameSwaps{1}; // Max frames in flight
         uint32_t mCurrentSync{0};
         uint32_t mCurrentSwap{0};
-        bool mExecuteSlotReady{false}; // WaitForExecuteSlot already waited/reset current sync
         RHIDeviceSemaphore* mExecuteImageAcquire{nullptr};
 
         UniquePtr<ExecuteResources> mResources;
@@ -934,7 +933,7 @@ namespace Foundation::RenderCore
         [[nodiscard]] RHIDeviceHandle<RHIDeviceSemaphore> GetRenderCompleteSemaphore() const;
 
         /**
-         * @brief Blocks until the most recently submitted frame has finished executing on the GPU.
+         * @brief Blocks until the **most recently submitted** frame has finished executing on the GPU.
          *
          * This waits on the graphics / compute fences associated with the previous frame
          * (i.e. the frame submitted by the last @ref EndExecute() call), without resetting them
@@ -952,17 +951,7 @@ namespace Foundation::RenderCore
          * @note This does NOT wait for *all* in-flight frames; use @ref WaitIdle() / device idle
          *       for that.
          */
-        void WaitForPreviousFrame();
-        /**
-         * @brief Waits for (and resets) the fences of the next sync slot to execute.
-         *
-         * Must be called before @ref RHISwapchain::GetNextImage when a swapchain is bound, so the
-         * acquire semaphore for this slot is safe to reuse. @ref BeginExecute will skip a redundant
-         * wait if this was already called for the current slot.
-         *
-         * Headless callers may skip this; @ref BeginExecute waits automatically.
-         */
-        void WaitForExecuteSlot();
+        void WaitForFrame();
         /**
          * @brief Resets the temporary execution allocator and selects the acquired swapchain image
          *        (when a swapchain is bound).
@@ -991,7 +980,6 @@ namespace Foundation::RenderCore
          * @note This MUST be called after BeginExecute(), and before EndExecute().
          *
          * @code{.cpp}
-         *  WaitForExecuteSlot();
          *  auto image = swapchain->GetNextImage(-1, renderer->GetImageAcquireSemaphore(), {});
          *  BeginExecute(image);
          *  // ...Additional pre-frame logic...

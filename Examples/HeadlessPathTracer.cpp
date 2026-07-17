@@ -316,7 +316,7 @@ int main(int argc, char** argv)
         LOG(HeadlessPathTracer, LogInfo, "Accumulation complete ({} frames)", kAccumFrames);
 
         // --- Drain the last frame before readback -------------------------------------------
-        renderer->WaitForPreviousFrame();
+        renderer->WaitForFrame();
         device->WaitIdle();
 
         // --- Read back the tonemapped RTV and dump + open it --------------------------------

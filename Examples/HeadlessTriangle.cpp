@@ -54,7 +54,7 @@ int main(int argc, char** argv)
 
     // Render one frame headlessly.
     Examples_NewFrame(renderer);
-    renderer->WaitForPreviousFrame();
+    renderer->WaitForFrame();
     device->WaitIdle();
 
     // Read back the offscreen RTV and verify the triangle was actually drawn.

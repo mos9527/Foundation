@@ -1386,8 +1386,7 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
         }
     }
     // Reset semaphores index and swapchain frame count
-    mFrameSwapped = mCurrentSwap = mCurrentSync = 0;
-    mExecuteSlotReady = false;
+    mFrameSwapped = mCurrentSwap = mCurrentSync = 0;    
 }
 
 RHIDeviceHandle<RHIDeviceSemaphore> Renderer::GetRenderCompleteSemaphore() const
@@ -1398,10 +1397,10 @@ RHIDeviceHandle<RHIDeviceSemaphore> Renderer::GetRenderCompleteSemaphore() const
     return mSwaps[mCurrentSwap].render.View();
 }
 
-void Renderer::WaitForPreviousFrame()
+void Renderer::WaitForFrame()
 {
     CHECK_MSG(mState != State::Execute,
-              "Renderer bad state ({}). WaitForPreviousFrame() must not be called between BeginExecute() and "
+              "Renderer bad state ({}). WaitForFrame() must not be called between BeginExecute() and "
               "EndExecute().",
               mState);
     ZoneScopedN("Wait for Previous Frame");
@@ -1426,34 +1425,24 @@ void Renderer::WaitForPreviousFrame()
     mDevice->WaitForFences(wait, true, -1);
 }
 
-void Renderer::WaitForExecuteSlot()
-{
-    CHECK_MSG(mState == State::PostSetup,
-              "Renderer bad state ({}). WaitForExecuteSlot() must be called before BeginExecute().", mState);
-    if (mExecuteSlotReady)
-        return;
-    ZoneScopedN("Wait for GPU");
-    Vector<RHIDeviceFence*> wait(mAllocator);
-    wait.reserve(2);
-    if (mSetup && mSetup->executionAnyGraphics)
-        wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
-    if (mSetup && mSetup->executionAnyCompute)
-        wait.push_back(mSwaps[mCurrentSync].computeFence.Get());
-    if (!wait.empty())
-    {
-        mDevice->WaitForFences(wait, true, -1);
-        mDevice->ResetFences(wait);
-    }
-    mExecuteSlotReady = true;
-}
 
 void Renderer::BeginExecute(uint32_t swapImageIndex, RHIDeviceSemaphore* imageAcquire)
 {
     CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", mState);
-    ZoneScoped;
-    if (!mExecuteSlotReady)
-        WaitForExecuteSlot();
-    mExecuteSlotReady = false;
+    {
+        ZoneScopedN("Wait for GPU");
+        Vector<RHIDeviceFence*> wait(mAllocator);
+        wait.reserve(2);
+        if (mSetup && mSetup->executionAnyGraphics)
+            wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
+        if (mSetup && mSetup->executionAnyCompute)
+            wait.push_back(mSwaps[mCurrentSync].computeFence.Get());
+        if (!wait.empty())
+        {
+            mDevice->WaitForFences(wait, true, -1);
+            mDevice->ResetFences(wait);
+        }
+    }
     mExecuteImageAcquire = imageAcquire;
     mState = State::Execute;
     // Reset per-frame arena

@@ -529,7 +529,7 @@ static void FRunning()
     // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
     if (sPickingPixel.x >= 0)
     {
-        renderer->WaitForPreviousFrame();
+        renderer->WaitForFrame();
 
         int const previousLight = SceneLightIndexFromId(GEditor.selectedLight);
         int const lightPick = EditorGizmos::PickLightAtRenderPixel(sPickingPixel);
