@@ -142,6 +142,35 @@ std::vector<PipelineCacheContext>& PipelineCacheContexts()
     return contexts;
 }
 
+bool CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISwapchain>& outSwap)
+{
+    int w, h;
+    SDL_GetWindowSizeInPixels(window, &w, &h);
+    if (w <= 0 || h <= 0)
+        return false;
+    LOG(RenderApplication, LogDebug, "Creating swapchain ({}x{})", w, h);
+    device->WaitIdle();
+    if (outSwap)
+        outSwap.Reset();
+    auto format = Ranges::FirstOf(Views::all(kFormatPreferenceList) |
+                                  Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedFormats())));
+    auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
+                                   Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedPresentModes())));
+    CHECK_MSG(format.has_value(), "No supported swapchain format found!");
+    LOG(RenderApplication, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format,
+        format.value().colorSpace);
+    CHECK_MSG(present.has_value(), "No supported presentation mode found!");
+    LOG(RenderApplication, LogDebug, "Selected swapchain present mode: {}", present.value());
+    outSwap = device->CreateSwapchain(RHISwapchain::SwapchainDesc{
+        .format = format.value().format,
+        .colorSpace = format.value().colorSpace,
+        .extents = RHIExtent3D{w, h, 1},
+        .minBufferCount = 3,
+        .presentMode = present.value(),
+    });
+    return true;
+}
+
 #if defined(__ANDROID__)
 // Bridges Foundation::Core::PathsResolve to SDL's APK-asset loader. Registered
 // in Examples_InitVulkan so shaders/bundled assets are lazily materialized out

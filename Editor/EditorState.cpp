@@ -22,28 +22,13 @@ uint32_t EditorBeginFrame(Renderer* renderer, Presenter* presenter)
 {
     const uint32_t image = presenter->AcquireNextImage();
     renderer->BeginExecute(image, presenter->GetImageAcquireSemaphore().Get());
-    
-    ImGui_ImplFoundation_NewFrame();
-    ImGui::NewFrame();
-    
     return image;
 }
 
-void EditorEndFrame(Renderer* renderer, Presenter* presenter, uint32_t swapImageIndex, bool clear)
+void EditorEndFrame(Renderer* renderer, Presenter* presenter, uint32_t swapImageIndex)
 {
     renderer->EndExecute();
-
-    auto* swapchain = presenter->GetSwapchain().Get();
-    auto* semaphore = ImGui_ImplFoundation_EndFrame(
-        swapchain->GetViews()[swapImageIndex],
-        swapchain->mDesc.format,
-        swapchain->mDesc.colorSpace,
-        swapImageIndex,
-        clear,
-        renderer->GetRenderCompleteSemaphore().Get()
-    );
-
-    presenter->Present(semaphore);
+    presenter->Present(renderer->GetRenderCompleteSemaphore().Get());
 }
 
 int SceneInstanceIndexFromId(FUUID id)
@@ -358,6 +343,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
 
 static void EndEditorRendererSetup(Renderer* renderer)
 {
+    ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
     renderer->EndSetup();
 }
 
@@ -424,6 +410,8 @@ static void FNoScene()
         renderer = GContext->renderer;
     }
     const uint32_t swapImage = EditorBeginFrame(renderer, GContext->presenter);
+    ImGui_ImplFoundation_NewFrame();
+    ImGui::NewFrame();
     {
         EditorDockSpaceAndMenuBar();
         ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -447,7 +435,7 @@ static void FNoScene()
     GEditor.camera.UpdateMovement(dt);
     GEditor.camera.Update({});
     renderer->ExecuteFrame();
-    EditorEndFrame(renderer, GContext->presenter, swapImage, false);
+    EditorEndFrame(renderer, GContext->presenter, swapImage);
 }
 
 static void FRunningEnter()
@@ -470,6 +458,8 @@ static void FRunning()
     // New frame
     const uint32_t swapImage = EditorBeginFrame(renderer, GContext->presenter);
     GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
+    ImGui_ImplFoundation_NewFrame();
+    ImGui::NewFrame();
     UpdateBackbufferViewport();
     if (GEditor.showImGui)
     {
@@ -479,7 +469,10 @@ static void FRunning()
     }
     // Global param update
     float dt = ImGui::GetIO().DeltaTime;
+    // Decide before BeginAnimationUpdate, which clears the scrub flag this query reads.
     bool const followAnimatedCamera = AnimatedCameraDrivesView();
+    // Kick the per-skeleton pose evaluation now so it overlaps the camera/UBO globals update below.
+    // EndAnimationUpdate (further down) waits for it before skinning + committing the scene.
     BeginAnimationUpdate(dt);
     RHIExtent2D displayExtent = ClampViewportExtent(GEditor.viewport.renderExtent);
     // Apply render resolution scale for internal render targets
@@ -509,9 +502,18 @@ static void FRunning()
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
     GEditor.shaderGlobals.ptPrimaryLightVisibility = GEditor.rendererConfig.ptPrimaryLightVisibility ? 1u : 0u;
 
+    // Skinned animation playback: wait for the scheduled poses, apply rigid transforms + CPU-skin
+    // into the dynamic ring, then re-author the scene so dynamic instances encode the current ring
+    // slot (the graph's BLAS Update pass refits them). Paused/held poses skip this so the path
+    // tracer keeps accumulating.
     if (EndAnimationUpdate())
         CommitSceneToGPU(true);
 
+    // -- AutoPause: any "user operation" exits AutoPaused. We define a user operation
+    //    as anything that resets the path-tracer accumulation, which covers camera
+    //    movement (cameraUpdated) and any UI control change that sets
+    //    ptAccumulatedFrames = 0 (PT settings, light edits, etc.). A drop in
+    //    ptAccumulatedFrames since the last frame is the canonical signal.
     static uint32_t sPrevPTAccumulatedFrames = 0u;
     bool ptAccumWasReset = GEditor.shaderGlobals.ptAccumulatedFrames < sPrevPTAccumulatedFrames;
     bool userOperation = GEditor.cameraUpdated || ptAccumWasReset;
@@ -525,7 +527,7 @@ static void FRunning()
     RefreshPostprocessState(renderExtent);
     EditorGizmos::BuildLightGizmos();
     renderer->ExecuteFrame();
-    EditorEndFrame(renderer, GContext->presenter, swapImage, false);
+    EditorEndFrame(renderer, GContext->presenter, swapImage);
     // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
     if (sPickingPixel.x >= 0)
     {

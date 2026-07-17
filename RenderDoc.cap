@@ -2,10 +2,10 @@
     "rdocCaptureSettings": 1,
     "settings": {
         "autoStart": false,
-        "commandLine": "\"D:\\Custom-Scenes\\LightBVH.gltf\" --renderer 1",
+        "commandLine": "\"D:\\Custom-Scenes\\SunAngle.gltf\"",
         "environment": [
         ],
-        "executable": "D:\\Foundation\\out\\build\\x64-Debug-NoVVL\\bin\\Editor.exe",
+        "executable": "D:\\Foundation\\out\\build\\x64-Release\\bin\\Editor.exe",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {

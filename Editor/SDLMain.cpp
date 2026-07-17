@@ -76,7 +76,6 @@ int main(int argc, char** argv)
                                    kSDLWindowFlagsVulkan),
                   GLOBAL_ALLOC, RHIDevice::DeviceDesc{.id = static_cast<uint32_t>(gpuId)});
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
-    
     ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);
 
     // Renderer Settings

@@ -36,7 +36,6 @@ namespace Foundation::RHI {
             RHIDeviceHandle<RHISurface> surface;
         } mDesc;
         [[nodiscard]] virtual Span<RHITexture* const> GetImages() const = 0;
-        [[nodiscard]] virtual Span<RHITextureView* const> GetViews() const = 0;
         RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : mDevice(device), mDesc(desc) {}
         /**
          * @brief Gets the next image in the swapchain.

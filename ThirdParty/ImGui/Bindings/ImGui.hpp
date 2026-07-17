@@ -6,9 +6,7 @@
 #include <imgui.h>
 
 #include <RHICore/Device.hpp>
-#include <RHICore/PipelineState.hpp>
-#include <RHICore/Command.hpp>
-
+#include <RenderCore/Renderer.hpp>
 /**
  * @brief Sampler type for added image.
  */
@@ -20,14 +18,35 @@ enum ImGui_ImplFoundation_ImageSampler
 
 /* -- Internals -- */
 void ImGui_ImplFoundation_ImplUpdateTexture(ImTextureData* tex);
+void ImGui_ImplFoundation_ImplPassSetup(Foundation::RenderCore::PassHandle self,
+                                        Foundation::RenderCore::Renderer* renderer,
+                                        Foundation::RenderCore::ResourceHandle vtxBuffer,
+                                        Foundation::RenderCore::ResourceHandle idxBuffer,
+                                        Foundation::RenderCore::ResourceHandle linSampler,
+                                        Foundation::RenderCore::ResourceHandle nearSampler);
+void ImGui_ImplFoundation_ImplPassRecord(Foundation::RenderCore::PassHandle self,
+                                         Foundation::RenderCore::Renderer* renderer, bool clear,
+                                         Foundation::RHI::RHICommandList* cmd,
+                                         Foundation::RenderCore::ResourceHandle vtxBuffer,
+                                         Foundation::RenderCore::ResourceHandle idxBuffer);
+void ImGui_ImplFoundation_ImplCreateResources(Foundation::RenderCore::Renderer* renderer,
+                                              Foundation::RenderCore::ResourceHandle& outVtxBuffer,
+                                              Foundation::RenderCore::ResourceHandle& outIdxBuffer,
+                                              Foundation::RenderCore::ResourceHandle& outLinearSampler,
+                                              Foundation::RenderCore::ResourceHandle& outNearestSampler);
 // ^^^ Internals
 
+/* -- APIs -- */
 /**
- * @brief Initialize global context (@ref TexturePool, etc.) for our ImGui backend
- *        Call this once context is created.
+ * @breif Initialize global context (@ref TexturePool, etc.) for our ImGui backend
+ *        Call this once context is created, within BeginSetup/EndSetup block of your @ref Renderer.
  *
- * @param device The device to use for ImGui.
- * @param window The SDL window for ImGui to attach to.
+ * @param device @ref RHIDevice of the @ref Renderer
+ * @param window @ref SDL_Window
+ * @param clear Whether to clear the render target before drawing.
+ * @param dependOn (Optional) A pass to depend on. You may want this if the prior pass writes to resources ImGui may renderer
+ *                 (e.g. through ImGui_ImplFoundation_AddImage). If the prior pass writes to the backbuffer as well, this
+ *                 is not required as dependency will be automatically created.
  *
  * @note You _MUST_ call @ref ImGui_ImplFoundation_Shutdown before the destruction of @ref RHIDevice related objects.
  *       See @ref Examples::ImGui or other ImGui backend usage for reference.
@@ -73,43 +92,48 @@ ImGui_ImplFoundation_AddImage(Foundation::RHI::RHITextureView* textureView,
 void ImGui_ImplFoundation_RemoveImage(ImTextureID textureID);
 
 /**
- * @brief Records and submits ImGui draw commands on the backend's managed command lists.
- * @param draw_data ImGui draw data to render.
- * @param rtv The render target view to render into.
+ * @brief Creates a render pass that will draw the ImGui UI.
+ * @tparam FSetup A callable type for custom render pass setup.
+ *                You may want this when ImGui is the last pass of your @ref Renderer setup,
+ *                as you can declare dependencies here.
+ *                See @ref Editor's @ref OnRendererSetup for an example.
+ *                However - if your prior pass writes to the backbuffer as well - dependency will
+ *                be automatically created and this won't be required.
+ * @param renderer The main renderer object.
+ * @param name A name for the pass, for debugging purposes.
  * @param clear Whether to clear the render target before drawing.
- * @param currentSwap Current frame index in flight (0 <= index < frameSwaps).
- * @param waitSemaphore Optional semaphore to wait on before execution.
- * @param waitStage Pipeline stage to wait for waitSemaphore.
- * @param signalSemaphore Optional semaphore to signal after execution finishes.
  */
-void ImGui_ImplFoundation_RenderDrawData(ImDrawData* draw_data,
-                                         Foundation::RHI::RHITextureView* rtv, 
-                                         Foundation::RHI::RHIResourceFormat rtvFormat,
-                                         Foundation::RHI::RHIColorSpace colorSpace,
-                                         bool clear, uint32_t currentSwap,
-                                         Foundation::RHI::RHIDeviceSemaphore* waitSemaphore = nullptr,
-                                         Foundation::RHI::RHIPipelineStage waitStage = Foundation::RHI::RHIPipelineStageBits::RenderTargetOutput,
-                                         Foundation::RHI::RHIDeviceSemaphore* signalSemaphore = nullptr);
+template <typename FSetup, typename FRecordPrologue>
+Foundation::RenderCore::PassHandle ImGui_ImplFoundation_CreatePass(Foundation::RenderCore::Renderer* renderer,
+                                                                   Foundation::Core::StringView name, bool clear,
+                                                                   FSetup&& setup, FRecordPrologue&& recordPrologue)
+{
+    using namespace Foundation;
+    using namespace RenderCore;
+    using namespace RHI;
+    ResourceHandle vtxBuffer, idxBuffer, linSampler, nearSampler;
+    ImGui_ImplFoundation_ImplCreateResources(renderer, vtxBuffer, idxBuffer, linSampler, nearSampler);
+    return renderer->CreatePass(
+        "ImGui", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            ImGui_ImplFoundation_ImplPassSetup(self, r, vtxBuffer, idxBuffer, linSampler, nearSampler);
+            setup(self, r);
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            recordPrologue(self, r, cmd);
+            ImGui_ImplFoundation_ImplPassRecord(self, r, clear, cmd, vtxBuffer, idxBuffer);
+        });
+}
 
+template <typename FSetup>
+Foundation::RenderCore::PassHandle ImGui_ImplFoundation_CreatePass(Foundation::RenderCore::Renderer* renderer, Foundation::Core::StringView name, bool clear, FSetup&& setup)
+{
+    return ImGui_ImplFoundation_CreatePass(renderer, name, clear, std::forward<FSetup>(setup),
+                                           Foundation::RenderCore::FRecordDefault{});
+}
 
-/**
- * @brief Finalizes the ImGui frame and renders into the swapchain.
- *
- * This is the "one call does it all" end-of-frame function. It:
- *  1. Calls ImGui::Render() to finalize draw data.
- *  2. Records & submits ImGui draw commands, waiting on the provided
- *     waitSemaphore and signaling an internal semaphore.
- *  3. Returns the signaled semaphore for presentation.
- *
- * Semaphore management is fully internal.
- */
-Foundation::RHI::RHIDeviceSemaphore* ImGui_ImplFoundation_EndFrame(
-    Foundation::RHI::RHITextureView* rtv,
-    Foundation::RHI::RHIResourceFormat rtvFormat,
-    Foundation::RHI::RHIColorSpace colorSpace,
-    uint32_t currentSwap,
-    bool clear,
-    Foundation::RHI::RHIDeviceSemaphore* waitSemaphore);
 
 /**
  * @brief Applies a default, vaguely stylish theme to the ImGui context.
