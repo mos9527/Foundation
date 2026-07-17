@@ -184,12 +184,12 @@ void ImGui_ImplFoundation_RemoveImage(ImTextureID textureID)
 #pragma pack(push, 4)
 struct PushConstants
 {
-    float scaleTranslate[4]; // xy: scale, zw: translation
-    uint textureSampler[4];  // x: texture id, y: sampler id
-    ImGuiSdfParams sdfParams;
+    float2 s; // scale
+    float2 t; // translation
+    uint textureId;
+    uint samplerId;
 };
 #pragma pack(pop)
-static_assert(sizeof(PushConstants) == 96);
 
 void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHandle vtxBuffer,
                                         ResourceHandle idxBuffer, ResourceHandle linSampler,
@@ -198,7 +198,7 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
     r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
     r->BindBufferCopyDst(self, vtxBuffer);
     r->BindBufferCopyDst(self, idxBuffer);
-    r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, sizeof(PushConstants));
+    r->BindPushConstant(self, RHIShaderStageBits::Vertex, 0, sizeof(PushConstants));
     // Specialization constant
     uint flags{};
     // We can output to these colorspaces:
@@ -292,11 +292,12 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
     // Setup scale and translation:
     // Our visible imgui space lies from draw_data->DisplayPps (top left) to
     // draw_data->DisplayPos+data_data->DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
-    PushConstants pc{};
-    pc.scaleTranslate[0] = 2.0f / draw_data->DisplaySize.x;
-    pc.scaleTranslate[1] = 2.0f / draw_data->DisplaySize.y;
-    pc.scaleTranslate[2] = -1.0f - draw_data->DisplayPos.x * (2.0f / draw_data->DisplaySize.x);
-    pc.scaleTranslate[3] = -1.0f - draw_data->DisplayPos.y * (2.0f / draw_data->DisplaySize.y);
+    PushConstants pc{
+        .s = {2.0f / draw_data->DisplaySize.x, 2.0f / draw_data->DisplaySize.y},
+        .t = {-1.0f - draw_data->DisplayPos.x * (2.0f / draw_data->DisplaySize.x),
+              -1.0f - draw_data->DisplayPos.y * (2.0f / draw_data->DisplaySize.y)},
+        .textureId = 0 // Updated per-draw
+    };
     // Render command list
     // Will project scissor/clipping rectangles into framebuffer space
     ImVec2 clip_off = draw_data->DisplayPos; // (0,0) unless using multi-viewports
@@ -322,21 +323,17 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
             // All textures live in the @ref TexturePool - akin to D3D12's ResourceDescriptorHeap
             // Whether they exist or not - push it
             auto [textureId, samplerId] = ImGui_ImplFoundation_DecodeImTextureID(pcmd->GetTexID());
-            pc.textureSampler[0] = textureId;
+            pc.textureId = textureId;
             switch (samplerId)
             {
             case ImGuiImplFoundationImageSamplerLinear:
-                pc.textureSampler[1] = 0;
+                pc.samplerId = 0;
                 break;
             case ImGuiImplFoundationImageSamplerNearest:
-                pc.textureSampler[1] = 1;
-                break;
-            case ImGuiImplFoundationImageSamplerProceduralInternal:
-                pc.textureSampler[1] = 2;
-                pc.sdfParams = draw_list->SdfParamsBuffer[textureId];
+                pc.samplerId = 1;
                 break;
             }
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, pc);
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex, 0, pc);
             // Draw!
             cmd->DrawIndexed(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset,
                              pcmd->VtxOffset + global_vtx_offset, 0);
@@ -469,12 +466,4 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     colors[ImGuiCol_SeparatorActive] = accent(1.0f, 1.0f);
     colors[ImGuiCol_ButtonHovered] = colors[ImGuiCol_HeaderHovered] = colors[ImGuiCol_SeparatorHovered] =
         accent(1.0f, 0.75f);
-    ImGuiSdfFrameStyle sdfStyle{};
-    sdfStyle.GradientTop = 1.12f;
-    sdfStyle.GradientBottom = 0.78f;
-    sdfStyle.Param0 = 2.25f;
-    sdfStyle.Param1 = 0.42f;
-    sdfStyle.ShadowColor = IM_COL32(0, 0, 0, 72);
-    sdfStyle.ShadowSoftness = 3.0f;
-    ImGui::EnableSdfFrames(&sdfStyle);
 }

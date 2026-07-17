@@ -1,21 +1,25 @@
 cmake_minimum_required(VERSION 3.26)
 
+include(FetchContent)
+FetchContent_MakeAvailable(imgui)
+FetchContent_MakeAvailable(imguizmo)
+
 add_library(ThirdParty_ImGui STATIC)
 target_sources(ThirdParty_ImGui PRIVATE
-    "imgui/imgui.cpp"
-    "imgui/imgui_draw.cpp"
-    "imgui/imgui_tables.cpp"
-    "imgui/imgui_widgets.cpp"
-    "imgui/imgui_demo.cpp"
-    "imgui/backends/imgui_impl_sdl3.cpp"
-    "imguizmo/ImGuizmo.cpp"
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imguizmo_SOURCE_DIR}/ImGuizmo.cpp
     "Bindings/ImGui.cpp"
     "Fonts/PlexSansIcon.c"
 )
 target_include_directories(ThirdParty_ImGui PUBLIC
-    "imgui"
-    "imgui/backends"
-    "imguizmo"
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+    ${imguizmo_SOURCE_DIR}
     .
 )
 

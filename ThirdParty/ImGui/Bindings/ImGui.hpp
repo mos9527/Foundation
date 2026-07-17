@@ -13,8 +13,7 @@
 enum ImGui_ImplFoundation_ImageSampler
 {
     ImGuiImplFoundationImageSamplerLinear = 0,
-    ImGuiImplFoundationImageSamplerNearest = 1,
-    ImGuiImplFoundationImageSamplerProceduralInternal = 2
+    ImGuiImplFoundationImageSamplerNearest = 1
 };
 
 /* -- Internals -- */
@@ -97,7 +96,7 @@ void ImGui_ImplFoundation_RemoveImage(ImTextureID textureID);
  * @tparam FSetup A callable type for custom render pass setup.
  *                You may want this when ImGui is the last pass of your @ref Renderer setup,
  *                as you can declare dependencies here.
- *                See @ref ModelViewer's @ref OnRendererSetup for an example.
+ *                See @ref Editor's @ref OnRendererSetup for an example.
  *                However - if your prior pass writes to the backbuffer as well - dependency will
  *                be automatically created and this won't be required.
  * @param renderer The main renderer object.

@@ -455,17 +455,7 @@ ImTimelineResult ImTimeline(const char* strId, Span<const ImTimelineRow> rows, S
         ImGui::PushID(si + 100000);
         float const rowY = canvasMin.y + kRulerHeight + static_cast<float>(strip.row) * kRowHeight;
         ImVec2 const pMin(x0, rowY + kStripPadY), pMax(x1, rowY + kRowHeight - kStripPadY);
-        {
-            auto scaleColor = [](ImU32 c, float f) -> ImU32
-            {
-                ImVec4 v = ImGui::ColorConvertU32ToFloat4(c);
-                v.x = std::min(v.x * f, 1.0f), v.y = std::min(v.y * f, 1.0f), v.z = std::min(v.z * f, 1.0f);
-                return ImGui::ColorConvertFloat4ToU32(v);
-            };
-            dl->AddRectSDF(pMin, pMax, ImGuiSdfPreset_DropShadow, 4.0f, IM_COL32(0, 0, 0, 110), 0, 3.0f);
-            dl->AddRectSDF(pMin, pMax, ImGuiSdfPreset_Gloss, 4.0f, scaleColor(strip.color, 1.18f),
-                           scaleColor(strip.color, 0.80f));
-        }
+        dl->AddRectFilled(pMin, pMax, strip.color, 4.0f);
         dl->AddRect(pMin, pMax, strip.selected ? IM_COL32(255, 220, 90, 255) : IM_COL32(0, 0, 0, 120), 4.0f, 0,
                     strip.selected ? 2.0f : 1.0f);
         if (strip.label)
