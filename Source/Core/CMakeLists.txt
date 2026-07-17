@@ -57,8 +57,6 @@ endif()
 
 if (WIN32)
     target_link_libraries(Foundation_Core PUBLIC ws2_32 dbghelp)
-elseif(ANDROID)
-    target_link_libraries(Foundation_Core PUBLIC log android)
 endif()
 
 # MinGW/GCC needs libatomic for 128-bit CAS used in AtomicPool

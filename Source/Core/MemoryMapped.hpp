@@ -1,5 +1,5 @@
 #pragma once
-#include <Core/Container.hpp>
+#include <Platform/Mmap.hpp>
 #include <cstdint>
 #include <limits>
 
@@ -13,20 +13,7 @@ enum class MemoryMappedAccess
 
 class MemoryMappedFile
 {
-    void* mData{};
-    uint64_t mSize{};
-    bool mWritable{};
-
-#if defined(_WIN32)
-    void* mFileHandle{};
-    void* mMappingHandle{};
-#else
-    int mFd{-1};
-#endif
-
-    void MapView();
-    void UnmapView() noexcept;
-    void MoveFrom(MemoryMappedFile& other) noexcept;
+    Platform::MmapState mState{};
 
 public:
     MemoryMappedFile() = default;
@@ -48,12 +35,12 @@ public:
     void Close() noexcept;
 
     [[nodiscard]] bool IsOpen() const noexcept;
-    [[nodiscard]] bool IsMapped() const noexcept { return mData != nullptr; }
-    [[nodiscard]] bool IsWritable() const noexcept { return mWritable; }
-    [[nodiscard]] bool Empty() const noexcept { return mSize == 0; }
-    [[nodiscard]] uint64_t Size() const noexcept { return mSize; }
+    [[nodiscard]] bool IsMapped() const noexcept { return mState.data != nullptr; }
+    [[nodiscard]] bool IsWritable() const noexcept { return mState.writable; }
+    [[nodiscard]] bool Empty() const noexcept { return mState.size == 0; }
+    [[nodiscard]] uint64_t Size() const noexcept { return mState.size; }
 
-    [[nodiscard]] const unsigned char* Data() const noexcept { return static_cast<const unsigned char*>(mData); }
+    [[nodiscard]] const unsigned char* Data() const noexcept { return static_cast<const unsigned char*>(mState.data); }
     [[nodiscard]] unsigned char* MutableData();
     [[nodiscard]] Span<const unsigned char> Bytes() const;
     [[nodiscard]] Span<unsigned char> MutableBytes();
