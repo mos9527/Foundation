@@ -7,7 +7,7 @@
 using namespace RenderUtils;
 int main(int argc, char** argv)
 {
-    SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("MipGeneration Example"), 512, 512,
+    SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("MipGeneration Example"), 1024, 1024,
                                           Examples_SDLWindowFlagsVulkan);
     auto ctx = Examples_InitVulkan(window, argc, argv,
                                                                   {
@@ -32,7 +32,7 @@ int main(int argc, char** argv)
         ctx.renderer->BeginSetup();
         ResourceHandle hdl = ctx.renderer->CreateResource("Mip Image", texture.Get());
         ResourceHandle sampler = ctx.renderer->CreateSampler({});
-        createCSMipGenerationSinglePass(ctx.renderer, "Mip Generation", RHIDeviceQueueType::Compute, hdl, hdl,
+        createCSMipGenerationSinglePass(ctx.renderer.get(), "Mip Generation", RHIDeviceQueueType::Compute, hdl, hdl,
                                         RHIResourceFormat::R8G8B8A8Unorm, RHIResourceFormat::R8G8B8A8Unorm,
                                         RHITextureAspectFlagBits::Color, RHITextureAspectFlagBits::Color, sampler,
                                         numMips);
@@ -65,7 +65,7 @@ int main(int argc, char** argv)
                 cmd->Draw(3);
                 cmd->EndGraphics();
             });
-        createCSDebugTextPassBackBuffer(ctx.renderer, "Debug Text", Examples_HudLines(input));
+        createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
         ctx.renderer->EndSetup();
         ExampleFpsCounter fps;
         while (true)
