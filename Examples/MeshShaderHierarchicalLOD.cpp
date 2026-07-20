@@ -23,8 +23,8 @@ int main(int argc, char** argv)
     UBO ubo{ .threshold = 0.01f};
     ExampleInputState input{};
     /* Setup */
-    auto [renderer, app, device, surface, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, {});
-    CHECK_MSG(device->GetCapabilities().meshShaders, "Mesh Shader support required, but is unavailable");
+    auto ctx = Examples_InitVulkan(window, argc, argv, {});
+    CHECK_MSG(ctx.device->GetCapabilities().meshShaders, "Mesh Shader support required, but is unavailable");
     RHIDeviceScopedHandle<RHIBuffer> meshData;
     /* Loads and computes DAG LODs and upload immediately */
     {
@@ -54,24 +54,25 @@ int main(int argc, char** argv)
         mesh.meshletVtxOffset = Write(s0.meshletVtx.data(), sizeof(uint32_t) * s0.meshletVtx.size());
         mesh.meshletTriOffset = Write(s0.meshletTri.data(), sizeof(uint8_t) * s0.meshletTri.size());
         size_t size = dst - ptr;
-        meshData = ImmediateCreateBuffer(device.Get(),
+        meshData = ImmediateCreateBuffer(
+            ctx.device.Get(),
             RHIBufferDesc{
                 .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer,
                 .size = size,
             },
             staging.data(), size);
     }
-    renderer->BeginSetup();
-    auto meshHandle = renderer->CreateResource("Mesh Storage", meshData.Get());
-    auto uboHandle = renderer->CreateResource(
+    ctx.renderer->BeginSetup();
+    auto meshHandle = ctx.renderer->CreateResource("Mesh Storage", meshData.Get());
+    auto uboHandle = ctx.renderer->CreateResource(
         "UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
                       .size = sizeof(RendererUBO)});
-    auto zbufferHandle = renderer->CreateResource("ZBuffer",
+    auto zbufferHandle = ctx.renderer->CreateResource("ZBuffer",
                                                   RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil,
                                                                  .extent = {4096, 4096, 1},
                                                                  .format = RHIResourceFormat::D32SignedFloat});
-    renderer->CreatePass(
+    ctx.renderer->CreatePass(
         "UBO Update", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
@@ -85,7 +86,7 @@ int main(int argc, char** argv)
             // XXX: Figure out how to make this less error-prone.
             cmd->UpdateBuffer(uboData, 0, AsBytes(AsSpan(ubo)));            
         });
-    renderer->CreatePass(
+    ctx.renderer->CreatePass(
         "Mesh Shader", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
@@ -115,8 +116,8 @@ int main(int argc, char** argv)
                 .DrawMeshTasks(ubo.mesh.meshletCount, 1, 1)
                 .EndGraphics();
         });
-    createCSDebugTextPassBackBuffer(renderer, "Debug Text", Examples_HudLines(input));
-    renderer->EndSetup();
+    createCSDebugTextPassBackBuffer(ctx.renderer, "Debug Text", Examples_HudLines(input));
+    ctx.renderer->EndSetup();
     ExampleFpsCounter fps;
     FExampleOrbitCamera camera{.center = {0, 0.5f, 0},
                                .radius = 2.0f,
@@ -127,7 +128,7 @@ int main(int argc, char** argv)
     while (true)
     {
         Examples_BeginFrameInput(input);
-        if (Examples_PollEvents(window, renderer, surface, swapchain, input))
+        if (Examples_PollEvents(window, ctx, input))
             break;
 
         uint64_t now = SDL_GetTicksNS();
@@ -145,12 +146,12 @@ int main(int argc, char** argv)
         if (increaseLod)
             ubo.threshold += 0.01f;
         ubo.threshold = std::clamp(ubo.threshold, 0.01f, 0.30f);
-        camera.aspect = swapchain->GetAspectRatio();
+        camera.aspect = ctx.swapchain->GetAspectRatio();
         camera.Update(input, dt);
         ubo.view = camera.view, ubo.proj = camera.proj, ubo.zNear = camera.zNear;
-        Examples_NewFrame(window, renderer, presenter, surface, swapchain);
+        Examples_NewFrame(window, ctx);
     }
     meshData.Release(); // Release - destructs with the device
-    Examples_DestroyVulkan(window, renderer, app, device, surface, swapchain);
+    Examples_DestroyVulkan(window, ctx);
     return 0;
 }

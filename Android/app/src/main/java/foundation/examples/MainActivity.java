@@ -50,14 +50,11 @@ public class MainActivity extends Activity {
 
         // BEGIN GENERATED ANDROID EXAMPLES
         Example[] examples = {
-            new Example("Example_GPUSceneDeform", "GPUSceneDeform", "Demonstrates a dynamically updated geometry with GPUScene"),
-            new Example("Example_GPUSceneStreaming", "GPUSceneStreaming", "Demonstrates asynchronous streaming with GPUScene"),
             new Example("Example_BindlessSimple", "BindlessSimple", "Demonstrates bindless texture sampling with a pool of procedurally generated textures. The fullscreen shader cycles through many sampled images without rebinding descriptors."),
-            new Example("Example_GPUSceneGLTF", "GPUSceneGLTF", "Demonstrates loading a glTF/GLB/FSCN into GPUScene and plays it!"),
-            new Example("Example_GPUScene", "GPUScene", "Demonstrates the Pathtracer and materials with minimal GPUScene setup"),
             new Example("Example_DebugText", "DebugText", "Example showing how to use CSDebugText to get the absolute minimum up and running - with something to display. You can copy-paste this into your own application to get started."),
             new Example("Example_SDF2D", "SDF2D", "Fullscreen 2D signed-distance-field shader demo. Ports Inigo Quilez-style distance functions into a minimal Foundation render pass."),
             new Example("Example_MipGeneration", "MipGeneration", "Generates a full mip chain for a texture on the GPU and displays the sampled result. Uses the shared cameraman image asset as a simple compute mip-generation test."),
+            new Example("Example_AutodiffSimple", "AutodiffSimple", "GPU auto-differentiation demo: BC7-style block compression via gradient descent. Ports NVIDIA Falcor's TinyBC sample. A compute pass jointly optimizes BC interpolation weights and endpoints per 4x4 tile using reverse-mode autodiff (__bwd_diff) and Adam, then the decoded (compressed->decompressed) result is blitted to the screen."),
             new Example("Example_Triangle", "Triangle", "Hello-world graphics example that renders a single animated triangle. Useful as the smallest windowed Renderer + Vulkan setup path."),
             new Example("Example_MeshShaderHierarchicalLOD", "MeshShaderHierarchicalLOD", "Mesh shader hierarchical LOD demo using clustered bunny geometry. Streams DAG LOD data to the GPU and lets the shader select detail by threshold."),
             new Example("Example_ImGui", "ImGui", "Minimal Dear ImGui integration sample using the Foundation backend. Opens the standard ImGui demo window over a rendered frame."),

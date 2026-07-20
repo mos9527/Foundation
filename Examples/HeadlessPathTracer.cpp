@@ -35,12 +35,10 @@ namespace
 int main(int argc, char** argv)
 {
     RendererDesc rendererDesc{.threadCount = 0};
-    auto [renderer0, app, device, surface, swapchain, presenter] = Examples_InitVulkan(nullptr, argc, argv, rendererDesc);
-    UniquePtr<Renderer> renderer(renderer0, StlDeleter<Renderer>{GLOBAL_ALLOC});
-
+    auto ctx = Examples_InitVulkan(nullptr, argc, argv, rendererDesc);
     {
         // GPUScene owns all GPU-resident scene data and lives for the example scope.
-        GPUScene gpu(device.Get(), GLOBAL_ALLOC, GPUSceneDesc{});
+        GPUScene gpu(ctx.device.Get(), GLOBAL_ALLOC, GPUSceneDesc{});
 
         // Same pipeline the editor uses (optimize -> DAG clusterize -> quantize), serialized
         // into a throwaway blob payload and uploaded synchronously.
@@ -258,29 +256,18 @@ int main(int argc, char** argv)
 
         ubo.ptSamplesPerPixel = 1;
 
-        // --- One-time TLAS build -------------------------------------------------------------
-        {
-            ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
-            auto* cmd = ctx.Get();
-            cmd->Begin();
-            auto tlasResult = gpu.BuildTLAS(cmd, /*update*/ false);
-            cmd->End();
-            if (tlasResult == GPUScene::TLASBuildResult::Built)
-                ctx.Submit(), ctx.WaitIdle();
-        }
-
         // --- Build the render graph (path tracer -> simplified tonemap into an RTV) ----------
         bool renderPaused = false; // PT dispatch gate (never paused: trace every frame)
         RendererConfig cfg{};
         cfg.renderExtent = kExtent;
         cfg.ptRenderPaused = &renderPaused;
         RendererOutputs handles{};
-        renderer->BeginSetup();
-        BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, handles);
+        ctx.renderer->BeginSetup();
+        BuildPathTracerRenderGraph(ctx.renderer, &ubo, &gpu, cfg, handles);
         // Headless: the tonemap writes only to the explicit RTV (no backbuffer blit).
         // We capture that handle to read it back after convergence.
-        const ResourceHandle postprocess = Examples_InsertBasicTonemapPasses(renderer.get(), handles, true);
-        renderer->EndSetup();
+        const ResourceHandle postprocess = Examples_InsertBasicTonemapPasses(ctx.renderer, handles, true);
+        ctx.renderer->EndSetup();
 
         // --- Fixed camera: look into the open front of the box from slightly above ----------
         FExampleOrbitCamera camera{.center = {0.0f, 0.9f, 0.0f},
@@ -292,8 +279,7 @@ int main(int argc, char** argv)
         camera.RefreshMatrices();
 
         auto UpdateUBO = [&]
-        {
-            Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, cfg);
+        { Examples_GPUSceneFillCameraUBO(ubo, ctx.renderer, camera, cfg);
         };
         UpdateUBO();
 
@@ -305,7 +291,7 @@ int main(int argc, char** argv)
         for (uint32_t f = 0; f < kAccumFrames; ++f)
         {
             UpdateUBO(); // refresh frameNumber each frame; camera/scene unchanged.
-            Examples_NewFrame(renderer.get());
+            Examples_NewFrame(ctx.renderer);
             ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
 
             fmt::print("\r[PT] frame {}/{} ({:.0f}%)   ", f + 1, kAccumFrames,
@@ -316,16 +302,16 @@ int main(int argc, char** argv)
         LOG(HeadlessPathTracer, LogInfo, "Accumulation complete ({} frames)", kAccumFrames);
 
         // --- Drain the last frame before readback -------------------------------------------
-        renderer->WaitForFrame();
-        device->WaitIdle();
+        ctx.renderer->WaitForFrame();
+        ctx.device->WaitIdle();
 
         // --- Read back the tonemapped RTV and dump + open it --------------------------------
         // Scoped so the readback (which owns device resources) is destroyed before the
         // GPUScene / device teardown below.
         {
-            auto* outputTex = renderer->DerefResource(postprocess).Get<RHITexture*>();
+            auto* outputTex = ctx.renderer->DerefResource(postprocess).Get<RHITexture*>();
             const size_t dataSize = static_cast<size_t>(kExtent.x) * kExtent.y * 4;
-            ImmediateReadback readback(device.Get(), dataSize + 16);
+            ImmediateReadback readback(ctx.device.Get(), dataSize + 16);
             readback.Begin();
             {
                 auto* cmd = readback.ctx.Get();
@@ -351,11 +337,10 @@ int main(int argc, char** argv)
             Examples_DumpAndOpenImage("render.png", kExtent, pixels);
         }
 
-        device->WaitIdle();
-        // GPUScene tears down here (end of scope); renderer/app/device tear down below.
+        ctx.device->WaitIdle();
     }
 
-    Examples_DestroyVulkan(nullptr, renderer.release(), app, device, surface, swapchain);
+    Examples_DestroyVulkan(nullptr, ctx);
     fmt::println("HeadlessPathTracer: OK");
     return 0;
 }

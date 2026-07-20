@@ -83,14 +83,11 @@ jobs:
         targets=(
           EditorWithUtil
           # BEGIN GENERATED CI EXAMPLE TARGETS
-          Example_GPUSceneDeform
-          Example_GPUSceneStreaming
           Example_BindlessSimple
-          Example_GPUSceneGLTF
-          Example_GPUScene
           Example_DebugText
           Example_SDF2D
           Example_MipGeneration
+          Example_AutodiffSimple
           Example_HeadlessPathTracer
           Example_HeadlessTriangle
           Example_Triangle

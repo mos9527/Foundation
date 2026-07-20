@@ -8,10 +8,10 @@ int main(int argc, char** argv)
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("Mesh Shader Hello World"), 800, 600,
                                           Examples_SDLWindowFlagsVulkan);
     CSDebugTextData data{ .x = 16, .y = 16 };
-    auto [renderer, app, device, surface, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, {});
-    CHECK_MSG(device->GetCapabilities().meshShaders, "Mesh Shader support required, but is unavailable");
-    renderer->BeginSetup();
-    renderer->CreatePass(
+    auto ctx = Examples_InitVulkan(window, argc, argv, {});
+    CHECK_MSG(ctx.device->GetCapabilities().meshShaders, "Mesh Shader support required, but is unavailable");
+    ctx.renderer->BeginSetup();
+    ctx.renderer->CreatePass(
         "Mesh Task", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
@@ -32,13 +32,13 @@ int main(int argc, char** argv)
                 .DrawMeshTasks(1, 1, 1)
                 .EndGraphics();
         });
-    createCSDebugTextPassBackBuffer(renderer, "Debug Text", {{data}});
-    renderer->EndSetup();
+    createCSDebugTextPassBackBuffer(ctx.renderer, "Debug Text", {{data}});
+    ctx.renderer->EndSetup();
     ExampleFpsCounter fps;
-    while (!Examples_ShouldClose(window, renderer, surface, swapchain))
+    while (!Examples_ShouldClose(window, ctx))
     {
         data.SetText(fmt::format("MeshShader Hello World FPS: {}", fps.Update()));
-        Examples_NewFrame(window, renderer, presenter, surface, swapchain);
+        Examples_NewFrame(window, ctx);
     }
-    Examples_DestroyVulkan(window, renderer, app, device, surface, swapchain);
+    Examples_DestroyVulkan(window, ctx);
 }

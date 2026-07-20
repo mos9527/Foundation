@@ -29,14 +29,11 @@ android {
                 )
                 // BEGIN GENERATED ANDROID EXAMPLE TARGETS
                 targets(
-                    "Example_GPUSceneDeform",
-                    "Example_GPUSceneStreaming",
                     "Example_BindlessSimple",
-                    "Example_GPUSceneGLTF",
-                    "Example_GPUScene",
                     "Example_DebugText",
                     "Example_SDF2D",
                     "Example_MipGeneration",
+                    "Example_AutodiffSimple",
                     "Example_Triangle",
                     "Example_MeshShaderHierarchicalLOD",
                     "Example_ImGui",

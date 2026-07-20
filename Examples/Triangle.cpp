@@ -9,13 +9,13 @@ int main(int argc, char** argv)
 {
     SDL_Window* window =
         SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("Hello World"), 1024, 768, Examples_SDLWindowFlagsVulkan);
-    auto [renderer, app, device, surface, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, {
+    auto ctx = Examples_InitVulkan(window, argc, argv, {
         .threadCount = 0 /* ST recording */
     });
     CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("Triangle, or Hello World in 3 vertices.");
-    renderer->BeginSetup();
-    renderer->CreatePass(
+    ctx.renderer->BeginSetup();
+    ctx.renderer->CreatePass(
         "Triangle", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r) {
             r->BindBackbufferRTV(self);
@@ -34,13 +34,13 @@ int main(int argc, char** argv)
                 .EndGraphics();
         }
     );
-    createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
-    renderer->EndSetup();
+    createCSDebugTextPassBackBuffer(ctx.renderer, "Debug Text", lines);
+    ctx.renderer->EndSetup();
     ExampleFpsCounter fps;
-    while (!Examples_ShouldClose(window, renderer, surface, swapchain))
+    while (!Examples_ShouldClose(window, ctx))
     {
         lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
-        Examples_NewFrame(window, renderer, presenter, surface, swapchain);
+        Examples_NewFrame(window, ctx);
     }
-    Examples_DestroyVulkan(window, renderer, app, device, surface, swapchain);
+    Examples_DestroyVulkan(window, ctx);
 }

@@ -44,7 +44,7 @@ using namespace Core;
 using namespace Math;
 using namespace RenderCore;
 
-// [renderer, app, device, swapchain]
+// ExampleVulkanContext members, in structured-binding order: [renderer, app, device, surface, swapchain, presenter]
 constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 // Common command-line options shared by all examples (mirrors Editor::SDLMain):
 //   -h, --help        Show usage and exit
@@ -55,8 +55,18 @@ namespace Foundation::RenderCore
 {
 class Presenter;
 }
-using ExampleVulkanContext =
-    std::tuple<Renderer*, VulkanApplication*, RHIApplicationScopedHandle<RHIDevice>, RHIDeviceScopedHandle<RHISurface>, RHIDeviceScopedHandle<RHISwapchain>, Presenter*>;
+// Aggregated Vulkan context returned by Examples_InitVulkan. Members are declared in the
+// order used by structured bindings, so it can be split with:
+//   auto& [renderer, app, device, surface, swapchain, presenter] = ctx;
+struct ExampleVulkanContext
+{
+    Renderer* renderer{};
+    VulkanApplication* app{};
+    RHIApplicationScopedHandle<RHIDevice> device{};
+    RHIDeviceScopedHandle<RHISurface> surface{};
+    RHIDeviceScopedHandle<RHISwapchain> swapchain{};
+    Presenter* presenter{};
+};
 
 struct ExampleClickableRegion
 {
@@ -170,13 +180,11 @@ struct ExampleGPUSceneRenderState
 ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc = {});
 
 // Drains all pending SDL events into the frame input state, resizing the swapchain as needed.
-bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swap,
-                         ExampleInputState& input, SDL_Event* outLastEvent = nullptr,
+bool Examples_PollEvents(SDL_Window* window, ExampleVulkanContext& ctx, ExampleInputState& input, SDL_Event* outLastEvent = nullptr,
                          void (*processEvent)(SDL_Event*) = nullptr);
 
 // Compatibility wrapper for simple examples that only need close/resize and optionally the last event.
-bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swap,
-                          SDL_Event* outEvent = nullptr);
+bool Examples_ShouldClose(SDL_Window* window, ExampleVulkanContext& ctx, SDL_Event* outEvent = nullptr);
 
 void Examples_BeginFrameInput(ExampleInputState& input);
 // Resets the layout cursor to (x, y) and clears ExampleInputState::hud for the frame; every
@@ -200,11 +208,8 @@ void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPU
 void Examples_GPUSceneFillCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera const& camera,
                                     RendererConfig const& config);
 void Examples_NewFrame(Renderer* renderer);
-bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presenter, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swapchain);
-void Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app,
-                            RHIApplicationScopedHandle<RHIDevice>& device,
-                            RHIDeviceScopedHandle<RHISurface>& surface,
-                            RHIDeviceScopedHandle<RHISwapchain>& swapchain);
+bool Examples_NewFrame(SDL_Window* window, ExampleVulkanContext& ctx);
+void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx);
 bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISurface>& outSurface, RHIDeviceScopedHandle<RHISwapchain>& outSwapchain);
 
 // Writes an 8-bit-per-channel image (e.g. from a readback buffer) to a PNG at `path`,

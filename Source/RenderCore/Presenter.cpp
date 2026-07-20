@@ -9,13 +9,7 @@ Presenter::Presenter(RHIDevice* device, RHIDeviceHandle<RHISwapchain> swapchain,
     mDevice(device), mSwapchain(swapchain), mSyncs(alloc)
 {
     CHECK_MSG(mSwapchain.IsValid(), "Presenter requires a valid swapchain");
-    mFrameSwaps = mSwapchain->GetImages().size();
-    mSyncs.resize(mFrameSwaps);
-    for (uint32_t i = 0; i < mFrameSwaps; ++i)
-    {
-        mSyncs[i] = mDevice->CreateSemaphore(false);
-        mSyncs[i]->DebugSetObjectName(fmt::format("Acquire Semaphore of Swap {}", i).c_str());
-    }
+    SetSwapchain(swapchain);
 }
 
 uint32_t Presenter::AcquireNextImage()
@@ -38,6 +32,16 @@ void Presenter::Present(RHIDeviceSemaphore* waitSemaphore)
     mCurrentSync = (mCurrentSync + 1) % mFrameSwaps;
 }
 
-RHIDeviceHandle<RHIDeviceSemaphore> Presenter::GetImageAcquireSemaphore() const
-{ return mSyncs[mCurrentSync]; }
+RHIDeviceHandle<RHIDeviceSemaphore> Presenter::GetImageAcquireSemaphore() const { return mSyncs[mCurrentSync]; }
+
+void Presenter::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain) {
+    mSwapchain = swapchain;
+    mFrameSwaps = mSwapchain->GetImages().size();
+    mSyncs.resize(mFrameSwaps);
+    for (uint32_t i = 0; i < mFrameSwaps; ++i)
+    {
+        mSyncs[i] = mDevice->CreateSemaphore(false);
+        mSyncs[i]->DebugSetObjectName(fmt::format("Acquire Semaphore of Swap {}", i).c_str());
+    }
+}
 } // namespace Foundation::RenderCore

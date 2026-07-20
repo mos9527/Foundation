@@ -9,7 +9,7 @@ int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("MipGeneration Example"), 512, 512,
                                           Examples_SDLWindowFlagsVulkan);
-    auto [renderer, app, device, surface, swapchain, presenter] = Examples_InitVulkan(window, argc, argv,
+    auto ctx = Examples_InitVulkan(window, argc, argv,
                                                                   {
                                                                       .asyncCompute = false, /* Nothing to overlap */
                                                                       .threadCount = 0, /* ST recording */
@@ -19,7 +19,8 @@ int main(int argc, char** argv)
         stbi_uc* data = stbi_load(Foundation::Core::PathsResolve("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
         CHECK_MSG(data, "Image did not load.");
         auto numMips = static_cast<uint32_t>(std::ceil(std::log2(std::max(x, y)))) + 1;
-        auto texture = ImmediateCreateTexture(device.Get(),
+        auto texture = ImmediateCreateTexture(
+            ctx.device.Get(),
             RHITextureDesc{
                 .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::StorageImage |
                          RHITextureUsageBits::TransferDestination,
@@ -28,7 +29,7 @@ int main(int argc, char** argv)
                 .mipLevels = numMips},
             data, static_cast<size_t>(x) * y * 4);
         stbi_image_free(data);
-        renderer->BeginSetup();
+        ctx.renderer->BeginSetup();
         ResourceHandle hdl = renderer->CreateResource("Mip Image", texture.Get());
         ResourceHandle sampler = renderer->CreateSampler({});
         createCSMipGenerationSinglePass(renderer, "Mip Generation", RHIDeviceQueueType::Compute, hdl, hdl,
@@ -70,16 +71,16 @@ int main(int argc, char** argv)
         while (true)
         {
             Examples_BeginFrameInput(input);
-            if (Examples_PollEvents(window, renderer, surface, swapchain, input))
+            if (Examples_PollEvents(window, ctx, input))
                 break;
 
             Examples_BeginControls(input);
             Examples_Text(input, fmt::format("Mip Generation FPS: {}", fps.Update()));
             Examples_Slider(input, "Preview LOD", previewLod, 0.0f, maxPreviewLod, 1.0f);
             previewLod = std::round(previewLod);
-            Examples_NewFrame(window, renderer, presenter, surface, swapchain);
+            Examples_NewFrame(window, ctx);
         }
         texture.Release(); // Release - destructs with the device
     }
-    Examples_DestroyVulkan(window, renderer, app, device, surface, swapchain);
+    Examples_DestroyVulkan(window, ctx);
 }

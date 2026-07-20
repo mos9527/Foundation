@@ -3,8 +3,6 @@
 #include <chrono>
 #include <vector>
 
-// Preserved for backwards compatibility with translation units that previously
-// included the Presenter header (which brought these into global scope).
 using namespace Foundation;
 using namespace RHI;
 
@@ -37,6 +35,11 @@ public:
      * @brief Returns the currently used @ref RHISwapchain object.
      */
     RHIDeviceHandle<RHISwapchain> GetSwapchain() const { return mSwapchain; }
+
+    /**
+    * @breif Updates the current swapchain to the new one, resetting sync primitives.
+    */
+    void SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain);
 
 private:
     RHIDevice* mDevice;

@@ -2,10 +2,10 @@
 #define FOUNDATION_EXAMPLES_IMPLEMENTATION
 #include "Examples.hpp"
 
-#include <Renderer/RasterEffects.hpp>
 #include <RenderCore/Presenter.hpp>
-#include <argh.h>
+#include <Renderer/RasterEffects.hpp>
 #include <algorithm>
+#include <argh.h>
 #include <cmath>
 #include <cstring>
 #include <exception>
@@ -21,504 +21,501 @@ using namespace RenderCore;
 
 namespace
 {
-constexpr int kExampleUiCharWidth = 9;
-constexpr int kExampleUiCharHeight = 16;
-constexpr int kExampleUiDefaultColor = -1;
-constexpr int kExampleUiActiveColor = 0xff00ff00;
-const RasterGTAOConfig kExampleRasterGTAOConfig{};
-const RasterMotionBlurConfig kExampleRasterMotionBlurConfig{};
-const RasterEffect kExampleRasterEffects[] = {
-    MakeRasterGTAOEffect(&kExampleRasterGTAOConfig),
-    MakeRasterMotionBlurEffect(&kExampleRasterMotionBlurConfig),
-};
+    constexpr int kExampleUiCharWidth = 9;
+    constexpr int kExampleUiCharHeight = 16;
+    constexpr int kExampleUiDefaultColor = -1;
+    constexpr int kExampleUiActiveColor = 0xff00ff00;
+    const RasterGTAOConfig kExampleRasterGTAOConfig{};
+    const RasterMotionBlurConfig kExampleRasterMotionBlurConfig{};
+    const RasterEffect kExampleRasterEffects[] = {
+        MakeRasterGTAOEffect(&kExampleRasterGTAOConfig),
+        MakeRasterMotionBlurEffect(&kExampleRasterMotionBlurConfig),
+    };
 
-constexpr RHISurfaceFormat kFormatPreferenceList[] = {
-    {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
-    {RHIResourceFormat::B8G8R8A8Unrom, RHIColorSpace::SrgbNonLinear},
-};
+    constexpr RHISurfaceFormat kFormatPreferenceList[] = {
+        {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
+        {RHIResourceFormat::B8G8R8A8Unrom, RHIColorSpace::SrgbNonLinear},
+    };
 
-constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
-    RHISwapchainPresentMode::Mailbox, RHISwapchainPresentMode::Tearing, RHISwapchainPresentMode::Fifo};
+    constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
+        RHISwapchainPresentMode::Mailbox, RHISwapchainPresentMode::Tearing, RHISwapchainPresentMode::Fifo};
 
-String PipelineCachePathForDevice(RHIDevice const& device)
-{
-    auto key = device.GetPipelineCacheKey();
-    return PathsResolve(fmt::format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
-}
+    String PipelineCachePathForDevice(RHIDevice const& device)
+    {
+        auto key = device.GetPipelineCacheKey();
+        return PathsResolve(fmt::format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
+    }
 
-Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)
-{
-    Vector<unsigned char> data(allocator);
-    if (!std::filesystem::exists(path.data()))
+    Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)
+    {
+        Vector<unsigned char> data(allocator);
+        if (!std::filesystem::exists(path.data()))
+            return data;
+
+        std::ifstream file(path.data(), std::ios::binary | std::ios::ate);
+        if (!file)
+        {
+            LOG(Examples, LogWarn, "Failed to open pipeline cache file for reading: {}", path);
+            return data;
+        }
+
+        auto fileSize = file.tellg();
+        if (fileSize <= std::streampos(0))
+            return data;
+
+        auto size = static_cast<size_t>(fileSize);
+        data.resize(size);
+        file.seekg(0, std::ios::beg);
+        if (!file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size)))
+        {
+            LOG(Examples, LogWarn, "Failed to read pipeline cache file: {}", path);
+            data.clear();
+        }
         return data;
-
-    std::ifstream file(path.data(), std::ios::binary | std::ios::ate);
-    if (!file)
-    {
-        LOG(Examples, LogWarn, "Failed to open pipeline cache file for reading: {}", path);
-        return data;
     }
 
-    auto fileSize = file.tellg();
-    if (fileSize <= std::streampos(0))
-        return data;
-
-    auto size = static_cast<size_t>(fileSize);
-    data.resize(size);
-    file.seekg(0, std::ios::beg);
-    if (!file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size)))
+    void ClearStalePipelineCaches(StringView activePath)
     {
-        LOG(Examples, LogWarn, "Failed to read pipeline cache file: {}", path);
-        data.clear();
-    }
-    return data;
-}
+        std::filesystem::path cacheDir = std::filesystem::path(activePath).parent_path();
+        if (!std::filesystem::exists(cacheDir))
+            return;
 
-void ClearStalePipelineCaches(StringView activePath)
-{
-    std::filesystem::path cacheDir = std::filesystem::path(activePath).parent_path();
-    if (!std::filesystem::exists(cacheDir))
-        return;
+        std::filesystem::path active(activePath);
+        for (auto const& entry : std::filesystem::directory_iterator(cacheDir))
+        {
+            if (!entry.is_regular_file() || entry.path() == active)
+                continue;
 
-    std::filesystem::path active(activePath);
-    for (auto const& entry : std::filesystem::directory_iterator(cacheDir))
-    {
-        if (!entry.is_regular_file() || entry.path() == active)
-            continue;
+            auto filename = entry.path().filename().string();
+            if (!filename.starts_with("pso-cache-") || !filename.ends_with(".bin"))
+                continue;
 
-        auto filename = entry.path().filename().string();
-        if (!filename.starts_with("pso-cache-") || !filename.ends_with(".bin"))
-            continue;
-
-        LOG(Examples, LogInfo, "Clearing stale pipeline cache: {}", entry.path().string());
-        std::error_code ec;
-        std::filesystem::remove(entry.path(), ec);
-    }
-}
-
-void SavePipelineCache(RHIPipelineStateCache const& cache, StringView path, Allocator* allocator)
-{
-    size_t size = cache.GetSerializedDataSize();
-    if (size == 0)
-        return;
-
-    Vector<unsigned char> data(size, allocator);
-    size_t written = cache.WriteSerializedData(data);
-    if (written == 0)
-        return;
-
-    data.resize(written);
-    std::filesystem::path fsPath(path);
-    std::filesystem::create_directories(fsPath.parent_path());
-    std::ofstream file(fsPath, std::ios::binary | std::ios::trunc);
-    if (!file)
-    {
-        LOG(Examples, LogWarn, "Failed to open pipeline cache file for writing: {}", path);
-        return;
+            LOG(Examples, LogInfo, "Clearing stale pipeline cache: {}", entry.path().string());
+            std::error_code ec;
+            std::filesystem::remove(entry.path(), ec);
+        }
     }
 
-    file.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
-    if (!file)
+    void SavePipelineCache(RHIPipelineStateCache const& cache, StringView path, Allocator* allocator)
     {
-        LOG(Examples, LogWarn, "Failed to write pipeline cache file: {}", path);
+        size_t size = cache.GetSerializedDataSize();
+        if (size == 0)
+            return;
+
+        Vector<unsigned char> data(size, allocator);
+        size_t written = cache.WriteSerializedData(data);
+        if (written == 0)
+            return;
+
+        data.resize(written);
+        std::filesystem::path fsPath(path);
+        std::filesystem::create_directories(fsPath.parent_path());
+        std::ofstream file(fsPath, std::ios::binary | std::ios::trunc);
+        if (!file)
+        {
+            LOG(Examples, LogWarn, "Failed to open pipeline cache file for writing: {}", path);
+            return;
+        }
+
+        file.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+        if (!file)
+        {
+            LOG(Examples, LogWarn, "Failed to write pipeline cache file: {}", path);
+        }
+        else
+        {
+            LOG(Examples, LogInfo, "Saved pipeline cache: {} ({} bytes)", path, data.size());
+        }
     }
-    else
+
+    struct PipelineCacheContext
     {
-        LOG(Examples, LogInfo, "Saved pipeline cache: {} ({} bytes)", path, data.size());
+        Renderer* renderer{};
+        RHIDevice* device{};
+        RHIDeviceScopedHandle<RHIPipelineStateCache> cache;
+        String path;
+    };
+
+    std::vector<PipelineCacheContext>& PipelineCacheContexts()
+    {
+        static std::vector<PipelineCacheContext> contexts;
+        return contexts;
     }
-}
-
-struct PipelineCacheContext
-{
-    Renderer* renderer{};
-    RHIDevice* device{};
-    RHIDeviceScopedHandle<RHIPipelineStateCache> cache;
-    String path;
-};
-
-std::vector<PipelineCacheContext>& PipelineCacheContexts()
-{
-    static std::vector<PipelineCacheContext> contexts;
-    return contexts;
-}
 
 
 #if defined(__ANDROID__)
-// Bridges Foundation::Core::PathsResolve to SDL's APK-asset loader. Registered
-// in Examples_InitVulkan so shaders/bundled assets are lazily materialized out
-// of the APK on first PathsResolve access (see Source/Core/Paths.cpp).
-void* Examples_SDLAssetLoader(const char* relPath, size_t* outSize)
-{
-    return SDL_LoadFile(relPath, outSize);
-}
+    // Bridges Foundation::Core::PathsResolve to SDL's APK-asset loader. Registered
+    // in Examples_InitVulkan so shaders/bundled assets are lazily materialized out
+    // of the APK on first PathsResolve access (see Source/Core/Paths.cpp).
+    void* Examples_SDLAssetLoader(const char* relPath, size_t* outSize) { return SDL_LoadFile(relPath, outSize); }
 #endif
 
-// Surface uncaught exceptions instead of dying with a bare SIGABRT. The
-// renderer/PSO layer throws std::runtime_error on failure (missing shader,
-// unsupported feature, etc.); this turns that into a visible prompt plus a
-// logcat line on Android (and a message box elsewhere).
-void Examples_TerminateHandler()
-{
-    Examples_ReportFatalException();
-    std::abort();
-}
-
-bool EventBelongsToWindow(SDL_Event const& event, SDL_WindowID windowID)
-{
-    switch (event.type)
+    // Surface uncaught exceptions instead of dying with a bare SIGABRT. The
+    // renderer/PSO layer throws std::runtime_error on failure (missing shader,
+    // unsupported feature, etc.); this turns that into a visible prompt plus a
+    // logcat line on Android (and a message box elsewhere).
+    void Examples_TerminateHandler()
     {
-    case SDL_EVENT_KEY_DOWN:
-    case SDL_EVENT_KEY_UP:
-        return event.key.windowID == windowID;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-        return event.button.windowID == windowID;
-    case SDL_EVENT_MOUSE_MOTION:
-        return event.motion.windowID == windowID;
-    case SDL_EVENT_MOUSE_WHEEL:
-        return event.wheel.windowID == windowID;
-    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-    case SDL_EVENT_WINDOW_RESIZED:
-    case SDL_EVENT_WINDOW_MAXIMIZED:
-    case SDL_EVENT_WINDOW_RESTORED:
-        return event.window.windowID == windowID;
-    default:
-        return true;
+        Examples_ReportFatalException();
+        std::abort();
     }
-}
 
-bool HitTest(ExampleInputState const& input, float x, float y, uint32_t& outControlId)
-{
-    for (ExampleClickableRegion const& region : input.clickableRegions)
+    bool EventBelongsToWindow(SDL_Event const& event, SDL_WindowID windowID)
     {
-        if (x >= static_cast<float>(region.x) && y >= static_cast<float>(region.y) &&
-            x < static_cast<float>(region.x + region.w) && y < static_cast<float>(region.y + region.h))
+        switch (event.type)
         {
-            outControlId = region.id;
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
+            return event.key.windowID == windowID;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            return event.button.windowID == windowID;
+        case SDL_EVENT_MOUSE_MOTION:
+            return event.motion.windowID == windowID;
+        case SDL_EVENT_MOUSE_WHEEL:
+            return event.wheel.windowID == windowID;
+        case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+        case SDL_EVENT_WINDOW_RESIZED:
+        case SDL_EVENT_WINDOW_MAXIMIZED:
+        case SDL_EVENT_WINDOW_RESTORED:
+            return event.window.windowID == windowID;
+        default:
             return true;
         }
     }
-    return false;
-}
 
-int DebugTextWidth(RenderUtils::CSDebugTextData const& line)
-{
-    return std::max(1, static_cast<int>(std::strlen(line.szText)) * kExampleUiCharWidth * line.scale);
-}
-
-int DebugTextHeight(RenderUtils::CSDebugTextData const& line)
-{
-    return std::max(1, kExampleUiCharHeight * line.scale);
-}
-
-void PlaceControl(ExampleInputState& input, RenderUtils::CSDebugTextData& line)
-{
-    if (input.uiSameLine)
+    bool HitTest(ExampleInputState const& input, float x, float y, uint32_t& outControlId)
     {
-        input.uiX = input.uiLastItemX + input.uiLastItemWidth + input.uiSameLineSpacing;
-        input.uiY = input.uiLastItemY;
-        input.uiSameLine = false;
-    }
-    line.x = input.uiX;
-    line.y = input.uiY;
-}
-
-void AdvanceControl(ExampleInputState& input, RenderUtils::CSDebugTextData const& line)
-{
-    const int width = DebugTextWidth(line);
-    const int height = DebugTextHeight(line);
-    input.uiLastItemX = line.x;
-    input.uiLastItemY = line.y;
-    input.uiLastItemWidth = width;
-    input.uiLastItemHeight = height;
-    input.uiLineHeight = height + input.uiYSpacing;
-    input.uiY = line.y + input.uiLineHeight;
-    input.uiX = input.uiStartX;
-}
-
-void RegisterControl(ExampleInputState& input, uint32_t id, RenderUtils::CSDebugTextData const& line)
-{
-    input.nextClickableRegions.push_back({
-        .id = id,
-        .x = line.x,
-        .y = line.y,
-        .w = DebugTextWidth(line),
-        .h = DebugTextHeight(line),
-    });
-}
-
-float PointerFractionForLine(ExampleInputState const& input, RenderUtils::CSDebugTextData const& line)
-{
-    const float width = static_cast<float>(std::max(1, DebugTextWidth(line)));
-    return std::clamp((input.pointerPosition.x - static_cast<float>(line.x)) / width, 0.0f, 1.0f);
-}
-
-RenderUtils::CSDebugTextData& NextHudLine(ExampleInputState& input)
-{
-    CHECK_MSG(input.hudCount < input.hud.size(), "Exceeded ExampleInputState::kMaxHudLines");
-    return input.hud[input.hudCount++];
-}
-
-float2 TouchPositionPixels(SDL_Window* window, SDL_TouchFingerEvent const& event)
-{
-    int w = 1;
-    int h = 1;
-    SDL_GetWindowSizeInPixels(window, &w, &h);
-    return float2(event.x * static_cast<float>(w), event.y * static_cast<float>(h));
-}
-
-ExampleTouchState* FindTouch(ExampleInputState& input, SDL_FingerID fingerId)
-{
-    for (ExampleTouchState& touch : input.touches)
-        if (touch.active && touch.fingerId == fingerId)
-            return &touch;
-    return nullptr;
-}
-
-ExampleTouchState* AllocateTouch(ExampleInputState& input, SDL_FingerID fingerId)
-{
-    if (ExampleTouchState* touch = FindTouch(input, fingerId))
-        return touch;
-    for (ExampleTouchState& touch : input.touches)
-    {
-        if (!touch.active)
+        for (ExampleClickableRegion const& region : input.clickableRegions)
         {
-            touch = {};
-            touch.active = true;
-            touch.fingerId = fingerId;
-            return &touch;
+            if (x >= static_cast<float>(region.x) && y >= static_cast<float>(region.y) &&
+                x < static_cast<float>(region.x + region.w) && y < static_cast<float>(region.y + region.h))
+            {
+                outControlId = region.id;
+                return true;
+            }
         }
+        return false;
     }
-    return nullptr;
-}
 
-bool IsTouchMouseEvent(SDL_MouseID mouseId)
-{
+    int DebugTextWidth(RenderUtils::CSDebugTextData const& line)
+    {
+        return std::max(1, static_cast<int>(std::strlen(line.szText)) * kExampleUiCharWidth * line.scale);
+    }
+
+    int DebugTextHeight(RenderUtils::CSDebugTextData const& line)
+    {
+        return std::max(1, kExampleUiCharHeight * line.scale);
+    }
+
+    void PlaceControl(ExampleInputState& input, RenderUtils::CSDebugTextData& line)
+    {
+        if (input.uiSameLine)
+        {
+            input.uiX = input.uiLastItemX + input.uiLastItemWidth + input.uiSameLineSpacing;
+            input.uiY = input.uiLastItemY;
+            input.uiSameLine = false;
+        }
+        line.x = input.uiX;
+        line.y = input.uiY;
+    }
+
+    void AdvanceControl(ExampleInputState& input, RenderUtils::CSDebugTextData const& line)
+    {
+        const int width = DebugTextWidth(line);
+        const int height = DebugTextHeight(line);
+        input.uiLastItemX = line.x;
+        input.uiLastItemY = line.y;
+        input.uiLastItemWidth = width;
+        input.uiLastItemHeight = height;
+        input.uiLineHeight = height + input.uiYSpacing;
+        input.uiY = line.y + input.uiLineHeight;
+        input.uiX = input.uiStartX;
+    }
+
+    void RegisterControl(ExampleInputState& input, uint32_t id, RenderUtils::CSDebugTextData const& line)
+    {
+        input.nextClickableRegions.push_back({
+            .id = id,
+            .x = line.x,
+            .y = line.y,
+            .w = DebugTextWidth(line),
+            .h = DebugTextHeight(line),
+        });
+    }
+
+    float PointerFractionForLine(ExampleInputState const& input, RenderUtils::CSDebugTextData const& line)
+    {
+        const float width = static_cast<float>(std::max(1, DebugTextWidth(line)));
+        return std::clamp((input.pointerPosition.x - static_cast<float>(line.x)) / width, 0.0f, 1.0f);
+    }
+
+    RenderUtils::CSDebugTextData& NextHudLine(ExampleInputState& input)
+    {
+        CHECK_MSG(input.hudCount < input.hud.size(), "Exceeded ExampleInputState::kMaxHudLines");
+        return input.hud[input.hudCount++];
+    }
+
+    float2 TouchPositionPixels(SDL_Window* window, SDL_TouchFingerEvent const& event)
+    {
+        int w = 1;
+        int h = 1;
+        SDL_GetWindowSizeInPixels(window, &w, &h);
+        return float2(event.x * static_cast<float>(w), event.y * static_cast<float>(h));
+    }
+
+    ExampleTouchState* FindTouch(ExampleInputState& input, SDL_FingerID fingerId)
+    {
+        for (ExampleTouchState& touch : input.touches)
+            if (touch.active && touch.fingerId == fingerId)
+                return &touch;
+        return nullptr;
+    }
+
+    ExampleTouchState* AllocateTouch(ExampleInputState& input, SDL_FingerID fingerId)
+    {
+        if (ExampleTouchState* touch = FindTouch(input, fingerId))
+            return touch;
+        for (ExampleTouchState& touch : input.touches)
+        {
+            if (!touch.active)
+            {
+                touch = {};
+                touch.active = true;
+                touch.fingerId = fingerId;
+                return &touch;
+            }
+        }
+        return nullptr;
+    }
+
+    bool IsTouchMouseEvent(SDL_MouseID mouseId)
+    {
 #if defined(SDL_TOUCH_MOUSEID)
-    return mouseId == SDL_TOUCH_MOUSEID;
+        return mouseId == SDL_TOUCH_MOUSEID;
 #else
-    (void)mouseId;
-    return false;
+        (void)mouseId;
+        return false;
 #endif
-}
-
-bool HasActiveTouches(ExampleInputState const& input)
-{
-    for (ExampleTouchState const& touch : input.touches)
-        if (touch.active)
-            return true;
-    return false;
-}
-
-void RecordKeyPress(SDL_Keycode key, ExampleInputState& input)
-{
-    if (input.pressedKeyCount >= ExampleInputState::kMaxPressedKeys)
-        return;
-    input.pressedKeys[input.pressedKeyCount++] = key;
-}
-
-void UpdateMovementKey(SDL_Keycode key, bool pressed, ExampleInputState& input)
-{
-    switch (key)
-    {
-    case SDLK_W:
-        input.keyForward = pressed;
-        break;
-    case SDLK_A:
-        input.keyLeft = pressed;
-        break;
-    case SDLK_S:
-        input.keyBack = pressed;
-        break;
-    case SDLK_D:
-        input.keyRight = pressed;
-        break;
-    case SDLK_LSHIFT:
-    case SDLK_RSHIFT:
-        input.keyFast = pressed;
-        break;
-    default:
-        break;
-    }
-}
-
-void UpdateMoveVector(ExampleInputState& input)
-{
-    input.move = float2((input.keyRight ? 1.0f : 0.0f) - (input.keyLeft ? 1.0f : 0.0f),
-                        (input.keyForward ? 1.0f : 0.0f) - (input.keyBack ? 1.0f : 0.0f));
-}
-
-void ProcessTouchMotion(ExampleInputState& input, ExampleTouchState& movedTouch)
-{
-    if (movedTouch.capturedByHud)
-        return;
-
-    int activeCameraTouches = 0;
-    ExampleTouchState* first = nullptr;
-    ExampleTouchState* second = nullptr;
-    for (ExampleTouchState& touch : input.touches)
-    {
-        if (!touch.active || touch.capturedByHud)
-            continue;
-        if (!first)
-            first = &touch;
-        else if (!second)
-            second = &touch;
-        ++activeCameraTouches;
     }
 
-    const float2 delta = movedTouch.position - movedTouch.previous;
-    if (activeCameraTouches <= 1)
+    bool HasActiveTouches(ExampleInputState const& input)
     {
-        input.orbitDelta += delta;
-        return;
+        for (ExampleTouchState const& touch : input.touches)
+            if (touch.active)
+                return true;
+        return false;
     }
 
-    if (first && second)
+    void RecordKeyPress(SDL_Keycode key, ExampleInputState& input)
     {
-        const float2 oldFirst = first == &movedTouch ? first->previous : first->position;
-        const float2 oldSecond = second == &movedTouch ? second->previous : second->position;
-        const float2 oldCenter = (oldFirst + oldSecond) * 0.5f;
-        const float2 newCenter = (first->position + second->position) * 0.5f;
-        input.panDelta += newCenter - oldCenter;
-
-        float oldDistance = length(oldFirst - oldSecond);
-        float newDistance = length(first->position - second->position);
-        if (oldDistance > 1e-3f)
-            input.zoomDelta += (newDistance - oldDistance) / 120.0f;
+        if (input.pressedKeyCount >= ExampleInputState::kMaxPressedKeys)
+            return;
+        input.pressedKeys[input.pressedKeyCount++] = key;
     }
-}
 
-void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState& input,
-                  Renderer* renderer, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swap)
-{
-    switch (event.type)
+    void UpdateMovementKey(SDL_Keycode key, bool pressed, ExampleInputState& input)
     {
-    case SDL_EVENT_WINDOW_RESIZED:
-    case SDL_EVENT_WINDOW_MAXIMIZED:
-    case SDL_EVENT_WINDOW_RESTORED:
-        try
+        switch (key)
         {
-            if (Examples_CreateSwapchain(window, swap.mFactory, surface, swap))
-                renderer->SetSwapchain(swap);
+        case SDLK_W:
+            input.keyForward = pressed;
+            break;
+        case SDLK_A:
+            input.keyLeft = pressed;
+            break;
+        case SDLK_S:
+            input.keyBack = pressed;
+            break;
+        case SDLK_D:
+            input.keyRight = pressed;
+            break;
+        case SDLK_LSHIFT:
+        case SDLK_RSHIFT:
+            input.keyFast = pressed;
+            break;
+        default:
+            break;
         }
-        catch (std::exception const& e)
+    }
+
+    void UpdateMoveVector(ExampleInputState& input)
+    {
+        input.move = float2((input.keyRight ? 1.0f : 0.0f) - (input.keyLeft ? 1.0f : 0.0f),
+                            (input.keyForward ? 1.0f : 0.0f) - (input.keyBack ? 1.0f : 0.0f));
+    }
+
+    void ProcessTouchMotion(ExampleInputState& input, ExampleTouchState& movedTouch)
+    {
+        if (movedTouch.capturedByHud)
+            return;
+
+        int activeCameraTouches = 0;
+        ExampleTouchState* first = nullptr;
+        ExampleTouchState* second = nullptr;
+        for (ExampleTouchState& touch : input.touches)
         {
-            LOG(Examples, LogWarn, "Swapchain event recreation failed: {}", e.what());
+            if (!touch.active || touch.capturedByHud)
+                continue;
+            if (!first)
+                first = &touch;
+            else if (!second)
+                second = &touch;
+            ++activeCameraTouches;
+        }
+
+        const float2 delta = movedTouch.position - movedTouch.previous;
+        if (activeCameraTouches <= 1)
+        {
+            input.orbitDelta += delta;
+            return;
+        }
+
+        if (first && second)
+        {
+            const float2 oldFirst = first == &movedTouch ? first->previous : first->position;
+            const float2 oldSecond = second == &movedTouch ? second->previous : second->position;
+            const float2 oldCenter = (oldFirst + oldSecond) * 0.5f;
+            const float2 newCenter = (first->position + second->position) * 0.5f;
+            input.panDelta += newCenter - oldCenter;
+
+            float oldDistance = length(oldFirst - oldSecond);
+            float newDistance = length(first->position - second->position);
+            if (oldDistance > 1e-3f)
+                input.zoomDelta += (newDistance - oldDistance) / 120.0f;
+        }
+    }
+
+    void ProcessEvent(SDL_Window* window, SDL_Event const& event, ExampleInputState& input, ExampleVulkanContext& ctx)
+    {
+        switch (event.type)
+        {
+        case SDL_EVENT_WINDOW_RESIZED:
+        case SDL_EVENT_WINDOW_MAXIMIZED:
+        case SDL_EVENT_WINDOW_RESTORED:
             try
             {
-                RHIDevice* device = swap.mFactory;
-            swap.Reset();
-            surface.Reset();
-            if (Examples_CreateSwapchain(window, device, surface, swap))
-                    renderer->SetSwapchain(swap);
+                if (Examples_CreateSwapchain(window, ctx.swapchain.mFactory, ctx.surface, ctx.swapchain))
+                    ctx.renderer->SetSwapchain(ctx.swapchain), ctx.presenter->SetSwapchain(ctx.swapchain);
             }
-            catch (std::exception const& refreshError)
+            catch (std::exception const& e)
             {
-                LOG(Examples, LogWarn, "Swapchain event recreation deferred: {}", refreshError.what());
+                LOG(Examples, LogWarn, "Swapchain event recreation failed: {}", e.what());
+                try
+                {
+                    RHIDevice* device = ctx.swapchain.mFactory;
+                    ctx.swapchain.Reset();
+                    ctx.surface.Reset();
+                    if (Examples_CreateSwapchain(window, device, ctx.surface, ctx.swapchain))
+                        ctx.renderer->SetSwapchain(ctx.swapchain), ctx.presenter->SetSwapchain(ctx.swapchain);
+                }
+                catch (std::exception const& refreshError)
+                {
+                    LOG(Examples, LogWarn, "Swapchain event recreation deferred: {}", refreshError.what());
+                }
             }
-        }
-        break;
-    case SDL_EVENT_KEY_DOWN:
-        if (!event.key.repeat)
-            RecordKeyPress(event.key.key, input);
-        UpdateMovementKey(event.key.key, true, input);
-        break;
-    case SDL_EVENT_KEY_UP:
-        UpdateMovementKey(event.key.key, false, input);
-        break;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (IsTouchMouseEvent(event.button.which))
             break;
-        if (event.button.button == SDL_BUTTON_LEFT)
-        {
-            input.pointerDown = true;
-            input.pointerPosition = float2(event.button.x, event.button.y);
-            input.clickPosition = input.pointerPosition;
-            uint32_t controlId = 0u;
-            if (HitTest(input, event.button.x, event.button.y, controlId))
+        case SDL_EVENT_KEY_DOWN:
+            if (!event.key.repeat)
+                RecordKeyPress(event.key.key, input);
+            UpdateMovementKey(event.key.key, true, input);
+            break;
+        case SDL_EVENT_KEY_UP:
+            UpdateMovementKey(event.key.key, false, input);
+            break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if (IsTouchMouseEvent(event.button.which))
+                break;
+            if (event.button.button == SDL_BUTTON_LEFT)
             {
-                input.clickedControl = controlId;
-                input.activeControl = controlId;
-                input.mouseCapturedByHud = true;
+                input.pointerDown = true;
+                input.pointerPosition = float2(event.button.x, event.button.y);
+                input.clickPosition = input.pointerPosition;
+                uint32_t controlId = 0u;
+                if (HitTest(input, event.button.x, event.button.y, controlId))
+                {
+                    input.clickedControl = controlId;
+                    input.activeControl = controlId;
+                    input.mouseCapturedByHud = true;
+                }
             }
-        }
-        break;
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-        if (IsTouchMouseEvent(event.button.which))
             break;
-        if (event.button.button == SDL_BUTTON_LEFT)
-        {
-            input.pointerDown = false;
-            input.mouseCapturedByHud = false;
-            input.activeControl = 0u;
-        }
-        break;
-    case SDL_EVENT_MOUSE_MOTION:
-        if (IsTouchMouseEvent(event.motion.which))
-            break;
-        input.pointerPosition = float2(event.motion.x, event.motion.y);
-        if (!input.mouseCapturedByHud)
-        {
-            if (event.motion.state & SDL_BUTTON_LMASK)
-                input.orbitDelta += float2(event.motion.xrel, event.motion.yrel);
-            if (event.motion.state & SDL_BUTTON_RMASK)
-                input.panDelta += float2(event.motion.xrel, event.motion.yrel);
-        }
-        break;
-    case SDL_EVENT_MOUSE_WHEEL:
-        if (IsTouchMouseEvent(event.wheel.which))
-            break;
-        input.zoomDelta += event.wheel.y;
-        break;
-    case SDL_EVENT_FINGER_DOWN:
-    {
-        ExampleTouchState* touch = AllocateTouch(input, event.tfinger.fingerID);
-        if (!touch)
-            break;
-        touch->position = TouchPositionPixels(window, event.tfinger);
-        touch->previous = touch->position;
-        input.pointerDown = true;
-        input.pointerPosition = touch->position;
-        input.clickPosition = touch->position;
-        uint32_t controlId = 0u;
-        if (HitTest(input, touch->position.x, touch->position.y, controlId))
-        {
-            input.clickedControl = controlId;
-            input.activeControl = controlId;
-            touch->capturedByHud = true;
-        }
-        break;
-    }
-    case SDL_EVENT_FINGER_MOTION:
-    {
-        ExampleTouchState* touch = FindTouch(input, event.tfinger.fingerID);
-        if (!touch)
-            break;
-        touch->previous = touch->position;
-        touch->position = TouchPositionPixels(window, event.tfinger);
-        input.pointerPosition = touch->position;
-        ProcessTouchMotion(input, *touch);
-        break;
-    }
-    case SDL_EVENT_FINGER_UP:
-    {
-        if (ExampleTouchState* touch = FindTouch(input, event.tfinger.fingerID))
-        {
-            if (touch->capturedByHud)
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (IsTouchMouseEvent(event.button.which))
+                break;
+            if (event.button.button == SDL_BUTTON_LEFT)
+            {
+                input.pointerDown = false;
+                input.mouseCapturedByHud = false;
                 input.activeControl = 0u;
-            *touch = {};
+            }
+            break;
+        case SDL_EVENT_MOUSE_MOTION:
+            if (IsTouchMouseEvent(event.motion.which))
+                break;
+            input.pointerPosition = float2(event.motion.x, event.motion.y);
+            if (!input.mouseCapturedByHud)
+            {
+                if (event.motion.state & SDL_BUTTON_LMASK)
+                    input.orbitDelta += float2(event.motion.xrel, event.motion.yrel);
+                if (event.motion.state & SDL_BUTTON_RMASK)
+                    input.panDelta += float2(event.motion.xrel, event.motion.yrel);
+            }
+            break;
+        case SDL_EVENT_MOUSE_WHEEL:
+            if (IsTouchMouseEvent(event.wheel.which))
+                break;
+            input.zoomDelta += event.wheel.y;
+            break;
+        case SDL_EVENT_FINGER_DOWN:
+            {
+                ExampleTouchState* touch = AllocateTouch(input, event.tfinger.fingerID);
+                if (!touch)
+                    break;
+                touch->position = TouchPositionPixels(window, event.tfinger);
+                touch->previous = touch->position;
+                input.pointerDown = true;
+                input.pointerPosition = touch->position;
+                input.clickPosition = touch->position;
+                uint32_t controlId = 0u;
+                if (HitTest(input, touch->position.x, touch->position.y, controlId))
+                {
+                    input.clickedControl = controlId;
+                    input.activeControl = controlId;
+                    touch->capturedByHud = true;
+                }
+                break;
+            }
+        case SDL_EVENT_FINGER_MOTION:
+            {
+                ExampleTouchState* touch = FindTouch(input, event.tfinger.fingerID);
+                if (!touch)
+                    break;
+                touch->previous = touch->position;
+                touch->position = TouchPositionPixels(window, event.tfinger);
+                input.pointerPosition = touch->position;
+                ProcessTouchMotion(input, *touch);
+                break;
+            }
+        case SDL_EVENT_FINGER_UP:
+            {
+                if (ExampleTouchState* touch = FindTouch(input, event.tfinger.fingerID))
+                {
+                    if (touch->capturedByHud)
+                        input.activeControl = 0u;
+                    *touch = {};
+                }
+                input.pointerDown = HasActiveTouches(input);
+                break;
+            }
+        default:
+            break;
         }
-        input.pointerDown = HasActiveTouches(input);
-        break;
     }
-    default:
-        break;
-    }
-}
 } // namespace
 
-bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISurface>& outSurface, RHIDeviceScopedHandle<RHISwapchain>& outSwap)
+bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISurface>& outSurface,
+                              RHIDeviceScopedHandle<RHISwapchain>& outSwap)
 {
     int w, h;
     SDL_GetWindowSizeInPixels(window, &w, &h);
@@ -620,9 +617,8 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
         psoCachePath = PipelineCachePathForDevice(*device.Get());
         ClearStalePipelineCaches(psoCachePath);
         auto psoCacheBytes = LoadPipelineCacheBytes(psoCachePath, GLOBAL_ALLOC);
-        psoCache = device->CreatePipelineCache({
-            .initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())
-        });
+        psoCache = device->CreatePipelineCache(
+            {.initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())});
         LOG(Examples, LogInfo, "Pipeline cache {}: {} ({} bytes)", psoCache->GetImportStatus(), psoCachePath,
             psoCacheBytes.size());
         desc.pipelineCache = psoCache.Get();
@@ -640,12 +636,18 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     Presenter* presenter = nullptr;
     if (swap.IsValid())
         presenter = Construct<Presenter>(GLOBAL_ALLOC, device.Get(), swap, GLOBAL_ALLOC);
-    return std::make_tuple(renderer, app, std::move(device), std::move(surface), std::move(swap), presenter);
+    ExampleVulkanContext ctx{};
+    ctx.renderer = renderer;
+    ctx.app = app;
+    ctx.device = std::move(device);
+    ctx.surface = std::move(surface);
+    ctx.swapchain = std::move(swap);
+    ctx.presenter = presenter;
+    return ctx;
 }
 
-bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swap,
-                         ExampleInputState& input, SDL_Event* outLastEvent,
-                         void (*processEvent)(SDL_Event*))
+bool Examples_PollEvents(SDL_Window* window, ExampleVulkanContext& ctx, ExampleInputState& input,
+                         SDL_Event* outLastEvent, void (*processEvent)(SDL_Event*))
 {
     bool shouldClose = false;
     SDL_Event event{};
@@ -669,14 +671,13 @@ bool Examples_PollEvents(SDL_Window* window, Renderer* renderer, RHIDeviceScoped
             shouldClose = true;
             continue;
         }
-        ProcessEvent(window, event, input, renderer, surface, swap);
+        ProcessEvent(window, event, input, ctx);
     }
     UpdateMoveVector(input);
     return shouldClose;
 }
 
-bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swap,
-                          SDL_Event* outEvent)
+bool Examples_ShouldClose(SDL_Window* window, ExampleVulkanContext& ctx, SDL_Event* outEvent)
 {
     ExampleInputState input{};
     SDL_Event event{};
@@ -694,7 +695,7 @@ bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScope
         return false;
     if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
         return true;
-    ProcessEvent(window, event, input, renderer, surface, swap);
+    ProcessEvent(window, event, input, ctx);
     return false;
 }
 
@@ -777,7 +778,7 @@ bool Examples_Slider(ExampleInputState& input, StringView label, float& value, f
     for (int i = 0; i < kBarSegments; ++i)
         bar[i] = i < filled ? '=' : '-';
     RenderUtils::CSDebugTextData& barLine = NextHudLine(input);
-    auto text = fmt::format(" {} [{}] {:.2f}{}", label, bar, value, unit);
+    auto text = fmt::format(" {} [{}] {:.4f}{}", label, bar, value, unit);
     if (drag)
     {
         PlaceControl(input, barLine);
@@ -867,14 +868,14 @@ void Examples_NewFrame(Renderer* renderer)
     renderer->EndExecute();
 }
 
-bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presenter, RHIDeviceScopedHandle<RHISurface>& surface, RHIDeviceScopedHandle<RHISwapchain>& swapchain)
+bool Examples_NewFrame(SDL_Window* window, ExampleVulkanContext& ctx)
 {
     try
     {
-        renderer->BeginExecute(presenter);
-        renderer->ExecuteFrame();
-        renderer->EndExecute();
-        presenter->Present(renderer->GetRenderCompleteSemaphore().Get());
+        ctx.renderer->BeginExecute(ctx.presenter);
+        ctx.renderer->ExecuteFrame();
+        ctx.renderer->EndExecute();
+        ctx.presenter->Present(ctx.renderer->GetRenderCompleteSemaphore().Get());
         return true;
     }
     catch (RHISwapchainResizeException&)
@@ -882,11 +883,11 @@ bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presen
         LOG(Examples, LogWarn, "Swapchain invalidated; recreating presentation surface");
         try
         {
-            RHIDevice* device = swapchain.mFactory;
-            swapchain.Reset();
-            surface.Reset();
-            if (Examples_CreateSwapchain(window, device, surface, swapchain))
-                renderer->SetSwapchain(swapchain);
+            RHIDevice* device = ctx.swapchain.mFactory;
+            ctx.swapchain.Reset();
+            ctx.surface.Reset();
+            if (Examples_CreateSwapchain(window, device, ctx.surface, ctx.swapchain))
+                ctx.renderer->SetSwapchain(ctx.swapchain);
         }
         catch (std::exception const& e)
         {
@@ -896,31 +897,26 @@ bool Examples_NewFrame(SDL_Window* window, Renderer* renderer, Presenter* presen
     }
 }
 
-void Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app,
-                            RHIApplicationScopedHandle<RHIDevice>& device,
-                            RHIDeviceScopedHandle<RHISurface>& surface,
-                            RHIDeviceScopedHandle<RHISwapchain>& swapchain)
+void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx)
 {
-    if (device)
-        device->WaitIdle();
+    if (ctx.device)
+        ctx.device->WaitIdle();
 
     auto& psoCacheContexts = PipelineCacheContexts();
-    auto psoCacheIt = std::ranges::find_if(psoCacheContexts,
-        [renderer, device = device.Get()](PipelineCacheContext const& context)
-        {
-            return context.renderer == renderer || context.device == device;
-        });
+    auto psoCacheIt = std::ranges::find_if(
+        psoCacheContexts, [ctxRenderer = ctx.renderer, device = ctx.device.Get()](PipelineCacheContext const& context)
+        { return context.renderer == ctxRenderer || context.device == device; });
     if (psoCacheIt != psoCacheContexts.end())
         SavePipelineCache(*psoCacheIt->cache.Get(), psoCacheIt->path, GLOBAL_ALLOC);
 
-    Destruct(GLOBAL_ALLOC, renderer);
+    Destruct(GLOBAL_ALLOC, ctx.renderer);
     if (psoCacheIt != psoCacheContexts.end())
         psoCacheContexts.erase(psoCacheIt);
-    swapchain.Reset();
-    surface.Reset();
-    device.Reset();
-    if (app)
-        Destruct(GLOBAL_ALLOC, app);
+    ctx.swapchain.Reset();
+    ctx.surface.Reset();
+    ctx.device.Reset();
+    if (ctx.app)
+        Destruct(GLOBAL_ALLOC, ctx.app);
     if (window)
         SDL_DestroyWindow(window);
 }
@@ -929,8 +925,8 @@ void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* 
 {
     const auto outPath = std::filesystem::absolute(std::string(path.data(), path.size())).string();
     const int stride = strideBytes ? strideBytes : static_cast<int>(extent.x) * channels;
-    if (!stbi_write_png(outPath.c_str(), static_cast<int>(extent.x), static_cast<int>(extent.y),
-                        channels, data, stride))
+    if (!stbi_write_png(outPath.c_str(), static_cast<int>(extent.x), static_cast<int>(extent.y), channels, data,
+                        stride))
     {
         LOG(Examples, LogError, "stbi_write_png failed for '{}'", outPath);
         return;
@@ -940,49 +936,43 @@ void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* 
         LOG(Examples, LogWarn, "SDL_OpenURL failed: {}", SDL_GetError());
 }
 
-ResourceHandle Examples_InsertBasicTonemapPasses(Renderer* renderer, RendererOutputs const& outputs,
-                                                 bool isPathTracer)
+ResourceHandle Examples_InsertBasicTonemapPasses(Renderer* renderer, RendererOutputs const& outputs, bool isPathTracer)
 {
     CHECK_MSG(outputs.diffuse != kInvalidHandle, "Basic tonemap pass missing diffuse output");
     RHIExtent2D extent = outputs.extent;
     if (extent.x == 0u || extent.y == 0u)
     {
-        CHECK_MSG(renderer->IsPresentEnabled(),
-                  "Basic tonemap pass requires outputs.extent when running headlessly");
+        CHECK_MSG(renderer->IsPresentEnabled(), "Basic tonemap pass requires outputs.extent when running headlessly");
         extent = renderer->GetSwapchainExtent();
     }
     const uint32_t w = extent.x;
     const uint32_t h = extent.y;
     constexpr RHIResourceFormat kOutputFormat = RHIResourceFormat::R8G8B8A8Unorm;
 
-    auto postprocess = renderer->CreateResource(
-        "Basic Postprocess",
-        RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                  RHITextureUsageBits::SampledImage |
-                                  RHITextureUsageBits::TransferSource,
-                       .extent = {w, h, 1},
-                       .format = kOutputFormat});
+    auto postprocess = renderer->CreateResource("Basic Postprocess",
+                                                RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                                                   RHITextureUsageBits::SampledImage |
+                                                                   RHITextureUsageBits::TransferSource,
+                                                               .extent = {w, h, 1},
+                                                               .format = kOutputFormat});
 
     using namespace RenderUtils;
-    const char* shader = isPathTracer ? "Data/Shaders/PostprocessBasicPT.spv"
-                                      : "Data/Shaders/PostprocessBasic.spv";
+    const char* shader = isPathTracer ? "Data/Shaders/PostprocessBasicPT.spv" : "Data/Shaders/PostprocessBasic.spv";
     createPSFullscreenPassRTV(
         renderer, "Basic Tonemap", postprocess,
-        RHITextureViewDesc{.format = kOutputFormat, .range = RHITextureSubresourceRange::Create()},
-        {w, h},
+        RHITextureViewDesc{.format = kOutputFormat, .range = RHITextureSubresourceRange::Create()}, {w, h},
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve(shader));
-            r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = outputs.aovFormat,
-                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(
+                self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
+                RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
             if (isPathTracer)
             {
-                const ResourceHandle specular =
-                    outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
-                r->BindTextureSRV(self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = outputs.aovFormat,
-                                                     .range = RHITextureSubresourceRange::Create()});
+                const ResourceHandle specular = outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
+                r->BindTextureSRV(
+                    self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
+                    RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
             }
         },
         [](PassHandle, Renderer*, RHICommandList*) {});
@@ -995,10 +985,7 @@ ResourceHandle Examples_InsertBasicTonemapPasses(Renderer* renderer, RendererOut
     return postprocess;
 }
 
-float Examples_GetTime()
-{
-    return static_cast<float>(SDL_GetTicks() / 1e3);
-}
+float Examples_GetTime() { return static_cast<float>(SDL_GetTicks() / 1e3); }
 
 bool FExampleOrbitCamera::Update(ExampleInputState const& input, float dt)
 {
