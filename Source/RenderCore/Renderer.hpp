@@ -615,7 +615,7 @@ namespace Foundation::RenderCore
          *
          * This can be automatically bound to the pipeline with CmdBeginGraphics().
          */
-        void BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const;
+        void BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc, bool readOnly = false) const;
         /**
          * @breif Binds the backbuffer as the first Render Target.
          * @note  If this is used, the first RTV will always be the Backbuffer itself.

@@ -2685,6 +2685,8 @@ void FRunningImGui()
                     for (size_t i = 0; i < passCount; i++)
                     {
                         auto const& pass = renderer->GetTrackedPass(i);
+                        if (!pass.used)
+                            continue;
                         ImProfilerSample sample{
                             .id = static_cast<int>(i),
                             .startTick = timings[i * 2],

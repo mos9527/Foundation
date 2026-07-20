@@ -205,6 +205,7 @@ namespace Foundation::RHI {
         General,
         RenderTarget,
         DepthStencil,
+        DepthStencilReadOnly,
         Present,
         TransferDst,
         TransferSrc,

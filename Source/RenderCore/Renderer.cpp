@@ -304,7 +304,7 @@ void Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextur
     tpass.rtvs.emplace_back(view, blending);
 }
 
-void Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const
+void Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc, bool readOnly) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(desc.range.IsValid(), "Binding DSV on {} is of invalid range! Did you specify `desc.range`?",
@@ -317,8 +317,8 @@ void Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextur
               "DSV view must have exactly one layer, and the access flag must be Depth and/or Stencil.");
     DeclareTextureAccess(pass, texture,
                          RHIPipelineStageBits::EarlyFragmentTests | RHIPipelineStageBits::LateFragmentTests, desc.range,
-                         RHIResourceAccessBits::DepthStencilRead | RHIResourceAccessBits::DepthStencilWrite,
-                         RHITextureLayout::DepthStencil);
+                         readOnly ? RHIResourceAccessBits::DepthStencilRead : (RHIResourceAccessBits::DepthStencilRead | RHIResourceAccessBits::DepthStencilWrite),
+                         readOnly ? RHITextureLayout::DepthStencilReadOnly : RHITextureLayout::DepthStencil);
     ResourceHandle view = CreateTextureView(pass, texture, desc);
     tpass.dsv = view;
 }

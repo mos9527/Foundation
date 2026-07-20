@@ -197,6 +197,7 @@ namespace Foundation::RHI {
         case RHITextureLayout::General: return vk::ImageLayout::eGeneral;
         case RHITextureLayout::RenderTarget: return vk::ImageLayout::eColorAttachmentOptimal;
         case RHITextureLayout::DepthStencil: return vk::ImageLayout::eDepthStencilAttachmentOptimal;
+        case RHITextureLayout::DepthStencilReadOnly: return vk::ImageLayout::eDepthStencilReadOnlyOptimal;
         case RHITextureLayout::Present: return vk::ImageLayout::ePresentSrcKHR;
         case RHITextureLayout::TransferDst: return vk::ImageLayout::eTransferDstOptimal;
         case RHITextureLayout::TransferSrc: return vk::ImageLayout::eTransferSrcOptimal;

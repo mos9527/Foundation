@@ -305,19 +305,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
     }
     /* Main Pass */
     {
-        // Motion meshlet lists accumulate across early/late stages; clear once before stage 1.
-        renderer->CreatePass(
-            "Motion Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindBufferCopyDst(self, MotionMeshletCounter);
-                r->BindBufferCopyDst(self, MotionMeshletDispatch);
-            },
-            [=](PassHandle, Renderer* r, RHICommandList* cmd)
-            {
-                cmd->FillBuffer(r->DerefResource(MotionMeshletCounter).Get<RHIBuffer*>(), 0u);
-                cmd->FillBuffer(r->DerefResource(MotionMeshletDispatch).Get<RHIBuffer*>(), 0u);
-            });
         auto AddCullPass = [=](bool early)
         {
             // Instance -> Meshlet Tasks
@@ -330,13 +317,15 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 {
                     r->BindBufferCopyDst(self, IndirectMeshletCounter);
                     r->BindBufferCopyDst(self, IndirectMeshletDispatch);
+                    r->BindBufferCopyDst(self, MotionMeshletCounter);
+                    r->BindBufferCopyDst(self, MotionMeshletDispatch);
                 },
                 [=](PassHandle, Renderer* r, RHICommandList* cmd)
                 {
-                    auto* msCounter = r->DerefResource(IndirectMeshletCounter).Get<RHIBuffer*>();
-                    auto* msDispatches = r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>();
-                    cmd->FillBuffer(msCounter, 0u);
-                    cmd->FillBuffer(msDispatches, 0u);
+                    cmd->FillBuffer(r->DerefResource(IndirectMeshletCounter).Get<RHIBuffer*>(), 0u);
+                    cmd->FillBuffer(r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>(), 0u);
+                    cmd->FillBuffer(r->DerefResource(MotionMeshletCounter).Get<RHIBuffer*>(), 0u);
+                    cmd->FillBuffer(r->DerefResource(MotionMeshletDispatch).Get<RHIBuffer*>(), 0u);
                 });
             renderer->CreatePass(
                 early ? "Indirect Meshlet Cull Dispatch [Stage 1]" : "Indirect Meshlet Cull Dispatch [Stage 2]",
@@ -744,7 +733,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                 r->BindTextureDSV(self, Depth,
                                   {.format = RHIResourceFormat::D32SignedFloat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)}, true);
                 r->BindBufferIndirectRead(self, MotionMeshletDispatch);
                 r->PassSetRasterizerFlags(self, {}, motionDepth);
             },
@@ -781,7 +770,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureDSV(self, Depth,
                                       {.format = RHIResourceFormat::D32SignedFloat,
-                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)}, true);
                     r->BindBufferIndirectRead(self, motionCmds);
                     r->BindBufferIndirectRead(self, motionCount);
                     r->PassSetRasterizerFlags(self, {}, motionDepth);
@@ -824,7 +813,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureDSV(self, Depth,
                                       {.format = RHIResourceFormat::D32SignedFloat,
-                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)}, true);
                     r->BindBufferIndirectRead(self, motionCmds);
                     r->BindBufferIndirectRead(self, motionCount);
                     r->PassSetRasterizerFlags(self, curveRaster, motionDepth);

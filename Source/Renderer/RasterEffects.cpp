@@ -31,7 +31,7 @@ void BuildRasterGTAO(RasterEffectContext& ctx, void const* configPtr)
                        .format = kAOFormat});
 
     renderer->CreatePass(
-        "GTAO", RHIDeviceQueueType::Graphics, 0u,
+        "GTAO", RHIDeviceQueueType::Compute, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSGTAO.spv"));
@@ -56,7 +56,7 @@ void BuildRasterGTAO(RasterEffectContext& ctx, void const* configPtr)
         });
 
     renderer->CreatePass(
-        "GTAO Upsample", RHIDeviceQueueType::Graphics, 0u,
+        "GTAO Upsample", RHIDeviceQueueType::Compute, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSGTAOUpsample.spv"));

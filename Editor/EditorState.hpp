@@ -170,7 +170,7 @@ struct EditorState
     float           renderResolutionScale = 1.0f; // 0.25 .. 1.0
     bool            rasterGTAO = true;
     RasterGTAOConfig rasterGTAOConfig{};
-    bool            rasterMotionBlur = true;
+    bool            rasterMotionBlur = false;
     RasterMotionBlurConfig rasterMotionBlurConfig{};
 
     [[nodiscard]] bool HasScene() const { return scene.has_value(); }
