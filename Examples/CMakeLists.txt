@@ -44,16 +44,16 @@ add_dependencies(Example_BindlessSimple Shader_BindlessSimple)
 add_example(Example_DebugText "DebugText.cpp")
 target_link_libraries(Example_DebugText PUBLIC Example_Common)
 
-# Core-only self-test for the JobGraph scheduler (no RHI/render deps).
-add_example(Example_JobGraph "JobGraph.cpp")
-target_link_libraries(Example_JobGraph PUBLIC Foundation_Core)
-
 add_example(Example_ImGui "ImGui.cpp")
 target_link_libraries(Example_ImGui PUBLIC Example_Common ThirdParty_ImGui)
 
 add_example(Example_MipGeneration "MipGeneration.cpp")
 target_link_libraries(Example_MipGeneration PUBLIC Example_Common ThirdParty_ImGui)
 add_dependencies(Example_MipGeneration Shader_MipGenerationBlur Examples_SampleFiles)
+
+add_example(Example_AutodiffSimple "AutodiffSimple.cpp")
+target_link_libraries(Example_AutodiffSimple PUBLIC Example_Common ThirdParty_ImGui)
+add_dependencies(Example_AutodiffSimple Shader_AutodiffSimple Examples_SampleFiles)
 
 add_example(Example_MeshShaderHello "MeshShaderHello.cpp")
 target_link_libraries(Example_MeshShaderHello PUBLIC Example_Common)
@@ -66,22 +66,6 @@ add_dependencies(Example_MeshShaderHierarchicalLOD Shader_MeshShaderHierarchical
 add_example(Example_CIEChromacity "CIEChromacity.cpp")
 target_link_libraries(Example_CIEChromacity PUBLIC Example_Common)
 add_dependencies(Example_CIEChromacity Shader_CIEChromacity)
-
-add_example(Example_GPUScene "GPUScene.cpp")
-target_link_libraries(Example_GPUScene PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
-add_dependencies(Example_GPUScene Foundation_Shaders Editor_Data Examples_SampleFiles Shader_PostprocessBasic Shader_PostprocessBasicPT)
-
-add_example(Example_GPUSceneGLTF "GPUSceneGLTF.cpp")
-target_link_libraries(Example_GPUSceneGLTF PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
-add_dependencies(Example_GPUSceneGLTF Foundation_Shaders Editor_Data Examples_SampleFiles Shader_PostprocessBasic Shader_PostprocessBasicPT)
-
-add_example(Example_GPUSceneStreaming "GPUSceneStreaming.cpp")
-target_link_libraries(Example_GPUSceneStreaming PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
-add_dependencies(Example_GPUSceneStreaming Foundation_Shaders Editor_Data Examples_SampleFiles Shader_PostprocessBasic Shader_PostprocessBasicPT)
-
-add_example(Example_GPUSceneDeform "GPUSceneDeform.cpp")
-target_link_libraries(Example_GPUSceneDeform PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
-add_dependencies(Example_GPUSceneDeform Foundation_Shaders Editor_Data Examples_SampleFiles Shader_PostprocessBasic Shader_PostprocessBasicPT)
 
 add_example(Example_HeadlessPathTracer "HeadlessPathTracer.cpp")
 target_link_libraries(Example_HeadlessPathTracer PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
