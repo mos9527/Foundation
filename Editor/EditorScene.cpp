@@ -1076,14 +1076,14 @@ bool PumpSceneLoad()
     {
         // Re-commit so newly resident textures replace their defaults; geometry streams into
         // the TLAS automatically (the per-frame TLAS pass only writes Ready instances).
-        CommitSceneToGPU(GContext->gpuScene, GEditor.Scene(), GEditor.shaderGlobals, true);
+        CommitSceneToGPU(true);
         return true;
     }
 
     String envMapPath = sPendingSceneLoad->envMapPath;
     if (r == GPUScene::Result::Ready)
     {
-        CommitSceneToGPU(GContext->gpuScene, GEditor.Scene(), GEditor.shaderGlobals, true);
+        CommitSceneToGPU(true);
         double const loadMs = MillisecondsSince(sPendingSceneLoad->loadStart);
         LOG(Editor, LogInfo, "Scene streamed in {:.2f} ms, {} meshes, {} instances, {} curves, {} materials",
             loadMs, sPendingSceneLoad->stats.sceneMeshCount, sPendingSceneLoad->stats.sceneInstanceCount,
@@ -1153,7 +1153,7 @@ void LoadScene(StringView path)
         // queued uploads stream in (PumpSceneLoad drives the drain + re-commits).
         GEditor.resources = std::move(load->resources);
         InstallLoadedScene(load->scenePayloadPath, gpu); // nulls `gpu`; ownership moves to GContext
-        CommitSceneToGPU(GContext->gpuScene, GEditor.Scene(), GEditor.shaderGlobals, true);
+        CommitSceneToGPU(true);
         SetupAnimationRuntime(); // builds CPU skinning state from the installed scene
         sPendingSceneLoad = load;
     }
