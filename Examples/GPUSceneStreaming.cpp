@@ -292,22 +292,8 @@ int main(int argc, char** argv)
             gpu.EndScene(tables, ubo.frameNumber);
             gpu.BuildUBO(ubo);
         };
-        AuthorFrame(0.0f); // seed the tables (floor only) so the initial TLAS build is well-formed
-
-        // One-time TLAS build sizes the AS inside its pre-allocated 16 MB buffer (the only sync, and
-        // it's before the loop). From here the graph's per-frame TLAS Update keeps it current.
-        {
-            ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
-            auto* cmd = ctx.Get();
-            cmd->Begin();
-            auto tlasResult = gpu.BuildTLAS(cmd, /*update*/ false);
-            cmd->End();
-            if (tlasResult == GPUScene::TLASBuildResult::Built)
-                ctx.Submit(), ctx.WaitIdle();
-        }
-
+        
         ExampleGPUSceneRenderState renderState{};
-
         // On-screen HUD: the CSDebugText pass draws on top of the scene's backbuffer, reading from
         // input.hud (persistent, re-read every frame) via Examples_GPUSceneBuildRenderGraph.
         ExampleInputState input{};

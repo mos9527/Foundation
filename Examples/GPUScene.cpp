@@ -17,12 +17,7 @@ int main(int argc, char** argv)
     auto [renderer0, app, device, surface, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, rendererDesc);
     UniquePtr<Renderer> renderer(renderer0, StlDeleter<Renderer>{GLOBAL_ALLOC});
     {
-        // GPUScene owns all GPU-resident scene data and lives for the full example scope.
         GPUScene gpu(device.Get(), GLOBAL_ALLOC, GPUSceneDesc{});
-
-        // Runs a CPU mesh through the same pipeline the editor uses (optimize -> DAG clusterize ->
-        // quantize), serializes it into a throwaway blob payload, and uploads it synchronously.
-        // The payload only has to outlive the Upload + Join, both of which happen here.
         auto UploadMesh = [&](FImportedMesh& mesh) -> GeometryHandle
         {
             mesh.Optimize();
@@ -51,9 +46,6 @@ int main(int argc, char** argv)
             return handle;
         };
 
-        // --- 1+2. Load the bunny + build a plane for the walls, then upload both ----------------
-        // Bunny AABB (raw, pre-quantize) so we can scale every copy to a fixed height and stand it
-        // on the floor regardless of the source model's units/pivot.
         float3 bunnyMin{1e30f, 1e30f, 1e30f};
         float3 bunnyMax{-1e30f, -1e30f, -1e30f};
         GeometryHandle bunny;
@@ -71,8 +63,6 @@ int main(int argc, char** argv)
             }
             bunny = UploadMesh(mesh);
         }
-        // A unit plane in the XZ plane (spanning [-0.5,0.5], +Y normal), lightly tessellated so the
-        // clusterizer has something to work with. Instanced + rotated into the five box walls.
         GeometryHandle plane;
         {
             constexpr int seg = 16;
@@ -106,15 +96,11 @@ int main(int argc, char** argv)
             plane = UploadMesh(mesh);
         }
 
-        // --- 3. Author the scene (re-filled every frame so the bunnies turn) ---------------------
         constexpr float kPi = 3.14159265358979f;
         constexpr float boxW = 4.0f; // interior width  (x in [-2, 2])
         constexpr float boxH = 3.0f; // interior height (y in [ 0, 3])
         constexpr float boxD = 4.0f; // interior depth  (z in [-2, 2])
         RendererUBO ubo { .adaptiveThreshold = 0.10f };
-
-        // -- Material palette. All principled (shaderBlockID 0); each hero leans on a different
-        //    part of the BSDF so the same path tracer renders glass, metal, wax and lacquer.
         auto BaseMat = []
         {
             GSMaterial m{};
@@ -129,7 +115,6 @@ int main(int argc, char** argv)
             return m;
         };
         Vector<GSMaterial> palette(GLOBAL_ALLOC);
-        // Walls: matte Lambertian-ish surfaces; the red/green pair is what bleeds colour everywhere.
         const uint32_t matWhite = static_cast<uint32_t>(palette.size());
         {
             GSMaterial m = BaseMat();
@@ -210,21 +195,13 @@ int main(int argc, char** argv)
         const float footZ = (bunnyMax.z - bunnyMin.z) * bunnyScale;
         const float spacing = std::min(0.74f, std::max(0.60f, std::sqrt(footX * footX + footZ * footZ) * 0.85f));
 
-        // Jump cadence: each bunny hops for half its cycle and rests (crouched) the other half, with a
-        // position-based phase offset so the hop travels across the grid as a wave.
         constexpr float kJumpFreq = 4.2f; // rad/s
         constexpr float kJumpHeight = 0.45f; // world units at the apex
         constexpr float kStretchAmp = 0.35f; // vertical stretch while airborne
         constexpr float kSquashAmp = 0.30f; // vertical squash while crouched
 
-        // Four walls (floor/back/left/right, open top) + the bunny grid. Constant count, so the
-        // per-frame TLAS refit never needs a full rebuild.
         const uint32_t instanceCount = 4u + static_cast<uint32_t>(kCols * kRows);
         const uint32_t lightCount = 2u;
-
-        // Re-authors the whole scene for animation time `t`: static box, the jumping/squashing bunny
-        // grid, and the overhead area light, then writes the ring-buffer offsets into the UBO. Called once up
-        // front (so the initial TLAS build has instances) and then every frame from the main loop.
         auto AuthorFrame = [&](float t)
         {
             auto tables = gpu.BeginScene(instanceCount, static_cast<uint32_t>(palette.size()), lightCount);
@@ -235,10 +212,6 @@ int main(int argc, char** argv)
                 tables.instances[idx++] = InstanceDesc{
                     .geometry = plane, .transform = pos, .rotation = rot, .scale = scale, .materialIndex = mat};
             };
-            // Each wall is the unit plane rotated so its +Y normal points into the room. The
-            // instance transform scales in *world* axes after rotation (world = Scale * Rot * local),
-            // so the scale vector gives each wall's world-space extents directly. Open top, no
-            // ceiling: the box stays well-lit in the raster path and the area light reads cleanly.
             AddWall(angleAxis(0.0f, float3(1, 0, 0)), float3(boxW, 1.0f, boxD), float3(0.0f, 0.0f, 0.0f),
                     matWhite); // floor
             AddWall(angleAxis(kPi * 0.5f, float3(1, 0, 0)), float3(boxW, boxH, 1.0f),
@@ -254,22 +227,14 @@ int main(int argc, char** argv)
                     int n = row * kCols + col;
                     float px = (static_cast<float>(col) - (kCols - 1) * 0.5f) * spacing;
                     float pz = (static_cast<float>(row) - (kRows - 1) * 0.5f) * spacing - 0.10f;
-
-                    // Hop: airborne for half the cycle (sin > 0), crouched on the floor for the rest.
                     float phase = t * kJumpFreq + (static_cast<float>(col) * 0.7f + static_cast<float>(row) * 1.3f);
                     float s = std::sin(phase);
                     float yJump = kJumpHeight * std::max(0.0f, s);
-                    // Volume-preserving squash & stretch: tall & thin through the fast parts of the
-                    // arc, flat & wide while crouched; sxz = 1/sqrt(sy) holds the volume constant.
                     float sy = s > 0.0f ? 1.0f + kStretchAmp * std::abs(std::cos(phase)) : 1.0f - kSquashAmp * (-s);
                     float sxz = 1.0f / std::sqrt(sy);
                     float3 sca = float3(bunnyScale * sxz, bunnyScale * sy, bunnyScale * sxz);
-
-                    // Gentle turntable so reflections/highlights/caustics drift across the materials.
                     float yaw = t * 0.25f + static_cast<float>(n) * 0.5f;
                     quat rot = angleAxis(yaw, float3(0, 1, 0));
-                    // Compensate the model pivot (scale is world-space, applied after rotation) so each
-                    // bunny spins about its own centre and keeps its feet planted as it squashes/lifts.
                     float3 v = rot * float3(bunnyCenter.x * bunnyScale, 0.0f, bunnyCenter.z * bunnyScale);
                     tables.instances[idx++] = InstanceDesc{
                         .geometry = bunny,
@@ -282,13 +247,9 @@ int main(int argc, char** argv)
             for (size_t i = 0; i < palette.size(); ++i)
                 tables.materials[i] = palette[i];
 
-            // Single soft rectangular overhead light. `power` is emitted radiance (Lemit = colour *
-            // power); dpdu/dpdv are half-extent vectors so this is a 1.4 x 1.4 quad facing straight
-            // down. GPUScene adds it to the TLAS as area-light geometry; the path tracer samples it
-            // with MIS for soft shadows + GI, the raster path treats it as a point at its centre.
             GSLight& env = tables.lights[0];
             env = GSLight{};
-            env.flags = 5u; // Environment light, always present as the first light.
+            env.flags = 5u; // Environment light
             env.color = float3(0.0f);
             env.power = 1.0f;
 
@@ -308,35 +269,14 @@ int main(int argc, char** argv)
         AuthorFrame(0.0f); // seed the tables so the initial TLAS build has instances
 
         ubo.ptSamplesPerPixel = 1;
-
-        // --- 4. Globals + TLAS ---------------------------------------------------------------
-        {
-            ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
-            auto* cmd = ctx.Get();
-            cmd->Begin();
-            auto tlasResult = gpu.BuildTLAS(cmd, /*update*/ false);
-            cmd->End();
-            if (tlasResult == GPUScene::TLASBuildResult::Built)
-                ctx.Submit(), ctx.WaitIdle();
-        }
-
-        // --- 5. Build the render graph (presents to the backbuffer itself) -------------------
-        // TAB toggles between the two renderers GPUScene feeds: meshlet raster and path tracer.
         ExampleGPUSceneRenderState renderState{};
-        // On-screen HUD: the CSDebugText pass draws over the scene's backbuffer, reading from
-        // input.hud (persistent, re-read every frame) via Examples_GPUSceneBuildRenderGraph.
         ExampleInputState input{};
-        // The graph sizes its internal targets to the render extent, so on a resize we tear the
-        // renderer down and recreate it against the resized swapchain before rebuilding the graph.
         auto RecreateRenderer = [&]
         { renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, rendererDesc, device, swapchain, GLOBAL_ALLOC); };
         auto BuildGraph = [&](RHIExtent2D extent)
         { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, input, extent); };
         BuildGraph(renderer->GetSwapchainExtent());
-
-        // --- 6. Main loop --------------------------------------------------------------------
-        // Look into the open front of the box from slightly above the bunnies.
-        FExampleOrbitCamera camera{.center = {0.0f, 0.95f, 0.0f},
+FExampleOrbitCamera camera{.center = {0.0f, 0.95f, 0.0f},
                                    .radius = 5.2f,
                                    .rot = normalize(angleAxis(radians(-4.0f), float3(1, 0, 0))),
                                    .zNear = 0.01f,

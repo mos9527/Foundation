@@ -2,7 +2,7 @@
 #include <Editor/Runtime/Animation.hpp>
 #include <Editor/Runtime/GPUScene.hpp>
 #include <Renderer/Renderer.hpp>
-#include <RenderCore/ImmediateContext.hpp> // ImmediateReadback for headless framebuffer readback
+#include <RenderCore/ImmediateContext.hpp> // For ImmediateReadback
 #include <Core/Paths.hpp>
 #include "Examples.hpp"
 #include <argh.h>
@@ -150,16 +150,6 @@ int main(int argc, char** argv)
         FAnimationRuntime anim;
         anim.Setup(scene, resources, animJobs.GetParallelForConcurrency());
         bool animPlaying = anim.playing;
-
-        {
-            ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
-            auto* cmd = ctx.Get();
-            cmd->Begin();
-            auto tlasResult = gpu.BuildTLAS(cmd, /*update*/ false);
-            cmd->End();
-            if (tlasResult == GPUScene::TLASBuildResult::Built)
-                ctx.Submit(), ctx.WaitIdle();
-        }
 
         if (headless)
         {

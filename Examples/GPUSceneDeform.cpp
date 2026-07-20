@@ -212,20 +212,9 @@ int main(int argc, char** argv)
             gpu.BuildUBO(ubo);
         };
         AuthorFrame();
-        {
-            ImmediateContext ctx(RHIDeviceQueueType::Compute, device.Get());
-            auto* cmd = ctx.Get();
-            cmd->Begin();
-            auto r = gpu.BuildTLAS(cmd, /*update*/ false);
-            cmd->End();
-            if (r == GPUScene::TLASBuildResult::Built)
-                ctx.Submit(), ctx.WaitIdle();
-        }
 
         ExampleGPUSceneRenderState renderState{};
-
         ExampleInputState input{};
-
         auto RecreateRenderer = [&] { renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, rendererDesc, device, swapchain, GLOBAL_ALLOC); };
         auto BuildGraph = [&](RHIExtent2D extent)
         { Examples_GPUSceneBuildRenderGraph(renderer.get(), &ubo, &gpu, renderState, input, extent); };

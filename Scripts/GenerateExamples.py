@@ -15,18 +15,12 @@ MAIN_ACTIVITY = REPO_ROOT / "Android" / "app" / "src" / "main" / "java" / "found
 BUILD_GRADLE = REPO_ROOT / "Android" / "app" / "build.gradle.kts"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build.yml"
 
-# Examples excluded from the Android picker/Gradle target list: no window/present
-# (Example_HeadlessTriangle, Example_HeadlessPathTracer) or no render dependencies
-# at all (Example_JobGraph). They still build and are exercised on other platforms.
 ANDROID_EXCLUDED_EXAMPLES = {
     "Example_HeadlessTriangle",
     "Example_HeadlessPathTracer",
-    "Example_JobGraph"
 }
 
-# Windows CI only compiles the examples (never runs them), so nothing needs excluding there.
 CI_EXCLUDED_EXAMPLES = {
-    "Example_JobGraph"
 }
 
 
