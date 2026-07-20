@@ -2,8 +2,10 @@
 #include <Editor/Runtime/Animation.hpp>
 #include <Editor/Runtime/GPUScene.hpp>
 #include <Renderer/Renderer.hpp>
+#include <RenderCore/ImmediateContext.hpp> // ImmediateReadback for headless framebuffer readback
 #include <Core/Paths.hpp>
 #include "Examples.hpp"
+#include <argh.h>
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -78,15 +80,49 @@ void ApplySceneCamera(FImportedScene const& scene, RendererUBO& ubo, FExampleOrb
 
 int main(int argc, char** argv)
 {
-    SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("GPUScene glTF Viewer"), 1280, 720,
-                                          Examples_SDLWindowFlagsVulkan);
+    // --- Command line ---------------------------------------------------------------------
+    // Positional: <scene path> (glTF/GLB/FSCN). Optional; defaults to Data/Assets/demo.glb.
+    // Headless single-image render (no window, path traced):
+    //   --headless              Render one image and exit (implied when -o/--output is given)
+    //   -o, --output <path>     Output PNG path (default: render.png)
+    //   -w, --width  <px>       Output width  (default: 1920)
+    //       --height <px>       Output height (default: 1080)
+    //   -s, --spp    <n>        Path-tracer samples to accumulate (default: 256)
+    // (Shared -h/--help, -g/--gpu, -l/--list-gpus are handled by Examples_InitVulkan.)
+    argh::parser cmdl;
+    cmdl.add_params({"-o", "--output", "-w", "--width", "--height", "-s", "--spp", "--samples", "-g", "--gpu"});
+    cmdl.parse(argc, argv);
+
+    uint32_t renderWidth = 1920u;
+    uint32_t renderHeight = 1080u;
+    uint32_t sampleCount = 256u;
+    cmdl({"-w", "--width"}, renderWidth) >> renderWidth;
+    cmdl({"--height"}, renderHeight) >> renderHeight;
+    cmdl({"-s", "--spp", "--samples"}, sampleCount) >> sampleCount;
+    renderWidth = std::max(renderWidth, 1u);
+    renderHeight = std::max(renderHeight, 1u);
+    sampleCount = std::max(sampleCount, 1u);
+    String outputPath = "render.png";
+    if (auto out = cmdl({"-o", "--output"}))
+        outputPath = out.str();
+    const bool headless = cmdl[{"--headless"}] || static_cast<bool>(cmdl({"-o", "--output"}));
+
+    String scenePathArg;
+    if (auto positional = cmdl(1))
+        scenePathArg = positional.str();
+
+    SDL_Window* window = headless ? nullptr
+                                  : SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("GPUScene glTF Viewer"), 1280, 720,
+                                                     Examples_SDLWindowFlagsVulkan);
     RendererDesc rendererDesc{};
+    if (headless)
+        rendererDesc.threadCount = 0; // deterministic single-threaded submission for offscreen render
     auto [renderer0, app, device, surface, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, rendererDesc);
     UniquePtr<Renderer> renderer(renderer0, StlDeleter<Renderer>{GLOBAL_ALLOC});
 
     // Examples_InitVulkan initializes PathsResolve's writable root and Android asset loader.
     // Resolve/import scene data after that so the temporary FSCN lands beside the pipeline cache.
-    String scenePath = argc >= 2 ? String(argv[1]) : PathsResolve("Data/Assets/demo.glb");
+    String scenePath = !scenePathArg.empty() ? scenePathArg : PathsResolve("Data/Assets/demo.glb");
     String scenePayloadPath = PrepareScenePayload(scenePath);
     MemoryMappedFile sceneFile(scenePayloadPath, MemoryMappedAccess::ReadOnly);
     FImportedScene scene(sceneFile, GLOBAL_ALLOC);
@@ -125,6 +161,84 @@ int main(int argc, char** argv)
                 ctx.Submit(), ctx.WaitIdle();
         }
 
+        if (headless)
+        {
+            // --- Headless single-image render ------------------------------------------------
+            // Build the path-tracer graph once at the requested resolution (no window/backbuffer,
+            // so no debug-text/blit passes), accumulate `sampleCount` samples into the converged
+            // image, read back the tonemapped RTV and write it to `outputPath`.
+            bool renderPaused = false;
+            RendererConfig cfg{};
+            cfg.renderExtent = RHIExtent2D{renderWidth, renderHeight};
+            cfg.ptRenderPaused = &renderPaused;
+            RendererOutputs outputs{};
+            renderer->BeginSetup();
+            BuildPathTracerRenderGraph(renderer.get(), &ubo, &gpu, cfg, outputs);
+            const ResourceHandle postprocess = Examples_InsertBasicTonemapPasses(renderer.get(), outputs, true);
+            renderer->EndSetup();
+
+            FExampleOrbitCamera camera{.center = {0.0f, 0.5f, 0.0f},
+                                       .radius = 5.0f,
+                                       .rot = normalize(angleAxis(radians(-18.0f), float3(1, 0, 0))),
+                                       .zNear = 0.01f,
+                                       .fovY = radians(50.0f)};
+            ApplySceneCamera(scene, ubo, camera);
+            camera.aspect = static_cast<float>(renderWidth) / static_cast<float>(renderHeight);
+            camera.RefreshMatrices();
+
+            // Scene + camera are static, so accumulation never resets: one converged sample/frame.
+            ubo.ptSamplesPerPixel = 1;
+            fmt::println("GPUSceneGLTF headless: rendering {}x{}, {} samples -> {}", renderWidth, renderHeight,
+                         sampleCount, outputPath);
+            for (uint32_t f = 0; f < sampleCount; ++f)
+            {
+                Examples_GPUSceneFillCameraUBO(ubo, renderer.get(), camera, cfg);
+                Examples_NewFrame(renderer.get());
+                ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
+                fmt::print("\r[PT] sample {}/{} ({:.0f}%)   ", f + 1, sampleCount,
+                           100.0f * static_cast<float>(f + 1) / static_cast<float>(sampleCount));
+                std::fflush(stdout);
+            }
+            fmt::println("");
+
+            renderer->WaitForFrame();
+            device->WaitIdle();
+
+            // Read back the tonemapped RTV and write it out. Scoped so the readback releases its
+            // device resources before the GPUScene/device teardown below.
+            {
+                auto* outputTex = renderer->DerefResource(postprocess).Get<RHITexture*>();
+                const RHIExtent2D extent{renderWidth, renderHeight};
+                const size_t dataSize = static_cast<size_t>(renderWidth) * renderHeight * 4;
+                ImmediateReadback readback(device.Get(), dataSize + 16);
+                readback.Begin();
+                {
+                    auto* cmd = readback.ctx.Get();
+                    cmd->BeginTransition();
+                    cmd->SetImageTransition(outputTex,
+                        {.srcAccess = RHIResourceAccessBits::RenderTargetWrite,
+                         .dstAccess = RHIResourceAccessBits::TransferRead,
+                         .srcStage = RHIPipelineStageBits::RenderTargetOutput,
+                         .dstStage = RHIPipelineStageBits::Transfer,
+                         .srcImgLayout = RHITextureLayout::RenderTarget,
+                         .dstImgLayout = RHITextureLayout::TransferSrc,
+                         .srcImgRange = RHITextureSubresourceRange::Create()});
+                    cmd->EndTransition();
+                }
+                char* pixels = readback.Readback(outputTex, dataSize,
+                                                 RHITextureSubresourceLayer{.aspect = RHITextureAspectFlagBits::Color},
+                                                 RHIOffset2D{}, extent);
+                readback.End();
+                readback.WaitIdle();
+                Examples_DumpAndOpenImage(outputPath, extent, pixels);
+            }
+
+            device->WaitIdle();
+            // Fall through to the shared teardown below so the GPUScene (this block's scope) is
+            // destroyed before the device in Examples_DestroyVulkan.
+        }
+        else
+        {
         ExampleGPUSceneRenderState renderState{};
         ExampleInputState input{};
 
@@ -226,6 +340,7 @@ int main(int argc, char** argv)
             if (cameraMoved)
                 ubo.ptAccumulatedFrames = 0u;
         }
+        } // else (interactive)
 
         device->WaitIdle();
     }
