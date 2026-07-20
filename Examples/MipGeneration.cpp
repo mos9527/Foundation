@@ -19,48 +19,14 @@ int main(int argc, char** argv)
         stbi_uc* data = stbi_load(Foundation::Core::PathsResolve("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
         CHECK_MSG(data, "Image did not load.");
         auto numMips = static_cast<uint32_t>(std::ceil(std::log2(std::max(x, y)))) + 1;
-        auto texture =
-            device->CreateTexture({.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::StorageImage |
-                                       RHITextureUsageBits::TransferDestination,
-                                   .extent = {static_cast<uint32_t>(x), static_cast<uint32_t>(y), 1},
-                                   .format = RHIResourceFormat::R8G8B8A8Unorm,
-                                   .mipLevels = numMips});
-        // Upload base level
-        {
-            ImmediateContext im(RHIDeviceQueueType::Graphics, device.Get());
-            auto staging = device->CreateBuffer(RHIBufferDesc::CreateStagingDesc(x * y * 4));
-            memcpy(staging->Map(), data, x * y * 4);
-            im->Begin();
-            im->BeginTransition();
-            im->SetImageTransition(texture.Get(),
-                                   {
-                                       .dstAccess = RHIResourceAccessBits::TransferWrite,
-                                       .dstStage = RHIPipelineStageBits::Transfer,
-                                       .dstImgLayout = RHITextureLayout::TransferDst,
-                                       .srcImgRange = RHITextureSubresourceRange::Create(),
-                                   });
-            im->EndTransition();
-            im->CopyBufferToImage(staging.Get(), texture.Get(), RHITextureLayout::TransferDst,
-                                  {{RHICommandList::CopyImageRegion{
-                                      .srcBufferOffset = 0,
-                                      .dstLayer =
-                                          RHITextureSubresourceLayer{
-                                              .aspect = RHITextureAspectFlagBits::Color,
-                                              .mipLevel = 0,
-                                              .baseArrayLayer = 0,
-                                              .layerCount = 1,
-                                          },
-                                      .extent =
-                                          {
-                                              static_cast<uint32_t>(x),
-                                              static_cast<uint32_t>(y),
-                                              1,
-                                          },
-                                  }}});
-            im->End();
-            im.Submit();
-            im.WaitIdle();
-        }
+        auto texture = ImmediateCreateTexture(device.Get(),
+            RHITextureDesc{
+                .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::StorageImage |
+                         RHITextureUsageBits::TransferDestination,
+                .extent = {static_cast<uint32_t>(x), static_cast<uint32_t>(y), 1},
+                .format = RHIResourceFormat::R8G8B8A8Unorm,
+                .mipLevels = numMips},
+            data, static_cast<size_t>(x) * y * 4);
         stbi_image_free(data);
         renderer->BeginSetup();
         ResourceHandle hdl = renderer->CreateResource("Mip Image", texture.Get());

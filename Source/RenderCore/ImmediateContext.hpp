@@ -193,4 +193,21 @@ namespace Foundation::RenderCore
         void WaitIdle();
     };
 
+    /**
+     * @brief Creates a buffer and uploads `data` into it in a single shot.
+     * @return The created buffer. No layout transition is performed (none is meaningful for buffers).
+     */
+    RHIDeviceScopedHandle<RHIBuffer> ImmediateCreateBuffer(RHIDevice* device, RHIBufferDesc const& desc,
+                                                           void const* data, size_t bytes);
+
+    /**
+     * @brief Creates a texture and uploads `data` (base mip) into it in a single shot.
+     * @param finalLayout Layout to leave the texture in after the upload. Defaults to TransferDst
+     *        (matching ImmediateUpload::Upload); pass ShaderReadOnly for a texture you intend to sample.
+     * @return The created texture.
+     */
+    RHIDeviceScopedHandle<RHITexture> ImmediateCreateTexture(RHIDevice* device, RHITextureDesc const& desc,
+                                                           void const* data, size_t bytes,
+                                                           RHITextureLayout finalLayout = RHITextureLayout::TransferDst);
+
 } // namespace Foundation::RenderCore

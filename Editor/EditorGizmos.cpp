@@ -111,48 +111,15 @@ static uint32_t UploadIconTexture(BindlessPool& pool, RHIDevice* device, StringV
     FTexture cpu(GLOBAL_ALLOC);
     LoadRGBA8(cpu, PathsResolve(relPath), false);
 
-    auto texture = device->CreateTexture(
-        {.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
-         .extent = {cpu.GetWidth(), cpu.GetHeight(), 1u},
-         .format = RHIResourceFormat::R8G8B8A8Unorm});
+    RHITextureDesc texDesc{
+        .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
+        .extent = {cpu.GetWidth(), cpu.GetHeight(), 1u},
+        .format = RHIResourceFormat::R8G8B8A8Unorm,
+    };
+    auto texture = ImmediateCreateTexture(device, texDesc, cpu.bytes.data(), cpu.bytes.size(),
+                                           RHITextureLayout::ShaderReadOnly);
     auto view = texture->CreateTextureView(
         {.format = RHIResourceFormat::R8G8B8A8Unorm, .range = RHITextureSubresourceRange::Create()});
-
-    ImmediateContext im(RHIDeviceQueueType::Graphics, device);
-    size_t const uploadBytes = cpu.bytes.size();
-    auto staging = device->CreateBuffer(RHIBufferDesc::CreateStagingDesc(uploadBytes));
-    std::memcpy(staging->Map(), cpu.bytes.data(), uploadBytes);
-    im->Begin();
-    im->BeginTransition();
-    im->SetImageTransition(texture.Get(),
-                           {.dstAccess = RHIResourceAccessBits::TransferWrite,
-                            .dstStage = RHIPipelineStageBits::Transfer,
-                            .dstImgLayout = RHITextureLayout::TransferDst,
-                            .srcImgRange = RHITextureSubresourceRange::Create()});
-    im->EndTransition();
-    im->CopyBufferToImage(staging.Get(), texture.Get(), RHITextureLayout::TransferDst,
-                          {{RHICommandList::CopyImageRegion{
-                              .dstLayer = RHITextureSubresourceLayer{
-                                  .aspect = RHITextureAspectFlagBits::Color,
-                                  .mipLevel = 0,
-                                  .baseArrayLayer = 0,
-                                  .layerCount = 1,
-                              },
-                              .extent = {cpu.GetWidth(), cpu.GetHeight(), 1u},
-                          }}});
-    im->BeginTransition();
-    im->SetImageTransition(texture.Get(),
-                           {.srcAccess = RHIResourceAccessBits::TransferRead,
-                            .dstAccess = RHIResourceAccessBits::ShaderRead,
-                            .srcStage = RHIPipelineStageBits::Transfer,
-                            .dstStage = RHIPipelineStageBits::FragmentShader,
-                            .srcImgLayout = RHITextureLayout::TransferDst,
-                            .dstImgLayout = RHITextureLayout::ShaderReadOnly,
-                            .srcImgRange = RHITextureSubresourceRange::Create()});
-    im->EndTransition();
-    im->End();
-    im.Submit();
-    im.WaitIdle();
 
     return pool.Allocate(std::move(texture), std::move(view));
 }

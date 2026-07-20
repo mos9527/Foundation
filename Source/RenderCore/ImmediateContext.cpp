@@ -1,5 +1,59 @@
+#include <cstring>
 namespace Foundation::RenderCore
 {
+    RHIDeviceScopedHandle<RHIBuffer> ImmediateCreateBuffer(RHIDevice* device, RHIBufferDesc const& desc,
+                                                           void const* data, size_t bytes)
+    {
+        RHIDeviceScopedHandle<RHIBuffer> res = device->CreateBuffer(desc);
+        ImmediateUpload upload(device, bytes);
+        upload.Begin();
+        char* dst = upload.Upload(res.Get(), bytes, 0);
+        std::memcpy(dst, data, bytes);
+        upload.End();
+        upload.WaitIdle();
+        return res;
+    }
+
+    RHIDeviceScopedHandle<RHITexture> ImmediateCreateTexture(RHIDevice* device, RHITextureDesc const& desc,
+                                                           void const* data, size_t bytes,
+                                                           RHITextureLayout finalLayout)
+    {
+        RHIDeviceScopedHandle<RHITexture> res = device->CreateTexture(desc);
+        ImmediateUpload upload(device, bytes);
+        upload.Begin();
+        RHICommandList* cmd = upload.Get();
+        // Transition to TransferDst so we can copy into it.
+        cmd->BeginTransition();
+        cmd->SetImageTransition(res.Get(), {
+            .dstAccess = RHIResourceAccessBits::TransferWrite,
+            .dstStage = RHIPipelineStageBits::Transfer,
+            .srcImgLayout = RHITextureLayout::Undefined,
+            .dstImgLayout = RHITextureLayout::TransferDst,
+            .srcImgRange = RHITextureSubresourceRange::Create(),
+        });
+        cmd->EndTransition();
+        char* dst = upload.Upload(res.Get(), bytes, {.aspect = RHITextureAspectFlagBits::Color}, RHIOffset2D{}, RHIExtent2D{});
+        std::memcpy(dst, data, bytes);
+        // Transition to the requested final layout (usually ShaderReadOnly) when not already TransferDst.
+        if (finalLayout != RHITextureLayout::TransferDst)
+        {
+            cmd->BeginTransition();
+            cmd->SetImageTransition(res.Get(), {
+                .srcAccess = RHIResourceAccessBits::TransferRead,
+                .dstAccess = RHIResourceAccessBits::ShaderRead,
+                .srcStage = RHIPipelineStageBits::Transfer,
+                .dstStage = RHIPipelineStageBits::FragmentShader,
+                .srcImgLayout = RHITextureLayout::TransferDst,
+                .dstImgLayout = finalLayout,
+                .srcImgRange = RHITextureSubresourceRange::Create(),
+            });
+            cmd->EndTransition();
+        }
+        upload.End();
+        upload.WaitIdle();
+        return res;
+    }
+
     ImmediateContext::ImmediateContext(RHIDeviceQueueType type, RHIDevice* device) : mDevice(device)
     {
         mQueue = device->GetDeviceQueue(type);

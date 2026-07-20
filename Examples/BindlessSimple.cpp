@@ -28,63 +28,27 @@ int main(int argc, char** argv)
         Vector<RHIDeviceScopedHandle<RHITexture>> textures(kNumTextures, GLOBAL_ALLOC);
         // Prepare textures
         {
-            ImmediateContext im(RHIDeviceQueueType::Graphics, device.Get());
-            auto staging = device->CreateBuffer(RHIBufferDesc::CreateStagingDesc(256 * 256 * 4 * kNumTextures));
             const auto format = RHIResourceFormat::R8G8B8A8Unorm;
             const auto extent = RHIExtent3D{256, 256, 1};
-            uint32_t offset = 0;
-            im->Begin();
+            Vector<uint32_t> pattern(extent.x * extent.y, GLOBAL_ALLOC);
             for (auto& tex : textures)
             {
-                auto pixels = Span<uint32_t>(static_cast<uint32_t*>(staging->Map()) + offset, extent.x * extent.y);
-                tex = device->CreateTexture({
-                    .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
-                    .extent = extent,
-                    .format = format,
-                });
-                auto view = tex->CreateTextureView(
-                    RHITextureViewDesc{.format = format, .range = RHITextureSubresourceRange::Create()});
                 // Fill with a color pattern
                 uint32_t color = 0xFF000000 | ((rand() % 256) << 16) | ((rand() % 256) << 8) | (rand() % 256);
-                for (size_t i = 0; i < pixels.size(); ++i)
-                    pixels[i] = color;
+                for (uint32_t i = 0; i < pattern.size(); ++i)
+                    pattern[i] = color;
+                tex = ImmediateCreateTexture(device.Get(),
+                    RHITextureDesc{
+                        .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
+                        .extent = extent,
+                        .format = format,
+                    },
+                    pattern.data(), pattern.size() * sizeof(uint32_t),
+                    RHITextureLayout::ShaderReadOnly);
+                auto view = tex->CreateTextureView(
+                    RHITextureViewDesc{.format = format, .range = RHITextureSubresourceRange::Create()});
                 bindings.Allocate(view.Release().Get()); // OK to release - textures own the view.
-                // Upload image
-                im->BeginTransition();
-                im->SetImageTransition(tex.Get(), {
-                    .dstAccess = RHIResourceAccessBits::TransferWrite,
-                    .dstStage = RHIPipelineStageBits::Transfer,
-                    .dstImgLayout = RHITextureLayout::TransferDst,
-                    .srcImgRange = RHITextureSubresourceRange::Create(),
-                });
-                im->EndTransition();
-                im->CopyBufferToImage(staging.Get(), tex.Get(), RHITextureLayout::TransferDst,
-                                      {{RHICommandList::CopyImageRegion{
-                                          .srcBufferOffset = offset * 4,
-                                          .dstLayer = RHITextureSubresourceLayer{
-                                              .aspect = RHITextureAspectFlagBits::Color,
-                                              .mipLevel = 0,
-                                              .baseArrayLayer = 0,
-                                              .layerCount = 1,
-                                          },
-                                          .extent = extent
-                                      }}});
-                im->BeginTransition();
-                im->SetImageTransition(tex.Get(), {
-                    .srcAccess = RHIResourceAccessBits::TransferRead,
-                    .dstAccess = RHIResourceAccessBits::ShaderRead,
-                    .srcStage = RHIPipelineStageBits::Transfer,
-                    .dstStage = RHIPipelineStageBits::FragmentShader,
-                    .srcImgLayout = RHITextureLayout::TransferDst,
-                    .dstImgLayout = RHITextureLayout::ShaderReadOnly,
-                    .srcImgRange = RHITextureSubresourceRange::Create(),
-                });
-                im->EndTransition();
-                offset += extent.x * extent.y;
             }
-            im->End();
-            im.Submit();
-            im.WaitIdle();
         }
         renderer->BeginSetup();
         ResourceHandle linSampler = renderer->CreateSampler({});

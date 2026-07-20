@@ -25,18 +25,15 @@ int main(int argc, char** argv)
     /* Setup */
     auto [renderer, app, device, surface, swapchain, presenter] = Examples_InitVulkan(window, argc, argv, {});
     CHECK_MSG(device->GetCapabilities().meshShaders, "Mesh Shader support required, but is unavailable");
-    auto meshData = device->CreateBuffer({
-        .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer,
-        .size = 16u * (1u << 20) // 16 MB
-    });
+    RHIDeviceScopedHandle<RHIBuffer> meshData;
     /* Loads and computes DAG LODs and upload immediately */
     {
         FImportedMesh src(GLOBAL_ALLOC);
         LoadObj(src, Foundation::Core::PathsResolve("Data/Assets/bunny.obj"));
         src.Optimize();
         src.ClusterizeDAG();
-        auto staging = device->CreateBuffer(RHIBufferDesc::CreateStagingDesc(meshData->mDesc.size));
-        char *ptr = static_cast<char*>(staging->Map()), *dst = ptr;
+        Vector<uint8_t> staging(16u << 20, GLOBAL_ALLOC);
+        char* ptr = reinterpret_cast<char*>(staging.data()), *dst = ptr;
         auto Write = [&](const void* pData, size_t bytes)
         {
             std::memcpy(dst, pData, bytes);
@@ -57,15 +54,12 @@ int main(int argc, char** argv)
         mesh.meshletVtxOffset = Write(s0.meshletVtx.data(), sizeof(uint32_t) * s0.meshletVtx.size());
         mesh.meshletTriOffset = Write(s0.meshletTri.data(), sizeof(uint8_t) * s0.meshletTri.size());
         size_t size = dst - ptr;
-        dst = ptr;
-        ImmediateContext im(RHIDeviceQueueType::Graphics, device.Get());
-        im->Begin();
-        im->CopyBuffer(staging.Get(), meshData.Get(), {{{.size = size}}});
-        im->End();
-        // NOTE: No need for transition here.
-        // Later WaitIdle ensures there'd be no ROW hazards from this.
-        im.Submit();
-        im.WaitIdle();
+        meshData = ImmediateCreateBuffer(device.Get(),
+            RHIBufferDesc{
+                .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer,
+                .size = size,
+            },
+            staging.data(), size);
     }
     renderer->BeginSetup();
     auto meshHandle = renderer->CreateResource("Mesh Storage", meshData.Get());
