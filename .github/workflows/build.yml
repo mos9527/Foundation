@@ -84,12 +84,11 @@ jobs:
           EditorWithUtil
           # BEGIN GENERATED CI EXAMPLE TARGETS
           Example_BindlessSimple
+          Example_GPUScene
           Example_DebugText
           Example_SDF2D
           Example_MipGeneration
           Example_AutodiffSimple
-          Example_HeadlessPathTracer
-          Example_HeadlessTriangle
           Example_Triangle
           Example_MeshShaderHierarchicalLOD
           Example_ImGui
