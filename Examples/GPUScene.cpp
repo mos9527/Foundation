@@ -246,8 +246,7 @@ int main(int argc, char** argv)
         {
             ExampleInputState input{};
             ExampleFpsCounter fps;
-            uint64_t t0 = SDL_GetTicksNS();
-            gpu.Join();
+            uint64_t t0 = SDL_GetTicksNS();            
 #if defined(__ANDROID__)
             // TDRs are...expected otherwise
             float scaling = 0.10f;
@@ -276,6 +275,8 @@ int main(int argc, char** argv)
                     ubo.ptAccumulatedFrames = 0u;
                     Examples_ResetRenderer(ctx, RendererDesc{});
                     ctx.renderer->BeginSetup();      
+                    renderWidth = ctx.renderer->GetSwapchainExtent().x;
+                    renderHeight = ctx.renderer->GetSwapchainExtent().y;
                     cfg.renderExtent = RHIExtent2D{float2(renderWidth, renderHeight) * scaling};
                     BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, &gpu, cfg, outputs);
                     BuildTonemappingPass(ctx.renderer.get(), outputs, true);
