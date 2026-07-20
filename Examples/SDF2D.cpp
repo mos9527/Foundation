@@ -15,7 +15,7 @@ int main(int argc, char** argv)
     lines[0].x = lines[0].y = 16, lines[0].SetText("SDF2D - port courtesy of https://iquilezles.org/articles/distfunctions2d/");
     ctx.renderer->BeginSetup();
     createPSFullscreenPass(
-        ctx.renderer, "SDF2D",
+        ctx.renderer.get(), "SDF2D",
         [=](PassHandle self, Renderer* r) {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/SDF2D.spv"));
             r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float));
@@ -24,7 +24,7 @@ int main(int argc, char** argv)
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, Examples_GetTime());
         }
     );
-    createCSDebugTextPassBackBuffer(ctx.renderer, "Debug Text", lines);
+    createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", lines);
     ctx.renderer->EndSetup();
     ExampleFpsCounter fps;
     while (!Examples_ShouldClose(window, ctx))
@@ -33,4 +33,6 @@ int main(int argc, char** argv)
         Examples_NewFrame(window, ctx);
     }
     Examples_DestroyVulkan(window, ctx);
+
+    return 0;
 }

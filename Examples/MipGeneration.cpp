@@ -30,16 +30,16 @@ int main(int argc, char** argv)
             data, static_cast<size_t>(x) * y * 4);
         stbi_image_free(data);
         ctx.renderer->BeginSetup();
-        ResourceHandle hdl = renderer->CreateResource("Mip Image", texture.Get());
-        ResourceHandle sampler = renderer->CreateSampler({});
-        createCSMipGenerationSinglePass(renderer, "Mip Generation", RHIDeviceQueueType::Compute, hdl, hdl,
+        ResourceHandle hdl = ctx.renderer->CreateResource("Mip Image", texture.Get());
+        ResourceHandle sampler = ctx.renderer->CreateSampler({});
+        createCSMipGenerationSinglePass(ctx.renderer, "Mip Generation", RHIDeviceQueueType::Compute, hdl, hdl,
                                         RHIResourceFormat::R8G8B8A8Unorm, RHIResourceFormat::R8G8B8A8Unorm,
                                         RHITextureAspectFlagBits::Color, RHITextureAspectFlagBits::Color, sampler,
                                         numMips);
         ExampleInputState input{};
         float previewLod = 0.0f;
         const float maxPreviewLod = static_cast<float>(numMips - 1u);
-        renderer->CreatePass(
+        ctx.renderer->CreatePass(
             "Draw Blurred", RHIDeviceQueueType::Graphics, 0u,
             [&](PassHandle self, Renderer* r)
             {
@@ -65,8 +65,8 @@ int main(int argc, char** argv)
                 cmd->Draw(3);
                 cmd->EndGraphics();
             });
-        createCSDebugTextPassBackBuffer(renderer, "Debug Text", Examples_HudLines(input));
-        renderer->EndSetup();
+        createCSDebugTextPassBackBuffer(ctx.renderer, "Debug Text", Examples_HudLines(input));
+        ctx.renderer->EndSetup();
         ExampleFpsCounter fps;
         while (true)
         {
@@ -83,4 +83,6 @@ int main(int argc, char** argv)
         texture.Release(); // Release - destructs with the device
     }
     Examples_DestroyVulkan(window, ctx);
+
+    return 0;
 }

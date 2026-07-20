@@ -52,19 +52,13 @@ static void ReleaseScenePayloadFileForRewrite(StringView payloadPath)
 }
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
 
-static GPUScene::UpdateResult CommitSceneToGPU(GPUScene* gpu, FImportedScene& scene, RendererUBO& globals,
-                                               bool resetAccumulation)
-{
-    CHECK(gpu);
-    return ::CommitSceneToGPU(scene, *gpu, GEditor.resources, globals, resetAccumulation);
-}
-
 void CommitSceneToGPU(bool resetAccumulation)
 {
     if (!GContext->gpuScene || !GEditor.HasScene())
         return;
-
-    CommitSceneToGPU(GContext->gpuScene, GEditor.Scene(), GEditor.shaderGlobals, resetAccumulation);
+    if (resetAccumulation)
+        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+    ::CommitSceneToGPU(GEditor.Scene(), *GContext->gpuScene, GEditor.resources, GEditor.shaderGlobals);
 }
 
 static FTexture LoadViewLUT(StringView path, Allocator* alloc = GLOBAL_ALLOC)

@@ -94,10 +94,10 @@ int main(int argc, char** argv)
             });
 
         // Display the decoded result.
-        createPSBackbufferBlitPass(ctx.renderer, "Blit Decoded", sampler, dstHdl, RHIResourceFormat::R8G8B8A8Unorm);
+        createPSBackbufferBlitPass(ctx.renderer.get(), "Blit Decoded", sampler, dstHdl, RHIResourceFormat::R8G8B8A8Unorm);
 
         ExampleInputState input{};
-        createCSDebugTextPassBackBuffer(ctx.renderer, "Debug Text", Examples_HudLines(input));
+        createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
         ctx.renderer->EndSetup();
 
         ExampleFpsCounter fps;

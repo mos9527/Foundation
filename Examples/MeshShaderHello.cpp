@@ -32,7 +32,7 @@ int main(int argc, char** argv)
                 .DrawMeshTasks(1, 1, 1)
                 .EndGraphics();
         });
-    createCSDebugTextPassBackBuffer(ctx.renderer, "Debug Text", {{data}});
+    createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", {{data}});
     ctx.renderer->EndSetup();
     ExampleFpsCounter fps;
     while (!Examples_ShouldClose(window, ctx))
@@ -41,4 +41,5 @@ int main(int argc, char** argv)
         Examples_NewFrame(window, ctx);
     }
     Examples_DestroyVulkan(window, ctx);
+    return 0;
 }

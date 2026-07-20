@@ -4,7 +4,6 @@
 
 namespace Foundation::RHI { struct RHIDeviceCapabilities; }
 
-// Resident GPU handles and id->table-index maps; rebuilt per UploadSceneResources.
 struct FSceneGPUResources
 {
     Vector<GeometryHandle> meshGeometry{GLOBAL_ALLOC};
@@ -20,19 +19,9 @@ bool IsSceneEnvironmentTexture(FImportedScene const& scene, size_t textureIndex)
 
 GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI::RHIDeviceCapabilities const& caps,
                                    uint32_t minLightBudget = 1024u);
-
-// Queues every mesh/curve/texture in `scene` (other than its environment map, see
-// UploadSceneEnvironment) onto `gpu`'s upload queue and fills `outResources` by resource index.
-// Drain with gpu.Join() or gpu.Poll().
 void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources& outResources);
-
-// Synchronously uploads `environment`'s HDRI map and importance-sampling CDFs. Requires
-// environment.HasEnvironmentTexture().
 void UploadSceneEnvironment(FImportedScene const& scene, FLight const& environment, GPUScene& gpu);
 
-// Fills and commits the GPUScene instance/material/light tables from `scene`, resolving instance
-// geometry and material textures through `resources`, then rebuilds the UBO.
-// `frameNumber` stamps motion-vector contributors (defaults to `globals.frameNumber`).
+// NOTE: For scene it's Instances, Materials and Lights only.
 GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources const& resources,
-                                        RendererUBO& globals, bool resetAccumulation = true,
-                                        uint32_t frameNumber = UINT32_MAX);
+                                        RendererUBO& globals, uint32_t frameNumber = UINT32_MAX);

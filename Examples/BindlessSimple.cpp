@@ -16,7 +16,7 @@ int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("BindlessSimple Example"), 800, 600,
                                           Examples_SDLWindowFlagsVulkan);
-    auto [renderer, app, device, surface, swapchain, presenter] =
+    auto ctx =
         Examples_InitVulkan(window, argc, argv,
                             {
                                 .asyncCompute = false, .threadCount = 0, /* ST recording */
@@ -24,7 +24,7 @@ int main(int argc, char** argv)
     CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("Bindless Simple");
     {
-        BindlessPool bindings(device.Get(), GLOBAL_ALLOC, {.maxBindings = kNumTextures});
+        BindlessPool bindings(ctx.device.Get(), GLOBAL_ALLOC, {.maxBindings = kNumTextures});
         Vector<RHIDeviceScopedHandle<RHITexture>> textures(kNumTextures, GLOBAL_ALLOC);
         // Prepare textures
         {
@@ -37,7 +37,8 @@ int main(int argc, char** argv)
                 uint32_t color = 0xFF000000 | ((rand() % 256) << 16) | ((rand() % 256) << 8) | (rand() % 256);
                 for (uint32_t i = 0; i < pattern.size(); ++i)
                     pattern[i] = color;
-                tex = ImmediateCreateTexture(device.Get(),
+                tex = ImmediateCreateTexture(
+                    ctx.device.Get(),
                     RHITextureDesc{
                         .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
                         .extent = extent,
@@ -50,10 +51,10 @@ int main(int argc, char** argv)
                 bindings.Allocate(view.Release().Get()); // OK to release - textures own the view.
             }
         }
-        renderer->BeginSetup();
-        ResourceHandle linSampler = renderer->CreateSampler({});
+        ctx.renderer->BeginSetup();
+        ResourceHandle linSampler = ctx.renderer->CreateSampler({});
         createPSFullscreenPass(
-            renderer, "Atlas Display",
+            ctx.renderer.get(), "Atlas Display",
             [&](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/BindlessSimple.spv"));
@@ -67,15 +68,16 @@ int main(int argc, char** argv)
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0,
                                       PushConstant{.time = Examples_GetTime(), .total = kNumTextures, .first = 0});
             });
-        createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
-        renderer->EndSetup();
+        createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", lines);
+        ctx.renderer->EndSetup();
 
         ExampleFpsCounter fps;
-        while (!Examples_ShouldClose(window, renderer, surface, swapchain))
+        while (!Examples_ShouldClose(window, ctx))
         {
             lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
-            Examples_NewFrame(window, renderer, presenter, surface, swapchain);
+            Examples_NewFrame(window, ctx);
         }
     }
-    Examples_DestroyVulkan(window, renderer, app, device, surface, swapchain);
+    Examples_DestroyVulkan(window, ctx);
+    return 0;
 }

@@ -1473,7 +1473,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                         if (loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Unorm ||
                             loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Srgb)
                         {
-                            loaded->GenerateMips();
+                            if (buildOptions.generateMipmaps)
+                                loaded->GenerateMips();
                             if (buildOptions.textureCompression == FSceneTextureCompression::BC7)
                                 texture = loaded->EncodeBC7(scratchAlloc);
                             else
@@ -1529,7 +1530,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         environmentLight.environmentTexture = scene.mTables.textures[environmentTextureIndex].id;
     }
 
-    /* Skeletons (one per glTF skin) + a glTF-mesh -> skin map for skinned-mesh import */
+    // Skinning map
     Vector<Vector<uint16_t>> skinRemap(scratchAlloc);
     skinRemap.reserve(data->skins_count);
     scene.mTables.skeletons.reserve(data->skins_count);
@@ -1551,10 +1552,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
             meshToSkin[cgltf_mesh_index(data, node->mesh)] = static_cast<int32_t>(cgltf_skin_index(data, node->skin));
     }
 
-    /* Scene-node hierarchy + rigid (non-skin) animation clips. Built before the instance loop so
-     * instances/lights can record their scene-node index. Skin joints are excluded here (they are
-     * driven by the skin clip path), so no node is animated twice. The hierarchy is only kept when
-     * at least one rigid clip exists. */
+    // Skinning animations
     FUUID sceneNodeSkeletonId{};
     Vector<int32_t> nodeToSceneJoint(scratchAlloc);
     if (data->animations_count > 0 && data->nodes_count > 0)
@@ -1609,10 +1607,7 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
     auto NodeJoint = [&](size_t nodeIndex) -> int32_t
     { return hasSceneNodeSkeleton ? nodeToSceneJoint[nodeIndex] : -1; };
 
-    /* Morph-animated meshes: any glTF mesh an animation drives via a `weights` channel. The actual
-     * weight keyframes become morph channels on the animation's clip (built with the skeletal clips
-     * below); here we only flag which meshes need morph geometry + the dynamic vertex/index path,
-     * and cache each mesh's morph-target count for building those channels. */
+    // Morphs
     Vector<uint8_t> meshMorphAnimated(data->meshes_count, uint8_t{0}, scratchAlloc);
     Vector<uint32_t> meshMorphTargetCount(data->meshes_count, 0u, scratchAlloc);
     for (size_t a = 0; a < data->animations_count; a++)
@@ -1711,11 +1706,19 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                             bool const dynamic = !submesh.skin.empty() || morphAnimated;
                             if (!dynamic)
                             {
-                                LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
-                                    submesh.vertices.size(), submesh.lods[0].indices.size());
-                                submesh.Optimize();
-                                submesh.ClusterizeDAG();
-                                LOG(Meshopt, LogInfo, "Optimized {}", meshIndex);
+         
+                                if (buildOptions.optimizeMeshes)
+                                {
+                                    LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
+                                        submesh.vertices.size(), submesh.lods[0].indices.size());
+                                    submesh.Optimize();
+                                }
+                                if (buildOptions.generateMeshlets)
+                                {
+                                    LOG(Meshopt, LogInfo, "Clusterizing submesh {}, vtx: {}, idx: {}", meshIndex,
+                                        submesh.vertices.size(), submesh.lods[0].indices.size());
+                                    submesh.ClusterizeDAG();                                
+                                }
                             }
                             submesh.Quantize();
                             BuildMeshBlobJobs(scene.mTables.meshes[meshIndex], meshBlobJobs[meshIndex].jobs, submesh,

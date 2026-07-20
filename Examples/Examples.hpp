@@ -3,6 +3,7 @@
 #include <Core/Paths.hpp>
 #include <RHIVulkan/Application.hpp>
 #include <RenderCore/Renderer.hpp>
+#include <RenderCore/Presenter.hpp>
 #include <RHICore/Surface.hpp>
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp>
@@ -51,21 +52,15 @@ constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_
 //   -g, --gpu <id>    Select GPU device index
 //   -l, --list-gpus   List available GPU devices and exit
 //
-namespace Foundation::RenderCore
-{
-class Presenter;
-}
-// Aggregated Vulkan context returned by Examples_InitVulkan. Members are declared in the
-// order used by structured bindings, so it can be split with:
-//   auto& [renderer, app, device, surface, swapchain, presenter] = ctx;
 struct ExampleVulkanContext
 {
-    Renderer* renderer{};
-    VulkanApplication* app{};
-    RHIApplicationScopedHandle<RHIDevice> device{};
-    RHIDeviceScopedHandle<RHISurface> surface{};
-    RHIDeviceScopedHandle<RHISwapchain> swapchain{};
-    Presenter* presenter{};
+    UniquePtr<VulkanApplication> app;
+    RHIApplicationScopedHandle<RHIDevice> device;
+    RHIDeviceScopedHandle<RHIPipelineStateCache> psoCache;
+    RHIDeviceScopedHandle<RHISurface> surface;
+    RHIDeviceScopedHandle<RHISwapchain> swapchain;
+    UniquePtr<Presenter> presenter;
+    UniquePtr<Renderer> renderer;
 };
 
 struct ExampleClickableRegion
@@ -90,7 +85,9 @@ struct ExampleInputState
 {
     static constexpr size_t kMaxPressedKeys = 16;
     static constexpr size_t kMaxHudLines = 32;
-
+    // Set to true whenever the window is resized. Clear manually.
+    bool hasPendingResize{true};
+    // Inputs
     bool keyForward{};
     bool keyBack{};
     bool keyLeft{};
@@ -109,6 +106,7 @@ struct ExampleInputState
     uint32_t pressedKeyCount{};
     float2 pointerPosition{};
     float2 clickPosition{};
+    // UI states
     int uiX = 16;
     int uiY = 16;
     int uiStartX = 16;
@@ -120,14 +118,12 @@ struct ExampleInputState
     int uiLastItemX{};
     int uiLastItemY{};
     bool uiSameLine{};
-    // Immediate-mode HUD buffer: Examples_Text/Button/Slider claim lines from here in order.
-    // Examples_BeginControls clears it and resets hudCount for the new frame.
-    std::array<RenderUtils::CSDebugTextData, kMaxHudLines> hud{};
+    Array<RenderUtils::CSDebugTextData, kMaxHudLines> hud{};
     size_t hudCount{};
-    std::array<SDL_Keycode, kMaxPressedKeys> pressedKeys{};
-    std::array<ExampleTouchState, 4> touches{};
-    std::vector<ExampleClickableRegion> clickableRegions;
-    std::vector<ExampleClickableRegion> nextClickableRegions;
+    Array<SDL_Keycode, kMaxPressedKeys> pressedKeys{};
+    Array<ExampleTouchState, 4> touches{};
+    Vector<ExampleClickableRegion> clickableRegions{GLOBAL_ALLOC};
+    Vector<ExampleClickableRegion> nextClickableRegions{GLOBAL_ALLOC};
 
     bool KeyPressed(SDL_Keycode key) const
     {
@@ -158,77 +154,26 @@ struct FExampleOrbitCamera
     void RefreshMatrices();
 };
 
-enum class ExampleGPUSceneRenderMode
-{
-    Raster,
-    PathTracer
-};
-
-struct ExampleGPUSceneRenderState
-{
-    ExampleGPUSceneRenderMode mode = ExampleGPUSceneRenderMode::PathTracer;
-    bool renderPaused = false;
-    float renderScale = 0.10f;
-    RendererConfig config{};
-    RendererOutputs outputs{};
-    RHIExtent2D renderExtent{};
-};
-
-// Pass window == nullptr to initialize headlessly: no SDL window or Vulkan WSI is required,
-// no swapchain is created, and the returned swapchain handle is invalid. This works on
-// software backends (e.g. Lavapipe) without surface extensions.
 ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc = {});
-
-// Drains all pending SDL events into the frame input state, resizing the swapchain as needed.
 bool Examples_PollEvents(SDL_Window* window, ExampleVulkanContext& ctx, ExampleInputState& input, SDL_Event* outLastEvent = nullptr,
                          void (*processEvent)(SDL_Event*) = nullptr);
-
-// Compatibility wrapper for simple examples that only need close/resize and optionally the last event.
 bool Examples_ShouldClose(SDL_Window* window, ExampleVulkanContext& ctx, SDL_Event* outEvent = nullptr);
 
 void Examples_BeginFrameInput(ExampleInputState& input);
-// Resets the layout cursor to (x, y) and clears ExampleInputState::hud for the frame; every
-// Examples_Text/Button/Slider call below this claims the next line automatically.
 void Examples_BeginControls(ExampleInputState& input, int x = 16, int y = 16);
 void Examples_SameLine(ExampleInputState& input, int spacing = 16);
 void Examples_Text(ExampleInputState& input, StringView text);
 bool Examples_Button(ExampleInputState& input, StringView text);
-// Text stepper: "Label [-][====------][+] value". [-]/[+] step by `step`; the bar itself is also a
-// clickable/draggable control that jumps/scrubs the value to the pointer's position along it.
 bool Examples_Slider(ExampleInputState& input, StringView label, float& value, float minValue, float maxValue,
                      float step = 0.01f, const char* unit = "x", bool draggable = true);
-// The HUD lines claimed so far this frame; pass to createCSDebugTextPassBackBuffer (or
-// Examples_GPUSceneBuildRenderGraph does this internally).
 Span<const RenderUtils::CSDebugTextData> Examples_HudLines(ExampleInputState const& input);
-const char* Examples_GPUSceneModeName(ExampleGPUSceneRenderMode mode);
-void Examples_GPUSceneToggleMode(ExampleGPUSceneRenderState& state);
-void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPUScene* gpu,
-                                       ExampleGPUSceneRenderState& state, ExampleInputState const& input,
-                                       RHIExtent2D swapchainExtent);
-void Examples_GPUSceneFillCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera const& camera,
-                                    RendererConfig const& config);
-void Examples_NewFrame(Renderer* renderer);
-bool Examples_NewFrame(SDL_Window* window, ExampleVulkanContext& ctx);
+void Examples_ResetRenderer(ExampleVulkanContext& ctx, RendererDesc desc = {});
+void Examples_NewFrame(Renderer* renderer); // Headless
+void Examples_NewFrame(SDL_Window* window, ExampleVulkanContext& ctx); // To Window WSI
 void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx);
 bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISurface>& outSurface, RHIDeviceScopedHandle<RHISwapchain>& outSwapchain);
-
-// Writes an 8-bit-per-channel image (e.g. from a readback buffer) to a PNG at `path`,
-// then opens it with the OS default viewer via SDL_OpenURL. `strideBytes` defaults to
-// width * channels when zero. Link ThirdParty_STB in targets that call this.
-//   channels: 1 (grey), 2 (grey+alpha), 3 (RGB), 4 (RGBA)
 void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* data,
                                int channels = 4, int strideBytes = 0);
-
-// Simplified example tonemap / postprocess pass.
-//   Raster: samples `outputs.diffuse` as-is.
-//   PT:     samples `outputs.diffuse + outputs.specular`.
-//   Output: clamped to [0,1] then gamma-corrected (1/2.2) into an explicit LDR
-//           PostprocessBuffer RTV (R8G8B8A8Unorm). When the renderer presents, that
-//           RTV is blitted to the backbuffer so windowed examples display it; the RTV
-//           handle is returned so headless examples can read it back. No view LUTs,
-//           exposure, or debug-AOV branches - this is the minimal display path.
-ResourceHandle Examples_InsertBasicTonemapPasses(Renderer* renderer, RendererOutputs const& outputs,
-                                                 bool isPathTracer);
 
 float Examples_GetTime();
 

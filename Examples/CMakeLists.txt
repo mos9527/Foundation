@@ -23,12 +23,6 @@ add_example(Example_Triangle "Triangle.cpp")
 target_link_libraries(Example_Triangle PUBLIC Example_Common)
 add_dependencies(Example_Triangle Shader_Triangle)
 
-# Headless offscreen rendering (no SDL window / no Vulkan WSI). Validates the
-# present=false Renderer path and works on software backends such as Lavapipe.
-add_example(Example_HeadlessTriangle "HeadlessTriangle.cpp")
-target_link_libraries(Example_HeadlessTriangle PUBLIC Example_Common)
-add_dependencies(Example_HeadlessTriangle Shader_Triangle)
-
 add_example(Example_SDF2D "SDF2D.cpp")
 target_link_libraries(Example_SDF2D PUBLIC Example_Common)
 add_dependencies(Example_SDF2D Shader_SDF2D)
@@ -67,7 +61,6 @@ add_example(Example_CIEChromacity "CIEChromacity.cpp")
 target_link_libraries(Example_CIEChromacity PUBLIC Example_Common)
 add_dependencies(Example_CIEChromacity Shader_CIEChromacity)
 
-add_example(Example_HeadlessPathTracer "HeadlessPathTracer.cpp")
-target_link_libraries(Example_HeadlessPathTracer PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
-add_dependencies(Example_HeadlessPathTracer Foundation_Shaders Editor_Data Examples_SampleFiles Shader_PostprocessBasic Shader_PostprocessBasicPT)
-
+add_example(Example_GPUScene "GPUScene.cpp")
+target_link_libraries(Example_GPUScene PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
+add_dependencies(Example_GPUScene Foundation_Shaders Editor_Data Examples_SampleFiles Shader_PostprocessBasic)

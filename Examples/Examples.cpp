@@ -128,21 +128,6 @@ namespace
         }
     }
 
-    struct PipelineCacheContext
-    {
-        Renderer* renderer{};
-        RHIDevice* device{};
-        RHIDeviceScopedHandle<RHIPipelineStateCache> cache;
-        String path;
-    };
-
-    std::vector<PipelineCacheContext>& PipelineCacheContexts()
-    {
-        static std::vector<PipelineCacheContext> contexts;
-        return contexts;
-    }
-
-
 #if defined(__ANDROID__)
     // Bridges Foundation::Core::PathsResolve to SDL's APK-asset loader. Registered
     // in Examples_InitVulkan so shaders/bundled assets are lazily materialized out
@@ -395,6 +380,7 @@ namespace
         case SDL_EVENT_WINDOW_RESTORED:
             try
             {
+                input.hasPendingResize = true;
                 if (Examples_CreateSwapchain(window, ctx.swapchain.mFactory, ctx.surface, ctx.swapchain))
                     ctx.renderer->SetSwapchain(ctx.swapchain), ctx.presenter->SetSwapchain(ctx.swapchain);
             }
@@ -604,45 +590,29 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
         PathsInitFromDir(SDL_GetBasePath());
 #endif
     }
-    auto app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
-    auto device = app->CreateDevice({.id = static_cast<uint32_t>(gpuId)});
-    RHIDeviceScopedHandle<RHISwapchain> swap;
-    RHIDeviceScopedHandle<RHISurface> surface;
-    if (!headless)
-        Examples_CreateSwapchain(window, device.Get(), surface, swap);
-    RHIDeviceScopedHandle<RHIPipelineStateCache> psoCache;
-    String psoCachePath;
-    if (!desc.pipelineCache)
-    {
-        psoCachePath = PipelineCachePathForDevice(*device.Get());
-        ClearStalePipelineCaches(psoCachePath);
-        auto psoCacheBytes = LoadPipelineCacheBytes(psoCachePath, GLOBAL_ALLOC);
-        psoCache = device->CreatePipelineCache(
-            {.initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())});
-        LOG(Examples, LogInfo, "Pipeline cache {}: {} ({} bytes)", psoCache->GetImportStatus(), psoCachePath,
-            psoCacheBytes.size());
-        desc.pipelineCache = psoCache.Get();
-    }
-    auto renderer = Construct<Renderer>(GLOBAL_ALLOC, desc, device, swap, GLOBAL_ALLOC);
-    if (psoCache)
-    {
-        PipelineCacheContexts().push_back({
-            .renderer = renderer,
-            .device = device.Get(),
-            .cache = std::move(psoCache),
-            .path = std::move(psoCachePath),
-        });
-    }
-    Presenter* presenter = nullptr;
-    if (swap.IsValid())
-        presenter = Construct<Presenter>(GLOBAL_ALLOC, device.Get(), swap, GLOBAL_ALLOC);
     ExampleVulkanContext ctx{};
-    ctx.renderer = renderer;
-    ctx.app = app;
+
+    auto app = ConstructUnique<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
+    auto device = app->CreateDevice({.id = static_cast<uint32_t>(gpuId)});    
+    if (!headless)
+        CHECK(Examples_CreateSwapchain(window, device.Get(), ctx.surface, ctx.swapchain))
+    if (ctx.swapchain.IsValid())
+        ctx.presenter = ConstructUnique<Presenter>(GLOBAL_ALLOC, device.Get(), ctx.swapchain, GLOBAL_ALLOC);
+    
+    String psoCachePath;
+    psoCachePath = PipelineCachePathForDevice(*device.Get());
+    ClearStalePipelineCaches(psoCachePath);
+    auto psoCacheBytes = LoadPipelineCacheBytes(psoCachePath, GLOBAL_ALLOC);
+    ctx.psoCache = device->CreatePipelineCache(
+        {.initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())});
+
+    LOG(Examples, LogInfo, "Pipeline cache {}: {} ({} bytes)", ctx.psoCache->GetImportStatus(), psoCachePath,
+        psoCacheBytes.size());
+    ctx.app = std::move(app);
     ctx.device = std::move(device);
-    ctx.surface = std::move(surface);
-    ctx.swapchain = std::move(swap);
-    ctx.presenter = presenter;
+
+    desc.pipelineCache = ctx.psoCache.Get();    
+    Examples_ResetRenderer(ctx, desc);
     return ctx;
 }
 
@@ -814,51 +784,11 @@ Span<const RenderUtils::CSDebugTextData> Examples_HudLines(ExampleInputState con
     return Span<const RenderUtils::CSDebugTextData>(input.hud.data(), input.hud.size());
 }
 
-const char* Examples_GPUSceneModeName(ExampleGPUSceneRenderMode mode)
+void Examples_ResetRenderer(ExampleVulkanContext& ctx, RendererDesc desc)
 {
-    return mode == ExampleGPUSceneRenderMode::PathTracer ? "Path Tracer" : "Raster";
-}
-
-void Examples_GPUSceneToggleMode(ExampleGPUSceneRenderState& state)
-{
-    state.mode = state.mode == ExampleGPUSceneRenderMode::Raster ? ExampleGPUSceneRenderMode::PathTracer
-                                                                 : ExampleGPUSceneRenderMode::Raster;
-}
-
-void Examples_GPUSceneBuildRenderGraph(Renderer* renderer, RendererUBO* ubo, GPUScene* gpu,
-                                       ExampleGPUSceneRenderState& state, ExampleInputState const& input,
-                                       RHIExtent2D swapchainExtent)
-{
-    state.renderScale = std::clamp(state.renderScale, 0.10f, 1.0f);
-    state.config.renderExtent = uint2(float2(swapchainExtent) * state.renderScale);
-    state.config.renderExtent.x = std::max(state.config.renderExtent.x, 1u);
-    state.config.renderExtent.y = std::max(state.config.renderExtent.y, 1u);
-    state.config.ptRenderPaused = &state.renderPaused;
-    state.config.rasterEffects = Span<const RasterEffect>(
-        kExampleRasterEffects, sizeof(kExampleRasterEffects) / sizeof(kExampleRasterEffects[0]));
-
-    const bool pathTracer = state.mode == ExampleGPUSceneRenderMode::PathTracer;
-    renderer->BeginSetup();
-    if (pathTracer)
-        BuildPathTracerRenderGraph(renderer, ubo, gpu, state.config, state.outputs);
-    else
-        BuildRasterRenderGraph(renderer, ubo, gpu, state.config, state.outputs);
-    Examples_InsertBasicTonemapPasses(renderer, state.outputs, pathTracer);
-    RenderUtils::createCSDebugTextPassBackBuffer(renderer, "Debug Text", Examples_HudLines(input));
-    renderer->EndSetup();
-    state.renderExtent = swapchainExtent;
-}
-
-void Examples_GPUSceneFillCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera const& camera,
-                                    RendererConfig const& config)
-{
-    UpdateRendererCameraUBO(ubo, renderer->GetFrame(), camera.view, camera.proj);
-    ubo.zNear = camera.zNear;
-    ubo.projPlanes = planeSymmetric(camera.proj);
-    ubo.camPosition = float4(camera.position, 0.0f);
-    ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
-    ubo.dbgViewFlags = config.viewFlags;
-    ubo.dbgMaterialFlags = config.materialFlags;
+    desc.pipelineCache = ctx.psoCache.Get();
+    ctx.renderer.reset();
+    ctx.renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, desc, ctx.device, ctx.swapchain, GLOBAL_ALLOC);
 }
 
 void Examples_NewFrame(Renderer* renderer)
@@ -868,33 +798,12 @@ void Examples_NewFrame(Renderer* renderer)
     renderer->EndExecute();
 }
 
-bool Examples_NewFrame(SDL_Window* window, ExampleVulkanContext& ctx)
+void Examples_NewFrame(SDL_Window* window, ExampleVulkanContext& ctx)
 {
-    try
-    {
-        ctx.renderer->BeginExecute(ctx.presenter);
-        ctx.renderer->ExecuteFrame();
-        ctx.renderer->EndExecute();
-        ctx.presenter->Present(ctx.renderer->GetRenderCompleteSemaphore().Get());
-        return true;
-    }
-    catch (RHISwapchainResizeException&)
-    {
-        LOG(Examples, LogWarn, "Swapchain invalidated; recreating presentation surface");
-        try
-        {
-            RHIDevice* device = ctx.swapchain.mFactory;
-            ctx.swapchain.Reset();
-            ctx.surface.Reset();
-            if (Examples_CreateSwapchain(window, device, ctx.surface, ctx.swapchain))
-                ctx.renderer->SetSwapchain(ctx.swapchain);
-        }
-        catch (std::exception const& e)
-        {
-            LOG(Examples, LogWarn, "Swapchain recreation deferred: {}", e.what());
-        }
-        return false;
-    }
+    ctx.renderer->BeginExecute(ctx.presenter.get());
+    ctx.renderer->ExecuteFrame();
+    ctx.renderer->EndExecute();
+    ctx.presenter->Present(ctx.renderer->GetRenderCompleteSemaphore().Get());
 }
 
 void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx)
@@ -902,21 +811,11 @@ void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx)
     if (ctx.device)
         ctx.device->WaitIdle();
 
-    auto& psoCacheContexts = PipelineCacheContexts();
-    auto psoCacheIt = std::ranges::find_if(
-        psoCacheContexts, [ctxRenderer = ctx.renderer, device = ctx.device.Get()](PipelineCacheContext const& context)
-        { return context.renderer == ctxRenderer || context.device == device; });
-    if (psoCacheIt != psoCacheContexts.end())
-        SavePipelineCache(*psoCacheIt->cache.Get(), psoCacheIt->path, GLOBAL_ALLOC);
+    auto psoCache = ctx.psoCache.Get();
+    auto cachePath = PipelineCachePathForDevice(*ctx.device.Get());
+    if (psoCache)
+        SavePipelineCache(*psoCache, cachePath, GLOBAL_ALLOC);
 
-    Destruct(GLOBAL_ALLOC, ctx.renderer);
-    if (psoCacheIt != psoCacheContexts.end())
-        psoCacheContexts.erase(psoCacheIt);
-    ctx.swapchain.Reset();
-    ctx.surface.Reset();
-    ctx.device.Reset();
-    if (ctx.app)
-        Destruct(GLOBAL_ALLOC, ctx.app);
     if (window)
         SDL_DestroyWindow(window);
 }
@@ -934,55 +833,6 @@ void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* 
     LOG(Examples, LogInfo, "Wrote '{}'", outPath);
     if (!SDL_OpenURL(outPath.c_str()))
         LOG(Examples, LogWarn, "SDL_OpenURL failed: {}", SDL_GetError());
-}
-
-ResourceHandle Examples_InsertBasicTonemapPasses(Renderer* renderer, RendererOutputs const& outputs, bool isPathTracer)
-{
-    CHECK_MSG(outputs.diffuse != kInvalidHandle, "Basic tonemap pass missing diffuse output");
-    RHIExtent2D extent = outputs.extent;
-    if (extent.x == 0u || extent.y == 0u)
-    {
-        CHECK_MSG(renderer->IsPresentEnabled(), "Basic tonemap pass requires outputs.extent when running headlessly");
-        extent = renderer->GetSwapchainExtent();
-    }
-    const uint32_t w = extent.x;
-    const uint32_t h = extent.y;
-    constexpr RHIResourceFormat kOutputFormat = RHIResourceFormat::R8G8B8A8Unorm;
-
-    auto postprocess = renderer->CreateResource("Basic Postprocess",
-                                                RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                                                   RHITextureUsageBits::SampledImage |
-                                                                   RHITextureUsageBits::TransferSource,
-                                                               .extent = {w, h, 1},
-                                                               .format = kOutputFormat});
-
-    using namespace RenderUtils;
-    const char* shader = isPathTracer ? "Data/Shaders/PostprocessBasicPT.spv" : "Data/Shaders/PostprocessBasic.spv";
-    createPSFullscreenPassRTV(
-        renderer, "Basic Tonemap", postprocess,
-        RHITextureViewDesc{.format = kOutputFormat, .range = RHITextureSubresourceRange::Create()}, {w, h},
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve(shader));
-            r->BindTextureSRV(
-                self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
-                RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
-            if (isPathTracer)
-            {
-                const ResourceHandle specular = outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
-                r->BindTextureSRV(
-                    self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
-                    RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
-            }
-        },
-        [](PassHandle, Renderer*, RHICommandList*) {});
-
-    if (renderer->IsPresentEnabled())
-    {
-        const auto sampler = renderer->CreateSampler({});
-        createPSBackbufferBlitPass(renderer, "Basic Tonemap Blit", sampler, postprocess, kOutputFormat);
-    }
-    return postprocess;
 }
 
 float Examples_GetTime() { return static_cast<float>(SDL_GetTicks() / 1e3); }

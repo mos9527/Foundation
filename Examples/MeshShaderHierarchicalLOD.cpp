@@ -116,7 +116,7 @@ int main(int argc, char** argv)
                 .DrawMeshTasks(ubo.mesh.meshletCount, 1, 1)
                 .EndGraphics();
         });
-    createCSDebugTextPassBackBuffer(ctx.renderer, "Debug Text", Examples_HudLines(input));
+    createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
     ctx.renderer->EndSetup();
     ExampleFpsCounter fps;
     FExampleOrbitCamera camera{.center = {0, 0.5f, 0},

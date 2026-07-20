@@ -630,6 +630,9 @@ struct FSceneBuildOptions
 #else
     FSceneTextureCompression textureCompression{FSceneTextureCompression::BC7};
 #endif
+    bool generateMipmaps{true};
+    bool generateMeshlets{true};
+    bool optimizeMeshes{true};
 };
 
 void LoadGLTF(StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC,

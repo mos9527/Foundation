@@ -34,7 +34,7 @@ int main(int argc, char** argv)
                 .EndGraphics();
         }
     );
-    createCSDebugTextPassBackBuffer(ctx.renderer, "Debug Text", lines);
+    createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", lines);
     ctx.renderer->EndSetup();
     ExampleFpsCounter fps;
     while (!Examples_ShouldClose(window, ctx))
