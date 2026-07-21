@@ -2194,7 +2194,7 @@ void GPUSceneImpl::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVe
 {
     CHECK_MSG(
         mDynamicIsUpdate,
-        "UpdateDynamicGeometryCPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+        "UpdateDynamicGeometryGPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
     Geometry* g = ResolveGeometry(handle);
     CHECK_MSG(g && g->dynamic, "UpdateDynamicGeometryGPU on a non-dynamic or invalid geometry handle");
     CHECK_MSG(g->isGpu, "UpdateDynamicGeometryGPU called on CPU-authored geometry");

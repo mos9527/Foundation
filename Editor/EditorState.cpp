@@ -367,6 +367,10 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
         sEditorRasterEffects[rasterEffectCount++] = MakeRasterGTAOEffect(&GEditor.rasterGTAOConfig);
     GEditor.rendererConfig.rasterEffects = Span<const RasterEffect>(sEditorRasterEffects, rasterEffectCount);
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
+    GEditor.rendererConfig.dynamicGeometryPassBuilder =
+        GEditor.animation && GEditor.animation->HasSkinning() ? &FAnimationRuntime::BuildGraphCallback : nullptr;
+    GEditor.rendererConfig.dynamicGeometryPassContext =
+        GEditor.animation && GEditor.animation->HasSkinning() ? &*GEditor.animation : nullptr;
     auto gpuResources = CreateGPUSceneRendererResources(renderer, context->gpuScene);
     if (GEditor.rendererMode == ERendererMode::PathTracer)
         BuildPathTracerRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs);
@@ -487,6 +491,11 @@ static void FRunning()
     GEditor.shaderGlobals.dbgMaterialFlags = GEditor.rendererConfig.materialFlags;
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
     GEditor.shaderGlobals.ptPrimaryLightVisibility = GEditor.rendererConfig.ptPrimaryLightVisibility ? 1u : 0u;
+
+    bool animationChanged =
+        GEditor.animation && GEditor.animation->Tick(dt, renderer->GetFrame());
+    if (animationChanged)
+        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
 
     static uint32_t sPrevPTAccumulatedFrames = 0u;
     bool ptAccumWasReset = GEditor.shaderGlobals.ptAccumulatedFrames < sPrevPTAccumulatedFrames;
@@ -798,4 +807,8 @@ bool EditorOnFrame(FContext* context)
     return false;
 }
 
-void EditorCleanup() { DestroyEditorRenderer(); }
+void EditorCleanup()
+{
+    DestroyEditorRenderer();
+    GEditor.animation.reset();
+}

@@ -7,6 +7,7 @@
 #include "Camera.hpp"
 #include "Editor.hpp"
 #include "Runtime/GPUScene.hpp"
+#include "Runtime/AnimationRuntime.hpp"
 #include "Scene/Scene.hpp"
 
 namespace Foundation::RenderCore
@@ -120,6 +121,7 @@ struct EditorState
     // instance/material/light tables. The editor keeps the bindings needed to refill
     // those tables from the FSCN scene (resident geometry handles, texture remap).
     FSceneGPUResources resources;
+    Optional<FAnimationRuntime> animation;
     Optional<MemoryMappedFile> sceneFile;
     Optional<FImportedScene>     scene;
     String             currentSavePath;

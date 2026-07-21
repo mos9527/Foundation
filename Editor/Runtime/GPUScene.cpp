@@ -26,6 +26,7 @@ void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResourc
 
     outResources.meshGeometry.clear();
     outResources.curveGeometry.clear();
+    outResources.instanceGeometry.assign(scene.GetInstances().size(), GeometryHandle{});
     outResources.meshGeometry.reserve(scene.GetMeshes().size());
     outResources.curveGeometry.reserve(scene.GetCurves().size());
     outResources.meshById.clear();
@@ -34,10 +35,13 @@ void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResourc
     outResources.materialById.clear();
     for (FSerializedMesh const& mesh : scene.GetMeshes())
     {
-        GeometryHandle handle;
-        GPUScene::Result r = gpu.Upload(&blobs, mesh, handle);
-        CHECK_MSG(r == GPUScene::Result::InProgress || r == GPUScene::Result::Ready, "Mesh upload rejected ({})",
-                  static_cast<int>(r));
+        GeometryHandle handle{};
+        if (mesh.skeleton.IsNil())
+        {
+            GPUScene::Result r = gpu.Upload(&blobs, mesh, handle);
+            CHECK_MSG(r == GPUScene::Result::InProgress || r == GPUScene::Result::Ready, "Mesh upload rejected ({})",
+                      static_cast<int>(r));
+        }
         outResources.meshGeometry.push_back(handle);
         outResources.meshById.emplace(mesh.id, static_cast<uint32_t>(outResources.meshGeometry.size() - 1));
     }
@@ -264,6 +268,8 @@ GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FS
             CHECK_MSG(it->second < resources.meshGeometry.size(), "Mesh instance references invalid mesh {}",
                       it->second);
             geometry = resources.meshGeometry[it->second];
+            if (i < resources.instanceGeometry.size() && resources.instanceGeometry[i].IsValid())
+                geometry = resources.instanceGeometry[i];
         }
         else if (src.type == FInstanceType::Curve)
         {

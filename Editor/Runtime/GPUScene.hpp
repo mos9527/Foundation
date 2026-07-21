@@ -8,6 +8,7 @@ struct FSceneGPUResources
 {
     Vector<GeometryHandle> meshGeometry{GLOBAL_ALLOC};
     Vector<GeometryHandle> curveGeometry{GLOBAL_ALLOC};
+    Vector<GeometryHandle> instanceGeometry{GLOBAL_ALLOC};
     Vector<TextureHandle> textureIDMap{GLOBAL_ALLOC};
     HashMap<FUUID, uint32_t> meshById{GLOBAL_ALLOC};
     HashMap<FUUID, uint32_t> curveById{GLOBAL_ALLOC};

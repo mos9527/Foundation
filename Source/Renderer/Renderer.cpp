@@ -36,7 +36,9 @@ RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* 
 }
 
 void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources const& resources,
-                               ResourceHandle globalUBO, bool buildTLAS)
+                               ResourceHandle globalUBO, bool buildTLAS,
+                               DynamicGeometryPassBuilder dynamicGeometryPassBuilder,
+                               void* dynamicGeometryPassContext)
 {
     GPUScene* scene = resources.scene;
     CHECK(renderer);
@@ -52,6 +54,8 @@ void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources const& reso
             },
             [=](PassHandle, Renderer*, RHICommandList* cmd) { scene->UploadDynamicGeometry(cmd); });
     }
+    if (dynamicGeometryPassBuilder)
+        dynamicGeometryPassBuilder(dynamicGeometryPassContext, renderer, resources.dynamicPrimitiveBuffer);
     if (buildTLAS && resources.tlas != kInvalidHandle)
     {
         renderer->CreatePass(

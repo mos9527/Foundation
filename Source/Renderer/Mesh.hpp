@@ -36,12 +36,7 @@ struct FQVertex
 static_assert(sizeof(FQVertex) == 16);
 #pragma pack(pop)
 
-/**
- * @brief Per-vertex skin binding for CPU skinning (parallel to a mesh's vertices).
- * @note CPU-only: the GPU only ever sees the deformed @ref FQVertex, so joints/weights never
- *       leave the host and aren't part of the GPU vertex format. @ref joints index the bound
- *       skeleton (see @ref Animation.hpp); @ref weights need not be pre-normalized.
- */
+// Per-vertex binding stored separately from the render vertex format.
 struct FSkinBinding
 {
     uint16_t joints[4]{0, 0, 0, 0};

@@ -172,9 +172,14 @@ struct RendererResources
     bool hasCurveGeometry{false};
 };
 
+using DynamicGeometryPassBuilder = void (*)(void* context, Renderer* renderer,
+                                            ResourceHandle dynamicPrimitiveBuffer);
+
 [[nodiscard]] RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* scene);
 void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources const& resources,
-                               ResourceHandle globalUBO, bool buildTLAS);
+                               ResourceHandle globalUBO, bool buildTLAS,
+                               DynamicGeometryPassBuilder dynamicGeometryPassBuilder = nullptr,
+                               void* dynamicGeometryPassContext = nullptr);
 
 struct RendererConfig;
 
@@ -230,6 +235,8 @@ struct RendererConfig
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
     RHIExtent2D renderExtent{0u, 0u};
     Span<RasterEffect const> rasterEffects{};
+    DynamicGeometryPassBuilder dynamicGeometryPassBuilder{nullptr};
+    void* dynamicGeometryPassContext{nullptr};
     uint32_t ptSampler{kPTSamplerSobol};
     uint32_t lightSamplerMode{kLightSamplerBVH};
     bool const* ptRenderPaused{nullptr};

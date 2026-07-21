@@ -341,6 +341,8 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
     CHECK_MSG(tables.meshes.size() <= UINT32_MAX, "FScene mesh table is too large");
     CHECK_MSG(tables.curves.size() <= UINT32_MAX, "FScene curve table is too large");
     CHECK_MSG(tables.textures.size() <= UINT32_MAX, "FScene texture table is too large");
+    CHECK_MSG(tables.skeletons.size() <= UINT32_MAX, "FScene skeleton table is too large");
+    CHECK_MSG(tables.clips.size() <= UINT32_MAX, "FScene animation clip table is too large");
 
     // String pool: content-addressed ids (id == hash of value).
     HashSet<FUUID> stringIds(GLOBAL_ALLOC);
@@ -358,9 +360,16 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
     HashSet<FUUID> const meshIds = BuildIdSet(tables.meshes, "FScene mesh");
     HashSet<FUUID> const curveIds = BuildIdSet(tables.curves, "FScene curve");
     HashSet<FUUID> const textureIds = BuildIdSet(tables.textures, "FScene texture");
+    HashSet<FUUID> const skeletonIds = BuildIdSet(tables.skeletons, "FScene skeleton");
+    BuildIdSet(tables.clips, "FScene animation clip");
     BuildIdSet(tables.instances, "FScene instance");
     BuildIdSet(tables.cameras, "FScene camera");
     BuildIdSet(tables.lights, "FScene light");
+    for (FSkeleton const& skeleton : tables.skeletons)
+        for (uint32_t joint = 0; joint < skeleton.Count(); ++joint)
+            CHECK_MSG(skeleton.joints[joint].parent >= -1 &&
+                          skeleton.joints[joint].parent < static_cast<int32_t>(joint),
+                      "Skeleton joints must be topologically sorted");
 
     auto requireTexture = [&](FUUID id, const char* what)
     {
@@ -459,6 +468,36 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
         ValidateBlobArray<FMeshlet>(header, mesh.dagMeshlets, "mesh.dagMeshlets");
         ValidateBlobArray<uint8_t>(header, mesh.dagMeshletTri, "mesh.dagMeshletTri");
         ValidateBlobArray<uint32_t>(header, mesh.dagMeshletVtx, "mesh.dagMeshletVtx");        
+        if (mesh.skeleton.IsNil())
+        {
+            CHECK_MSG(mesh.skinBinding.decodedSize == 0 && mesh.skinBinding.count == 0,
+                      "Rigid mesh must not carry skin bindings");
+        }
+        else
+        {
+            CHECK_MSG(skeletonIds.contains(mesh.skeleton), "Skinned mesh references unknown skeleton id");
+            ValidateBlobArray<FSkinBinding>(header, mesh.skinBinding, "mesh.skinBinding");
+            CHECK_MSG(mesh.skinBinding.count == mesh.vertexCount, "Skinned mesh binding count mismatch");
+        }
+    }
+
+    for (auto const& clip : tables.clips)
+    {
+        CHECK_MSG(skeletonIds.contains(clip.skeleton), "Animation clip references unknown skeleton id");
+        CHECK_MSG(clip.duration >= 0.0f, "Animation clip has a negative duration");
+        auto skeleton = std::find_if(tables.skeletons.begin(), tables.skeletons.end(),
+                                     [&](FSkeleton const& value) { return value.id == clip.skeleton; });
+        CHECK(skeleton != tables.skeletons.end());
+        for (FAnimChannel const& channel : clip.channels)
+        {
+            CHECK_MSG(channel.joint < skeleton->Count(), "Animation channel references an invalid joint");
+            uint32_t components = channel.path == FAnimPath::Rotation ? 4u : 3u;
+            uint32_t multiplier = channel.interp == FAnimInterp::CubicSpline ? 3u : 1u;
+            CHECK_MSG(channel.values.size() == channel.times.size() * components * multiplier,
+                      "Animation channel key/value count mismatch");
+            CHECK_MSG(std::is_sorted(channel.times.begin(), channel.times.end()),
+                      "Animation channel times must be sorted");
+        }
     }
 
     for (auto const& curve : tables.curves)
@@ -1878,10 +1917,14 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
 {
     GPUSceneDesc desc{};
     size_t primitiveBytes = 0;
+    size_t rigidMeshCount = 0;
     for (auto const& mesh : GetMeshes())
     {
+        if (!mesh.skeleton.IsNil())
+            continue;
         primitiveBytes = AlignUp(primitiveBytes, size_t(4));
         primitiveBytes += GPUScene::CalculateMeshPrimitiveSize(mesh);
+        ++rigidMeshCount;
     }
     for (auto const& curve : GetCurves())
     {
@@ -1903,7 +1946,27 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     desc.tlasInstanceBudget = RingGPUSceneBudget(tlasInstanceCount);
     desc.materialBudget = RingGPUSceneBudget(GetMaterials().size());
     desc.lightBudget = RingGPUSceneBudget(GetLights().size());
-    desc.geometryBudget = CountGPUSceneBudget(GetMeshes().size() + GetCurves().size());
+    size_t skinnedInstanceCount = 0;
+    size_t dynamicBytes = 0;
+    for (FInstance const& instance : GetInstances())
+    {
+        if (instance.type != FInstanceType::Mesh)
+            continue;
+        int meshIndex = MeshIndex(instance.resource);
+        if (meshIndex < 0)
+            continue;
+        FSerializedMesh const& mesh = GetMeshes()[static_cast<size_t>(meshIndex)];
+        if (mesh.skeleton.IsNil())
+            continue;
+        CHECK_MSG(!mesh.lods.empty(), "Skinned mesh has no LOD0");
+        uint64_t bytes = sizeof(GSMesh) + static_cast<uint64_t>(mesh.vertexCount) * sizeof(FQVertex) +
+            static_cast<uint64_t>(mesh.lods[0].indexCount) * sizeof(uint32_t);
+        dynamicBytes += static_cast<size_t>(AlignUp(bytes, 16ull));
+        ++skinnedInstanceCount;
+    }
+    desc.dynamicGeometryBudget = ByteGPUSceneBudget(dynamicBytes, 0, size_t(16));
+    desc.geometryBudget =
+        CountGPUSceneBudget(rigidMeshCount + GetCurves().size() + skinnedInstanceCount);
     desc.framesInFlight = kGPUSceneRingFrameSlack;
 
     size_t textureBindings = kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings +

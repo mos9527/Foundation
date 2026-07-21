@@ -391,6 +391,8 @@ void DeleteSelectedInstance()
     if (idx < 0 || idx >= static_cast<int>(sceneInstances.size()))
         return;
 
+    if (GEditor.animation)
+        GEditor.animation->RemoveInstance(static_cast<uint32_t>(idx), GEditor.resources);
     sceneInstances.erase(sceneInstances.begin() + idx);
     GEditor.Scene().RebuildIndex();
     ClearSelection();
@@ -440,22 +442,29 @@ static size_t GPUSceneBudgetBytes(GPUSceneDesc const& desc)
            size_t(desc.lightBudget) * 2u * sizeof(uint32_t) +
            size_t(desc.tlasInstanceBudget) * GContext->device->WriteAccelerationStructureInstanceData({}, nullptr) +
            size_t(desc.tlasBudget) +
-           size_t(desc.tlasScratchBudget);
+           size_t(desc.tlasScratchBudget) +
+           size_t(desc.dynamicGeometryBudget) * (size_t(desc.framesInFlight) + 2u);
 }
 
 static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBytes)
 {
     auto estimatedBudget = CalculateSceneGPUDesc(scene, GContext->device->GetCapabilities());
     LOG(Editor, LogDebug,
-        "Estimated GPUScene budget: primitive {} MB, instances {}, TLAS instances {}, materials {}, lights {}, textures {}",
+        "Estimated GPUScene budget: primitive {} MB, dynamic {} MB, instances {}, TLAS instances {}, materials {}, lights {}, textures {}",
         estimatedBudget.primitiveBudget / (1u << 20),
+        estimatedBudget.dynamicGeometryBudget / (1u << 20),
         estimatedBudget.instanceBudget,
         estimatedBudget.tlasInstanceBudget,
         estimatedBudget.materialBudget,
         estimatedBudget.lightBudget,
         estimatedBudget.texturesBudget);
 
-    outBudgetBytes = GPUSceneBudgetBytes(estimatedBudget);
+    FAnimationRuntimeBudget animationBudget = CalculateAnimationRuntimeBudget(scene);
+    outBudgetBytes = GPUSceneBudgetBytes(estimatedBudget) + animationBudget.TotalBytes();
+    if (animationBudget.TotalBytes() != 0)
+        LOG(Editor, LogDebug, "Animation buffers: {:.2f} MB input/staging, {:.2f} MB palettes",
+            animationBudget.inputBytes * 2u / static_cast<float>(1u << 20),
+            animationBudget.paletteBytes / static_cast<float>(1u << 20));
 
     auto* gpu = Construct<GPUScene>(GContext->allocator, GContext->device.Get(), GContext->allocator,
                                     estimatedBudget, GContext->editorFrameScratch.get());
@@ -565,10 +574,13 @@ static void InstallLoadedScene(String const& scenePayloadPath, GPUScene*& newGPU
 {
     GContext->device->WaitIdle();
     DestroyEditorRenderer(GContext);
+    GEditor.animation.reset();
     DestroyGPUScene(GContext->gpuScene);
     GContext->gpuScene = newGPUScene;
     newGPUScene = nullptr;
     GEditor.OpenSceneFile(scenePayloadPath);
+    GEditor.animation.emplace(GContext->allocator);
+    GEditor.animation->Initialize(GEditor.Scene(), *GContext->gpuScene, GContext->device.Get(), GEditor.resources);
     ClearSelection();
     GEditor.cameraUpdated = true;
     GEditor.state = FERunningEnter;
