@@ -155,16 +155,17 @@ struct GPUSceneImpl
         bool dynamic{false};
         bool isGpu{false};
         bool dynamicIsBuilt{false};
+        bool dynamicIndicesDirty{false};
         uint32_t dynamicLastRebuildFrame{0};
-        uint32_t dynamicSize{0};
         uint32_t dynamicVtxBytes{0};
-        uint32_t dynamicIdxBytes{0};
         RHIDeviceScopedHandle<RHIBuffer> dynamicBLASBuffer;
         RHIDeviceScopedHandle<RHIBuffer> dynamicBLASScratch;
         /* --- */
         bool live{false};
         bool dirty{false}; // BLAS rebuild/refit pending
-        bool uploadDirty{false}; // staging -> device copy pending
+        bool uploadHeader{false};
+        bool uploadVertices{false};
+        bool uploadIndices{false};
     };
     Vector<Geometry> mGeometry;
     Vector<uint32_t> mGeometryFreelist;
@@ -366,7 +367,9 @@ struct GPUSceneImpl
         return false;
     }
     void BeginDynamicGeometryUpdate();
-    void UpdateDynamicGeometry(GeometryHandle handle, Span<FQVertex>& outVertices, Span<uint32_t>& outIndices);
+    void UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
+    void UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices,
+                               Span<const uint32_t> indices);
     void EndDynamicGeometryUpdate();
     void UploadDynamicGeometry(RHICommandList* cmd);
     void BuildBLAS(RHICommandList* cmd);
@@ -2122,8 +2125,6 @@ GPUScene::Result GPUSceneImpl::AllocateDynamic(uint32_t vertexCount, uint32_t in
         return Result::InvalidInput;
 
     uint32_t const vtxBytes = static_cast<uint32_t>(vtxBytes64);
-    uint32_t const idxBytes = static_cast<uint32_t>(idxBytes64);
-    uint32_t const footprint = static_cast<uint32_t>(footprint64);
     uint32_t const stride = static_cast<uint32_t>(stride64);
 
     GeometryHandle handle{};
@@ -2152,14 +2153,12 @@ GPUScene::Result GPUSceneImpl::AllocateDynamic(uint32_t vertexCount, uint32_t in
         g.isGpu = isGpu;
         g.blas = UINT32_MAX;
         g.offset = static_cast<uint32_t>(base);
-        g.dynamicSize = footprint;
         g.dynamicVtxBytes = vtxBytes;
-        g.dynamicIdxBytes = idxBytes;
         g.mesh = GSMesh{};
         g.mesh.vertices.count = vertexCount;
         g.mesh.indices.count = indexCount;
         g.live = true;
-        g.uploadDirty = isGpu;
+        g.uploadHeader = true;
         g.state = ResourceState::Ready;
         handle = {slot, version};
         gp = &g;
@@ -2189,30 +2188,51 @@ void GPUSceneImpl::BeginDynamicGeometryUpdate()
     mDynamicIsUpdate = true;
     if (mDynamicStagingFrames != 0)
         mDynamicStagingFrameIndex = (mDynamicStagingFrameIndex + 1u) % mDynamicStagingFrames;
-    for (uint32_t slot : mDynamicGeometries)
-    {
-        Geometry& g = mGeometry[slot];
-        if (g.live && g.dynamic && g.isGpu)
-            g.dirty = true;
-    }
 }
 
-void GPUSceneImpl::UpdateDynamicGeometry(GeometryHandle handle, Span<FQVertex>& outVertices,
-                                         Span<uint32_t>& outIndices)
+void GPUSceneImpl::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices)
 {
     CHECK_MSG(
         mDynamicIsUpdate,
-        "UpdateDynamicGeometry must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+        "UpdateDynamicGeometryCPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
     Geometry* g = ResolveGeometry(handle);
-    CHECK_MSG(g && g->dynamic, "UpdateDynamicGeometry on a non-dynamic or invalid geometry handle");
-    CHECK_MSG(!g->isGpu, "UpdateDynamicGeometry cannot map a GPU-authored geometry");
-    g->dirty = true; // rewriting this slot -> needs a BLAS refit
-    g->uploadDirty = true;
+    CHECK_MSG(g && g->dynamic, "UpdateDynamicGeometryGPU on a non-dynamic or invalid geometry handle");
+    CHECK_MSG(g->isGpu, "UpdateDynamicGeometryGPU called on CPU-authored geometry");
+    CHECK_MSG(updateVertices || updateIndices, "UpdateDynamicGeometryGPU requires at least one updated range");
+    g->dirty = true;
+    g->dynamicIndicesDirty |= updateIndices;
+}
+
+void GPUSceneImpl::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices,
+                                         Span<const uint32_t> indices)
+{
+    CHECK_MSG(
+        mDynamicIsUpdate,
+        "UpdateDynamicGeometryCPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+    Geometry* g = ResolveGeometry(handle);
+    CHECK_MSG(g && g->dynamic, "UpdateDynamicGeometryCPU on a non-dynamic or invalid geometry handle");
+    CHECK_MSG(!g->isGpu, "CPU-authored UpdateDynamicGeometryCPU called on GPU-authored geometry");
+    CHECK_MSG(!vertices.empty() || !indices.empty(), "UpdateDynamicGeometryCPU requires at least one updated range");
+    CHECK_MSG(vertices.empty() || vertices.size() == g->mesh.vertices.count,
+              "Dynamic vertex update has {} vertices; expected {}", vertices.size(), g->mesh.vertices.count);
+    CHECK_MSG(indices.empty() || indices.size() == g->mesh.indices.count,
+              "Dynamic index update has {} indices; expected {}", indices.size(), g->mesh.indices.count);
+
     uint32_t const base = GetDynamicStagingOffset(*g);
-    char* vtx = mDynamicStagingMapped + base + sizeof(GSMesh);
-    char* idx = vtx + g->dynamicVtxBytes;
-    outVertices = Span<FQVertex>(reinterpret_cast<FQVertex*>(vtx), g->mesh.vertices.count);
-    outIndices = Span<uint32_t>(reinterpret_cast<uint32_t*>(idx), g->mesh.indices.count);
+    if (!vertices.empty())
+    {
+        std::memcpy(mDynamicStagingMapped + base + sizeof(GSMesh), vertices.data(),
+                    vertices.size_bytes());
+        g->uploadVertices = true;
+    }
+    if (!indices.empty())
+    {
+        std::memcpy(mDynamicStagingMapped + base + sizeof(GSMesh) + g->dynamicVtxBytes, indices.data(),
+                    indices.size_bytes());
+        g->uploadIndices = true;
+        g->dynamicIndicesDirty = true;
+    }
+    g->dirty = true;
 }
 
 void GPUSceneImpl::EndDynamicGeometryUpdate()
@@ -2231,16 +2251,33 @@ void GPUSceneImpl::UploadDynamicGeometry(RHICommandList* cmd)
         return;
 
     Vector<RHICommandList::CopyBufferRegion> regions(mAllocator);
-    regions.reserve(mDynamicGeometries.size());
+    regions.reserve(mDynamicGeometries.size() * 3);
     for (uint32_t slot : mDynamicGeometries)
     {
         Geometry& g = mGeometry[slot];
-        if (!g.live || !g.dynamic || !g.uploadDirty)
+        if (!g.live || !g.dynamic)
             continue;
         uint32_t const srcOffset = GetDynamicStagingOffset(g);
-        regions.push_back(
-            {.srcOffset = srcOffset, .dstOffset = g.offset, .size = g.isGpu ? sizeof(GSMesh) : g.dynamicSize});
-        g.uploadDirty = false;
+        if (g.uploadHeader)
+        {
+            regions.push_back({.srcOffset = srcOffset, .dstOffset = g.offset, .size = sizeof(GSMesh)});
+            g.uploadHeader = false;
+        }
+        if (g.uploadVertices)
+        {
+            regions.push_back({.srcOffset = srcOffset + sizeof(GSMesh),
+                               .dstOffset = g.offset + sizeof(GSMesh),
+                               .size = g.dynamicVtxBytes});
+            g.uploadVertices = false;
+        }
+        if (g.uploadIndices)
+        {
+            uint32_t const indexOffset = static_cast<uint32_t>(sizeof(GSMesh)) + g.dynamicVtxBytes;
+            regions.push_back({.srcOffset = srcOffset + indexOffset,
+                               .dstOffset = g.offset + indexOffset,
+                               .size = g.mesh.indices.count * static_cast<uint32_t>(sizeof(uint32_t))});
+            g.uploadIndices = false;
+        }
     }
     if (regions.empty())
         return;
@@ -2263,7 +2300,7 @@ void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
         if (!g.live || !g.dynamic || g.blas == UINT32_MAX || !g.dirty)
             continue;
         bool const periodic = g.dynamicLastRebuildFrame >= kGPUSceneDynamicRebuildRate;
-        bool const rebuild = !g.dynamicIsBuilt || periodic; // initial build or cadence -> full Build
+        bool const rebuild = !g.dynamicIsBuilt || g.dynamicIndicesDirty || periodic;
         if (rebuild)
             g.dynamicLastRebuildFrame = 0;
         else
@@ -2299,6 +2336,7 @@ void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
             desc.srcAS = mBLASes[g.blas].Get();
         cmd->BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc>{&desc, 1});
         g.dirty = false;
+        g.dynamicIndicesDirty = false;
         g.dynamicIsBuilt = true;
         any = true;
     }
@@ -2870,9 +2908,14 @@ void GPUScene::Reset() { mImpl->Reset(); }
 bool GPUScene::HasDynamicGeometry() const { return mImpl->HasDynamicGeometry(); }
 bool GPUScene::HasCurveGeometry() const { return mImpl->HasCurveGeometry(); }
 void GPUScene::BeginDynamicGeometryUpdate() { mImpl->BeginDynamicGeometryUpdate(); }
-void GPUScene::UpdateDynamicGeometry(GeometryHandle handle, Span<FQVertex>& outVertices, Span<uint32_t>& outIndices)
+void GPUScene::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices)
 {
-    mImpl->UpdateDynamicGeometry(handle, outVertices, outIndices);
+    mImpl->UpdateDynamicGeometryGPU(handle, updateVertices, updateIndices);
+}
+void GPUScene::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices,
+                                     Span<const uint32_t> indices)
+{
+    mImpl->UpdateDynamicGeometryCPU(handle, vertices, indices);
 }
 void GPUScene::EndDynamicGeometryUpdate() { mImpl->EndDynamicGeometryUpdate(); }
 void GPUScene::UploadDynamicGeometry(RHICommandList* cmd) { mImpl->UploadDynamicGeometry(cmd); }

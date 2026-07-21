@@ -1,4 +1,4 @@
-// Demonstrates GPU- and CPU-authored dynamic geometry sharing one GPUScene ring.
+// Demonstrates GPU- and CPU-authored dynamic geometry.
 #include <Renderer/Mesh.hpp>
 #include <algorithm>
 #include "Examples.hpp"
@@ -205,6 +205,10 @@ int main(int argc, char** argv)
     CHECK(gpu.AllocateDynamic(kWaterVerts, kWaterIndices, water, true) == GPUScene::Result::Ready);
     CHECK(gpu.AllocateDynamic(kGroundVerts, kGroundIndices, ground) == GPUScene::Result::Ready);
     CHECK(gpu.HasDynamicGeometry());
+    FQVertex groundVertices[kGroundVerts]{};
+    uint32_t groundIndices[kGroundIndices]{};
+    FillGround(groundVertices, groundIndices);
+    bool uploadGround = true;
 
     RendererUBO ubo{};
     RendererConfig cfg{};
@@ -244,11 +248,13 @@ int main(int argc, char** argv)
             RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, gerstner);
         }
 
-        Span<FQVertex> groundVerts;
-        Span<uint32_t> groundIndices;
         gpu.BeginDynamicGeometryUpdate();
-        gpu.UpdateDynamicGeometry(ground, groundVerts, groundIndices);
-        FillGround(groundVerts, groundIndices);
+        gpu.UpdateDynamicGeometryGPU(water, true, true);
+        if (uploadGround)
+        {
+            gpu.UpdateDynamicGeometryCPU(ground, groundVertices, groundIndices);
+            uploadGround = false;
+        }
         gpu.EndDynamicGeometryUpdate();
         if (paused < 0.5f)
             ubo.ptAccumulatedFrames = 0u;

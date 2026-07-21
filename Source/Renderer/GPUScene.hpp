@@ -265,13 +265,12 @@ public:
     [[nodiscard]] bool HasCurveGeometry() const;
 
     void BeginDynamicGeometryUpdate();
-    // Spans are valid only until EndDynamicGeometryUpdate; do not retain across frames.
-    // Rejects GPU-authored handles.
-    void UpdateDynamicGeometry(GeometryHandle handle, Span<FQVertex>& outVertices, Span<uint32_t>& outIndices);
+    // Host-mapped copy. Requires isGpu = false with @ref AllocateDynamic, otherwise use UpdateDynamicGeometryGPU.    
+    void UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices = {},
+                               Span<const uint32_t> indices = {});
+    // Device local writes. Requires isGpu = true with @ref AllocateDynamic, otherwise use UpdateDynamicGeometryCPU.
+    void UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
     void EndDynamicGeometryUpdate();
-    // Staging -> device-local copy for dirty active slots. Call after EndDynamicGeometryUpdate
-    // and before GPU producers / BuildBLAS / dynamic draws.
-    // CPU-authored slots copy the full footprint; GPU-authored slots copy only the GSMesh header.
     void UploadDynamicGeometry(RHICommandList* cmd);
 
     void BuildBLAS(RHICommandList* cmd);
