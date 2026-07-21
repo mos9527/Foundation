@@ -426,8 +426,8 @@ void GPUSceneImpl::FlushDirectGeometryUpload()
 }
 
 GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc, AllocatorStack* frameScratch) :
-    mCommittedInstances(allocator), mCommittedLights(allocator), mCommittedLightsSorted(allocator),
-    mCommittedMaterials(allocator), mTLASInstanceMap(allocator)
+    mCommittedInstances(allocator), mCommittedLights(allocator), mCommittedMaterials(allocator),
+    mTLASInstanceMap(allocator)
 {
     mImpl = ConstructUnique<GPUSceneImpl>(allocator, *this, device, allocator, desc, frameScratch);
 }
@@ -793,6 +793,23 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     res.materials = tables.materialRange;
     res.materialsHash = FNV1a64(tables.materials);
     res.lights = tables.lightRange;
+    CHECK_MSG(!tables.lights.empty(), "Scene must contain an environment light");
+    auto LightOrder = [](GSLight const& light)
+    {
+        uint32_t const type = GSLightTypeCPU(light);
+        if (type == kGSLightTypeEnvironment)
+            return 0u;
+        if (type == kGSLightTypeDirectional && light.params.x > 0.0f)
+            return 1u;
+        return 2u;
+    };
+    std::stable_sort(tables.lights.begin(), tables.lights.end(),
+                     [&](GSLight const& a, GSLight const& b) { return LightOrder(a) < LightOrder(b); });
+    GSLight& environment = tables.lights.front();
+    CHECK_MSG(GSLightTypeCPU(environment) == kGSLightTypeEnvironment,
+              "First light must be an environment light, got {}", GSLightTypeCPU(environment));
+    environment.params.y =
+        (environment.flags & kGSLightFlagEnvironmentMap) != 0u ? owner.mEnvMapAverageRadiance : 1.0f;
     res.lightsHash = FNV1a64(tables.lights);
     // Resolve instance resources
     for (auto& inst : tables.instances)
@@ -807,16 +824,6 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     owner.mCommittedInstances.assign(tables.instances.begin(), tables.instances.end());
     owner.mCommittedMaterials.assign(tables.materials.begin(), tables.materials.end());
     owner.mCommittedLights.assign(tables.lights.begin(), tables.lights.end());
-    owner.mCommittedLightsSorted.assign(tables.lights.begin(), tables.lights.end());
-    auto& lights = owner.mCommittedLightsSorted;
-    // Sort lights by type, then by radius (param x) so shaders take non-delta lights first
-    {
-        auto key = [](GSLight const& light)
-        { return Pair<uint32_t, float>{light.flags & kGSLightTypeMask, light.params.x}; };
-        std::sort(lights.begin(), lights.end(), [&](GSLight const& a, GSLight const& b) { return key(a) < key(b); });
-    }
-    CHECK_MSG((lights[0].flags & kGSLightTypeMask) == kGSLightTypeEnvironment,
-              "First light must be an environment light (type of 0), got {}", lights[0].flags & kGSLightTypeMask);
     // Light BVH update
     if (owner.mLastUpdateResult.lightsHash == res.lightsHash)
         res.lightBVH = owner.mLastUpdateResult.lightBVH, mLightBVHNeedsRefit = false;
@@ -824,7 +831,12 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     {
         mLightBVHNeedsRefit = true;
         LightBVHOptions options{};
-        LightBVHBuild bvh = BuildLightBVH(lights, options, mStackAlloc ? mStackAlloc : mAllocator);
+        LightBVHBuild bvh = BuildLightBVH(tables.lights, options, mStackAlloc ? mStackAlloc : mAllocator);
+#ifndef NDEBUG
+        String validationError;
+        CHECK_MSG(ValidateLightBVH(bvh, tables.lights, &validationError),
+                  "Light BVH validation failed: {}", validationError);
+#endif
         UpdateResult::LightBVH& lightBVH = res.lightBVH;
         lightBVH.valid = bvh.valid;
         mLightBVHRefitLevels = bvh.refitLevels;
@@ -2850,7 +2862,7 @@ void GPUScene::ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffs
     outPrimitiveOffset = g->dynamic ? mImpl->GetDynamicOffset(*g, mImpl->mDynamicFrameIndex) : g->offset;
     outPrimitiveType = g->type | (g->dynamic ? kGSInstanceFlagDynamic : 0u);
 }
-GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables, uint32_t frameNumber)
+GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables)
 {
     return mImpl->EndScene(tables);
 }

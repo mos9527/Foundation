@@ -473,13 +473,13 @@ struct HitRecord
 HitKind HitKindFromLight(GSLight light)
 {
     uint32_t type = GSLightType(light);
-    if (type == 1)
+    if (type == kGSLightTypePoint)
         return HitKind::Point;
-    if (type == 2)
+    if (type == kGSLightTypeSpot)
         return HitKind::Spot;
-    if (type == 3)
+    if (type == kGSLightTypeDisk)
         return HitKind::Disk;
-    if (type == 4)
+    if (type == kGSLightTypeRect)
         return HitKind::Rect;
     return HitKind::None;
 }
@@ -1436,12 +1436,11 @@ void AddEnvironmentMiss(
     float3 Le = lighting.env.Le(wi);
     float pdf = EvalLightSelectionPMF(lighting.lastLightCtx, 0u) *
         lighting.env.PDF_Li(lighting.lastLightCtx, wi, true);
-    // These are sorted so that env light is #0 and non-delta directionals (if any) come first
-    // Add contributions from sun disk misses
+    // Sun disks follow the environment light.
     for (uint i = 1u; i < globalParams.lights.count; ++i)
     {
         GSLight gl = LoadSceneLight(i);
-        if (gl.flags & kGSLightTypeMask != kGSLightTypeDirectional || gl.params.x <= 0.0f)
+        if (GSLightType(gl) != kGSLightTypeDirectional || gl.params.x <= 0.0f)
             break;
         DistantLight sun = DistantLight(SampledSpectrum(gl.color * gl.power), gl.direction, gl.params.x);
         float3 sunLe = sun.Le(wi);
@@ -1793,7 +1792,7 @@ bool EvaluateLightIntersection(uint lightType, float3 ro, float3 rd, float rayTM
 {
     hitT = 0.0f;
     localPosition = float2(0.0f);
-    if (lightType == 1 || lightType == 2) // Point or Spot
+    if (lightType == kGSLightTypePoint || lightType == kGSLightTypeSpot)
     {
         float a = dot(rd, rd);
         float b = dot(ro, rd);
@@ -1825,11 +1824,11 @@ bool EvaluateLightIntersection(uint lightType, float3 ro, float3 rd, float rayTM
         return false;
 
     float2 p = (ro + rd * t).xy;
-    if (lightType == 3) // Disk
+    if (lightType == kGSLightTypeDisk)
     {
         if (dot(p, p) > 1.0f) return false;
     }
-    else if (lightType == 4) // Rect
+    else if (lightType == kGSLightTypeRect)
     {
         if (any(abs(p) > 1.0f)) return false;
     }

@@ -229,8 +229,10 @@ public float ComputeLightProposalWeight(GSLight light) {
     uint type = GSLightType(light);
     if (type == kGSLightTypeDirectional)
         return radiometricWeight;
-    if (type == kGSLightTypeEnvironment)
-        return radiometricWeight * Pi;
+    if (type == kGSLightTypeEnvironment) {
+        float averageRadiance = light.params.y > 0.0f ? light.params.y : 1.0f;
+        return radiometricWeight * averageRadiance * Pi;
+    }
     if (type == kGSLightTypePoint)
         return radiometricWeight * (4.0f * Pi);
     if (type == kGSLightTypeSpot) {

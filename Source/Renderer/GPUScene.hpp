@@ -244,7 +244,7 @@ public:
 
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
     void ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffset, uint32_t& outPrimitiveType) const;
-    UpdateResult EndScene(GPUSceneTables& tables, uint32_t frameNumber);
+    UpdateResult EndScene(GPUSceneTables& tables);
 
     struct MemoryStat
     {
@@ -379,7 +379,7 @@ private:
     UpdateResult mLastUpdateResult;
     // Per-frame commits
     Vector<GSInstance> mCommittedInstances;
-    Vector<GSLight> mCommittedLights, mCommittedLightsSorted;    
+    Vector<GSLight> mCommittedLights;
     Vector<GSMaterial> mCommittedMaterials;
     // TLAS instanceID -> committed instance index
     Vector<uint32_t> mTLASInstanceMap;

@@ -291,8 +291,7 @@ GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FS
     for (size_t i = 0; i < lights.size(); ++i)
         FLightToGSLight(lights[i], tables.lights[i], gpu);
 
-    uint32_t const motionFrame = frameNumber != UINT32_MAX ? frameNumber : globals.frameNumber;
-    GPUScene::UpdateResult result = gpu.EndScene(tables, motionFrame);
+    GPUScene::UpdateResult result = gpu.EndScene(tables);
     gpu.UpdateUBO(globals);
     return result;
 }
