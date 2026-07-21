@@ -1427,24 +1427,25 @@ void Renderer::WaitForFrame()
     mDevice->WaitForFences(wait, true, -1);
 }
 
+void Renderer::WaitAndResetCurrentSync()
+{
+    ZoneScopedN("Wait for Sync Slot");
+    Vector<RHIDeviceFence*> wait(mAllocator);
+    wait.reserve(2);
+    if (mSetup && mSetup->executionAnyGraphics)
+        wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
+    if (mSetup && mSetup->executionAnyCompute)
+        wait.push_back(mSwaps[mCurrentSync].computeFence.Get());
+    if (!wait.empty())
+    {
+        mDevice->WaitForFences(wait, true, -1);
+        mDevice->ResetFences(wait);
+    }
+}
 
 void Renderer::BeginExecute(uint32_t swapImageIndex, RHIDeviceSemaphore* imageAcquire)
 {
     CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", mState);
-    {
-        ZoneScopedN("Wait for GPU");
-        Vector<RHIDeviceFence*> wait(mAllocator);
-        wait.reserve(2);
-        if (mSetup && mSetup->executionAnyGraphics)
-            wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
-        if (mSetup && mSetup->executionAnyCompute)
-            wait.push_back(mSwaps[mCurrentSync].computeFence.Get());
-        if (!wait.empty())
-        {
-            mDevice->WaitForFences(wait, true, -1);
-            mDevice->ResetFences(wait);
-        }
-    }
     mExecuteImageAcquire = imageAcquire;
     mState = State::Execute;
     // Reset per-frame arena
@@ -1491,14 +1492,13 @@ void Renderer::BeginExecute(uint32_t swapImageIndex, RHIDeviceSemaphore* imageAc
 
 void Renderer::BeginExecute()
 {
+    WaitAndResetCurrentSync();
     BeginExecute(0, nullptr);
 }
 
 uint32_t Renderer::BeginExecute(Presenter* presenter)
 {
-    // Wait for the previous frame *before* acquiring, so the acquire semaphore (reused per
-    // synchronization slot) has no pending signal/wait operations at vkAcquireNextImageKHR time.
-    WaitForFrame();
+    WaitAndResetCurrentSync();
     const uint32_t image = presenter->AcquireNextImage();
     BeginExecute(image, presenter->GetImageAcquireSemaphore().Get());
     return image;

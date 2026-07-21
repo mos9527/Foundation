@@ -17,6 +17,7 @@ add_library(Foundation_GPUScene STATIC
     Renderer.cpp
     Serialization.cpp
     Texture.cpp
+    Animation.cpp
     "${lz4_SOURCE_DIR}/lib/lz4.c"
     "${lz4_SOURCE_DIR}/lib/xxhash.c"
     "${bc7enc_SOURCE_DIR}/bc7enc.c"

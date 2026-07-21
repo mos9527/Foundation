@@ -106,6 +106,8 @@ struct FSerializedMesh
     FBlobRef dagMeshlets;
     FBlobRef dagMeshletTri;
     FBlobRef dagMeshletVtx;
+    FBlobRef skinBinding; // FSkinBinding per vertex; empty when rigid.
+    FUUID skeleton{};     // skin skeleton id; kNilUUID when rigid.
 
     explicit FSerializedMesh(Allocator* alloc = GLOBAL_ALLOC)
         : lods(alloc)
@@ -116,7 +118,8 @@ struct FSerializedMesh
 struct FImportedMesh
 {
     Vector<FVertex> vertices; // Full precision, raw vertices. Used by importers.
-    Vector<FQVertex> verticesQuantized; // Quantized vertex data for GPU upload.    
+    Vector<FQVertex> verticesQuantized; // Quantized vertex data for GPU upload.
+    Vector<FSkinBinding> skin; // Per-vertex skin binding; empty when rigid. Parallel to @ref vertices.
     struct LOD
     {
         Vector<uint32_t> indices; // Full precision triangle indices

@@ -1,5 +1,6 @@
 #pragma once
 #include <Renderer/Mesh.hpp>
+#include <Renderer/Animation.hpp>
 #include <Renderer/Curve.hpp>
 #include <Renderer/Serialization.hpp>
 #include <Renderer/Texture.hpp>
@@ -162,7 +163,7 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 23;
+static constexpr uint32_t kSceneVersion = 24;
 
 // Stringpool entry
 struct FStringEntry
@@ -182,11 +183,13 @@ struct FSceneTables
     Vector<FSerializedMesh> meshes;
     Vector<FSerializedCurve> curves;
     Vector<FSerializedTexture> textures;
+    Vector<FSkeleton> skeletons;
+    Vector<FAnimationClip> clips;
     FUUID sceneNodeSkeleton{}; // kNilUUID when no rigid node hierarchy.
 
     explicit FSceneTables(Allocator* alloc = GLOBAL_ALLOC)
         : strings(alloc), cameras(alloc), lights(alloc), instances(alloc), materials(alloc), meshes(alloc), curves(alloc),
-          textures(alloc)
+          textures(alloc), skeletons(alloc), clips(alloc)
     {
     }
 };
@@ -230,6 +233,8 @@ inline void FSerialize(FWriter& writer, FSerializedMesh const& mesh)
     FSerialize(writer, mesh.dagMeshlets);
     FSerialize(writer, mesh.dagMeshletTri);
     FSerialize(writer, mesh.dagMeshletVtx);
+    FSerialize(writer, mesh.skinBinding);
+    FSerialize(writer, mesh.skeleton);
 }
 
 template <>
@@ -244,6 +249,60 @@ inline void FDeserialize(FReader& reader, FSerializedMesh& mesh)
     FDeserialize(reader, mesh.dagMeshlets);
     FDeserialize(reader, mesh.dagMeshletTri);
     FDeserialize(reader, mesh.dagMeshletVtx);
+    FDeserialize(reader, mesh.skinBinding);
+    FDeserialize(reader, mesh.skeleton);
+}
+
+// FJoint is trivially copyable, so a skeleton's joint array serializes in bulk.
+template <>
+inline void FSerialize(FWriter& writer, FSkeleton const& skel)
+{
+    FSerialize(writer, skel.id);
+    FSerialize(writer, skel.joints);
+}
+template <>
+inline void FDeserialize(FReader& reader, FSkeleton& skel)
+{
+    FDeserialize(reader, skel.id);
+    FDeserialize(reader, skel.joints);
+}
+
+template <>
+inline void FSerialize(FWriter& writer, FAnimChannel const& channel)
+{
+    FSerialize(writer, channel.joint);
+    FSerialize(writer, channel.path);
+    FSerialize(writer, channel.interp);
+    FSerialize(writer, channel.times);
+    FSerialize(writer, channel.values);
+}
+template <>
+inline void FDeserialize(FReader& reader, FAnimChannel& channel)
+{
+    FDeserialize(reader, channel.joint);
+    FDeserialize(reader, channel.path);
+    FDeserialize(reader, channel.interp);
+    FDeserialize(reader, channel.times);
+    FDeserialize(reader, channel.values);
+}
+
+template <>
+inline void FSerialize(FWriter& writer, FAnimationClip const& clip)
+{
+    FSerialize(writer, clip.id);
+    FSerialize(writer, clip.name);
+    FSerialize(writer, clip.channels);
+    FSerialize(writer, clip.duration);
+    FSerialize(writer, clip.skeleton);
+}
+template <>
+inline void FDeserialize(FReader& reader, FAnimationClip& clip)
+{
+    FDeserialize(reader, clip.id);
+    FDeserialize(reader, clip.name);
+    FDeserialize(reader, clip.channels, clip.channels.get_allocator().mResource);
+    FDeserialize(reader, clip.duration);
+    FDeserialize(reader, clip.skeleton);
 }
 
 // FStringEntry: id is FUUID::FromString(value).
@@ -272,6 +331,8 @@ inline void FSerialize(FWriter& writer, FSceneTables const& tables)
     FSerialize(writer, tables.meshes);
     FSerialize(writer, tables.curves);
     FSerialize(writer, tables.textures);
+    FSerialize(writer, tables.skeletons);
+    FSerialize(writer, tables.clips);
     FSerialize(writer, tables.sceneNodeSkeleton);
 }
 
@@ -287,6 +348,8 @@ inline void FDeserialize(FReader& reader, FSceneTables& tables)
     FDeserialize(reader, tables.meshes, tables.meshes.get_allocator().mResource);
     FDeserialize(reader, tables.curves);
     FDeserialize(reader, tables.textures, tables.textures.get_allocator().mResource);
+    FDeserialize(reader, tables.skeletons, tables.skeletons.get_allocator().mResource);
+    FDeserialize(reader, tables.clips, tables.clips.get_allocator().mResource);
     FDeserialize(reader, tables.sceneNodeSkeleton);
 }
 
@@ -359,6 +422,16 @@ struct FImportedScene
         CHECK(mWriting);
         mTables.textures.push_back(texture);
     }
+    void Add(FSkeleton const& skeleton)
+    {
+        CHECK(mWriting);
+        mTables.skeletons.push_back(skeleton);
+    }
+    void Add(FAnimationClip const& clip)
+    {
+        CHECK(mWriting);
+        mTables.clips.push_back(clip);
+    }
 
     // Reader only operations
     // Resident data changes are local, and never reflected in the file
@@ -405,6 +478,8 @@ struct FImportedScene
     Span<FSerializedMesh const> GetMeshes() const { return {mTables.meshes.data(), mTables.meshes.size()}; }
     Span<FSerializedCurve const> GetCurves() const { return {mTables.curves.data(), mTables.curves.size()}; }
     Span<FSerializedTexture const> GetTextures() const { return {mTables.textures.data(), mTables.textures.size()}; }
+    Span<FSkeleton const> GetSkeletons() const { return {mTables.skeletons.data(), mTables.skeletons.size()}; }
+    Span<FAnimationClip const> GetClips() const { return {mTables.clips.data(), mTables.clips.size()}; }
     Span<FStringEntry const> GetStrings() const { return {mTables.strings.data(), mTables.strings.size()}; }
 
     void RebuildIndex();

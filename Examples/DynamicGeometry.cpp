@@ -150,7 +150,7 @@ namespace
                                    .power = 33.0f,
                                    .position = float3(0, 1, 0),
                                    .params = float4(.05f)};
-        gpu.EndScene(tables, ubo.frameNumber);
+        gpu.EndScene(tables);
         gpu.UpdateUBO(ubo);
     }
 
@@ -250,7 +250,10 @@ int main(int argc, char** argv)
         gpu.UpdateDynamicGeometry(ground, groundVerts, groundIndices);
         FillGround(groundVerts, groundIndices);
         gpu.EndDynamicGeometryUpdate();
-        ubo.ptAccumulatedFrames = 0u;
+        if (paused < 0.5f)
+            ubo.ptAccumulatedFrames = 0u;
+        else
+            ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
 
         if (camera.Update(input, dt))
             ubo.ptAccumulatedFrames = 0u;

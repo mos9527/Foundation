@@ -283,6 +283,7 @@ namespace Foundation::RenderCore
          * @brief Executes all barriers for a pass
          */
         void ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierList cmd);
+        void WaitAndResetCurrentSync();
         /**
          * @brief Core implementation of @ref BeginExecute.
          *
@@ -985,9 +986,7 @@ namespace Foundation::RenderCore
         void BeginExecute();
         /**
          * @brief Convenience overload for the common present loop.
-         * Waits for the previous frame (@ref WaitForFrame), acquires the next swapchain image
-         * via the presenter, then begins execution. The wait happens *before* the acquire so the
-         * acquire semaphore (reused per synchronization slot) is guaranteed free.
+         * Waits for the synchronization slot being reused, then acquires the next swapchain image.
          * @return The acquired swapchain image index.
          */
         uint32_t BeginExecute(Presenter* presenter);

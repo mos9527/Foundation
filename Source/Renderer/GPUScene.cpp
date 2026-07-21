@@ -146,7 +146,7 @@ struct GPUSceneImpl
     {
         uint32_t type{kGSInstanceTypeMesh};
         uint32_t version{0};
-        uint32_t offset{0}; // into respective primitive buffer of type in bytes, see also @ref GetDynamicOffset
+        uint32_t offset{0}; // into respective primitive buffer of type in bytes
         uint32_t blas{UINT32_MAX}; // see @ref ResolveBLAS
         ResourceState state{ResourceState::Queued};
         /* --- */
@@ -157,7 +157,6 @@ struct GPUSceneImpl
         bool dynamicIsBuilt{false};
         uint32_t dynamicLastRebuildFrame{0};
         uint32_t dynamicSize{0};
-        uint32_t dynamicStride{0};
         uint32_t dynamicVtxBytes{0};
         uint32_t dynamicIdxBytes{0};
         RHIDeviceScopedHandle<RHIBuffer> dynamicBLASBuffer;
@@ -176,14 +175,14 @@ struct GPUSceneImpl
     // Dynamic geometry
     // Topology for these do NOT change (e.g. skinning, morphing), otherwise
     // rebuilding BLASes is required.
-    // Device-local ring is GPU-consumed; CPU writes go through an identically laid-out staging ring.
     bool mDynamicIsUpdate{false};
     char* mDynamicStagingMapped{nullptr};
     RHIDeviceScopedHandle<RHIBuffer> mDynamicPrimitiveBuffer;
     RHIDeviceScopedHandle<RHIBuffer> mDynamicStagingBuffer;
     RHIDeviceScopedHandle<RHIVirtualAllocator> mDynamicPrimitiveAlloc;
-    uint32_t mDynamicFramesInFlight{0};
-    uint32_t mDynamicFrameIndex{0}; // frame % mDynamicFramesInFlight
+    uint32_t mDynamicStagingFrames{0};
+    uint32_t mDynamicStagingFrameIndex{0};
+    uint32_t mDynamicStagingFrameSize{0};
     Vector<uint32_t> mDynamicGeometries; // index into mGeometry
     uint32_t mLastRefitCount{0};
     uint32_t mLastRebuildCount{0};
@@ -351,11 +350,9 @@ struct GPUSceneImpl
     void Collect();
     void Reset();
     // Dynamic updates
-    // Offset in mDynamicPrimitiveBuffer for the given slot
-    // Static offset is just g.offset
-    [[nodiscard]] inline uint32_t GetDynamicOffset(Geometry const& g, uint32_t slot) const
+    [[nodiscard]] inline uint32_t GetDynamicStagingOffset(Geometry const& g) const
     {
-        return g.offset + slot * g.dynamicStride;
+        return mDynamicStagingFrameIndex * mDynamicStagingFrameSize + g.offset;
     }
     void AllocateDynamicBLAS(Geometry& g);
     [[nodiscard]] bool HasDynamicGeometry() const { return !mDynamicGeometries.empty(); }
@@ -487,31 +484,31 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     }
     if (desc.dynamicGeometryBudget != 0)
     {
-        // XXX Conservative, we allocate enough for all frames in a swapchain to be run w/o contention
         CHECK_MSG(desc.framesInFlight >= 1, "framesInFlight must be >= 1");
-        mDynamicFramesInFlight = desc.framesInFlight + 1u;
-        const size_t totalBytes = static_cast<size_t>(desc.dynamicGeometryBudget) * mDynamicFramesInFlight;
+        mDynamicStagingFrames = desc.framesInFlight + 1u;
+        mDynamicStagingFrameSize = desc.dynamicGeometryBudget;
+        const size_t stagingBytes = static_cast<size_t>(desc.dynamicGeometryBudget) * mDynamicStagingFrames;
         mDynamicPrimitiveBuffer = mDevice->CreateBuffer(
             {.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
              .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
                  RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly |
                  RHIBufferUsageBits::IndexBuffer,
-             .size = totalBytes});
-        mDynamicPrimitiveBuffer->DebugSetObjectName("Dynamic Primitive Ring");
+             .size = desc.dynamicGeometryBudget});
+        mDynamicPrimitiveBuffer->DebugSetObjectName("Dynamic Primitive Buffer");
         mDynamicStagingBuffer = mDevice->CreateBuffer(
             {.resource = {.heap = RHIDeviceHeapType::Upload,
                           .hostAccess = RHIResourceHostAccess::WriteOnly,
                           .coherent = true,
                           .staging = true},
              .usage = RHIBufferUsageBits::TransferSource,
-             .size = totalBytes});
+             .size = stagingBytes});
         mDynamicStagingBuffer->DebugSetObjectName("Dynamic Primitive Staging");
         mDynamicStagingMapped = mDynamicStagingBuffer->Map<char>();
-        mDynamicPrimitiveAlloc = mDevice->CreateVirtualAllocator(totalBytes);
+        mDynamicPrimitiveAlloc = mDevice->CreateVirtualAllocator(desc.dynamicGeometryBudget);
         LOG(GPUScene, LogInfo,
-            "Dynamic geometry ring: {} MiB device + {} MiB staging ({} MiB/frame x {} slots, {} frames in flight).",
-            totalBytes / (1u << 20), totalBytes / (1u << 20), desc.dynamicGeometryBudget / (1u << 20),
-            mDynamicFramesInFlight, desc.framesInFlight);
+            "Dynamic geometry: {} MiB device + {} MiB staging ({} slots, {} frames in flight).",
+            desc.dynamicGeometryBudget / (1u << 20), stagingBytes / (1u << 20), mDynamicStagingFrames,
+            desc.framesInFlight);
     }
     mTLASBuffer =
         mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
@@ -816,7 +813,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     {
         Geometry* g = ResolveGeometry({inst.resourceIndex, 0u});
         CHECK_MSG(g, "Instance isn't assigned with a valid resourceIndex");
-        uint32_t const resourceOffset = g->dynamic ? GetDynamicOffset(*g, mDynamicFrameIndex) : g->offset;
+        uint32_t const resourceOffset = g->offset;
         uint32_t const type = g->type | (g->dynamic ? kGSInstanceFlagDynamic : 0u);
         inst.resourceOffset = resourceOffset;
         inst.type = type;
@@ -2059,7 +2056,7 @@ void GPUSceneImpl::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> 
 void GPUSceneImpl::AllocateDynamicBLAS(Geometry& g)
 {
     CHECK(mDynamicPrimitiveBuffer);
-    uint32_t const base = GetDynamicOffset(g, 0);
+    uint32_t const base = g.offset;
     RHIAccelerationStructureGeometryInfo geo{
         .type = RHIAccelerationGeometryType::Triangles,
         .triangleData = {
@@ -2121,8 +2118,7 @@ GPUScene::Result GPUSceneImpl::AllocateDynamic(uint32_t vertexCount, uint32_t in
     uint64_t const idxBytes64 = static_cast<uint64_t>(indexCount) * sizeof(uint32_t);
     uint64_t const footprint64 = sizeof(GSMesh) + vtxBytes64 + idxBytes64;
     uint64_t const stride64 = AlignUp(footprint64, 16ull);
-    uint64_t const allocBytes = stride64 * mDynamicFramesInFlight;
-    if (vtxBytes64 > UINT32_MAX || idxBytes64 > UINT32_MAX || stride64 > UINT32_MAX || allocBytes > UINT32_MAX)
+    if (vtxBytes64 > UINT32_MAX || idxBytes64 > UINT32_MAX || stride64 > UINT32_MAX)
         return Result::InvalidInput;
 
     uint32_t const vtxBytes = static_cast<uint32_t>(vtxBytes64);
@@ -2134,12 +2130,11 @@ GPUScene::Result GPUSceneImpl::AllocateDynamic(uint32_t vertexCount, uint32_t in
     Geometry* gp = nullptr;
     {
         std::lock_guard<Mutex> lock(mUploadStateMutex);
-        uint64_t base = mDynamicPrimitiveAlloc->Allocate(allocBytes, 16);
+        uint64_t base = mDynamicPrimitiveAlloc->Allocate(stride, 16);
         if (base == RHIVirtualAllocator::kInvalidOffset)
         {
-            LOG(GPUScene, LogError, "Dynamic geometry ring overflow. Need {} bytes ({}/slot x {}), {} used of {}",
-                allocBytes, stride, mDynamicFramesInFlight, mDynamicPrimitiveAlloc->GetUsedBytes(),
-                mDynamicPrimitiveAlloc->GetCapacity());
+            LOG(GPUScene, LogError, "Dynamic geometry overflow. Need {} bytes, {} used of {}", stride,
+                mDynamicPrimitiveAlloc->GetUsedBytes(), mDynamicPrimitiveAlloc->GetCapacity());
             return Result::OutOfMemory;
         }
         uint32_t slot = FreelistPop(mGeometry, mGeometryFreelist);
@@ -2156,15 +2151,15 @@ GPUScene::Result GPUSceneImpl::AllocateDynamic(uint32_t vertexCount, uint32_t in
         g.dynamic = true;
         g.isGpu = isGpu;
         g.blas = UINT32_MAX;
-        g.offset = static_cast<uint32_t>(base); // slot 0 base; slot s = base + s*stride
+        g.offset = static_cast<uint32_t>(base);
         g.dynamicSize = footprint;
-        g.dynamicStride = stride;
         g.dynamicVtxBytes = vtxBytes;
         g.dynamicIdxBytes = idxBytes;
         g.mesh = GSMesh{};
         g.mesh.vertices.count = vertexCount;
         g.mesh.indices.count = indexCount;
         g.live = true;
+        g.uploadDirty = isGpu;
         g.state = ResourceState::Ready;
         handle = {slot, version};
         gp = &g;
@@ -2173,15 +2168,15 @@ GPUScene::Result GPUSceneImpl::AllocateDynamic(uint32_t vertexCount, uint32_t in
     Geometry& g = *gp;
 
     CHECK(mDynamicStagingMapped != nullptr);
-    for (uint32_t s = 0; s < mDynamicFramesInFlight; ++s)
+    GSMesh h{};
+    h.vertices.offset = g.offset + sizeof(GSMesh);
+    h.vertices.count = g.mesh.vertices.count;
+    h.indices.offset = h.vertices.offset + g.dynamicVtxBytes;
+    h.indices.count = g.mesh.indices.count;
+    for (uint32_t s = 0; s < mDynamicStagingFrames; ++s)
     {
-        uint32_t const base = GetDynamicOffset(g, s);
-        GSMesh h{};
-        h.vertices.offset = base + sizeof(GSMesh);
-        h.vertices.count = g.mesh.vertices.count;
-        h.indices.offset = h.vertices.offset + g.dynamicVtxBytes;
-        h.indices.count = g.mesh.indices.count;
-        std::memcpy(mDynamicStagingMapped + base, &h, sizeof(GSMesh));
+        uint32_t const stagingBase = s * mDynamicStagingFrameSize + g.offset;
+        std::memcpy(mDynamicStagingMapped + stagingBase, &h, sizeof(GSMesh));
     }
     AllocateDynamicBLAS(g);
     outHandle = handle;
@@ -2192,16 +2187,13 @@ void GPUSceneImpl::BeginDynamicGeometryUpdate()
 {
     CHECK_MSG(!mDynamicIsUpdate, "BeginDynamicGeometryUpdate called while a window is already open");
     mDynamicIsUpdate = true;
-    if (mDynamicFramesInFlight != 0)
-        mDynamicFrameIndex = (mDynamicFrameIndex + 1u) % mDynamicFramesInFlight;
+    if (mDynamicStagingFrames != 0)
+        mDynamicStagingFrameIndex = (mDynamicStagingFrameIndex + 1u) % mDynamicStagingFrames;
     for (uint32_t slot : mDynamicGeometries)
     {
         Geometry& g = mGeometry[slot];
         if (g.live && g.dynamic && g.isGpu)
-        {
             g.dirty = true;
-            g.uploadDirty = true;
-        }
     }
 }
 
@@ -2216,7 +2208,7 @@ void GPUSceneImpl::UpdateDynamicGeometry(GeometryHandle handle, Span<FQVertex>& 
     CHECK_MSG(!g->isGpu, "UpdateDynamicGeometry cannot map a GPU-authored geometry");
     g->dirty = true; // rewriting this slot -> needs a BLAS refit
     g->uploadDirty = true;
-    uint32_t const base = GetDynamicOffset(*g, mDynamicFrameIndex);
+    uint32_t const base = GetDynamicStagingOffset(*g);
     char* vtx = mDynamicStagingMapped + base + sizeof(GSMesh);
     char* idx = vtx + g->dynamicVtxBytes;
     outVertices = Span<FQVertex>(reinterpret_cast<FQVertex*>(vtx), g->mesh.vertices.count);
@@ -2245,9 +2237,9 @@ void GPUSceneImpl::UploadDynamicGeometry(RHICommandList* cmd)
         Geometry& g = mGeometry[slot];
         if (!g.live || !g.dynamic || !g.uploadDirty)
             continue;
-        uint32_t const offset = GetDynamicOffset(g, mDynamicFrameIndex);
+        uint32_t const srcOffset = GetDynamicStagingOffset(g);
         regions.push_back(
-            {.srcOffset = offset, .dstOffset = offset, .size = g.isGpu ? sizeof(GSMesh) : g.dynamicSize});
+            {.srcOffset = srcOffset, .dstOffset = g.offset, .size = g.isGpu ? sizeof(GSMesh) : g.dynamicSize});
         g.uploadDirty = false;
     }
     if (regions.empty())
@@ -2278,7 +2270,7 @@ void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
             ++g.dynamicLastRebuildFrame;
         ++mLastRefitCount;
         mLastRebuildCount += rebuild ? 1u : 0u;
-        uint32_t const base = GetDynamicOffset(g, mDynamicFrameIndex);
+        uint32_t const base = g.offset;
         RHIAccelerationStructureGeometryInfo geo{
             .type = RHIAccelerationGeometryType::Triangles,
             .triangleData = {
@@ -2778,7 +2770,7 @@ void GPUSceneImpl::Reset()
         mUploadHasWork = false;
         mUploadWorkerStarted = false;
     }
-    mDynamicFrameIndex = 0;
+    mDynamicStagingFrameIndex = 0;
     mDynamicIsUpdate = false;
     mBLASes.clear();
     mBLASBuffers.clear();
@@ -2859,7 +2851,7 @@ void GPUScene::ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffs
 {
     GPUSceneImpl::Geometry* g = mImpl->ResolveGeometry(handle);
     CHECK_MSG(g, "ResolveGeometry on an invalid geometry handle");
-    outPrimitiveOffset = g->dynamic ? mImpl->GetDynamicOffset(*g, mImpl->mDynamicFrameIndex) : g->offset;
+    outPrimitiveOffset = g->offset;
     outPrimitiveType = g->type | (g->dynamic ? kGSInstanceFlagDynamic : 0u);
 }
 GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables)
