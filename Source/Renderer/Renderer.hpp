@@ -65,8 +65,6 @@ struct RendererUBO
     uint32_t lightBVHValid{0u};
     uint32_t firstLightBVHDistantNode{0u};
     uint32_t numLightBVHDistantNodes{0u};
-    // Non-delta directionals occupy lights[1 .. 1+numSunDiskLights) after GPUScene partition.
-    uint32_t numSunDiskLights{0u};
     uint32_t energyCompensation{1u};
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
@@ -246,7 +244,6 @@ struct RendererOutputs
     ResourceHandle specular{kInvalidHandle};
     ResourceHandle depth{kInvalidHandle};
     ResourceHandle instanceID{kInvalidHandle};
-    ResourceHandle motionVectors{kInvalidHandle};
     ResourceHandle debugOutput{kInvalidHandle};
 };
 

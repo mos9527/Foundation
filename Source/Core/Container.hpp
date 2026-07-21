@@ -17,6 +17,7 @@
 #include <algorithm>
 
 #include "Allocator.hpp"
+#include "Hash.hpp"
 namespace Foundation::Core {
 
     /* -- STL Value types -- */
@@ -260,4 +261,17 @@ namespace Foundation::Core {
     {
         using namespace std::views;
     } // namespace Views
+    /**
+    * @breif Hash helpers
+    */
+    template <typename T>
+    [[nodiscard]] constexpr uint64_t FNV1a64(Span<const T> span) noexcept
+    {
+        return FNV1a64CombineBytes(kFNV1a64OffsetBasis, span.data(), span.size());
+    }
+    template <typename T>
+    [[nodiscard]] constexpr uint64_t FNV1a64(Span<T> span) noexcept
+    {
+        return FNV1a64CombineBytes(kFNV1a64OffsetBasis, span.data(), span.size());
+    }
 }

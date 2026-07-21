@@ -17,10 +17,6 @@ RWStructuredBuffer<Atomic<uint>> outMeshletCounter;
 RWStructuredBuffer<uint2> outMeshletIndices; // (x: Meshlet ID, y: Instance ID)
 // vvv Cleared before dispatch
 RWStructuredBuffer<MeshletTaskDispatch> outMeshletDispatches;
-// Motion-vector contributor lists: cleared once per frame (not between early/late cull stages).
-RWStructuredBuffer<Atomic<uint>> outMotionMeshletCounter;
-RWStructuredBuffer<uint2> outMotionMeshletIndices;
-RWStructuredBuffer<MeshletTaskDispatch> outMotionMeshletDispatches;
 
 SamplerState hizSampler;
 Texture2D<float> hiz;
@@ -199,27 +195,6 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             uint pos = WavePrefixCountBits(draw);
             uint outPos = waveMeshletOffset + pos;
             outMeshletIndices[outPos] = uint2(meshletID, work.instanceID);
-        }
-    }
-    // Append moved static instances to the motion-vector meshlet list (accumulates across stages).
-    bool motion = draw && GSInstanceHasMotion(inst, globalParams.frameNumber);
-    uint waveMotionCount = WaveActiveCountBits(motion);
-    if (waveMotionCount > 0) {
-        uint waveMotionOffset = 0;
-        if (WaveIsFirstLane())
-            waveMotionOffset = outMotionMeshletCounter[0].add(waveMotionCount);
-        waveMotionOffset = WaveActiveMax(waveMotionOffset);
-        uint waveMotionTotal = waveMotionOffset + waveMotionCount;
-        if (WaveIsFirstLane()) {
-            uint groupCountX = (waveMotionTotal + kMeshIndirectPerDrawMeshlets - 1) / kMeshIndirectPerDrawMeshlets;
-            uint groupCountY = min(waveMotionTotal, kMeshIndirectPerDrawMeshlets);
-            InterlockedMax(outMotionMeshletDispatches[0].groupCountX, groupCountX);
-            InterlockedMax(outMotionMeshletDispatches[0].groupCountY, groupCountY);
-            outMotionMeshletDispatches[0].groupCountZ = 1;
-        }
-        if (motion) {
-            uint pos = WavePrefixCountBits(motion);
-            outMotionMeshletIndices[waveMotionOffset + pos] = uint2(meshletID, work.instanceID);
         }
     }
     // If this was a Task Shader (which it was): DispatchMesh(shared.meshletCount,1,1,shared);

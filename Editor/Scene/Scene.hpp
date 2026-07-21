@@ -1,6 +1,5 @@
 #pragma once
 #include <Renderer/Mesh.hpp>
-#include <Renderer/Animation.hpp>
 #include <Renderer/Curve.hpp>
 #include <Renderer/Serialization.hpp>
 #include <Renderer/Texture.hpp>
@@ -10,12 +9,6 @@ namespace Foundation::RHI { struct RHIDeviceCapabilities; }
 struct GPUSceneDesc;
 
 // Components
-struct FTransform
-{
-    float3 transform;
-    quat rotation;
-    float3 scale;
-};
 enum class FInstanceType : uint32_t
 {
     Mesh = 0,
@@ -29,9 +22,6 @@ struct FInstance
     FUUID name{}; // FStringEntry id; kNilUUID when unnamed.
     FUUID resource{};
     FUUID material{}; // kDefaultMaterialUUID for implicit default.
-    // Scene-node joint index for rigid animation; -1 when static.
-    // Joint-local indices stay indices (meaningful only within one skeleton).
-    int32_t node{-1};
 };
 struct FCamera
 {
@@ -45,9 +35,6 @@ struct FCamera
     uint32_t apertureBlades{0u};
     float apertureRotation{0.0f};
     float apertureRatio{1.0f};
-    // Scene-node hierarchy index for rigid node animation; -1 when the camera is static
-    // (its baked @ref transform is authoritative).
-    int32_t node{-1};
 };
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#metallic-roughness-material
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#additional-textures
@@ -122,12 +109,12 @@ struct FMaterial
 };
 enum class FLightType : uint32_t
 {
-    Directional = 0,
-    Point = 1,
-    Spot = 2,
-    Disk = 3,
-    Rect = 4,
-    Environment = 5,
+    Environment = 0,
+    Directional = 1,
+    Point = 2,
+    Spot = 3,
+    Disk = 4,
+    Rect = 5,
 };
 inline constexpr uint32_t kMaxSceneLights = 1024;
 struct FLight
@@ -175,30 +162,7 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 22;
-
-// One NLA strip: a source clip (referenced by its animation-group name id) placed on the timeline,
-// optionally retimed and looped within a source-clip window. Matches EXT_foundation_animation.
-struct FNlaStrip
-{
-    FUUID source{};        // animation-group name id (the source clip/action)
-    float stripStart{0.0f}; // timeline seconds  (Strip Frame Start)
-    float stripEnd{0.0f};   //                   (Strip Frame End)
-    float clipStart{0.0f};  // source-local secs (Clip Start)
-    float clipEnd{0.0f};    //                   (Clip End)
-    float timeScale{1.0f};  // Clip Timescale (playback scale)
-    float influence{1.0f};  // 0..1 per-channel blend weight over lower tracks (lerp T/S, slerp R)
-    bool cyclic{true};      // loop clip within [clipStart,clipEnd] to fill the strip (restart)
-};
-
-struct FNlaTrack
-{
-    FUUID id{};
-    FUUID name{};
-    Vector<FNlaStrip> strips;
-    bool mute{false};
-    explicit FNlaTrack(Allocator* alloc = GLOBAL_ALLOC) : strips(alloc) {}
-};
+static constexpr uint32_t kSceneVersion = 23;
 
 // Stringpool entry
 struct FStringEntry
@@ -218,14 +182,11 @@ struct FSceneTables
     Vector<FSerializedMesh> meshes;
     Vector<FSerializedCurve> curves;
     Vector<FSerializedTexture> textures;
-    Vector<FSkeleton> skeletons;
-    Vector<FAnimationClip> clips;
-    Vector<FNlaTrack> nlaTracks;
     FUUID sceneNodeSkeleton{}; // kNilUUID when no rigid node hierarchy.
 
     explicit FSceneTables(Allocator* alloc = GLOBAL_ALLOC)
         : strings(alloc), cameras(alloc), lights(alloc), instances(alloc), materials(alloc), meshes(alloc), curves(alloc),
-          textures(alloc), skeletons(alloc), clips(alloc), nlaTracks(alloc)
+          textures(alloc)
     {
     }
 };
@@ -269,10 +230,6 @@ inline void FSerialize(FWriter& writer, FSerializedMesh const& mesh)
     FSerialize(writer, mesh.dagMeshlets);
     FSerialize(writer, mesh.dagMeshletTri);
     FSerialize(writer, mesh.dagMeshletVtx);
-    FSerialize(writer, mesh.skinBinding);
-    FSerialize(writer, mesh.skeleton);
-    FSerialize(writer, mesh.morphPositions);
-    FSerialize(writer, mesh.morphTargetCount);
 }
 
 template <>
@@ -287,126 +244,6 @@ inline void FDeserialize(FReader& reader, FSerializedMesh& mesh)
     FDeserialize(reader, mesh.dagMeshlets);
     FDeserialize(reader, mesh.dagMeshletTri);
     FDeserialize(reader, mesh.dagMeshletVtx);
-    FDeserialize(reader, mesh.skinBinding);
-    FDeserialize(reader, mesh.skeleton);
-    FDeserialize(reader, mesh.morphPositions);
-    FDeserialize(reader, mesh.morphTargetCount);
-}
-
-// FJoint is trivially copyable, so a skeleton's joint array serializes in bulk.
-template <>
-inline void FSerialize(FWriter& writer, FSkeleton const& skel)
-{
-    FSerialize(writer, skel.id);
-    FSerialize(writer, skel.joints);
-}
-template <>
-inline void FDeserialize(FReader& reader, FSkeleton& skel)
-{
-    FDeserialize(reader, skel.id);
-    FDeserialize(reader, skel.joints);
-}
-
-template <>
-inline void FSerialize(FWriter& writer, FAnimChannel const& channel)
-{
-    FSerialize(writer, channel.joint);
-    FSerialize(writer, channel.path);
-    FSerialize(writer, channel.interp);
-    FSerialize(writer, channel.times);
-    FSerialize(writer, channel.values);
-}
-template <>
-inline void FDeserialize(FReader& reader, FAnimChannel& channel)
-{
-    FDeserialize(reader, channel.joint);
-    FDeserialize(reader, channel.path);
-    FDeserialize(reader, channel.interp);
-    FDeserialize(reader, channel.times);
-    FDeserialize(reader, channel.values);
-}
-
-template <>
-inline void FSerialize(FWriter& writer, FMorphChannel const& channel)
-{
-    FSerialize(writer, channel.mesh);
-    FSerialize(writer, channel.targetCount);
-    FSerialize(writer, channel.interp);
-    FSerialize(writer, channel.times);
-    FSerialize(writer, channel.values);
-}
-template <>
-inline void FDeserialize(FReader& reader, FMorphChannel& channel)
-{
-    FDeserialize(reader, channel.mesh);
-    FDeserialize(reader, channel.targetCount);
-    FDeserialize(reader, channel.interp);
-    FDeserialize(reader, channel.times);
-    FDeserialize(reader, channel.values);
-}
-
-template <>
-inline void FSerialize(FWriter& writer, FAnimationClip const& clip)
-{
-    FSerialize(writer, clip.id);
-    FSerialize(writer, clip.name);
-    FSerialize(writer, clip.skeleton);
-    FSerialize(writer, clip.duration);
-    FSerialize(writer, clip.channels);
-    FSerialize(writer, clip.morphChannels);
-}
-template <>
-inline void FDeserialize(FReader& reader, FAnimationClip& clip)
-{
-    FDeserialize(reader, clip.id);
-    FDeserialize(reader, clip.name);
-    FDeserialize(reader, clip.skeleton);
-    FDeserialize(reader, clip.duration);
-    FDeserialize(reader, clip.channels, clip.channels.get_allocator().mResource);
-    FDeserialize(reader, clip.morphChannels, clip.morphChannels.get_allocator().mResource);
-}
-
-// FNlaStrip is trivially copyable (POD), so it bulk-serializes as part of a track's vector.
-template <>
-inline void FSerialize(FWriter& writer, FNlaStrip const& strip)
-{
-    FSerialize(writer, strip.source);
-    FSerialize(writer, strip.stripStart);
-    FSerialize(writer, strip.stripEnd);
-    FSerialize(writer, strip.clipStart);
-    FSerialize(writer, strip.clipEnd);
-    FSerialize(writer, strip.timeScale);
-    FSerialize(writer, strip.influence);
-    FSerialize(writer, strip.cyclic);
-}
-template <>
-inline void FDeserialize(FReader& reader, FNlaStrip& strip)
-{
-    FDeserialize(reader, strip.source);
-    FDeserialize(reader, strip.stripStart);
-    FDeserialize(reader, strip.stripEnd);
-    FDeserialize(reader, strip.clipStart);
-    FDeserialize(reader, strip.clipEnd);
-    FDeserialize(reader, strip.timeScale);
-    FDeserialize(reader, strip.influence);
-    FDeserialize(reader, strip.cyclic);
-}
-
-template <>
-inline void FSerialize(FWriter& writer, FNlaTrack const& track)
-{
-    FSerialize(writer, track.id);
-    FSerialize(writer, track.name);
-    FSerialize(writer, track.strips);
-    FSerialize(writer, track.mute);
-}
-template <>
-inline void FDeserialize(FReader& reader, FNlaTrack& track)
-{
-    FDeserialize(reader, track.id);
-    FDeserialize(reader, track.name);
-    FDeserialize(reader, track.strips);
-    FDeserialize(reader, track.mute);
 }
 
 // FStringEntry: id is FUUID::FromString(value).
@@ -435,9 +272,6 @@ inline void FSerialize(FWriter& writer, FSceneTables const& tables)
     FSerialize(writer, tables.meshes);
     FSerialize(writer, tables.curves);
     FSerialize(writer, tables.textures);
-    FSerialize(writer, tables.skeletons);
-    FSerialize(writer, tables.clips);
-    FSerialize(writer, tables.nlaTracks);
     FSerialize(writer, tables.sceneNodeSkeleton);
 }
 
@@ -453,9 +287,6 @@ inline void FDeserialize(FReader& reader, FSceneTables& tables)
     FDeserialize(reader, tables.meshes, tables.meshes.get_allocator().mResource);
     FDeserialize(reader, tables.curves);
     FDeserialize(reader, tables.textures, tables.textures.get_allocator().mResource);
-    FDeserialize(reader, tables.skeletons, tables.skeletons.get_allocator().mResource);
-    FDeserialize(reader, tables.clips, tables.clips.get_allocator().mResource);
-    FDeserialize(reader, tables.nlaTracks, tables.nlaTracks.get_allocator().mResource);
     FDeserialize(reader, tables.sceneNodeSkeleton);
 }
 

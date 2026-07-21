@@ -6,7 +6,6 @@
 #include <Renderer/RasterEffects.hpp>
 #include "Camera.hpp"
 #include "Editor.hpp"
-#include "Runtime/Animation.hpp"
 #include "Runtime/GPUScene.hpp"
 #include "Scene/Scene.hpp"
 
@@ -23,8 +22,7 @@ enum class ERendererMode
 
 enum class ERenderFormat { HDR, SDR };
 
-// Offline render workflow state: flows from file dialog → popup → readback
-struct RenderWorkflow
+struct RenderOutputState
 {
     ERenderFormat format       = ERenderFormat::HDR;
     int           targetSamples     = 0;
@@ -33,14 +31,8 @@ struct RenderWorkflow
     int           timePopupInput    = 0;
     double        startTime         = 0.0;
     bool          openRenderPopup   = false;
-    // Pause state - kept here so the Path Tracer pass setup can read it via pointer.
-    // renderPaused is true whenever rendering should NOT progress (manual OR auto).
-    // renderAutoPaused distinguishes the auto-pause state, which is auto-cleared on
-    // any user operation. Manual pause (PT button) does NOT auto-clear.
     bool          renderPaused      = false;
     bool          renderAutoPaused  = false;
-    // Auto-pause: when > 0, rendering auto-pauses once this many pixel samples
-    // have accumulated. Set via Rendering window slider.
     int           autoPauseSampleLimit = 0;
     String        outputPath;
     int           previousSpp = 0;
@@ -139,7 +131,7 @@ struct EditorState
     float              selectedLightHighlightStart = -1.0f;
     bool               openSelectionContextMenu = false;
     bool               applySelectionDoubleClickAction = false;
-    RenderWorkflow  renderTask;
+    RenderOutputState  renderTask;
     GizmoState      gizmo;
     CameraApertureState aperture;
     EditorViewportState viewport;
@@ -170,8 +162,6 @@ struct EditorState
     float           renderResolutionScale = 1.0f; // 0.25 .. 1.0
     bool            rasterGTAO = true;
     RasterGTAOConfig rasterGTAOConfig{};
-    bool            rasterMotionBlur = false;
-    RasterMotionBlurConfig rasterMotionBlurConfig{};
 
     [[nodiscard]] bool HasScene() const { return scene.has_value(); }
     FImportedScene& Scene()
@@ -202,25 +192,8 @@ void CommitSceneToGPU(bool resetAccumulation = true);
 void UpdateSceneLights();
 void DeleteSelectedInstance();
 void LoadScene(StringView path);
-// Queues a scene load for the next editor frame (safe to call during ImGui / renderer execute).
 void RequestLoadScene(StringView path, StringView envMapPath = {});
-// Drains any queued scene load. Called at the start of each editor frame.
-void PumpDeferredSceneLoad();
-// Advances an in-flight async scene load; returns true while one is still streaming.
-// Must be pumped once per editor frame.
-bool PumpSceneLoad();
-// Animation update, split so the per-skeleton pose evaluation can overlap the caller's per-frame
-// CPU work. BeginAnimationUpdate schedules pose evaluation (non-blocking) and advances the clock;
-// EndAnimationUpdate waits for it, applies rigid transforms + CPU-skins into the dynamic ring, and
-// returns true if anything changed (the caller must then re-commit the scene). Call them in order,
-// once per frame, with independent main-thread work in between.
-void BeginAnimationUpdate(float dt);
-bool EndAnimationUpdate();
-// Camera animation: while an animated scene camera is active, the editor view follows it. Query
-// AnimatedCameraDrivesView before BeginAnimationUpdate (it reads the scrub flag Begin then clears),
-// then call ApplyAnimatedCameraToView after movement input to override the arcball for this frame.
-bool AnimatedCameraDrivesView();
-bool ApplyAnimatedCameraToView();
+bool PollSceneLoad();
 void LoadEnvMap(StringView path);
 bool ApplyViewLUTSelection();
 bool ApplyMatcapSelection();
@@ -228,7 +201,6 @@ void HandleFile(const char* filePath);
 
 void EditorDockSpaceAndMenuBar();
 
-// UUID -> scene-table index (-1 when nil/absent). Same index as GPU tables (1:1 commit order).
 int SceneInstanceIndexFromId(FUUID id);
 int SceneLightIndexFromId(FUUID id);
 int SceneMaterialIndexFromId(FUUID id);
@@ -239,13 +211,13 @@ void SelectLight(FUUID lightId);
 void ClearSelection();
 void FHierarchyPanel();
 void FLightingPanel();
-void FAnimationPanel();
-bool IsInstanceAnimated(uint32_t index);
 void FRunningImGui();
 void ClearMaterialTexturePreviewCache();
 
 void DoRenderReadback(RendererOutputs const& outputs);
 void FRendering(RendererOutputs const& outputs);
+
+void CheckDeferredSceneLoad();
 
 // Acquire swapchain image + BeginExecute. Returns image index for EditorEndFrame.
 uint32_t EditorBeginFrame(Renderer* renderer, Presenter* presenter);

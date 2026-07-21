@@ -40,7 +40,7 @@ struct LightBVHOptions
 };
 
 #pragma pack(push, 1)
-// Falcor uncompressed node layout (48B): header + origin + extent/flux + cone.
+// TODO Pack/compress should emissive triangles also participate in NEE
 struct GSLightBVHNode
 {
     uint32_t header;

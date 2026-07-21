@@ -55,20 +55,17 @@ template<typename T>
     return FNV1a64Combine(hash, std::bit_cast<uint64_t>(value));
 }
 
-template<typename T, typename... Rest>
-    requires (sizeof...(Rest) > 0)
-[[nodiscard]] constexpr uint64_t FNV1a64Combine(uint64_t hash, T value, Rest... rest) noexcept
-{
-    hash = FNV1a64Combine(hash, value);
-    ((hash = FNV1a64Combine(hash, rest)), ...);
-    return hash;
-}
-
-template<typename... T>
+template <typename... T>
 [[nodiscard]] constexpr uint64_t FNV1a64(T... values) noexcept
 {
     uint64_t hash = kFNV1a64OffsetBasis;
     ((hash = FNV1a64Combine(hash, values)), ...);
     return hash;
+}
+
+template <typename T>
+[[nodiscard]] constexpr uint64_t FNV1a64(T* data, size_t size) noexcept
+{
+    return FNV1a64CombineBytes(kFNV1a64OffsetBasis, data, size);
 }
 } // namespace Foundation::Core

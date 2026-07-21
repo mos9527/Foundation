@@ -11,14 +11,4 @@ struct RasterGTAOConfig
     uint32_t stepCount{6u};
 };
 
-struct RasterMotionBlurConfig
-{
-    float intensity{4.0f};
-    uint32_t sampleCount{8u};
-    float maximumVelocity{200.0f}; // pixels
-    float minimumVelocity{2.0f};   // pixels
-    float depthComparisonExtent{1.0f};
-};
-
 RasterEffect MakeRasterGTAOEffect(RasterGTAOConfig const* config);
-RasterEffect MakeRasterMotionBlurEffect(RasterMotionBlurConfig const* config);

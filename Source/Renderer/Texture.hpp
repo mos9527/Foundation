@@ -94,15 +94,6 @@ struct FTexture : FTextureHeader
      * Encodes the current, uncompressed R8G8B8A8 texture into BC7 format
      */
     FTexture EncodeBC7(Allocator* alloc = GLOBAL_ALLOC) const;
-
-    [[nodiscard]] FSerializedTexture ToSerializedTexture(Allocator* alloc = GLOBAL_ALLOC) const
-    {
-        FSerializedTexture texture(alloc);
-        texture.magic = magic;
-        texture.header = header;
-        texture.header10 = header10;
-        return texture;
-    }
 };
 
 /**

@@ -1900,24 +1900,11 @@ void FHierarchyPanel()
                 char label[128];
                 FormatIndexLabelWithName(label, sizeof(label), InstanceTypeName(inst.type), static_cast<int>(i),
                                          sceneInstances[i].name);
-                bool selected = (GEditor.selectedInstance == instanceId);
-                // Pulse the label of instances the current animation selection drives.
-                bool const animated = IsInstanceAnimated(i);
-                if (animated)
-                {
-                    float const pulse = 0.5f + 0.5f * std::sin(static_cast<float>(ImGui::GetTime()) * 4.0f);
-                    ImVec4 const base = ImGui::GetStyleColorVec4(ImGuiCol_Text);
-                    ImVec4 const accent{0.30f, 0.85f, 1.0f, 1.0f};
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                                          ImVec4(base.x + (accent.x - base.x) * pulse, base.y + (accent.y - base.y) * pulse,
-                                                 base.z + (accent.z - base.z) * pulse, 1.0f));
-                }
+                bool selected = (GEditor.selectedInstance == instanceId);                
                 if (ImGui::Selectable(label, selected))
                 {
                     SelectInstance(i, inst);
                 }
-                if (animated)
-                    ImGui::PopStyleColor();
                 if (ImGui::IsItemHovered())
                     SetUUIDTooltip(instanceId);
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
@@ -2166,8 +2153,8 @@ void FLightingPanel()
         }
 
         bool anyChanged = false;
-        static const char* kLightTypeNames[] = {"Directional", "Point", "Spot", "Disk", "Rect"};
-        static constexpr int kLightTypeCount = 5;
+        static const char* kLightTypeNames[] = {"Environment", "Directional", "Point", "Spot", "Disk", "Rect"};
+        static constexpr int kLightTypeCount = 6;
 
         // ---- Scene Lights ----
             GEditor.Scene().EnsureEnvironmentLight();
@@ -2332,8 +2319,11 @@ void FLightingPanel()
                     int typeInt = static_cast<int>(light.type);
                     if (ImGui::Combo("Type", &typeInt, kLightTypeNames, kLightTypeCount))
                     {
-                        light.type = static_cast<FLightType>(typeInt);
-                        lightChanged = true;
+                        if (typeInt != 0) // No more than 1 env light, which is always #0
+                        {
+                            light.type = static_cast<FLightType>(typeInt);
+                            lightChanged = true;
+                        }
                     }
                 }
 
@@ -2376,11 +2366,6 @@ void FLightingPanel()
                                      light.type == FLightType::Disk || light.type == FLightType::Rect);
                 if (hasDirection)
                 {
-                    // Decompose quaternion -> Euler yaw/pitch (YXZ intrinsic order).
-                    // Convention: default forward is (0,0,-1), Y-up.
-                    // rotation = rotateY(yaw) * rotateX(pitch)
-                    // Extract pitch and yaw directly from the quaternion to avoid
-                    // direction-vector round-trip instabilities at the poles.
                     float sinP = 2.0f *
                         (light.transform.rotation.w * light.transform.rotation.x -
                          light.transform.rotation.y * light.transform.rotation.z);
@@ -2749,7 +2734,6 @@ void FRunningImGui()
     ImGui::End();
     ImGui::PopStyleColor();
     FLightingPanel();
-    FAnimationPanel();
     DrawInstanceGizmos();
     DrawViewportSelectionContextMenu();
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
@@ -2917,8 +2901,7 @@ void FRunningImGui()
                         completedSamples, samplesPerSec, frameCount, sFramesPerSec);
             // Auto-Pause sample limit slider. 0 = disabled.
             int limit = GEditor.renderTask.autoPauseSampleLimit;
-            if (ImGui::SliderInt("Auto-Pause Samples", &limit, 0, 65536, limit > 0 ? "%d" : "Off",
-                                 ImGuiSliderFlags_Logarithmic))
+            if (ImGui::SliderInt("Auto-Pause Samples", &limit, 0, 4096, limit > 0 ? "%d" : "Off"))
             {
                 GEditor.renderTask.autoPauseSampleLimit = std::max(0, limit);
                 // Re-arm auto-pause if user raised the limit above current count
@@ -2928,6 +2911,7 @@ void FRunningImGui()
                     GEditor.renderTask.renderAutoPaused = false;
                     GEditor.renderTask.renderPaused = false;
                 }
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::SeparatorText(PSI_BOLT " Path Tracer");
             if (ImModalButton(PSI_CODE " Direct", 0, 4))
@@ -3069,23 +3053,7 @@ void FRunningImGui()
                         gtao.stepCount = static_cast<uint32_t>(steps);
                     ImGui::EndDisabled();
                     ImGui::PopID();
-                }
-                if (ImGui::CollapsingHeader("Motion Blur", ImGuiTreeNodeFlags_DefaultOpen))
-                {
-                    ImGui::PushID("MotionBlur");
-                    changed |= ImGui::Checkbox("Enable Motion Blur", &GEditor.rasterMotionBlur);
-                    ImGui::BeginDisabled(!GEditor.rasterMotionBlur);
-                    RasterMotionBlurConfig& mb = GEditor.rasterMotionBlurConfig;
-                    ImGui::SliderFloat("Intensity", &mb.intensity, 0.0f, 32.0f, "%.2f");
-                    int samples = static_cast<int>(mb.sampleCount);
-                    if (ImGui::SliderInt("Sample Count", &samples, 2, 32))
-                        mb.sampleCount = static_cast<uint32_t>(std::max(2, samples));
-                    ImGui::SliderFloat("Maximum Velocity", &mb.maximumVelocity, 1.0f, 1500.0f, "%.0f px");
-                    ImGui::SliderFloat("Minimum Velocity", &mb.minimumVelocity, 0.0f, 64.0f, "%.1f px");
-                    ImGui::SliderFloat("Depth Comparison Extent", &mb.depthComparisonExtent, 0.0f, 20.0f, "%.2f");
-                    ImGui::EndDisabled();
-                    ImGui::PopID();
-                }
+                }                
             }
             if ((GEditor.rendererConfig.viewFlags & kViewMatcap) != 0u)
             {

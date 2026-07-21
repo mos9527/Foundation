@@ -3,6 +3,12 @@
 #include <cfloat>
 
 using namespace Foundation::Math;
+struct FTransform
+{
+    float3 transform;
+    quat rotation;
+    float3 scale;
+};
 
 struct FSerializedBounds
 {

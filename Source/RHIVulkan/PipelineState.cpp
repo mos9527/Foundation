@@ -384,7 +384,7 @@ void VulkanPipelineState::InitializeRayTracing()
     {
         if (shader.desc.stage & RHIShaderStageBits::RayGeneration)
         {
-            CHECK_MSG(!rayGenShader, "Only one ray generation shader can be specified per ray tracing pipeline");
+            CHECK_MSG(!rayGenShader, "Only one ray version shader can be specified per ray tracing pipeline");
             rayGenShader = &shader;
         }
         else if (shader.desc.stage & RHIShaderStageBits::RayMiss)
@@ -393,7 +393,7 @@ void VulkanPipelineState::InitializeRayTracing()
             RHIShaderStageBits::RayIntersection))
             hitShaders.push_back(&shader);
     }
-    CHECK_MSG(rayGenShader, "One ray generation shader must be specified per ray tracing pipeline");
+    CHECK_MSG(rayGenShader, "One ray version shader must be specified per ray tracing pipeline");
     Vector<vk::PipelineShaderStageCreateInfo> stages(alloc.Ptr());
     Vector<vk::RayTracingShaderGroupCreateInfoKHR> groups(alloc.Ptr());
     // This is incredibly obtuse.

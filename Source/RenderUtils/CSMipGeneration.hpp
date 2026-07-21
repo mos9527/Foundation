@@ -117,8 +117,8 @@ namespace Foundation::RenderUtils
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstants));
                 r->BindTextureSampler(self, srcSampler, "srcSampler");
                 r->BindBufferUnordered(self, SpdCounter, RHIPipelineStageBits::ComputeShader, "spdGlobalAtomic");
-                CHECK_MSG(numMips <= 12, "Single Pass CS Mip generation supports up to 12 mips.");
-                CHECK_MSG(numMips > 1, "Single Pass CS Mip generation requires at least 2 mips.");
+                CHECK_MSG(numMips <= 12, "Single Pass CS Mip version supports up to 12 mips.");
+                CHECK_MSG(numMips > 1, "Single Pass CS Mip version requires at least 2 mips.");
                 r->BindTextureSRV(self, src, "imgSrc", RHIPipelineStageBits::ComputeShader,
                                   {
                                       .format = srcFormat,

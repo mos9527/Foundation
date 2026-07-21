@@ -106,16 +106,6 @@ struct FSerializedMesh
     FBlobRef dagMeshlets;
     FBlobRef dagMeshletTri;
     FBlobRef dagMeshletVtx;
-    // Optional CPU skinning data: per-vertex @ref FSkinBinding (count == vertexCount when present)
-    // plus the id of the bound skeleton (kNilUUID = not skinned).
-    // Skinned meshes carry no DAG/meshlets (they take the dynamic vertex/index path).
-    FBlobRef skinBinding;
-    FUUID skeleton{};
-    // Optional morph-target POSITION deltas (target-major: target t, vertex v at t*vertexCount + v)
-    // and the target count. Only present when a clip's morph channel drives this mesh's weights
-    // (morphTargetCount == 0 otherwise); such meshes take the dynamic vertex/index path.
-    FBlobRef morphPositions;
-    uint32_t morphTargetCount{0};
 
     explicit FSerializedMesh(Allocator* alloc = GLOBAL_ALLOC)
         : lods(alloc)
@@ -126,10 +116,7 @@ struct FSerializedMesh
 struct FImportedMesh
 {
     Vector<FVertex> vertices; // Full precision, raw vertices. Used by importers.
-    Vector<FQVertex> verticesQuantized; // Quantized vertex data for GPU upload.
-    Vector<FSkinBinding> skin; // Optional CPU skin binding, parallel to @ref vertices (empty if not skinned).
-    Vector<float3> morphPositions; // Optional morph POSITION deltas, target-major (t*vertexCount + v).
-    uint32_t morphTargetCount{0};
+    Vector<FQVertex> verticesQuantized; // Quantized vertex data for GPU upload.    
     struct LOD
     {
         Vector<uint32_t> indices; // Full precision triangle indices

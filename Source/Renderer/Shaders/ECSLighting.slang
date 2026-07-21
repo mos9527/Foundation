@@ -38,22 +38,13 @@ bool shadow(float3 p, float3 l, float tMax = INF)
 
 float EnvLightAzimuth()
 {
-    for (uint li = 0; li < globalParams.numSceneLights; li++) {
-        GSLight gl = lights[globalParams.firstLight + li];
-        if (GSLightType(gl) == 5u)
-            return gl.params.x / 180.0f * Pi;
-    }
-    return 0.0f;
+    return lights[globalParams.firstLight].params.x / 180.0f * Pi;
 }
 
 float3 EnvLightTint()
 {
-    for (uint li = 0; li < globalParams.numSceneLights; li++) {
-        GSLight gl = lights[globalParams.firstLight + li];
-        if (GSLightType(gl) == 5u)
-            return gl.color * gl.power;
-    }
-    return float3(0.0f);
+    GSLight gl = lights[globalParams.firstLight];
+    return gl.color * gl.power;
 }
 
 float ReflectionMipFromRoughness(float roughness, uint32_t numMips)
@@ -79,7 +70,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
     if (ndcDepth <= EPS) {
         diffuseOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         float3 envLight = EnvLightTint();
-        if (globalParams.hasEnvMap != 0u) {
+        if (globalParams.hasEnvMap != 0u && GSLightHasFlag(lights[globalParams.firstLight], kGSLightFlagEnvironmentMap)) {
             float2 uvNdc = (tid.xy + 0.5f) / float2(globalParams.fbWidth, globalParams.fbHeight);
             float4 ndcFar = float4(uvNdc.x * 2.0f - 1.0f, 1.0f - uvNdc.y * 2.0f, 1.0f, 1.0f);
             float4 wsFar = mul(globalParams.inverseViewProj, ndcFar);
@@ -151,13 +142,13 @@ void main(uint2 tid: SV_DispatchThreadID) {
             uint32_t lightType = GSLightType(gl);
             float3 lightColor = gl.color * gl.power;
             if (!any(lightColor > 0.0f)) continue;
-            if (lightType == 5) // Environment: handled as IBL below.
+            if (lightType == kGSLightTypeEnvironment) // Environment: handled as IBL below.
                 continue;
 
             float3 l;
             float atten = 1.0f;
             float lightDist = INF;
-            if (lightType == 0) { // Directional
+            if (lightType == kGSLightTypeDirectional) { // Directional
                 l = -gl.direction;
             } else { // Point or Spot
                 float3 toLight = gl.position - p;
@@ -167,7 +158,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
                 l = toLight / dist;
                 lightDist = dist;
                 atten = 1.0f / dist2;
-                if (lightType == 2) { // Spot
+                if (lightType == kGSLightTypeSpot) { // Spot
                     float cosTheta = dot(gl.direction, -l);
                     if (cosTheta < gl.params.z) continue;
                     if (cosTheta < gl.params.y) {
@@ -183,7 +174,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
             bsdf.f(wo, wi, TransportMode::Radiance, fd, fs);
             float vis = 1.0f;
             if ((flags & kEnableRasterRTShadows) != 0 && GSLightHasFlag(gl, kGSLightFlagUseShadow)) {
-                if (lightType <= 2 /* Anything not area lights */) {
+                if (lightType < kGSLightTypeDisk /* Anything not area lights */) {
                     float3 shadowNormalFF = dot(l, normalWS) < 0.0f ? -normalWS : normalWS;
                     float3 shadowOrigin = OffsetRay(
                         p + shadowNormalFF * globalParams.rasterRTShadowBias, shadowNormalFF);

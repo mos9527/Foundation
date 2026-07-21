@@ -439,7 +439,7 @@ RHI::vkAccelerationBuildRangeInfoFromRHI(RHIAccelerationStructureBuildRangeInfo 
 {
     return vk::AccelerationStructureBuildRangeInfoKHR{
         .primitiveCount = desc.primitiveCount,
-        .primitiveOffset = desc.primitiveOffset,
+        .primitiveOffset = desc.offset,
         .firstVertex = desc.firstVertex,
         .transformOffset = desc.transformOffset,
     };

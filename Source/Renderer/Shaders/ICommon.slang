@@ -88,16 +88,16 @@ public struct MIndex {
     public uint8_t v1;
     public uint8_t v2;
 }
-// GSInstance.type packs the geometry kind in the low byte and feature flags above it.
+
 public static const uint32_t kGSInstanceTypeMask = 0xFFu;
-public static const uint32_t kGSInstanceFlagDynamic = 0x100u; // CPU-updateable geometry: read positions from `dynamicPrimitives`
+public static const uint32_t kGSInstanceFlagDynamic = 0x100u;
 public static const uint32_t kGSLightTypeMask = 0xFFu;
-public static const uint32_t kGSLightTypeDirectional = 0u;
-public static const uint32_t kGSLightTypePoint = 1u;
-public static const uint32_t kGSLightTypeSpot = 2u;
-public static const uint32_t kGSLightTypeDisk = 3u;
-public static const uint32_t kGSLightTypeRect = 4u;
-public static const uint32_t kGSLightTypeEnvironment = 5u;
+public static const uint32_t kGSLightTypeEnvironment = 0u;
+public static const uint32_t kGSLightTypeDirectional = 1u;
+public static const uint32_t kGSLightTypePoint = 2u;
+public static const uint32_t kGSLightTypeSpot = 3u;
+public static const uint32_t kGSLightTypeDisk = 4u;
+public static const uint32_t kGSLightTypeRect = 5u;
 public static const uint32_t kGSLightFlagTwoSided = 0x100u;
 public static const uint32_t kGSLightFlagUseShadow = 0x200u;
 public static const uint32_t kGSLightFlagEnvironmentMap = 0x400u;
@@ -113,19 +113,11 @@ public struct GSInstance
     public uint32_t materialIndex; // In Material buffer (offset)
     public uint32_t resourceIndex; // Debug use
     public uint32_t type; // [7:0] 0=Mesh, 1=Curve; bit 8 = dynamic (see kGSInstanceFlag*)
-    // Previous-frame object state for motion vectors (same camera; object/deform motion only).
-    public float3 prevTransform;
-    public quat prevRotation;
-    public float3 prevScale;
-    public uint32_t prevResourceOffset;
-    // Set to the commit frame when this instance contributes motion; otherwise 0xFFFFFFFFu.
-    public uint32_t motionFrame;
 };
 // Geometry kind (mesh/curve), ignoring feature flags.
 public uint32_t GSInstanceType(GSInstance i) { return i.type & kGSInstanceTypeMask; }
 // True when the instance's primitive data lives in the dynamic (CPU-updateable) ring buffer.
 public bool GSInstanceIsDynamic(GSInstance i) { return (i.type & kGSInstanceFlagDynamic) != 0u; }
-public bool GSInstanceHasMotion(GSInstance i, uint32_t frame) { return i.motionFrame == frame; }
 public struct GSCurveSet
 {
     public uint32_t vtxOffset;
@@ -315,7 +307,6 @@ public struct UBO
     public uint32_t lightBVHValid;
     public uint32_t firstLightBVHDistantNode;
     public uint32_t numLightBVHDistantNodes;
-    public uint32_t numSunDiskLights;
     public uint32_t energyCompensation;
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;

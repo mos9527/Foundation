@@ -35,10 +35,7 @@ void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResourc
     for (FSerializedMesh const& mesh : scene.GetMeshes())
     {
         GeometryHandle handle;
-        // Deforming (skinned/morphed) meshes upload as dynamic geometry (Ready synchronously);
-        // everything else streams in through the upload worker (InProgress).
-        bool const dynamic = mesh.skinBinding.count != 0 || mesh.morphTargetCount != 0;
-        GPUScene::Result r = dynamic ? gpu.UploadDynamic(&blobs, mesh, handle) : gpu.Upload(&blobs, mesh, handle);
+        GPUScene::Result r = gpu.Upload(&blobs, mesh, handle);
         CHECK_MSG(r == GPUScene::Result::InProgress || r == GPUScene::Result::Ready, "Mesh upload rejected ({})",
                   static_cast<int>(r));
         outResources.meshGeometry.push_back(handle);
@@ -123,7 +120,7 @@ void UploadSceneEnvironment(FImportedScene const& scene, FLight const& environme
     FTexture environmentTexture = ReadSceneTexture(scene, environmentTextureDesc, &environmentAlloc);
     CHECK_MSG(environmentTexture.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat,
               "Scene environment texture must be RGBA32F, got {}", environmentTexture.GetFormat());
-    GPUScene::Result r = gpu.UploadEnvMap(environmentTexture);
+    GPUScene::Result r = gpu.UploadEnvironmentMap(environmentTexture);
     CHECK_MSG(r == GPUScene::Result::Ready, "Environment map upload rejected ({})", static_cast<int>(r));
 }
 
@@ -280,12 +277,13 @@ GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FS
             CHECK_MSG(false, "Unknown scene instance type {}", static_cast<uint32_t>(src.type));
         auto matIt = resources.materialById.find(src.material);
         CHECK_MSG(matIt != resources.materialById.end(), "Instance references unknown material id");
-        tables.instances[i] = InstanceDesc{
-            .geometry = geometry,
+        tables.instances[i] = {            
             .transform = src.transform.transform,
             .rotation = src.transform.rotation,
             .scale = src.transform.scale,
             .materialIndex = matIt->second,
+            .resourceIndex = geometry.index
+            // ^^ Assign only resource index *here* so later EndScene resolves it            
         };
     }
     for (size_t i = 0; i < materials.size(); ++i)
@@ -295,6 +293,6 @@ GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FS
 
     uint32_t const motionFrame = frameNumber != UINT32_MAX ? frameNumber : globals.frameNumber;
     GPUScene::UpdateResult result = gpu.EndScene(tables, motionFrame);
-    gpu.BuildUBO(globals);
+    gpu.UpdateUBO(globals);
     return result;
 }

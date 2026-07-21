@@ -365,8 +365,6 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
     size_t rasterEffectCount = 0;
     if (GEditor.rasterGTAO)
         sEditorRasterEffects[rasterEffectCount++] = MakeRasterGTAOEffect(&GEditor.rasterGTAOConfig);
-    if (GEditor.rasterMotionBlur)
-        sEditorRasterEffects[rasterEffectCount++] = MakeRasterMotionBlurEffect(&GEditor.rasterMotionBlurConfig);
     GEditor.rendererConfig.rasterEffects = Span<const RasterEffect>(sEditorRasterEffects, rasterEffectCount);
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
     if (GEditor.rendererMode == ERendererMode::PathTracer)
@@ -383,8 +381,6 @@ static void FInitEnter()
     // while it streams in). If no file installs a scene, fall back to the no-scene branch.
     for (size_t i = 0; i < GContext->files.size(); i++)
         HandleFile(GContext->files[i]);
-    // Startup file opens are not inside a renderer execute frame, so drain the queue now.
-    PumpDeferredSceneLoad();
     // Handle Renderer Settings passed from context (cmd lines)
     GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride;
     GEditor.rendererMode = static_cast<ERendererMode>(GContext->rendererSettings.defaultRenderer);
@@ -467,11 +463,6 @@ static void FRunning()
     }
     // Global param update
     float dt = ImGui::GetIO().DeltaTime;
-    // Decide before BeginAnimationUpdate, which clears the scrub flag this query reads.
-    bool const followAnimatedCamera = AnimatedCameraDrivesView();
-    // Kick the per-skeleton pose evaluation now so it overlaps the camera/UBO globals update below.
-    // EndAnimationUpdate (further down) waits for it before skinning + committing the scene.
-    BeginAnimationUpdate(dt);
     RHIExtent2D displayExtent = ClampViewportExtent(GEditor.viewport.renderExtent);
     // Apply render resolution scale for internal render targets
     RHIExtent2D renderExtent = {
@@ -480,9 +471,6 @@ static void FRunning()
     };
     GEditor.camera.aspect = static_cast<float>(displayExtent.x) / static_cast<float>(displayExtent.y);
     GEditor.cameraUpdated |= GEditor.camera.UpdateMovement(dt);
-    // An animated scene camera overrides user navigation while it's playing/scrubbing.
-    if (followAnimatedCamera)
-        GEditor.cameraUpdated |= ApplyAnimatedCameraToView();
     GEditor.camera.Update({});
     UpdateRendererCameraUBO(GEditor.shaderGlobals, renderer->GetFrame(), GEditor.camera.view, GEditor.camera.proj);
     GEditor.shaderGlobals.zNear = GEditor.camera.zNear;
@@ -494,24 +482,11 @@ static void FRunning()
         ? ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm * 1e-3f,
                                   GEditor.camera.fovY)
         : 0.0f;
-    // UBO fbWidth/fbHeight are renderer-owned: stamped from cfg.renderExtent by the PT/RASTER UBO update pass.
     GEditor.shaderGlobals.dbgViewFlags = GEditor.rendererConfig.viewFlags;
     GEditor.shaderGlobals.dbgMaterialFlags = GEditor.rendererConfig.materialFlags;
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
     GEditor.shaderGlobals.ptPrimaryLightVisibility = GEditor.rendererConfig.ptPrimaryLightVisibility ? 1u : 0u;
 
-    // Skinned animation playback: wait for the scheduled poses, apply rigid transforms + CPU-skin
-    // into the dynamic ring, then re-author the scene so dynamic instances encode the current ring
-    // slot (the graph's BLAS Update pass refits them). Paused/held poses skip this so the path
-    // tracer keeps accumulating.
-    if (EndAnimationUpdate())
-        CommitSceneToGPU(true);
-
-    // -- AutoPause: any "user operation" exits AutoPaused. We define a user operation
-    //    as anything that resets the path-tracer accumulation, which covers camera
-    //    movement (cameraUpdated) and any UI control change that sets
-    //    ptAccumulatedFrames = 0 (PT settings, light edits, etc.). A drop in
-    //    ptAccumulatedFrames since the last frame is the canonical signal.
     static uint32_t sPrevPTAccumulatedFrames = 0u;
     bool ptAccumWasReset = GEditor.shaderGlobals.ptAccumulatedFrames < sPrevPTAccumulatedFrames;
     bool userOperation = GEditor.cameraUpdated || ptAccumWasReset;
@@ -793,9 +768,9 @@ bool EditorProcessEvent(SDL_Event* event)
 bool EditorOnFrame(FContext* context)
 {
     ResetEditorFrameScratch(context);
-    PumpDeferredSceneLoad();
+    CheckDeferredSceneLoad();
     // Finalize/install any scene whose background upload finished this frame.
-    PumpSceneLoad();
+    PollSceneLoad();
     switch (GEditor.state)
     {
     case FEInitEnter:

@@ -1436,18 +1436,19 @@ void AddEnvironmentMiss(
     float3 Le = lighting.env.Le(wi);
     float pdf = EvalLightSelectionPMF(lighting.lastLightCtx, 0u) *
         lighting.env.PDF_Li(lighting.lastLightCtx, wi, true);
-
-    // Sorted after EndScene: lights[1 .. 1+numSunDiskLights) are non-delta directionals.
-    for (uint i = 0u; i < globalParams.numSunDiskLights; ++i)
+    // These are sorted so that env light is #0 and non-delta directionals (if any) come first
+    // Add contributions from sun disk misses
+    for (uint i = 1u; i < globalParams.numSceneLights; ++i)
     {
-        uint lightIndex = 1u + i;
-        GSLight gl = LoadSceneLight(lightIndex);
+        GSLight gl = LoadSceneLight(i);
+        if (gl.flags & kGSLightTypeMask != kGSLightTypeDirectional || gl.params.x <= 0.0f)
+            break;
         DistantLight sun = DistantLight(SampledSpectrum(gl.color * gl.power), gl.direction, gl.params.x);
         float3 sunLe = sun.Le(wi);
         if (!any(sunLe > 0.0f))
             continue;
 
-        float pSel = EvalLightSelectionPMF(lighting.lastLightCtx, lightIndex);
+        float pSel = EvalLightSelectionPMF(lighting.lastLightCtx, i);
         pdf += pSel * sun.PDF_Li(lighting.lastLightCtx, wi, true);
         if (bounce > 0 || globalParams.ptPrimaryLightVisibility != 0u)
             Le += sunLe;

@@ -312,7 +312,7 @@ namespace Foundation::RHI
     struct RHIAccelerationStructureBuildRangeInfo
     {
         uint32_t primitiveCount;
-        uint32_t primitiveOffset;
+        uint32_t offset;
         uint32_t firstVertex;
         uint32_t transformOffset;
     };

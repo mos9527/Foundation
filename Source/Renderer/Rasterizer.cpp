@@ -116,18 +116,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
         renderer->CreateResource("Indirect Draw MS Dispatch",
                                  RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
                                                .size = sizeof(MeshletTaskDispatch)});
-    // Motion-vector meshlet lists: cleared once per frame (accumulate across early/late cull).
-    auto MotionMeshlets =
-        renderer->CreateResource("Motion Meshlet Buffer",
-                                 RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                                               .size = 2 * sizeof(int) * kMaxMeshletCount});
-    auto MotionMeshletCounter = renderer->CreateResource(
-        "Motion Meshlet Counter",
-        RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(int)});
-    auto MotionMeshletDispatch =
-        renderer->CreateResource("Motion Meshlet Dispatch",
-                                 RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                                               .size = sizeof(MeshletTaskDispatch)});
     // We pack meshlet visibility in uint32 bitmaps
     auto Visibility =
         renderer->CreateResource("Visibility Buffer",
@@ -315,15 +303,11 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 {
                     r->BindBufferCopyDst(self, IndirectMeshletCounter);
                     r->BindBufferCopyDst(self, IndirectMeshletDispatch);
-                    r->BindBufferCopyDst(self, MotionMeshletCounter);
-                    r->BindBufferCopyDst(self, MotionMeshletDispatch);
                 },
                 [=](PassHandle, Renderer* r, RHICommandList* cmd)
                 {
                     cmd->FillBuffer(r->DerefResource(IndirectMeshletCounter).Get<RHIBuffer*>(), 0u);
                     cmd->FillBuffer(r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>(), 0u);
-                    cmd->FillBuffer(r->DerefResource(MotionMeshletCounter).Get<RHIBuffer*>(), 0u);
-                    cmd->FillBuffer(r->DerefResource(MotionMeshletDispatch).Get<RHIBuffer*>(), 0u);
                 });
             renderer->CreatePass(
                 early ? "Indirect Meshlet Cull Dispatch [Stage 1]" : "Indirect Meshlet Cull Dispatch [Stage 2]",
@@ -347,12 +331,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                     r->BindBufferUnordered(self, IndirectMeshletCounter, RHIPipelineStageBits::ComputeShader, "outMeshletCounter");
                     r->BindBufferUnordered(self, IndirectMeshlets, RHIPipelineStageBits::ComputeShader, "outMeshletIndices");
                     r->BindBufferUnordered(self, IndirectMeshletDispatch, RHIPipelineStageBits::ComputeShader, "outMeshletDispatches");
-                    r->BindBufferUnordered(self, MotionMeshletCounter, RHIPipelineStageBits::ComputeShader,
-                                           "outMotionMeshletCounter");
-                    r->BindBufferUnordered(self, MotionMeshlets, RHIPipelineStageBits::ComputeShader,
-                                           "outMotionMeshletIndices");
-                    r->BindBufferUnordered(self, MotionMeshletDispatch, RHIPipelineStageBits::ComputeShader,
-                                           "outMotionMeshletDispatches");
                     r->BindTextureSampler(self, HIZSampler, "hizSampler");
                     r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
@@ -706,131 +684,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {w, h, 1});
         });
-    /* Moved objects overwrite camera vectors with combined camera/object motion. */
-    {
-        using DepthStencil = RHIPipelineState::PipelineStateDesc::DepthStencil;
-        DepthStencil const motionDepth{.depthTest = true,
-                                       .depthWrite = false,
-                                       .depthCompareOp = DepthStencil::Equal};
-        renderer->CreatePass(
-            "Motion Vectors [Static]", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindShader(self, RHIShaderStageBits::Mesh, "main",
-                              PathsResolve("Data/Shaders/EMSMotionVector.spv"));
-                r->BindShader(self, RHIShaderStageBits::Fragment, "main",
-                              PathsResolve("Data/Shaders/EPSMotionVector.spv"));
-                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
-                r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
-                r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
-                r->BindBufferStorageRead(self, MotionMeshletCounter, RHIPipelineStageBits::AllGraphics,
-                                         "inMeshletCounter");
-                r->BindBufferStorageRead(self, MotionMeshlets, RHIPipelineStageBits::AllGraphics, "inMeshletIndices");
-                r->BindTextureRTV(self, MotionVectorRT,
-                                  {.format = RHIResourceFormat::R16G16SignedFloat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureDSV(self, Depth,
-                                  {.format = RHIResourceFormat::D32SignedFloat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)}, true);
-                r->BindBufferIndirectRead(self, MotionMeshletDispatch);
-                r->PassSetRasterizerFlags(self, {}, motionDepth);
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                RHIExtent2D wh{w, h};
-                r->CmdBeginGraphics(self, cmd, wh, {{{RHIAttachmentLoadOp::Load}}}, {RHIAttachmentLoadOp::Load});
-                r->CmdSetPipeline(self, cmd);
-                cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-                auto* dispatchBuffer = r->DerefResource(MotionMeshletDispatch).Get<RHIBuffer*>();
-                cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
-                cmd->EndGraphics();
-            });
-        if (gpu->HasDynamicGeometry())
-        {
-            auto motionCmds = DynamicMotionDrawCmds;
-            auto motionCount = DynamicMotionDrawCount;
-            auto motionIDs = DynamicMotionDrawInstanceIDs;
-            renderer->CreatePass(
-                "Motion Vectors [Dynamic]", RHIDeviceQueueType::Graphics, 0u,
-                [=](PassHandle self, Renderer* r)
-                {
-                    r->BindShader(self, RHIShaderStageBits::Vertex, "main",
-                                  PathsResolve("Data/Shaders/EVSMotionDraw.spv"));
-                    r->BindShader(self, RHIShaderStageBits::Fragment, "main",
-                                  PathsResolve("Data/Shaders/EPSMotionVector.spv"));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
-                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
-                    r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::AllGraphics,
-                                             "dynamicPrimitives");
-                    r->BindBufferStorageRead(self, motionIDs, RHIPipelineStageBits::AllGraphics, "drawInstanceIDs");
-                    r->BindTextureRTV(self, MotionVectorRT,
-                                      {.format = RHIResourceFormat::R16G16SignedFloat,
-                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureDSV(self, Depth,
-                                      {.format = RHIResourceFormat::D32SignedFloat,
-                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)}, true);
-                    r->BindBufferIndirectRead(self, motionCmds);
-                    r->BindBufferIndirectRead(self, motionCount);
-                    r->PassSetRasterizerFlags(self, {}, motionDepth);
-                },
-                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-                {
-                    RHIExtent2D wh{w, h};
-                    r->CmdBeginGraphics(self, cmd, wh, {{{RHIAttachmentLoadOp::Load}}}, {RHIAttachmentLoadOp::Load});
-                    r->CmdSetPipeline(self, cmd);
-                    cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-                    cmd->BindIndexBuffer(gpu->GetDynamicPrimitiveBuffer(), 0, RHIResourceFormat::R32Uint);
-                    auto* cmds = r->DerefResource(motionCmds).Get<RHIBuffer*>();
-                    auto* count = r->DerefResource(motionCount).Get<RHIBuffer*>();
-                    cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxDynamicDraws,
-                                                  sizeof(DrawIndexedIndirectCommand));
-                    cmd->EndGraphics();
-                });
-        }
-        if (gpu->HasCurveGeometry())
-        {
-            auto motionCmds = CurveMotionDrawCmds;
-            auto motionCount = CurveMotionDrawCount;
-            auto motionIDs = CurveMotionDrawInstanceIDs;
-            using RasterizerState = RHIPipelineState::PipelineStateDesc::Rasterizer;
-            RasterizerState const curveRaster{.cullMode = RasterizerState::CullNone};
-            renderer->CreatePass(
-                "Motion Vectors [Curves]", RHIDeviceQueueType::Graphics, 0u,
-                [=](PassHandle self, Renderer* r)
-                {
-                    r->BindShader(self, RHIShaderStageBits::Vertex, "main",
-                                  PathsResolve("Data/Shaders/EVSCurveMotionDraw.spv"));
-                    r->BindShader(self, RHIShaderStageBits::Fragment, "main",
-                                  PathsResolve("Data/Shaders/EPSMotionVector.spv"));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
-                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
-                    r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
-                    r->BindBufferStorageRead(self, motionIDs, RHIPipelineStageBits::AllGraphics, "drawInstanceIDs");
-                    r->BindTextureRTV(self, MotionVectorRT,
-                                      {.format = RHIResourceFormat::R16G16SignedFloat,
-                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureDSV(self, Depth,
-                                      {.format = RHIResourceFormat::D32SignedFloat,
-                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)}, true);
-                    r->BindBufferIndirectRead(self, motionCmds);
-                    r->BindBufferIndirectRead(self, motionCount);
-                    r->PassSetRasterizerFlags(self, curveRaster, motionDepth);
-                },
-                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-                {
-                    RHIExtent2D wh{w, h};
-                    r->CmdBeginGraphics(self, cmd, wh, {{{RHIAttachmentLoadOp::Load}}}, {RHIAttachmentLoadOp::Load});
-                    r->CmdSetPipeline(self, cmd);
-                    cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-                    cmd->BindIndexBuffer(gpu->GetPrimitiveBuffer(), 0, RHIResourceFormat::R32Uint);
-                    auto* cmds = r->DerefResource(motionCmds).Get<RHIBuffer*>();
-                    auto* count = r->DerefResource(motionCount).Get<RHIBuffer*>();
-                    cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxCurveDraws,
-                                                  sizeof(DrawIndexedIndirectCommand));
-                    cmd->EndGraphics();
-                });
-        }
-    }
     if (cfg.viewFlags & kViewOverdraw)
     {
         renderer->CreatePass(
@@ -1008,5 +861,4 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
     out.depth = Depth;
     out.debugOutput = DebugOutput;
     out.instanceID = InstanceIDBuffer;
-    out.motionVectors = MotionVectorRT;
 }
