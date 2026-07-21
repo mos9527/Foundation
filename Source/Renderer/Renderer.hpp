@@ -1,6 +1,7 @@
 #pragma once
 #include <Math/Math.hpp>
 #include <RenderCore/RenderPass.hpp>
+#include "GPUScene.hpp"
 using namespace Foundation;
 using namespace Foundation::Math;
 using namespace Foundation::RenderCore;
@@ -8,10 +9,8 @@ using namespace Foundation::RenderCore;
 struct RendererUBO
 {
     uint32_t frameNumber;
-    uint32_t firstInstance;
-    uint32_t numInstances;
-    uint32_t firstMaterial;
-    uint32_t numMaterials;
+    GSOffsetCount instances;
+    GSOffsetCount materials;
     float lodThreshold{0.005f};
     float zNear;
     float4x4 view;
@@ -53,18 +52,13 @@ struct RendererUBO
     float3 envSHCoeffs[9]{};
     uint32_t matcapTextureIndex{UINT32_MAX};
     // Scene lights
-    uint32_t firstLight{0u};
-    uint32_t numSceneLights{0u};
-    uint32_t firstLightBVHNode{0u};
-    uint32_t numLightBVHNodes{0u};
-    uint32_t firstLightBVHLightIndex{0u};
-    uint32_t numLightBVHLightIndices{0u};
+    GSOffsetCount lights{};
+    GSOffsetCount lightBVHNodes{};
+    GSOffsetCount lightBVHLightIndices{};
     uint32_t firstLightBVHBitmask{0u};
-    uint32_t firstLightBVHGlobalIndex{0u};
-    uint32_t numLightBVHGlobalLights{0u};
+    GSOffsetCount lightBVHGlobalIndices{};
     uint32_t lightBVHValid{0u};
-    uint32_t firstLightBVHDistantNode{0u};
-    uint32_t numLightBVHDistantNodes{0u};
+    GSOffsetCount lightBVHDistantNodes{};
     uint32_t energyCompensation{1u};
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
@@ -155,7 +149,32 @@ inline uint32_t PTPackCompileOptions(uint32_t sampler, bool forceTextureLOD0, ui
     return options;
 }
 
-class GPUScene;
+struct RendererResources
+{
+    GPUScene* scene{nullptr};
+    ResourceHandle primitiveBuffer{kInvalidHandle};
+    ResourceHandle dynamicPrimitiveBuffer{kInvalidHandle};
+    ResourceHandle dynamicStagingBuffer{kInvalidHandle};
+    ResourceHandle instanceBuffer{kInvalidHandle};
+    ResourceHandle materialBuffer{kInvalidHandle};
+    ResourceHandle lightBuffer{kInvalidHandle};
+    ResourceHandle lightBVHNodeBuffer{kInvalidHandle};
+    ResourceHandle lightBVHLightIndexBuffer{kInvalidHandle};
+    ResourceHandle lightBVHBitmaskBuffer{kInvalidHandle};
+    ResourceHandle lightBVHNodeIndexBuffer{kInvalidHandle};
+    ResourceHandle sobolMatricesBuffer{kInvalidHandle};
+    ResourceHandle tlas{kInvalidHandle};
+    BindlessPool* textures2D{nullptr};
+    BindlessPool* textures3D{nullptr};
+    RHIBuffer* primitiveBufferRHI{nullptr};
+    RHIBuffer* dynamicPrimitiveBufferRHI{nullptr};
+    bool hasDynamicGeometry{false};
+    bool hasCurveGeometry{false};
+};
+
+[[nodiscard]] RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* scene);
+void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources const& resources,
+                               ResourceHandle globalUBO, bool buildTLAS);
 
 struct RendererConfig;
 
@@ -261,7 +280,9 @@ struct PostprocessUBO
     uint32_t dbgViewFlags{0u};
 };
 
-extern void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
+extern void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals,
+                                   RendererResources const& gpu,
                                    RendererConfig const& cfg, RendererOutputs& out);
-extern void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
+extern void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals,
+                                       RendererResources const& gpu,
                                        RendererConfig const& cfg, RendererOutputs& out);

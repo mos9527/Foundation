@@ -35,7 +35,7 @@ void main(
         group.meshletID = indices.x;
         group.instance = instances[indices.y];
         group.mesh = primitive.Load<GSMesh>(group.instance.resourceOffset);
-        group.meshlet = primitive.Load<FMeshlet>(group.mesh.meshletOffset + group.meshletID * sizeof(FMeshlet));
+        group.meshlet = primitive.Load<FMeshlet>(group.mesh.meshlets.offset + group.meshletID * sizeof(FMeshlet));
     }
     GroupMemoryBarrierWithGroupSync();
     uint32_t vtxBase = group.mesh.meshletVtxOffset + group.meshlet.vtxOffset * sizeof(uint32_t);
@@ -46,7 +46,7 @@ void main(
     SetMeshOutputCounts(vtxCount, triCount);
     for (uint i = tid; i < vtxCount; i += kMeshWorkGroupSize) {
         uint ind = primitive.Load<uint32_t>(vtxBase + i * sizeof(uint32_t));
-        FQVertex fq = primitive.Load<FQVertex>(group.mesh.vtxOffset + ind * sizeof(FQVertex));
+        FQVertex fq = primitive.Load<FQVertex>(group.mesh.vertices.offset + ind * sizeof(FQVertex));
         float3 position, normal, tangent;
         float2 uv;
         float bitangentSign;

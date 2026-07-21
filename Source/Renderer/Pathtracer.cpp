@@ -4,12 +4,12 @@
 #include <algorithm>
 #include "GPUScene.hpp"
 #include "Renderer.hpp"
-void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
+void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources const& gpu,
                                 RendererConfig const& cfg, RendererOutputs& out)
 {
     CHECK(renderer);
     CHECK(globals);
-    CHECK(gpu);
+    CHECK(gpu.scene);
     CHECK_MSG(renderer->GetDevice()->GetCapabilities().raytracingInline, "Pathtracer requires Ray Query support");
     out = {};
     globals->ptAccumulatedFrames = 0u;
@@ -30,120 +30,24 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
             auto* ubo = r->DerefResource(GlobalUBO).Get<RHIBuffer*>();
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*globals)));
         });
-    CHECK(gpu->GetTLAS() && "Pathtracer requires a TLAS to be built/updated from.");
-    ResourceHandle TLAS = kInvalidHandle;
-    TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
-    renderer->CreatePass(
-        "TLAS/BLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
-        { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-        {
-            if (gpu->HasDynamicGeometry())
-                gpu->BuildBLAS(cmd);
-            (void)gpu->BuildTLAS(cmd, true);
-        });
+    CHECK(gpu.tlas != kInvalidHandle && "Pathtracer requires a TLAS to be built/updated from.");
+    ResourceHandle TLAS = gpu.tlas;
     /* Instance and Primitive buffers */
-    auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
-    auto DynamicPrimitiveBuffer = renderer->CreateResource("Dynamic Primitive Buffer", gpu->GetDynamicPrimitiveBuffer());
-    auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
-    auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
-    auto LightBuffer = renderer->CreateResource("Light Buffer", gpu->GetLightBuffer());
-    auto LightBVHNodeBuffer = renderer->CreateResource("Light BVH Nodes", gpu->GetLightBVHNodeBuffer());
-    auto LightBVHLightIndexBuffer =
-        renderer->CreateResource("Light BVH Light Indices", gpu->GetLightBVHLightIndexBuffer());
-    auto LightBVHBitmaskBuffer = renderer->CreateResource("Light BVH Bitmasks", gpu->GetLightBVHBitmaskBuffer());
-    auto LightBVHNodeIndexBuffer =
-        renderer->CreateResource("Light BVH Node Indices", gpu->GetLightBVHNodeIndexBuffer());
-    auto SobolMatricesBuffer = renderer->CreateResource("Sobol Matrices Buffer", gpu->GetSobolMatricesBuffer());
+    auto PrimitiveBuffer = gpu.primitiveBuffer;
+    auto DynamicPrimitiveBuffer = gpu.dynamicPrimitiveBuffer;
+    auto InstanceBuffer = gpu.instanceBuffer;
+    auto MaterialBuffer = gpu.materialBuffer;
+    auto LightBuffer = gpu.lightBuffer;
+    auto LightBVHNodeBuffer = gpu.lightBVHNodeBuffer;
+    auto LightBVHLightIndexBuffer = gpu.lightBVHLightIndexBuffer;
+    auto LightBVHBitmaskBuffer = gpu.lightBVHBitmaskBuffer;
+    auto LightBVHNodeIndexBuffer = gpu.lightBVHNodeIndexBuffer;
+    auto SobolMatricesBuffer = gpu.sobolMatricesBuffer;
+    BuildGPUSceneUpdatePasses(renderer, gpu, GlobalUBO, true);
     auto TexSampler = renderer->CreateSampler(MakeTextureSamplerDesc(cfg));
     uint32_t w = std::max(renderExtent.x, 1u);
     uint32_t h = std::max(renderExtent.y, 1u);
     constexpr RHIResourceFormat kPathTracerAOVFormat = RHIResourceFormat::R32G32B32A32SignedFloat;
-
-    struct LightBVHRefitPush
-    {
-        uint32_t firstNodeOffset;
-        uint32_t nodeCount;
-    };
-
-    renderer->CreatePass(
-        "Light BVH Refit Leaves", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
-            r->BindBufferUnordered(self, LightBVHNodeBuffer, RHIPipelineStageBits::ComputeShader, "lightBVHNodes");
-            r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, RHIPipelineStageBits::ComputeShader,
-                                     "lightBVHLightIndices");
-            r->BindBufferStorageRead(self, LightBVHNodeIndexBuffer, RHIPipelineStageBits::ComputeShader,
-                                     "gNodeIndices");
-            r->BindShader(self, RHIShaderStageBits::Compute, "updateLeafNodes",
-                          PathsResolve("Data/Shaders/ECSLightBVHRefit.spv"));
-            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(LightBVHRefitPush));
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            if (!gpu->NeedsLightBVHRefit())
-                return;
-            uint32_t levels = gpu->GetLightBVHRefitLevelCount();
-            if (levels == 0u)
-                return;
-            uint32_t leafLevel = levels - 1u;
-            uint32_t count = gpu->GetLightBVHRefitLevelNodeCount(leafLevel);
-            if (count == 0u)
-                return;
-            LightBVHRefitPush pc{gpu->GetLightBVHFirstNodeIndex() + gpu->GetLightBVHRefitLevelOffset(leafLevel),
-                                 count};
-            r->CmdSetPipeline(self, cmd);
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
-            cmd->Dispatch((count + 255u) / 256u, 1, 1);
-        });
-
-    renderer->CreatePass(
-        "Light BVH Refit Internals", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
-            r->BindBufferUnordered(self, LightBVHNodeBuffer, RHIPipelineStageBits::ComputeShader, "lightBVHNodes");
-            r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, RHIPipelineStageBits::ComputeShader,
-                                     "lightBVHLightIndices");
-            r->BindBufferStorageRead(self, LightBVHNodeIndexBuffer, RHIPipelineStageBits::ComputeShader,
-                                     "gNodeIndices");
-            r->BindShader(self, RHIShaderStageBits::Compute, "updateInternalNodes",
-                          PathsResolve("Data/Shaders/ECSLightBVHRefit.spv"));
-            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(LightBVHRefitPush));
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            if (!gpu->NeedsLightBVHRefit())
-                return;
-            uint32_t levels = gpu->GetLightBVHRefitLevelCount();
-            if (levels < 2u)
-                return;
-            r->CmdSetPipeline(self, cmd);
-            for (int level = static_cast<int>(levels) - 2; level >= 0; --level)
-            {
-                uint32_t count = gpu->GetLightBVHRefitLevelNodeCount(static_cast<uint32_t>(level));
-                if (count == 0u)
-                    continue;
-                LightBVHRefitPush pc{
-                    gpu->GetLightBVHFirstNodeIndex() + gpu->GetLightBVHRefitLevelOffset(static_cast<uint32_t>(level)),
-                    count};
-                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
-                cmd->Dispatch((count + 255u) / 256u, 1, 1);
-                if (level > 0)
-                {
-                    cmd->BeginTransition();
-                    cmd->SetBufferTransition(
-                        gpu->GetLightBVHNodeBuffer(),
-                        {.srcAccess = RHIResourceAccessBits::ShaderWrite,
-                         .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
-                         .srcStage = RHIPipelineStageBits::ComputeShader,
-                         .dstStage = RHIPipelineStageBits::ComputeShader});
-                    cmd->EndTransition();
-                }
-            }
-        });
 
     // AOV buffers
     auto Diffuse = renderer->CreateResource("Diffuse",
@@ -241,14 +145,14 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, GPUSce
                           RHITextureViewDesc{.format = kPathTracerAOVFormat,
                                              .range = RHITextureSubresourceRange::Create()});
         r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
-        r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
-        r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
+        r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());
+        r->BindDescriptorSet(self, "textures3D", gpu.textures3D->GetDescriptorSetLayout());
     },
     [=](PassHandle self, Renderer* r, RHICommandList* cmd)
     {
         r->CmdSetPipeline(self, cmd);
-        r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
-        r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());
+        r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
+        r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu.textures3D->GetDescriptorSet());
         bool canTrace = (!cfg.ptRenderPaused || !*cfg.ptRenderPaused);
         if (canTrace)
         {

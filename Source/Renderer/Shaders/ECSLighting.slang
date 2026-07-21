@@ -38,12 +38,12 @@ bool shadow(float3 p, float3 l, float tMax = INF)
 
 float EnvLightAzimuth()
 {
-    return lights[globalParams.firstLight].params.x / 180.0f * Pi;
+    return lights[globalParams.lights.offset].params.x / 180.0f * Pi;
 }
 
 float3 EnvLightTint()
 {
-    GSLight gl = lights[globalParams.firstLight];
+    GSLight gl = lights[globalParams.lights.offset];
     return gl.color * gl.power;
 }
 
@@ -70,7 +70,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
     if (ndcDepth <= EPS) {
         diffuseOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         float3 envLight = EnvLightTint();
-        if (globalParams.hasEnvMap != 0u && GSLightHasFlag(lights[globalParams.firstLight], kGSLightFlagEnvironmentMap)) {
+        if (globalParams.hasEnvMap != 0u && GSLightHasFlag(lights[globalParams.lights.offset], kGSLightFlagEnvironmentMap)) {
             float2 uvNdc = (tid.xy + 0.5f) / float2(globalParams.fbWidth, globalParams.fbHeight);
             float4 ndcFar = float4(uvNdc.x * 2.0f - 1.0f, 1.0f - uvNdc.y * 2.0f, 1.0f, 1.0f);
             float4 wsFar = mul(globalParams.inverseViewProj, ndcFar);
@@ -137,8 +137,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
                                              0.0f, 0.0f, float3(1.0f), globalParams.sheenLtcIndex);
 
         // TODO: Area lights. That's probably going to be ReSTIR DI if we'd want soft shadows from those...
-        for (uint li = 0; li < globalParams.numSceneLights; li++) {
-            GSLight gl = lights[globalParams.firstLight + li];
+        for (uint li = 0; li < globalParams.lights.count; li++) {
+            GSLight gl = lights[globalParams.lights.offset + li];
             uint32_t lightType = GSLightType(gl);
             float3 lightColor = gl.color * gl.power;
             if (!any(lightColor > 0.0f)) continue;

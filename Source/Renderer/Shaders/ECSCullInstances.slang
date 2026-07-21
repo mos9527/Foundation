@@ -14,9 +14,9 @@ RWStructuredBuffer<MeshletTaskDispatch> outTasksDispatch;
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void main(uint tid: SV_DispatchThreadID, uint gid: SV_GroupIndex) {
-    if (tid >= globalParams.numInstances)
+    if (tid >= globalParams.instances.count)
         return;
-    uint iid = tid + globalParams.firstInstance;
+    uint iid = tid + globalParams.instances.offset;
     GSInstance inst = instances[iid];
     // Only static meshes go through the meshlet pipeline. Curves and dynamic (CPU-updateable)
     // geometry are drawn elsewhere (dynamic geo via a dedicated vertex/index MDI draw), and carry
@@ -26,12 +26,12 @@ void main(uint tid: SV_DispatchThreadID, uint gid: SV_GroupIndex) {
     // TODO: Culling instance
     // Would require AABB update on the CPU side. Not implemented yet.
     GSMesh mesh = primitive.Load<GSMesh>(inst.resourceOffset);
-    uint groups = alignUp(mesh.meshletCount, kMeshWorkGroupSize) / kMeshWorkGroupSize;
+    uint groups = alignUp(mesh.meshlets.count, kMeshWorkGroupSize) / kMeshWorkGroupSize;
     uint taskIndex = outTasksCounter[0].add(groups);
     for (uint group = 0; group < groups; group++) {
         MeshletTaskWork task;
         task.instanceID = iid;
-        task.numMeshlets = min(mesh.meshletCount - group * kMeshWorkGroupSize, kMeshWorkGroupSize);
+        task.numMeshlets = min(mesh.meshlets.count - group * kMeshWorkGroupSize, kMeshWorkGroupSize);
         task.firstMeshlet = group * kMeshWorkGroupSize;
         outTasks[taskIndex + group] = task;
     }

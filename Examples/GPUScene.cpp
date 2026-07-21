@@ -81,55 +81,6 @@ void UpdateRendererUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera
     ubo.dbgMaterialFlags = config.materialFlags;    
 }
 
-ResourceHandle BuildTonemappingPass(Renderer* renderer, RendererOutputs const& outputs, bool isPresent)
-{
-    CHECK_MSG(outputs.diffuse != kInvalidHandle, "Basic tonemap pass missing diffuse output");
-    RHIExtent2D extent = outputs.extent;
-    if (extent.x == 0u || extent.y == 0u)
-    {
-        CHECK_MSG(renderer->IsPresentEnabled(), "Basic tonemap pass requires outputs.extent when running headlessly");
-        extent = renderer->GetSwapchainExtent();
-    }
-    const uint32_t w = extent.x;
-    const uint32_t h = extent.y;
-    constexpr RHIResourceFormat kOutputFormat = RHIResourceFormat::R8G8B8A8Unorm;
-    auto linSampler = renderer->CreateSampler({});
-    auto postprocessSetup = [=](PassHandle self, Renderer* r)
-    {
-        r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                      PathsResolve("Data/Shaders/PostprocessBasic.spv"));
-        r->BindTextureSRV(
-            self, outputs.diffuse, "bufferA", RHIPipelineStageBits::FragmentShader,
-            RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureSRV(
-            self, outputs.specular, "bufferB", RHIPipelineStageBits::FragmentShader,
-            RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureSampler(self, linSampler, "sampler");
-    };
-    using namespace RenderUtils;
-    if (isPresent)
-    {
-        createPSFullscreenPass(renderer, "Final Blit To Backbuffer", postprocessSetup);
-        return kInvalidHandle;
-    }
-    else
-    {
-        auto postprocess = renderer->CreateResource("Final Image",
-                                                    RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                                                       RHITextureUsageBits::SampledImage |
-                                                                       RHITextureUsageBits::TransferSource,
-                                                                   .extent = {w, h, 1},
-                                                                   .format = kOutputFormat});
-        createPSFullscreenPassRTV(
-            renderer, "Final Blit To Image", postprocess,
-            RHITextureViewDesc{.format = kOutputFormat, .range = RHITextureSubresourceRange::Create()},
-            postprocessSetup
-        );
-        return postprocess;
-    }
-}
-
-
 int main(int argc, char** argv)
 {
     // --- Command line ---------------------------------------------------------------------
@@ -199,8 +150,9 @@ int main(int argc, char** argv)
         {
             ctx.renderer->BeginSetup();
             cfg.renderExtent = RHIExtent2D{renderWidth, renderHeight};
-            BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, &gpu, cfg, outputs);
-            const ResourceHandle output = BuildTonemappingPass(ctx.renderer.get(), outputs, false);
+            auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
+            BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
+            const ResourceHandle output = Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, false);
             ctx.renderer->EndSetup();
             // Accumalate
             gpu.Join();
@@ -278,8 +230,9 @@ int main(int argc, char** argv)
                     renderWidth = ctx.renderer->GetSwapchainExtent().x;
                     renderHeight = ctx.renderer->GetSwapchainExtent().y;
                     cfg.renderExtent = RHIExtent2D{float2(renderWidth, renderHeight) * scaling};
-                    BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, &gpu, cfg, outputs);
-                    BuildTonemappingPass(ctx.renderer.get(), outputs, true);
+                    auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
+                    BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
+                    Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
                     RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
                     ctx.renderer->EndSetup();
                 }                

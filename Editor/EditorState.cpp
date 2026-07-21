@@ -367,10 +367,11 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
         sEditorRasterEffects[rasterEffectCount++] = MakeRasterGTAOEffect(&GEditor.rasterGTAOConfig);
     GEditor.rendererConfig.rasterEffects = Span<const RasterEffect>(sEditorRasterEffects, rasterEffectCount);
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
+    auto gpuResources = CreateGPUSceneRendererResources(renderer, context->gpuScene);
     if (GEditor.rendererMode == ERendererMode::PathTracer)
-        BuildPathTracerRenderGraph(renderer, &GEditor.shaderGlobals, context->gpuScene, GEditor.rendererConfig, outOutputs);
+        BuildPathTracerRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs);
     if (GEditor.rendererMode == ERendererMode::Raster)
-        BuildRasterRenderGraph(renderer, &GEditor.shaderGlobals, context->gpuScene, GEditor.rendererConfig, outOutputs);
+        BuildRasterRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs);
     InsertEditorPostprocessPasses(context, renderer, outOutputs, GEditor.rendererConfig.isRendering);
     EndEditorRendererSetup(renderer);
 }

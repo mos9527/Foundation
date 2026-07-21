@@ -109,9 +109,9 @@ float ComputeNodeImportance(float3 posW, float3 normalW, bool upperHemisphere, G
 
 float ComputeFiniteRootImportance(float3 posW, float3 normalW, bool upperHemisphere)
 {
-    if (globalParams.lightBVHValid == 0u || globalParams.numLightBVHNodes == 0u)
+    if (globalParams.lightBVHValid == 0u || globalParams.lightBVHNodes.count == 0u)
         return 0.0f;
-    GSLightBVHNode root = lightBVHNodes[globalParams.firstLightBVHNode];
+    GSLightBVHNode root = lightBVHNodes[globalParams.lightBVHNodes.offset];
     return ComputeNodeImportance(posW, normalW, upperHemisphere, root);
 }
 
@@ -137,9 +137,10 @@ float ComputeDistantNodeImportance(float3 posW, float3 normalW, bool upperHemisp
 
 float ComputeDistantRootImportance(float3 posW, float3 normalW, bool upperHemisphere)
 {
-    if (globalParams.numLightBVHDistantNodes == 0u)
+    if (globalParams.lightBVHDistantNodes.count == 0u)
         return 0.0f;
-    return ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[globalParams.firstLightBVHDistantNode]);
+    return ComputeDistantNodeImportance(posW, normalW, upperHemisphere,
+                                        lightBVHNodes[globalParams.lightBVHDistantNodes.offset]);
 }
 
 float EvalMixtureTotal(float3 posW, float3 normalW, bool upperHemisphere, out float finiteWeight,
@@ -154,12 +155,12 @@ bool TraverseLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout f
                       out uint leafNodeIndex)
 {
     pdf = 1.0f;
-    leafNodeIndex = globalParams.firstLightBVHNode;
+    leafNodeIndex = globalParams.lightBVHNodes.offset;
     GSLightBVHNode node = lightBVHNodes[leafNodeIndex];
     while (!LightBVHNodeIsLeaf(node))
     {
         uint leftIndex = leafNodeIndex + 1u;
-        uint rightIndex = globalParams.firstLightBVHNode + LightBVHNodeRightChild(node);
+        uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
         float leftImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
         float rightImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
         float sum = leftImp + rightImp;
@@ -187,12 +188,12 @@ bool TraverseLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout f
 bool TraverseDistantLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout float u, out float pdf, out uint leafNodeIndex)
 {
     pdf = 1.0f;
-    leafNodeIndex = globalParams.firstLightBVHDistantNode;
+    leafNodeIndex = globalParams.lightBVHDistantNodes.offset;
     GSLightBVHNode node = lightBVHNodes[leafNodeIndex];
     while (!LightBVHNodeIsLeaf(node))
     {
         uint leftIndex = leafNodeIndex + 1u;
-        uint rightIndex = globalParams.firstLightBVHNode + LightBVHNodeRightChild(node);
+        uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
         float leftImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
         float rightImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
         float sum = leftImp + rightImp;
@@ -228,8 +229,8 @@ bool PickLeafLight(uint leafNodeIndex, float u, out float pdf, out uint lightInd
     float total = 0.0f;
     for (uint i = 0; i < count; ++i)
     {
-        uint idx = lightBVHLightIndices[globalParams.firstLightBVHLightIndex + offset + i];
-        total += ComputeLightProposalWeight(lights[globalParams.firstLight + idx]);
+        uint idx = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
+        total += ComputeLightProposalWeight(lights[globalParams.lights.offset + idx]);
     }
     if (total <= 0.0f)
         return false;
@@ -238,8 +239,8 @@ bool PickLeafLight(uint leafNodeIndex, float u, out float pdf, out uint lightInd
     float cdf = 0.0f;
     for (uint i = 0; i < count; ++i)
     {
-        uint idx = lightBVHLightIndices[globalParams.firstLightBVHLightIndex + offset + i];
-        float weight = ComputeLightProposalWeight(lights[globalParams.firstLight + idx]);
+        uint idx = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
+        float weight = ComputeLightProposalWeight(lights[globalParams.lights.offset + idx]);
         cdf += weight;
         if (uScaled < cdf || i + 1u == count)
         {
@@ -260,8 +261,8 @@ float EvalLeafLightPdf(uint leafNodeIndex, uint lightIndex)
     float selected = 0.0f;
     for (uint i = 0; i < count; ++i)
     {
-        uint idx = lightBVHLightIndices[globalParams.firstLightBVHLightIndex + offset + i];
-        float weight = ComputeLightProposalWeight(lights[globalParams.firstLight + idx]);
+        uint idx = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
+        float weight = ComputeLightProposalWeight(lights[globalParams.lights.offset + idx]);
         total += weight;
         if (idx == lightIndex)
             selected = weight;
@@ -274,12 +275,12 @@ float EvalFiniteTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere, 
     uint2 bits2 = lightBVHBitmasks[globalParams.firstLightBVHBitmask + lightIndex];
     uint64_t bitmask = ((uint64_t)bits2.y << 32) | bits2.x;
     float pdf = 1.0f;
-    leafNodeIndex = globalParams.firstLightBVHNode;
+    leafNodeIndex = globalParams.lightBVHNodes.offset;
     GSLightBVHNode node = lightBVHNodes[leafNodeIndex];
     while (!LightBVHNodeIsLeaf(node))
     {
         uint leftIndex = leafNodeIndex + 1u;
-        uint rightIndex = globalParams.firstLightBVHNode + LightBVHNodeRightChild(node);
+        uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
         float leftImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
         float rightImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
         float sum = leftImp + rightImp;
@@ -308,12 +309,12 @@ float EvalDistantTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere,
     uint2 bits2 = lightBVHBitmasks[globalParams.firstLightBVHBitmask + lightIndex];
     uint64_t bitmask = ((uint64_t)bits2.y << 32) | bits2.x;
     float pdf = 1.0f;
-    leafNodeIndex = globalParams.firstLightBVHDistantNode;
+    leafNodeIndex = globalParams.lightBVHDistantNodes.offset;
     GSLightBVHNode node = lightBVHNodes[leafNodeIndex];
     while (!LightBVHNodeIsLeaf(node))
     {
         uint leftIndex = leafNodeIndex + 1u;
-        uint rightIndex = globalParams.firstLightBVHNode + LightBVHNodeRightChild(node);
+        uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
         float leftImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
         float rightImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
         float sum = leftImp + rightImp;
@@ -331,11 +332,11 @@ float EvalDistantTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere,
 
 public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
 {
-    if (globalParams.numSceneLights == 0u || lightIndex >= globalParams.numSceneLights)
+    if (globalParams.lights.count == 0u || lightIndex >= globalParams.lights.count)
         return 0.0f;
 
     if ((ptCompileOptions & kPTCompileOptionLightSamplerUniform) != 0u)
-        return 1.0f / float(globalParams.numSceneLights);
+        return 1.0f / float(globalParams.lights.count);
 
     float3 posW = ctx.p();
     float3 normalW = ctx.ns;
@@ -346,11 +347,11 @@ public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
     if (total <= 0.0f)
         return 0.0f;
 
-    GSLight gl = lights[globalParams.firstLight + lightIndex];
+    GSLight gl = lights[globalParams.lights.offset + lightIndex];
     uint type = GSLightType(gl);
     if (type == kGSLightTypeDirectional || type == kGSLightTypeEnvironment)
     {
-        if (distantWeight <= 0.0f || globalParams.numLightBVHDistantNodes == 0u)
+        if (distantWeight <= 0.0f || globalParams.lightBVHDistantNodes.count == 0u)
             return 0.0f;
         uint leafNodeIndex;
         float traversalPdf = EvalDistantTraversalPdf(posW, normalW, upperHemisphere, lightIndex, leafNodeIndex);
@@ -372,12 +373,12 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
 {
     lightIndex = ~0u;
     selectionPMF = 0.0f;
-    if (globalParams.numSceneLights == 0u)
+    if (globalParams.lights.count == 0u)
         return false;
 
     if ((ptCompileOptions & kPTCompileOptionLightSamplerUniform) != 0u)
     {
-        uint n = globalParams.numSceneLights;
+        uint n = globalParams.lights.count;
         lightIndex = min(uint(u * float(n)), n - 1u);
         selectionPMF = 1.0f / float(n);
         return true;

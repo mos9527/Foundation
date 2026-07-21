@@ -61,12 +61,12 @@ static void RunRasterEffects(RasterEffectContext& ctx, RasterInjectionPoint poin
     }
 }
 
-void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* gpu,
+void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources const& gpu,
                             RendererConfig const& cfg, RendererOutputs& out)
 {
     CHECK(renderer);
     CHECK(globals);
-    CHECK(gpu);
+    CHECK(gpu.scene);
     CHECK_MSG(renderer->GetDevice()->GetCapabilities().meshShaders, "Rasterizer requires Mesh Shader support");
     out = {};
     RHIExtent2D renderExtent = cfg.renderExtent;
@@ -80,16 +80,13 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
                       .size = sizeof(RendererUBO)});
     /* Instance and Primitive buffers */
-    bool hasTLAS = gpu->GetTLAS() != nullptr;
-    ResourceHandle TLAS = kInvalidHandle;
-    if (hasTLAS)
-        TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
-    auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
-    auto DynamicPrimitiveBuffer = renderer->CreateResource("Dynamic Primitive Buffer", gpu->GetDynamicPrimitiveBuffer());
-
-    auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
-    auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
-    auto LightBuffer = renderer->CreateResource("Light Buffer", gpu->GetLightBuffer());
+    bool hasTLAS = gpu.tlas != kInvalidHandle;
+    ResourceHandle TLAS = gpu.tlas;
+    auto PrimitiveBuffer = gpu.primitiveBuffer;
+    auto DynamicPrimitiveBuffer = gpu.dynamicPrimitiveBuffer;
+    auto InstanceBuffer = gpu.instanceBuffer;
+    auto MaterialBuffer = gpu.materialBuffer;
+    auto LightBuffer = gpu.lightBuffer;
     /* Indirect Task Buffers */
     using enum RHIBufferUsageBits;
     auto IndirectTasks =
@@ -147,20 +144,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
     bool useRTShadows = (cfg.viewFlags & kEnableRasterRTShadows) && !disableRT && hasTLAS;
     uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~kEnableRasterRTShadows);
     uint32_t gbufferFlags = cfg.viewFlags | (cfg.forceTextureLOD0 ? kForceTextureLOD0 : 0u);
-    // Raytracing. The raster path draws dynamic geometry through its own vertex/index MDI draw
-    // (no BLAS needed for shading), so the dynamic BLAS refit is only required when RT shadows
-    // trace the TLAS - which reads the dynamic BLASes.
-    if (useRTShadows)
-    {
-        renderer->CreatePass(
-            "TLAS/BLAS Update", RHIDeviceQueueType::Compute, 0u, [=](PassHandle self, Renderer* r)
-            { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-            {
-                if (gpu->HasDynamicGeometry())
-                    gpu->BuildBLAS(cmd);
-                (void)gpu->BuildTLAS(cmd, true);
-            });
-    }
+    BuildGPUSceneUpdatePasses(renderer, gpu, GlobalUBO, useRTShadows);
     renderer->CreatePass(
         "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -188,7 +172,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
         {
             r->CmdSetPipeline(self, cmd);
             // TODO: This limits us to 65536 instances
-            r->CmdDispatch(self, cmd, {globals->numInstances, 1, 1});
+            r->CmdDispatch(self, cmd, {globals->instances.count, 1, 1});
         });
     /* Meshlet Drawing */
     uint32_t w = std::max(renderExtent.x, 16u);
@@ -384,7 +368,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                     r->BindBufferIndirectRead(self, IndirectMeshletDispatch);
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
                     r->BindDescriptorSet(self, "textures",
-                                         gpu->GetTexture2DPool()->GetDescriptorSetLayout());
+                                         gpu.textures2D->GetDescriptorSetLayout());
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -406,7 +390,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                     r->CmdSetPipeline(self, cmd);
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
                     r->CmdBindDescriptorSet(self, cmd, "textures",
-                                            gpu->GetTexture2DPool()->GetDescriptorSet());
+                                            gpu.textures2D->GetDescriptorSet());
                     auto* dispatchBuffer = r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>();
                     cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
                     cmd->EndGraphics();
@@ -437,7 +421,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
     ResourceHandle DynamicMotionDrawCmds = kInvalidHandle;
     ResourceHandle DynamicMotionDrawCount = kInvalidHandle;
     ResourceHandle DynamicMotionDrawInstanceIDs = kInvalidHandle;
-    if (gpu->HasDynamicGeometry())
+    if (gpu.hasDynamicGeometry)
     {
         auto DynamicDrawCmds = renderer->CreateResource(
             "Dynamic Draw Commands",
@@ -487,7 +471,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 cmd->FillBuffer(r->DerefResource(DynamicDrawCount).Get<RHIBuffer*>(), 0u);
                 cmd->FillBuffer(r->DerefResource(DynamicMotionDrawCount).Get<RHIBuffer*>(), 0u);
                 r->CmdSetPipeline(self, cmd);
-                r->CmdDispatch(self, cmd, {globals->numInstances, 1, 1});
+                r->CmdDispatch(self, cmd, {globals->instances.count, 1, 1});
             });
         renderer->CreatePass(
             "Dynamic GBuffer", RHIDeviceQueueType::Graphics, 0u,
@@ -527,7 +511,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 r->BindBufferIndirectRead(self, DynamicDrawCmds);
                 r->BindBufferIndirectRead(self, DynamicDrawCount);
                 r->BindTextureSampler(self, TexSampler, "textureSampler");
-                r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
+                r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
@@ -541,10 +525,10 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                     {RHIAttachmentLoadOp::Load});
                 r->CmdSetPipeline(self, cmd);
                 cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-                r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
+                r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
                 // The dynamic ring is bound as a UINT32 index buffer; the VS pulls vertices from
                 // it by SV_VertexID and reads the instance via SV_InstanceID (firstInstance).
-                cmd->BindIndexBuffer(gpu->GetDynamicPrimitiveBuffer(), 0, RHIResourceFormat::R32Uint);
+                cmd->BindIndexBuffer(gpu.dynamicPrimitiveBufferRHI, 0, RHIResourceFormat::R32Uint);
                 auto* cmds = r->DerefResource(DynamicDrawCmds).Get<RHIBuffer*>();
                 auto* count = r->DerefResource(DynamicDrawCount).Get<RHIBuffer*>();
                 cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxDynamicDraws, sizeof(DrawIndexedIndirectCommand));
@@ -555,7 +539,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
     ResourceHandle CurveMotionDrawCmds = kInvalidHandle;
     ResourceHandle CurveMotionDrawCount = kInvalidHandle;
     ResourceHandle CurveMotionDrawInstanceIDs = kInvalidHandle;
-    if (gpu->HasCurveGeometry())
+    if (gpu.hasCurveGeometry)
     {
         auto CurveDrawCmds = renderer->CreateResource(
             "Curve Draw Commands",
@@ -604,7 +588,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 cmd->FillBuffer(r->DerefResource(CurveDrawCount).Get<RHIBuffer*>(), 0u);
                 cmd->FillBuffer(r->DerefResource(CurveMotionDrawCount).Get<RHIBuffer*>(), 0u);
                 r->CmdSetPipeline(self, cmd);
-                r->CmdDispatch(self, cmd, {globals->numInstances, 1, 1});
+                r->CmdDispatch(self, cmd, {globals->instances.count, 1, 1});
             });
         using RasterizerState = RHIPipelineState::PipelineStateDesc::Rasterizer;
         RasterizerState const curveRaster{.cullMode = RasterizerState::CullNone};
@@ -642,7 +626,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                 r->BindBufferIndirectRead(self, CurveDrawCmds);
                 r->BindBufferIndirectRead(self, CurveDrawCount);
                 r->BindTextureSampler(self, TexSampler, "textureSampler");
-                r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
+                r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());
                 r->PassSetRasterizerFlags(self, curveRaster);
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -656,8 +640,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                     {RHIAttachmentLoadOp::Load});
                 r->CmdSetPipeline(self, cmd);
                 cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-                r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
-                cmd->BindIndexBuffer(gpu->GetPrimitiveBuffer(), 0, RHIResourceFormat::R32Uint);
+                r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
+                cmd->BindIndexBuffer(gpu.primitiveBufferRHI, 0, RHIResourceFormat::R32Uint);
                 auto* cmds = r->DerefResource(CurveDrawCmds).Get<RHIBuffer*>();
                 auto* count = r->DerefResource(CurveDrawCount).Get<RHIBuffer*>();
                 cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxCurveDraws, sizeof(DrawIndexedIndirectCommand));
@@ -757,7 +741,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
         RasterEffectContext effectCtx{
             .renderer = renderer,
             .globals = globals,
-            .gpu = gpu,
+            .gpu = gpu.scene,
             .cfg = &cfg,
             .extent = {w, h},
             .globalUBO = GlobalUBO,
@@ -836,8 +820,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
                                   RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
                                                      .range = RHITextureSubresourceRange::Create()});
-                r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
-                r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
+                r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());
+                r->BindDescriptorSet(self, "textures3D", gpu.textures3D->GetDescriptorSetLayout());
                 r->BindTextureUAV(self, DiffuseBuffer, "diffuseOutput", RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create()});
@@ -849,8 +833,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, GPUScene* 
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
                 r->CmdSetPipeline(self, cmd);
-                r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
-                r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());
+                r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
+                r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu.textures3D->GetDescriptorSet());
                 r->CmdDispatch(self, cmd, {w, h, 1});
             });
         RunRasterEffects(effectCtx, RasterInjectionPoint::AfterLighting);

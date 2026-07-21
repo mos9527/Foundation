@@ -95,11 +95,7 @@ inline void GSLightBVHNodeSetLeaf(GSLightBVHNode& node, uint32_t lightCount, uin
     node.header = kLightBVHLeafBit | (lightCount << kLightBVHLightOffsetBits) | lightOffset;
 }
 
-struct LightBVHRefitLevel
-{
-    uint32_t offset = 0;
-    uint32_t count = 0;
-};
+using LightBVHRefitLevel = GSOffsetCount;
 
 struct LightBVHStats
 {

@@ -37,19 +37,20 @@ void meshMain(
     OutputIndices<uint3, 96> triangles,
 ) {
     // Each WG of mesh shader processes *exactly* one meshlet per dispatch
-    FMeshlet meshlet = mesh.Load<FMeshlet>(globalParams.mesh.meshletOffset + gid * sizeof(FMeshlet));    
+    FMeshlet meshlet = mesh.Load<FMeshlet>(globalParams.mesh.meshlets.offset + gid * sizeof(FMeshlet));
     uint32_t vtxBase = globalParams.mesh.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
     uint32_t vtxCount = meshlet.vtxCount;
     uint32_t triBase = globalParams.mesh.meshletTriOffset + meshlet.triOffset * sizeof(uint8_t);
     uint32_t triCount = meshlet.triCount;
     // View-dependent culling
-    FLODGroup selfGroup = mesh.Load<FLODGroup>(globalParams.mesh.groupOffset + meshlet.group * sizeof(FLODGroup));
+    FLODGroup selfGroup = mesh.Load<FLODGroup>(globalParams.mesh.groups.offset + meshlet.group * sizeof(FLODGroup));
     float selfError = projErrorSimple(selfGroup);
     // Remember - we take the upper_bound of the acceptable clusters
     // where it's the *first* LOD that exceeds the error threshold
     bool culled = selfError <= globalParams.threshold;
     if (meshlet.refined != ~0u){
-        FLODGroup refGroup = mesh.Load<FLODGroup>(globalParams.mesh.groupOffset + meshlet.refined * sizeof(FLODGroup));
+        FLODGroup refGroup =
+            mesh.Load<FLODGroup>(globalParams.mesh.groups.offset + meshlet.refined * sizeof(FLODGroup));
         float refError = projErrorSimple(refGroup);
         // The refined ones exceeds it too - impossible unless it's closer to
         // the actual upper bound. So cull ourselves.
@@ -63,7 +64,7 @@ void meshMain(
         // Each thread in the WG processes multiple vertices/triangles
         for (uint i = tid; i < vtxCount; i += kWGSize) {
             uint ind = mesh.Load<uint32_t>(vtxBase + i * sizeof(uint32_t));
-            FVertex vtx = mesh.Load<FVertex>(globalParams.mesh.vtxOffset + ind * sizeof(FVertex));
+            FVertex vtx = mesh.Load<FVertex>(globalParams.mesh.vertices.offset + ind * sizeof(FVertex));
             V2F v2f;
             v2f.pos = mul(mul(globalParams.proj, globalParams.view), float4(vtx.position, 1.0));
             v2f.meshlet = gid;

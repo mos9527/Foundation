@@ -13,18 +13,18 @@ RWStructuredBuffer<Atomic<uint>> outDrawCount;
 [numthreads(64, 1, 1)]
 void main(uint tid: SV_DispatchThreadID)
 {
-    if (tid >= globalParams.numInstances)
+    if (tid >= globalParams.instances.count)
         return;
-    uint iid = tid + globalParams.firstInstance;
+    uint iid = tid + globalParams.instances.offset;
     GSInstance inst = instances[iid];
     if (GSInstanceType(inst) != kGSInstanceTypeCurve)
         return;
     GSCurveSet curve = primitive.Load<GSCurveSet>(inst.resourceOffset);
     uint draw = outDrawCount[0].add(1);
     DrawIndexedIndirectCommand cmd;
-    cmd.indexCount = curve.idxCount;
+    cmd.indexCount = curve.indices.count;
     cmd.instanceCount = 1;
-    cmd.firstIndex = curve.idxOffset / 4u;
+    cmd.firstIndex = curve.indices.offset / 4u;
     cmd.vertexOffset = 0;
     cmd.firstInstance = 0;
     outDrawCmds[draw] = cmd;

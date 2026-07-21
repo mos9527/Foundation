@@ -64,3 +64,7 @@ add_dependencies(Example_CIEChromacity Shader_CIEChromacity)
 add_example(Example_GPUScene "GPUScene.cpp")
 target_link_libraries(Example_GPUScene PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
 add_dependencies(Example_GPUScene Foundation_Shaders Editor_Data Examples_SampleFiles Shader_PostprocessBasic)
+
+add_example(Example_DynamicGeometry "DynamicGeometry.cpp")
+target_link_libraries(Example_DynamicGeometry PUBLIC Example_Common Foundation_Rasterizer)
+add_dependencies(Example_DynamicGeometry Foundation_Shaders Editor_Data Shader_PostprocessBasic Shader_DynamicGerstner)

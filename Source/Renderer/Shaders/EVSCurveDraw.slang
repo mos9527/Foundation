@@ -10,7 +10,7 @@ uniform UBO globalParams;
 
 GSCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint leafIndex)
 {
-    return primitive.Load<GSCurveLeaf>(curve.leafOffset + leafIndex * sizeof(GSCurveLeaf));
+    return primitive.Load<GSCurveLeaf>(curve.leaves.offset + leafIndex * sizeof(GSCurveLeaf));
 }
 
 [shader("vertex")]
@@ -19,7 +19,8 @@ V2F main(uint vertexID: SV_VertexID, uint drawID: SV_DrawIndex)
     uint instanceID = drawInstanceIDs[drawID];
     GSInstance inst = instances[instanceID];
     GSCurveSet curve = primitive.Load<GSCurveSet>(inst.resourceOffset);
-    GSCurveDOTSVertex vtx = primitive.Load<GSCurveDOTSVertex>(curve.vtxOffset + vertexID * sizeof(GSCurveDOTSVertex));
+    GSCurveDOTSVertex vtx =
+        primitive.Load<GSCurveDOTSVertex>(curve.vertices.offset + vertexID * sizeof(GSCurveDOTSVertex));
 
     uint leafIndex = vertexID / 8u;
     GSCurveLeaf leaf = LoadCurveLeaf(curve, leafIndex);

@@ -19,7 +19,7 @@ V2F main(uint vertexID: SV_VertexID, uint drawID: SV_DrawIndex)
     uint instanceID = drawInstanceIDs[drawID];
     GSInstance inst = instances[instanceID];
     GSMesh mesh = dynamicPrimitives.Load<GSMesh>(inst.resourceOffset);
-    FQVertex fq = dynamicPrimitives.Load<FQVertex>(mesh.vtxOffset + vertexID * sizeof(FQVertex));
+    FQVertex fq = dynamicPrimitives.Load<FQVertex>(mesh.vertices.offset + vertexID * sizeof(FQVertex));
 
     float3 position, normal, tangent;
     float bitangentSign;

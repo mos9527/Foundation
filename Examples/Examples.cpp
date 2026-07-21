@@ -3,7 +3,6 @@
 #include "Examples.hpp"
 
 #include <RenderCore/Presenter.hpp>
-#include <Renderer/RasterEffects.hpp>
 #include <algorithm>
 #include <argh.h>
 #include <cmath>
@@ -25,12 +24,6 @@ namespace
     constexpr int kExampleUiCharHeight = 16;
     constexpr int kExampleUiDefaultColor = -1;
     constexpr int kExampleUiActiveColor = 0xff00ff00;
-    const RasterGTAOConfig kExampleRasterGTAOConfig{};
-    const RasterMotionBlurConfig kExampleRasterMotionBlurConfig{};
-    const RasterEffect kExampleRasterEffects[] = {
-        MakeRasterGTAOEffect(&kExampleRasterGTAOConfig),
-        MakeRasterMotionBlurEffect(&kExampleRasterMotionBlurConfig),
-    };
 
     constexpr RHISurfaceFormat kFormatPreferenceList[] = {
         {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
@@ -889,4 +882,47 @@ void FExampleOrbitCamera::RefreshMatrices()
     vec3 dir = rot * vec3(0, 0, 1);
     position = center + radius * dir;
     view = viewMatrixRHReverseZ(position, rot);
+}
+
+ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs const& outputs, bool isPresent)
+{
+    CHECK_MSG(outputs.diffuse != kInvalidHandle, "Basic tonemap pass missing diffuse output");
+    RHIExtent2D extent = outputs.extent;
+    if (extent.x == 0u || extent.y == 0u)
+    {
+        CHECK_MSG(renderer->IsPresentEnabled(), "Basic tonemap pass requires outputs.extent when running headlessly");
+        extent = renderer->GetSwapchainExtent();
+    }
+    uint32_t const w = extent.x;
+    uint32_t const h = extent.y;
+    constexpr RHIResourceFormat kOutputFormat = RHIResourceFormat::R8G8B8A8Unorm;
+    auto linSampler = renderer->CreateSampler({});
+    auto postprocessSetup = [=](PassHandle self, Renderer* r)
+    {
+        r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                      PathsResolve("Data/Shaders/PostprocessBasic.spv"));
+        r->BindTextureSRV(
+            self, outputs.diffuse, "bufferA", RHIPipelineStageBits::FragmentShader,
+            RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
+        r->BindTextureSRV(
+            self, outputs.specular, "bufferB", RHIPipelineStageBits::FragmentShader,
+            RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
+        r->BindTextureSampler(self, linSampler, "sampler");
+    };
+    using namespace RenderUtils;
+    if (isPresent)
+    {
+        createPSFullscreenPass(renderer, "Final Blit To Backbuffer", postprocessSetup);
+        return kInvalidHandle;
+    }
+
+    auto postprocess = renderer->CreateResource(
+        "Final Image", RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::SampledImage |
+                                           RHITextureUsageBits::TransferSource,
+                                       .extent = {w, h, 1},
+                                       .format = kOutputFormat});
+    createPSFullscreenPassRTV(
+        renderer, "Final Blit To Image", postprocess,
+        RHITextureViewDesc{.format = kOutputFormat, .range = RHITextureSubresourceRange::Create()}, postprocessSetup);
+    return postprocess;
 }

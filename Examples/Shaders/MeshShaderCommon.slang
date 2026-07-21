@@ -42,24 +42,19 @@ struct FMeshlet // @ref meshopt_Meshlet
     float4 coneAxisAngle; // (x,y,z,cos(half solid angle))
     float3 coneApex; // (x,y,z)
 };
+struct GSOffsetCount
+{
+    uint32_t offset;
+    uint32_t count;
+};
 struct GSMesh
 {
-    // Offsets are absolute, and are in Primitive buffer (bytes).
-    // @ref FVertex
-    uint32_t vtxOffset;
-    uint32_t vtxCount;
-    // LOD0 UINT32 indices
-    uint32_t idxOffset;
-    uint32_t idxCount;
-    // -- DAG LOD Group @ref FLODGroup
-    uint32_t groupOffset;
-    uint32_t groupCount;
-    // -- DAG Meshlets @ref FMeshlet
-    uint32_t meshletOffset;
-    uint32_t meshletCount;
+    GSOffsetCount vertices;
+    GSOffsetCount indices;
+    GSOffsetCount groups;
+    GSOffsetCount meshlets;
     uint32_t meshletVtxOffset;
     uint32_t meshletTriOffset;
-    // -- Global index (amongst all loaded meshes)
     uint32_t meshletGlobalIndex;
 };
 struct MIndex {

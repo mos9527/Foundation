@@ -18,6 +18,13 @@ public struct FQVertex {
     public uint32_t tbn32;
     public half2 uv;
 };
+public FQVertex FQPack(float3 position, float3 normal, float3 tangent, float bitangentSign, float2 uv) {
+    FQVertex v;
+    v.position = half4((half3)position, (half)0.0);
+    v.tbn32 = packTBN(normal, tangent, bitangentSign);
+    v.uv = (half2)uv;
+    return v;
+}
 public void FQDecode(in FQVertex v, out float3 position, out float3 normal, out float3 tangent, out float bitangentSign, out float2 uv) {
     position = float3(v.position.xyz);
     unpackTBN(v.tbn32, normal, tangent, bitangentSign);
@@ -63,24 +70,19 @@ public struct FMeshlet // @ref meshopt_Meshlet
     public float3 coneApex; // (x,y,z)
 };
 // NOTE: GS -> GPU Scene
+public struct GSOffsetCount
+{
+    public uint32_t offset;
+    public uint32_t count;
+};
 public struct GSMesh
 {
-    // Offsets are absolute, and are in Primitive buffer (bytes).
-    // @ref FVertex
-    public uint32_t vtxOffset;
-    public uint32_t vtxCount;
-    // LOD0 UINT32 indices
-    public uint32_t idxOffset;
-    public uint32_t idxCount;
-    // -- DAG LOD Group @ref FLODGroup
-    public uint32_t groupOffset;
-    public uint32_t groupCount;
-    // -- DAG Meshlets @ref FMeshlet
-    public uint32_t meshletOffset;
-    public uint32_t meshletCount;
+    public GSOffsetCount vertices;
+    public GSOffsetCount indices;
+    public GSOffsetCount groups;
+    public GSOffsetCount meshlets;
     public uint32_t meshletVtxOffset;
     public uint32_t meshletTriOffset;
-    // -- Global index (amongst all loaded meshes)
     public uint32_t meshletGlobalIndex;
 };
 public struct MIndex {
@@ -120,12 +122,9 @@ public uint32_t GSInstanceType(GSInstance i) { return i.type & kGSInstanceTypeMa
 public bool GSInstanceIsDynamic(GSInstance i) { return (i.type & kGSInstanceFlagDynamic) != 0u; }
 public struct GSCurveSet
 {
-    public uint32_t vtxOffset;
-    public uint32_t vtxCount;
-    public uint32_t idxOffset;
-    public uint32_t idxCount;
-    public uint32_t leafOffset;
-    public uint32_t leafCount;
+    public GSOffsetCount vertices;
+    public GSOffsetCount indices;
+    public GSOffsetCount leaves;
 };
 public struct GSCurveDOTSVertex
 {
@@ -252,10 +251,8 @@ public float ComputeLightProposalWeight(GSLight light) {
 public struct UBO
 {
     public uint32_t frameNumber;
-    public uint32_t firstInstance;
-    public uint32_t numInstances;
-    public uint32_t firstMaterial;
-    public uint32_t numMaterials;
+    public GSOffsetCount instances;
+    public GSOffsetCount materials;
     public float lodThreshold;
     public float zNear;
     public float4x4 view;
@@ -295,18 +292,13 @@ public struct UBO
     public float3 envSHCoeffs[9];
     public uint32_t matcapTextureIndex;
     // Scene lights
-    public uint32_t firstLight;
-    public uint32_t numSceneLights;
-    public uint32_t firstLightBVHNode;
-    public uint32_t numLightBVHNodes;
-    public uint32_t firstLightBVHLightIndex;
-    public uint32_t numLightBVHLightIndices;
+    public GSOffsetCount lights;
+    public GSOffsetCount lightBVHNodes;
+    public GSOffsetCount lightBVHLightIndices;
     public uint32_t firstLightBVHBitmask;
-    public uint32_t firstLightBVHGlobalIndex;
-    public uint32_t numLightBVHGlobalLights;
+    public GSOffsetCount lightBVHGlobalIndices;
     public uint32_t lightBVHValid;
-    public uint32_t firstLightBVHDistantNode;
-    public uint32_t numLightBVHDistantNodes;
+    public GSOffsetCount lightBVHDistantNodes;
     public uint32_t energyCompensation;
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;

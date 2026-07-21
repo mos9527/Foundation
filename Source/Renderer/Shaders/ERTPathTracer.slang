@@ -129,12 +129,12 @@ void RotateHitTangentFrame(inout HitState hit, float2 direction)
 
 uint GetInstanceBufferIndex(uint localInstanceIndex)
 {
-    return globalParams.firstInstance + localInstanceIndex;
+    return globalParams.instances.offset + localInstanceIndex;
 }
 
 uint GetMaterialBufferIndex(uint localMaterialIndex)
 {
-    return globalParams.firstMaterial + localMaterialIndex;
+    return globalParams.materials.offset + localMaterialIndex;
 }
 
 bool IsLightInstance(uint instance)
@@ -164,7 +164,7 @@ GSMaterial LoadMaterial(uint localMaterialIndex)
 
 GSLight LoadSceneLight(uint localLightIndex)
 {
-    return lights[NonUniformResourceIndex(globalParams.firstLight + localLightIndex)];
+    return lights[NonUniformResourceIndex(globalParams.lights.offset + localLightIndex)];
 }
 
 void ApplyRayConeAnisotropy(inout HitState hit, GSInstance inst,
@@ -229,14 +229,14 @@ HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, f
 
     // Fetch triangle indices
     GSMesh mesh = prims.Load<GSMesh>(meshOffset);
-    uint i0 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 0) * sizeof(uint32_t));
-    uint i1 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 1) * sizeof(uint32_t));
-    uint i2 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 2) * sizeof(uint32_t));
+    uint i0 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 0) * sizeof(uint32_t));
+    uint i1 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 1) * sizeof(uint32_t));
+    uint i2 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 2) * sizeof(uint32_t));
 
     // Fetch and decode vertices
-    FQVertex vq0 = prims.Load<FQVertex>(mesh.vtxOffset + i0 * sizeof(FQVertex));
-    FQVertex vq1 = prims.Load<FQVertex>(mesh.vtxOffset + i1 * sizeof(FQVertex));
-    FQVertex vq2 = prims.Load<FQVertex>(mesh.vtxOffset + i2 * sizeof(FQVertex));
+    FQVertex vq0 = prims.Load<FQVertex>(mesh.vertices.offset + i0 * sizeof(FQVertex));
+    FQVertex vq1 = prims.Load<FQVertex>(mesh.vertices.offset + i1 * sizeof(FQVertex));
+    FQVertex vq2 = prims.Load<FQVertex>(mesh.vertices.offset + i2 * sizeof(FQVertex));
     float3 p0, p1, p2;
     float3 n0, n1, n2;
     float3 t0, t1, t2;
@@ -290,13 +290,13 @@ float2 GetHitUV(ByteAddressBuffer prims, uint meshOffset, uint primitive, float2
 {
     const float3 barycentrics = float3(1.0 - bary.x - bary.y, bary.x, bary.y);
     GSMesh mesh = prims.Load<GSMesh>(meshOffset);
-    uint i0 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 0) * sizeof(uint32_t));
-    uint i1 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 1) * sizeof(uint32_t));
-    uint i2 = prims.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 2) * sizeof(uint32_t));
+    uint i0 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 0) * sizeof(uint32_t));
+    uint i1 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 1) * sizeof(uint32_t));
+    uint i2 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 2) * sizeof(uint32_t));
 
-    float2 u0 = float2(prims.Load<FQVertex>(mesh.vtxOffset + i0 * sizeof(FQVertex)).uv);
-    float2 u1 = float2(prims.Load<FQVertex>(mesh.vtxOffset + i1 * sizeof(FQVertex)).uv);
-    float2 u2 = float2(prims.Load<FQVertex>(mesh.vtxOffset + i2 * sizeof(FQVertex)).uv);
+    float2 u0 = float2(prims.Load<FQVertex>(mesh.vertices.offset + i0 * sizeof(FQVertex)).uv);
+    float2 u1 = float2(prims.Load<FQVertex>(mesh.vertices.offset + i1 * sizeof(FQVertex)).uv);
+    float2 u2 = float2(prims.Load<FQVertex>(mesh.vertices.offset + i2 * sizeof(FQVertex)).uv);
     
     return u0 * barycentrics.x + u1 * barycentrics.y + u2 * barycentrics.z;
 }
@@ -348,7 +348,7 @@ float4 IntersectInfiniteCone(float3 ro, float3 rd, float3 pa, float3 pb, float r
 GSCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint primitive)
 {
     uint leafIndex = primitive / 4u;
-    return primitives.Load<GSCurveLeaf>(curve.leafOffset + leafIndex * sizeof(GSCurveLeaf));
+    return primitives.Load<GSCurveLeaf>(curve.leaves.offset + leafIndex * sizeof(GSCurveLeaf));
 }
 
 HitState GetCurveHitState(uint curveOffset, uint primitive, float2 /*triangleBary*/, GSInstance inst,
@@ -1118,30 +1118,30 @@ LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
 {
     SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
     switch (GSLightType(gl)) {
-    case 0: {
+    case kGSLightTypeEnvironment: {
+        InfiniteLight light = MakeEnvironmentLight(gl);
+        return light.Sample_Li(ctx, u);
+    }
+    case kGSLightTypeDirectional: {
         DistantLight light = DistantLight(Lemit, gl.direction, gl.params.x);
         return light.Sample_Li(ctx, u);
     }
-    case 1: {
+    case kGSLightTypePoint: {
         PointLight light = PointLight(Lemit, gl.position, gl.params.x);
         return light.Sample_Li(ctx, u);
     }
-    case 2: {
+    case kGSLightTypeSpot: {
         SpotLight light = SpotLight(Lemit, gl.position, gl.direction,
             acos(gl.params.z), acos(gl.params.y), gl.params.x);
         return light.Sample_Li(ctx, u);
     }
-    case 3: {
+    case kGSLightTypeDisk: {
         DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.params.xy, GSLightHasFlag(gl, kGSLightFlagTwoSided));
         return light.Sample_Li(ctx, u);
     }
-    case 4: {
+    case kGSLightTypeRect: {
         RectLight light = RectLight(Lemit, gl.position,
             gl.dpdu, gl.dpdv, GSLightHasFlag(gl, kGSLightFlagTwoSided));
-        return light.Sample_Li(ctx, u);
-    }
-    case 5: {
-        InfiniteLight light = MakeEnvironmentLight(gl);
         return light.Sample_Li(ctx, u);
     }
     default:
@@ -1438,7 +1438,7 @@ void AddEnvironmentMiss(
         lighting.env.PDF_Li(lighting.lastLightCtx, wi, true);
     // These are sorted so that env light is #0 and non-delta directionals (if any) come first
     // Add contributions from sun disk misses
-    for (uint i = 1u; i < globalParams.numSceneLights; ++i)
+    for (uint i = 1u; i < globalParams.lights.count; ++i)
     {
         GSLight gl = LoadSceneLight(i);
         if (gl.flags & kGSLightTypeMask != kGSLightTypeDirectional || gl.params.x <= 0.0f)

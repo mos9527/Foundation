@@ -30,6 +30,7 @@ android {
                 // BEGIN GENERATED ANDROID EXAMPLE TARGETS
                 targets(
                     "Example_BindlessSimple",
+                    "Example_DynamicGeometry",
                     "Example_GPUScene",
                     "Example_DebugText",
                     "Example_SDF2D",

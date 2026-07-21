@@ -159,7 +159,7 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
     if (DTid.x >= pc.gNodeCount)
         return;
     uint localIndex = gNodeIndices[pc.gFirstNodeOffset + DTid.x];
-    uint nodeIndex = globalParams.firstLightBVHNode + localIndex;
+    uint nodeIndex = globalParams.lightBVHNodes.offset + localIndex;
     GSLightBVHNode node = lightBVHNodes[nodeIndex];
     uint count = LightBVHNodeLightCount(node);
     uint offset = LightBVHNodeLightOffset(node);
@@ -170,8 +170,8 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
     float flux = 0.0f;
     for (uint i = 0; i < count; ++i)
     {
-        uint lightIndex = lightBVHLightIndices[globalParams.firstLightBVHLightIndex + offset + i];
-        GSLight light = lights[globalParams.firstLight + lightIndex];
+        uint lightIndex = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
+        GSLight light = lights[globalParams.lights.offset + lightIndex];
         float3 cMin, cMax, coneDir;
         float cosCone;
         ComputeLightBounds(light, cMin, cMax, coneDir, cosCone);
@@ -191,8 +191,8 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
         node.cosConeAngle = 1.0f;
         for (uint i = 0; i < count; ++i)
         {
-            uint lightIndex = lightBVHLightIndices[globalParams.firstLightBVHLightIndex + offset + i];
-            GSLight light = lights[globalParams.firstLight + lightIndex];
+            uint lightIndex = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
+            GSLight light = lights[globalParams.lights.offset + lightIndex];
             float3 cMin, cMax, coneDir;
             float cosCone;
             ComputeLightBounds(light, cMin, cMax, coneDir, cosCone);
@@ -214,10 +214,10 @@ void updateInternalNodes(uint3 DTid : SV_DispatchThreadID)
     if (DTid.x >= pc.gNodeCount)
         return;
     uint localIndex = gNodeIndices[pc.gFirstNodeOffset + DTid.x];
-    uint nodeIndex = globalParams.firstLightBVHNode + localIndex;
+    uint nodeIndex = globalParams.lightBVHNodes.offset + localIndex;
     GSLightBVHNode node = lightBVHNodes[nodeIndex];
     uint leftIndex = nodeIndex + 1u;
-    uint rightIndex = globalParams.firstLightBVHNode + LightBVHNodeRightChild(node);
+    uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
     GSLightBVHNode left = lightBVHNodes[leftIndex];
     GSLightBVHNode right = lightBVHNodes[rightIndex];
 

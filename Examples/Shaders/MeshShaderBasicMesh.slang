@@ -27,7 +27,7 @@ void meshMain(
     OutputIndices<uint3, 96> triangles,
 ) {        
     // Each WG of mesh shader processes *exactly* one meshlet per dispatch
-    FMeshlet meshlet = mesh.Load<FMeshlet>(globalParams.mesh.meshletOffset + gid * sizeof(FMeshlet));
+    FMeshlet meshlet = mesh.Load<FMeshlet>(globalParams.mesh.meshlets.offset + gid * sizeof(FMeshlet));
     uint32_t vtxBase = globalParams.mesh.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
     uint32_t vtxCount = meshlet.vtxCount;
     uint32_t triBase = globalParams.mesh.meshletTriOffset + meshlet.triOffset * sizeof(uint8_t);
@@ -36,7 +36,7 @@ void meshMain(
     // Each thread in the WG processes multiple vertices/triangles
     for (uint i = tid; i < vtxCount; i += kWGSize) {
         uint ind = mesh.Load<uint32_t>(vtxBase + i * sizeof(uint32_t));
-        FVertex vtx = mesh.Load<FVertex>(globalParams.mesh.vtxOffset + ind * sizeof(FVertex));
+        FVertex vtx = mesh.Load<FVertex>(globalParams.mesh.vertices.offset + ind * sizeof(FVertex));
         V2F v2f;
         v2f.pos = mul(globalParams.mvp, float4(vtx.position, 1.0));
         v2f.meshlet = gid;

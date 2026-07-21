@@ -479,10 +479,12 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
             params.screenSize = float2(extent.x, extent.y);
             if (GContext->gpuScene)
             {
-                params.firstLightBVHNode = GContext->gpuScene->GetLightBVHFirstNode();
-                params.numLightBVHNodes = GContext->gpuScene->GetLightBVHNodeCount();
-                params.firstLightBVHDistantNode = GContext->gpuScene->GetLightBVHFirstDistantNode();
-                params.numLightBVHDistantNodes = GContext->gpuScene->GetLightBVHDistantNodeCount();
+                GSOffsetCount const nodes = GContext->gpuScene->GetLightBVHNodes();
+                GSOffsetCount const distantNodes = GContext->gpuScene->GetLightBVHDistantNodes();
+                params.firstLightBVHNode = nodes.offset;
+                params.numLightBVHNodes = nodes.count;
+                params.firstLightBVHDistantNode = distantNodes.offset;
+                params.numLightBVHDistantNodes = distantNodes.count;
             }
             auto* ubo = r->DerefResource(sGizmo.ubo).Get<RHIBuffer*>();
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(params)));
@@ -571,7 +573,7 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
-                uint32_t nodeCount = GContext->gpuScene->GetLightBVHNodeCount();
+                uint32_t nodeCount = GContext->gpuScene->GetLightBVHNodes().count;
                 if (nodeCount == 0u)
                     return;
                 r->CmdSetPipeline(self, cmd);

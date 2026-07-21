@@ -25,14 +25,14 @@ Fragment drawMeshlet(V2F input)
     output.RT0 = float4(unpackUnorm4x8(hashed).xyz, 1.0);
     output.RT1 = float4(0);
     output.RT2 = float3(0);
-    output.RT3 = input.instanceID - globalParams.firstInstance;
+    output.RT3 = input.instanceID - globalParams.instances.offset;
     return output;
 }
 
 Fragment drawTextureLOD(V2F input)
 {
     Fragment output;
-    GSMaterial material = materials[globalParams.firstMaterial + input.materialIndex];
+    GSMaterial material = materials[globalParams.materials.offset + input.materialIndex];
     float3 color = float3(0.0f);
     if (material.baseColorTexture != ~0u)
     {
@@ -46,7 +46,7 @@ Fragment drawTextureLOD(V2F input)
     output.RT0 = float4(color, 1.0f);
     output.RT1 = float4(0);
     output.RT2 = float3(0);
-    output.RT3 = input.instanceID - globalParams.firstInstance;
+    output.RT3 = input.instanceID - globalParams.instances.offset;
     return output;
 }
 
@@ -60,7 +60,7 @@ float4 SampleMaterialTexture(uint textureIndex, float2 uv)
 Fragment drawGBuffer(V2F input){
     Fragment output;
     int materialFlags = globalParams.dbgMaterialFlags;
-    GSMaterial material = materials[globalParams.firstMaterial + input.materialIndex];
+    GSMaterial material = materials[globalParams.materials.offset + input.materialIndex];
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
         baseColor *= SampleMaterialTexture(material.baseColorTexture, input.uv);
@@ -87,7 +87,7 @@ Fragment drawGBuffer(V2F input){
     output.RT0 = float4(baseColor.xyz, pbrMetalRough.y); // BaseColor, Roughness
     output.RT1 = float4(normalOct, pbrMetalRough.z, 0.0f);
     output.RT2 = float3(emissive.xyz); // Emissive
-    output.RT3 = input.instanceID - globalParams.firstInstance;
+    output.RT3 = input.instanceID - globalParams.instances.offset;
     return output;
 }
 

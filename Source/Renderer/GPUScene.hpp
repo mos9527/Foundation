@@ -38,6 +38,13 @@ inline constexpr uint32_t kGSLightFlagTwoSided = 0x100u;
 inline constexpr uint32_t kGSLightFlagUseShadow = 0x200u;
 inline constexpr uint32_t kGSLightFlagEnvironmentMap = 0x400u;
 
+struct GSOffsetCount
+{
+    uint32_t offset{0u};
+    uint32_t count{0u};
+};
+static_assert(sizeof(GSOffsetCount) == 8);
+
 struct GeometryHandle
 {
     uint32_t index{~0u};
@@ -60,22 +67,12 @@ BITMASK_ENUM_END()
 #pragma pack(push, 1)
 struct GSMesh
 {
-    // Offsets are absolute, and are in Primitive buffer (bytes).
-    // @ref FVertex
-    uint32_t vtxOffset;
-    uint32_t vtxCount;
-    // LOD0 UINT32 indices
-    uint32_t idxOffset;
-    uint32_t idxCount;
-    // -- DAG LOD Group @ref FLODGroup
-    uint32_t groupOffset;
-    uint32_t groupCount;
-    // -- DAG Meshlets @ref FMeshlet
-    uint32_t meshletOffset;
-    uint32_t meshletCount;
+    GSOffsetCount vertices; // absolute byte offset + count in Primitive buffer (@ref FVertex / FQVertex)
+    GSOffsetCount indices;  // LOD0 UINT32 indices
+    GSOffsetCount groups;   // DAG LOD Group @ref FLODGroup
+    GSOffsetCount meshlets; // DAG Meshlets @ref FMeshlet
     uint32_t meshletVtxOffset;
     uint32_t meshletTriOffset;
-    // -- Global index (amongst all loaded meshes)
     uint32_t meshletGlobalIndex;
 };
 struct GSInstance
@@ -143,12 +140,9 @@ struct GSLight
 };
 struct GSCurveSet
 {
-    uint32_t vtxOffset; // FCurveDOTSVertex, in Primitive buffer (bytes)
-    uint32_t vtxCount;
-    uint32_t idxOffset; // uint32_t, in Primitive buffer (bytes)
-    uint32_t idxCount;  // 12 indices (4 tris) per leaf
-    uint32_t leafOffset; // FCurveLeaf, in Primitive buffer (bytes)
-    uint32_t leafCount;
+    GSOffsetCount vertices; // FCurveDOTSVertex
+    GSOffsetCount indices;  // uint32_t, 12 indices per leaf
+    GSOffsetCount leaves;   // FCurveLeaf
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
@@ -196,7 +190,7 @@ public:
     ~GPUScene();
 
     Result Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
-    Result UploadDynamic(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
+    Result AllocateDynamic(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu = false);
     
     Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
     
@@ -219,23 +213,18 @@ public:
 
     struct UpdateResult
     {
-        struct OffsetCount
-        {
-            uint32_t first{0u};
-            uint32_t count{0u};
-        };
-        OffsetCount instances;
-        OffsetCount materials;
-        OffsetCount lights;
+        GSOffsetCount instances;
+        GSOffsetCount materials;
+        GSOffsetCount lights;
         struct LightBVH
         {
             uint32_t valid{0u};
-            OffsetCount nodes;
-            OffsetCount nodeIndices;
-            OffsetCount distantNodes;            
-            OffsetCount bitmasks;
-            OffsetCount lightIndices;
-            OffsetCount globalLightIndices;
+            GSOffsetCount nodes;
+            GSOffsetCount nodeIndices;
+            GSOffsetCount distantNodes;
+            GSOffsetCount bitmasks;
+            GSOffsetCount lightIndices;
+            GSOffsetCount globalLightIndices;
         } lightBVH;
         /* Hashes */
         uint64_t instancesHash{0u};
@@ -248,10 +237,9 @@ public:
         Span<GSInstance> instances;
         Span<GSMaterial> materials;
         Span<GSLight> lights;
-        // offset into ring buffers
-        uint32_t firstInstance{0}; 
-        uint32_t firstMaterial{0};
-        uint32_t firstLight{0};
+        GSOffsetCount instanceRange{};
+        GSOffsetCount materialRange{};
+        GSOffsetCount lightRange{};
     };
 
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
@@ -277,8 +265,14 @@ public:
     [[nodiscard]] bool HasCurveGeometry() const;
 
     void BeginDynamicGeometryUpdate();
-    [[nodiscard]] Span<std::byte> UpdateDynamicGeometry(GeometryHandle handle);
+    // Spans are valid only until EndDynamicGeometryUpdate; do not retain across frames.
+    // Rejects GPU-authored handles.
+    void UpdateDynamicGeometry(GeometryHandle handle, Span<FQVertex>& outVertices, Span<uint32_t>& outIndices);
     void EndDynamicGeometryUpdate();
+    // Staging -> device-local copy for dirty active slots. Call after EndDynamicGeometryUpdate
+    // and before GPU producers / BuildBLAS / dynamic draws.
+    // CPU-authored slots copy the full footprint; GPU-authored slots copy only the GSMesh header.
+    void UploadDynamicGeometry(RHICommandList* cmd);
 
     void BuildBLAS(RHICommandList* cmd);
     [[nodiscard]] uint32_t GetDynamicRefitCount() const;
@@ -321,6 +315,7 @@ public:
     /* Geometry */
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetDynamicPrimitiveBuffer() const;
+    [[nodiscard]] RHIBuffer* GetDynamicStagingBuffer() const;
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const;
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const;
     [[nodiscard]] RHIBuffer* GetLightBuffer() const;
@@ -334,10 +329,8 @@ public:
     [[nodiscard]] uint32_t GetLightBVHRefitLevelOffset(uint32_t level) const;
     [[nodiscard]] uint32_t GetLightBVHRefitLevelNodeCount(uint32_t level) const;
     [[nodiscard]] uint32_t GetLightBVHFirstNodeIndex() const;
-    [[nodiscard]] uint32_t GetLightBVHFirstNode() const;
-    [[nodiscard]] uint32_t GetLightBVHNodeCount() const;
-    [[nodiscard]] uint32_t GetLightBVHFirstDistantNode() const;
-    [[nodiscard]] uint32_t GetLightBVHDistantNodeCount() const;
+    [[nodiscard]] GSOffsetCount GetLightBVHNodes() const;
+    [[nodiscard]] GSOffsetCount GetLightBVHDistantNodes() const;
     /* Textures */
     [[nodiscard]] BindlessPool* GetTexture2DPool();
     [[nodiscard]] BindlessPool* GetTexture3DPool();

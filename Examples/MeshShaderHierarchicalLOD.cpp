@@ -42,15 +42,15 @@ int main(int argc, char** argv)
             return off;
         };
         auto& mesh = ubo.mesh;
-        mesh.vtxCount = src.vertices.size();
-        mesh.vtxOffset = Write(src.vertices.data(), sizeof(FVertex) * src.vertices.size());
+        mesh.vertices.count = src.vertices.size();
+        mesh.vertices.offset = Write(src.vertices.data(), sizeof(FVertex) * src.vertices.size());
         // Group data
-        mesh.groupCount = src.dag.groups.size();
-        mesh.groupOffset = Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());
+        mesh.groups.count = src.dag.groups.size();
+        mesh.groups.offset = Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());
         // DAG occupies LOD0 data
         auto& s0 = src.dag;
-        mesh.meshletCount = s0.meshlets.size();
-        mesh.meshletOffset = Write(s0.meshlets.data(), sizeof(FMeshlet) * s0.meshlets.size());
+        mesh.meshlets.count = s0.meshlets.size();
+        mesh.meshlets.offset = Write(s0.meshlets.data(), sizeof(FMeshlet) * s0.meshlets.size());
         mesh.meshletVtxOffset = Write(s0.meshletVtx.data(), sizeof(uint32_t) * s0.meshletVtx.size());
         mesh.meshletTriOffset = Write(s0.meshletTri.data(), sizeof(uint8_t) * s0.meshletTri.size());
         size_t size = dst - ptr;
@@ -113,7 +113,7 @@ int main(int argc, char** argv)
             // Mesh Shader workgroups effectively directly.
             cmd->SetViewport(0, 0, img_wh.x, img_wh.y,0, 1, true)
                 .SetScissor(0, 0, img_wh.x, img_wh.y)
-                .DrawMeshTasks(ubo.mesh.meshletCount, 1, 1)
+                .DrawMeshTasks(ubo.mesh.meshlets.count, 1, 1)
                 .EndGraphics();
         });
     createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));

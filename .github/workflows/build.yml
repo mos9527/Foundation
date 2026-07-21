@@ -84,6 +84,7 @@ jobs:
           EditorWithUtil
           # BEGIN GENERATED CI EXAMPLE TARGETS
           Example_BindlessSimple
+          Example_DynamicGeometry
           Example_GPUScene
           Example_DebugText
           Example_SDF2D

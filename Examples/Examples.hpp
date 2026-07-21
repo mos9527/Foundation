@@ -174,6 +174,8 @@ void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx);
 bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISurface>& outSurface, RHIDeviceScopedHandle<RHISwapchain>& outSwapchain);
 void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* data,
                                int channels = 4, int strideBytes = 0);
+// Basic diffuse+specular tonemap. Returns an offscreen image when isPresent is false.
+ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs const& outputs, bool isPresent);
 
 float Examples_GetTime();
 

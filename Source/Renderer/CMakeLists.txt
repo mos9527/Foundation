@@ -14,6 +14,7 @@ add_library(Foundation_GPUScene STATIC
     Mesh.cpp
     Postprocess.cpp
     Precompute.cpp
+    Renderer.cpp
     Serialization.cpp
     Texture.cpp
     "${lz4_SOURCE_DIR}/lib/lz4.c"
