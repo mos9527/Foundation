@@ -22,6 +22,7 @@ android {
                     "-DANDROID_STL=c++_shared",
                     "-DFOUNDATION_WITH_EXAMPLES=ON",
                     "-DFOUNDATION_RHIVULKAN_VALIDATION_LAYER=OFF",
+                    "-DFOUNDATION_WITH_JOLT_EXAMPLES=ON"
                     "-DANDROID_PLATFORM=android-33",
                     "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
                     "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
@@ -29,6 +30,7 @@ android {
                 )
                 // BEGIN GENERATED ANDROID EXAMPLE TARGETS
                 targets(
+                    "Example_PhysicsJolt",
                     "Example_BindlessSimple",
                     "Example_DynamicGeometry",
                     "Example_GPUScene",

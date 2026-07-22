@@ -603,6 +603,7 @@ namespace
 void ComputeDirectionalLightBounds(GSLight const& light, float3& aabbMin, float3& aabbMax, float3& center,
                                    float3& coneDirection, float& cosConeAngle)
 {
+    CHECK(length(light.direction) > FLT_MIN);
     coneDirection = -normalize(light.direction);
     float angularRadius = std::max(std::abs(light.params.x) * 0.5f, kLightBVHMinSunAngularRadius);
     float extent = std::sin(std::min(angularRadius, std::numbers::pi_v<float> * 0.5f));

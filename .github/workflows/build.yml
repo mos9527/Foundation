@@ -74,6 +74,7 @@ jobs:
         -DFOUNDATION_WITH_EXAMPLES=ON
         -DFOUNDATION_WITH_PROFILING=OFF
         -DFOUNDATION_RHIVULKAN_VALIDATION_LAYER=OFF
+        -DFOUNDATION_WITH_JOLT_EXAMPLES=ON
 
     - name: Build
       if: matrix.platform == 'windows'
@@ -83,6 +84,7 @@ jobs:
         targets=(
           EditorWithUtil
           # BEGIN GENERATED CI EXAMPLE TARGETS
+          Example_PhysicsJolt
           Example_BindlessSimple
           Example_DynamicGeometry
           Example_GPUScene

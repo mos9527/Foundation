@@ -50,8 +50,9 @@ public class MainActivity extends Activity {
 
         // BEGIN GENERATED ANDROID EXAMPLES
         Example[] examples = {
+            new Example("Example_PhysicsJolt", "PhysicsJolt", ""),
             new Example("Example_BindlessSimple", "BindlessSimple", "Demonstrates bindless texture sampling with a pool of procedurally generated textures. The fullscreen shader cycles through many sampled images without rebinding descriptors."),
-            new Example("Example_DynamicGeometry", "DynamicGeometry", "Demonstrates GPU- and CPU-authored dynamic geometry."),
+            new Example("Example_DynamicGeometry", "DynamicGeometry", "Demonstrates GPU-generated dynamic geometry and CPU-generated static geo usage."),
             new Example("Example_GPUScene", "GPUScene", "Demonstrates loading a glTF/GLB/FSCN into GPUScene with the Pathtracer integrator"),
             new Example("Example_DebugText", "DebugText", "Example showing how to use CSDebugText to get the absolute minimum up and running - with something to display. You can copy-paste this into your own application to get started."),
             new Example("Example_SDF2D", "SDF2D", "Fullscreen 2D signed-distance-field shader demo. Ports Inigo Quilez-style distance functions into a minimal Foundation render pass."),

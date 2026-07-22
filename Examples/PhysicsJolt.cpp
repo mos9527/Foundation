@@ -148,6 +148,7 @@ namespace
         tables.materials[1].baseColorFactor = float4(0.2f, 0.6f, 0.9f, 1.0f);
         tables.materials[1].metallicFactor = 0.0f;
         tables.materials[1].roughnessFactor = 0.5f;
+        tables.materials[1].transmissionFactor = 1.0f;
         tables.materials[1].ior = 1.5f;
 
         tables.lights[0] = GSLight{
@@ -155,11 +156,11 @@ namespace
             .color = float3(0.45f, 0.55f, 0.7f),
             .power = 1.0f,
         };
-        tables.lights[1] = GSLight{.flags = kGSLightTypePoint,
+        tables.lights[1] = GSLight{.flags = kGSLightTypeDirectional | kGSLightFlagUseShadow,
                                    .color = float3(1.0f, 0.96f, 0.9f),
-                                   .power = 33.0f,
-                                   .position = float3(5, 10, 5),
-                                   .params = float4(.05f)};
+                                   .power = 2.0f,            
+                                   .direction = float3(0.0f, -1.0f, 0.0f),
+                                   .params = float4(.05f, 0.0f, 0.0f, 0.0f)};
         gpu.EndScene(tables);
         gpu.UpdateUBO(ubo);
     }
@@ -170,7 +171,7 @@ namespace
         Examples_ResetRenderer(ctx, RendererDesc{});
         ctx.renderer->BeginSetup();
         cfg.renderExtent = ctx.renderer->GetSwapchainExtent();
-        ubo.ptMaxBounces = 1u;
+        ubo.ptMaxBounces = 4u;
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
         if (renderer == ExampleRenderer::PathTracer)
@@ -238,11 +239,11 @@ int main(int argc, char** argv)
     desc.primitiveBudget = 64u * 1024u;
     desc.dynamicGeometryBudget = 256u * 1024u;
     desc.dynamicStagingBudget = 256u * 1024u;
-    desc.instanceBudget = 1024;
+    desc.instanceBudget = cMaxBodies * 2;
     desc.materialBudget = 8;
     desc.lightBudget = 8;
     desc.geometryBudget = 8;
-    desc.tlasInstanceBudget = 1024;
+    desc.tlasInstanceBudget = cMaxBodies * 2;
     GPUScene gpu(ctx.device.Get(), GLOBAL_ALLOC, desc);
     
     SimulationState state;
@@ -278,7 +279,8 @@ int main(int argc, char** argv)
     float paused = 0.0f;
     ExampleRenderer renderer = ExampleRenderer::PathTracer;
     uint64_t t0 = SDL_GetTicksNS();
-
+    float lastClickTime = -1.0f;
+    const float kShootIntervalMS = 250;
     while (true)
     {
         uint64_t t1 = SDL_GetTicksNS();
@@ -288,13 +290,33 @@ int main(int argc, char** argv)
         if (Examples_PollEvents(window, ctx, input))
             break;
             
+        bool clicked = input.pointerDown && !input.mouseCapturedByHud && (t1 - lastClickTime > kShootIntervalMS * 1e6f);
+
+        if (clicked && box_bodies.size() < cMaxBodies / 2 /* reserve.. */)
+        {
+            lastClickTime = t1;
+            float ndcX = (input.clickPosition.x / (float)ctx.renderer->GetSwapchainExtent().x) * 2.0f - 1.0f;
+            float ndcY = (1.0f - input.clickPosition.y / (float)ctx.renderer->GetSwapchainExtent().y) * 2.0f - 1.0f;
+            mat4 invVP = inverse(camera.proj * camera.view);
+            vec4 target = invVP * vec4(ndcX,ndcY, 1e-5f, 1.0f);
+            target /= target.w;
+            vec3 dir = normalize(vec3(target) - camera.position);
+            
+            BodyCreationSettings proj_settings(box_shape, RVec3(camera.position.x, camera.position.y, camera.position.z), Quat::sIdentity(), EMotionType::Dynamic, Layers::MOVING);
+            BodyID proj_id = body_interface.CreateAndAddBody(proj_settings, EActivation::Activate);
+            body_interface.SetLinearVelocity(proj_id, Vec3(dir.x, dir.y, dir.z) * 25.0f);
+            
+            box_bodies.push_back(proj_id);
+            state.bodies.push_back(proj_id);
+        }
+
         if (input.wantResizeOrRebuild)
         {
             input.wantResizeOrRebuild = false;
             RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, renderer);
         }
 
-        if (paused < 0.5f)
+        if (paused < 0.5f || clicked)
         {
             physics_system.Update(1.0f / 60.0f, 1, &temp_allocator, &job_system);
             ubo.ptAccumulatedFrames = 0u;
