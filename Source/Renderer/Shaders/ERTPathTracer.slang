@@ -1525,16 +1525,13 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     GSLight envLight = LoadSceneLight(0u);
     InfiniteLight env = MakeEnvironmentLight(envLight);
     DirectLightingState lighting = DirectLightingState(env);
-    uint diffuseBounces = 0;
-    uint specularBounces = 0;
-    uint transmissionBounces = 0;
     const int supportDebugViewFlags = kViewBaseColor | kViewNormal | kViewPosition | kViewTextureLOD;
     bool hasAnyDebugView = (globalParams.dbgViewFlags & supportDebugViewFlags) != 0u;
     CameraRay cameraRay = GenerateCameraRay(pix, rng, hasAnyDebugView);
     RayDesc ray = cameraRay.ray;
     RayCone currentRayCone = cameraRay.rayCone;
     float chitNDCDepth = 0.0f;
-    for (uint bounce = 0; ; bounce++) {
+    for (uint bounce = 0; bounce <= globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
 
         RayQuery<RAY_FLAG_NONE> q;
@@ -1634,7 +1631,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         }
 
         float3 wo = WorldToShadingLocal(hitState, view);
-        bool foldSubsurfaceToDiffuse = diffuseBounces > 0;
+        bool foldSubsurfaceToDiffuse = bounce > 0;
         float3 baseColorOut;
         IMaterial material = MakeMaterial(hit.raw, hitState, wo, baseColorOut, hit.kind == HitKind::Curve, foldSubsurfaceToDiffuse);
 
@@ -1735,16 +1732,6 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
 
         if (!nextSample.valid)
             break;
-
-        if (IsTransmission(nextSample.flags)) transmissionBounces++;
-        else if (IsDiffuse(nextSample.flags)) diffuseBounces++;
-        else specularBounces++;
-
-        if (diffuseBounces > globalParams.ptMaxBouncesDiffuse ||
-            specularBounces > globalParams.ptMaxBouncesSpecular ||
-            transmissionBounces > globalParams.ptMaxBouncesTransmission) {
-            break;
-        }
 
         if (bounce == 0)
             firstBounceCategory = nextSample.category;

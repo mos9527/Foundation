@@ -304,9 +304,7 @@ public struct UBO
     public uint32_t energyCompensation;
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
-    public uint32_t ptMaxBouncesDiffuse;
-    public uint32_t ptMaxBouncesSpecular;
-    public uint32_t ptMaxBouncesTransmission;
+    public uint32_t ptMaxBounces;
     public float ptFireflyClamp;
     public uint32_t ptSamplesPerPixel;
     public uint32_t ptPrimaryLightVisibility;

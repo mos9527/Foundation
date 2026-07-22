@@ -2981,33 +2981,25 @@ void FRunningImGui()
             ImGui::SeparatorText(PSI_BOLT " Path Tracer");
             if (ImModalButton(PSI_CODE " Direct", 0, 4))
             {
-                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 0;
-                GEditor.shaderGlobals.ptMaxBouncesSpecular = 0;
-                GEditor.shaderGlobals.ptMaxBouncesTransmission = 0;
+                GEditor.shaderGlobals.ptMaxBounces = 0;
                 GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton(PSI_BOLT " Fast", 1, 4))
             {
-                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 4;
-                GEditor.shaderGlobals.ptMaxBouncesSpecular = 4;
-                GEditor.shaderGlobals.ptMaxBouncesTransmission = 12;
+                GEditor.shaderGlobals.ptMaxBounces = 4;
                 GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton(PSI_FIRE " Full", 2, 4))
             {
-                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
-                GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
-                GEditor.shaderGlobals.ptMaxBouncesTransmission = 32;
+                GEditor.shaderGlobals.ptMaxBounces = 32;
                 GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton(PSI_BEAKER " Über", 3, 4))
             {
-                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 100;
-                GEditor.shaderGlobals.ptMaxBouncesSpecular = 100;
-                GEditor.shaderGlobals.ptMaxBouncesTransmission = 100;
+                GEditor.shaderGlobals.ptMaxBounces = 100;
                 GEditor.shaderGlobals.ptFireflyClamp = 100.0f;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
@@ -3039,9 +3031,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::SeparatorText(PSI_RANDOM " Ray Bounce");
-            ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesDiffuse), 0, 64);
-            ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);
-            ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
+            ImGui::SliderInt("Max Bounces", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBounces), 0, 100);
             ImGui::SeparatorText(PSI_RANDOM " Sampling");
             const char* lightSamplerItems[] = {"Light BVH", "Uniform (Reference)"};
             int lightSampler = static_cast<int>(GEditor.rendererConfig.lightSamplerMode);

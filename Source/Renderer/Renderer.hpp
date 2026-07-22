@@ -62,9 +62,7 @@ struct RendererUBO
     uint32_t energyCompensation{1u};
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
-    uint32_t ptMaxBouncesDiffuse{4u};
-    uint32_t ptMaxBouncesSpecular{4u};
-    uint32_t ptMaxBouncesTransmission{12u};
+    uint32_t ptMaxBounces{4u};
     float ptFireflyClamp{2.0f}; // 10^x
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1.
     uint32_t ptPrimaryLightVisibility{0u}; // Analytic lights + sun disks on bounce 0
