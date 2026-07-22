@@ -52,8 +52,8 @@ namespace
                 uint32_t meshType = 0;
                 resources.scene->ResolveGeometry(state->water, meshOffset, meshType);
                 CHECK(meshType & kGSInstanceFlagDynamic);
-                GerstnerPush push{.vertexOffset = meshOffset + sizeof(GSMesh),
-                                  .indexOffset = meshOffset + sizeof(GSMesh) + kWaterVerts * sizeof(FQVertex),
+                GerstnerPush push{.vertexOffset = static_cast<uint32_t>(meshOffset + sizeof(GSMesh)),
+                                  .indexOffset = static_cast<uint32_t>(meshOffset + sizeof(GSMesh) + kWaterVerts * sizeof(FQVertex)),
                                   .gridQuads = kWaterQuads,
                                   .extent = kWaterExtent,
                                   .time = state->time,
