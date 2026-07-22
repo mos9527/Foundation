@@ -67,20 +67,6 @@ void ApplySceneCamera(FImportedScene const& scene, RendererUBO& ubo, FExampleOrb
     }
 }
 
-void UpdateRendererUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera& camera,
-                      RendererConfig const& config)
-{
-    camera.aspect = static_cast<float>(config.renderExtent.x) / static_cast<float>(config.renderExtent.y);
-    camera.RefreshMatrices();
-    UpdateRendererCameraUBO(ubo, renderer->GetFrame(), camera.view, camera.proj);
-    ubo.zNear = camera.zNear;
-    ubo.projPlanes = planeSymmetric(camera.proj);
-    ubo.camPosition = float4(camera.position, 0.0f);
-    ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
-    ubo.dbgViewFlags = config.viewFlags;
-    ubo.dbgMaterialFlags = config.materialFlags;    
-}
-
 int main(int argc, char** argv)
 {
     // --- Command line ---------------------------------------------------------------------
@@ -158,7 +144,7 @@ int main(int argc, char** argv)
             gpu.Join();
             for (uint32_t f = 0; f < sampleCount; ++f)
             {
-                UpdateRendererUBO(ubo, ctx.renderer.get(), camera, cfg);
+                Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
                 Examples_NewFrame(ctx.renderer.get());
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
                 fmt::print("\rSample {}/{} ({:.0f}%)   ", f + 1, sampleCount,
@@ -236,7 +222,7 @@ int main(int argc, char** argv)
                     RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
                     ctx.renderer->EndSetup();
                 }                
-                UpdateRendererUBO(ubo, ctx.renderer.get(), camera, cfg);
+                Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
                 CommitSceneToGPU(scene, gpu, resources, ubo);
                 // Debug Text
                 Examples_Text(input,

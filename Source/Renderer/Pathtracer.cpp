@@ -31,6 +31,9 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*globals)));
         });
     CHECK(gpu.tlas != kInvalidHandle && "Pathtracer requires a TLAS to be built/updated from.");
+    BuildGPUSceneAccelerationStructureUpdatePass(renderer, gpu);
+    if (cfg.lightSamplerMode == kLightSamplerBVH)
+        BuildGPUSceneLightBVHRefitPasses(renderer, gpu, GlobalUBO);
     ResourceHandle TLAS = gpu.tlas;
     /* Instance and Primitive buffers */
     auto PrimitiveBuffer = gpu.primitiveBuffer;
@@ -43,12 +46,10 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
     auto LightBVHBitmaskBuffer = gpu.lightBVHBitmaskBuffer;
     auto LightBVHNodeIndexBuffer = gpu.lightBVHNodeIndexBuffer;
     auto SobolMatricesBuffer = gpu.sobolMatricesBuffer;
-    BuildGPUSceneUpdatePasses(renderer, gpu, GlobalUBO, true);
     auto TexSampler = renderer->CreateSampler(MakeTextureSamplerDesc(cfg));
     uint32_t w = std::max(renderExtent.x, 1u);
     uint32_t h = std::max(renderExtent.y, 1u);
     constexpr RHIResourceFormat kPathTracerAOVFormat = RHIResourceFormat::R32G32B32A32SignedFloat;
-
     // AOV buffers
     auto Diffuse = renderer->CreateResource("Diffuse",
                                             RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
@@ -76,8 +77,8 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
                        .format = RHIResourceFormat::R32Uint});
     auto AdaptiveAux = renderer->CreateResource("Adaptive Aux",
                                                 RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
-                                                                    RHITextureUsageBits::SampledImage |
-                                                                    RHITextureUsageBits::TransferSource,
+                                                                   RHITextureUsageBits::SampledImage |
+                                                                   RHITextureUsageBits::TransferSource,
                                                                .extent = {w, h, 1},
                                                                .format = kPathTracerAOVFormat});
     ResourceHandle EnvMapSampler = renderer->CreateSampler({
@@ -95,73 +96,71 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
     renderer->CreatePass(
         passName, RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
-    {
-        const auto pipelineStage = shaderExecutionReordering
-            ? RHIPipelineStageBits::RayTracingShader
-            : RHIPipelineStageBits::ComputeShader;
-        r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
-        r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "AS");
-        const uint ptCompileOptions =
-            PTPackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode, cfg.energyCompensation);
-        const auto shader = PathsResolve(
-            !shaderExecutionReordering ? "Data/Shaders/ERTPathTracer.spv" : "Data/Shaders/ERTPathTracer_SER.spv"
-        );
-        if (shaderExecutionReordering)
         {
-            r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,
-                          AsBytes(AsSpan(ptCompileOptions)));
-        }
-        else
-        {
-            r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", shader,
-                          AsBytes(AsSpan(ptCompileOptions)));
-        }
-
-        r->BindBufferStorageRead(self, PrimitiveBuffer, pipelineStage, "primitives");
-        r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, pipelineStage, "dynamicPrimitives");
-        r->BindBufferStorageRead(self, InstanceBuffer, pipelineStage, "instances");
-        r->BindBufferStorageRead(self, MaterialBuffer, pipelineStage, "materials");
-        r->BindBufferStorageRead(self, LightBuffer, pipelineStage, "lights");
-        r->BindBufferStorageRead(self, LightBVHNodeBuffer, pipelineStage, "lightBVHNodes");
-        r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, pipelineStage, "lightBVHLightIndices");
-        r->BindBufferStorageRead(self, LightBVHBitmaskBuffer, pipelineStage, "lightBVHBitmasks");
-        r->BindBufferStorageRead(self, SobolMatricesBuffer, pipelineStage, "sobolMatrices");
-        r->BindTextureSampler(self, TexSampler, "textureSampler");
-        r->BindTextureSampler(self, LUTSampler, "lutSampler");
-        // Accumulation UAVs
-        r->BindTextureUAV(self, Diffuse, "diffuse", pipelineStage,
-                          RHITextureViewDesc{.format = kPathTracerAOVFormat,
-                                             .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureUAV(self, Specular, "specular", pipelineStage,
-                          RHITextureViewDesc{.format = kPathTracerAOVFormat,
-                                             .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureUAV(self, Depth, "depth", pipelineStage,
-                          RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
-                                             .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureUAV(self, InstanceIDBuffer, "instanceIDBuffer", pipelineStage,
-                          RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
-                                             .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", pipelineStage,
-                          RHITextureViewDesc{.format = kPathTracerAOVFormat,
-                                             .range = RHITextureSubresourceRange::Create()});
-        r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
-        r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());
-        r->BindDescriptorSet(self, "textures3D", gpu.textures3D->GetDescriptorSetLayout());
-    },
-    [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-    {
-        r->CmdSetPipeline(self, cmd);
-        r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
-        r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu.textures3D->GetDescriptorSet());
-        bool canTrace = (!cfg.ptRenderPaused || !*cfg.ptRenderPaused);
-        if (canTrace)
-        {
+            const auto pipelineStage = shaderExecutionReordering ? RHIPipelineStageBits::RayTracingShader
+                                                                 : RHIPipelineStageBits::ComputeShader;
+            r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
+            r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "AS");
+            const uint ptCompileOptions =
+                PTPackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode, cfg.energyCompensation);
+            const auto shader = PathsResolve(!shaderExecutionReordering ? "Data/Shaders/ERTPathTracer.spv"
+                                                                        : "Data/Shaders/ERTPathTracer_SER.spv");
             if (shaderExecutionReordering)
-                cmd->TraceRays(w, h, 1);
+            {
+                r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,
+                              AsBytes(AsSpan(ptCompileOptions)));
+            }
             else
-                cmd->Dispatch((w - 1) / 8 + 1, (h - 1) / 8 + 1, 1);
-        }
-    });
+            {
+                r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", shader,
+                              AsBytes(AsSpan(ptCompileOptions)));
+            }
+
+            r->BindBufferStorageRead(self, PrimitiveBuffer, pipelineStage, "primitives");
+            r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, pipelineStage, "dynamicPrimitives");
+            r->BindBufferStorageRead(self, InstanceBuffer, pipelineStage, "instances");
+            r->BindBufferStorageRead(self, MaterialBuffer, pipelineStage, "materials");
+            r->BindBufferStorageRead(self, LightBuffer, pipelineStage, "lights");
+            r->BindBufferStorageRead(self, LightBVHNodeBuffer, pipelineStage, "lightBVHNodes");
+            r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, pipelineStage, "lightBVHLightIndices");
+            r->BindBufferStorageRead(self, LightBVHBitmaskBuffer, pipelineStage, "lightBVHBitmasks");
+            r->BindBufferStorageRead(self, SobolMatricesBuffer, pipelineStage, "sobolMatrices");
+            r->BindTextureSampler(self, TexSampler, "textureSampler");
+            r->BindTextureSampler(self, LUTSampler, "lutSampler");
+            // Accumulation UAVs
+            r->BindTextureUAV(
+                self, Diffuse, "diffuse", pipelineStage,
+                RHITextureViewDesc{.format = kPathTracerAOVFormat, .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureUAV(
+                self, Specular, "specular", pipelineStage,
+                RHITextureViewDesc{.format = kPathTracerAOVFormat, .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureUAV(self, Depth, "depth", pipelineStage,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureUAV(self, InstanceIDBuffer, "instanceIDBuffer", pipelineStage,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureUAV(
+                self, AdaptiveAux, "adaptiveAux", pipelineStage,
+                RHITextureViewDesc{.format = kPathTracerAOVFormat, .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
+            r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());
+            r->BindDescriptorSet(self, "textures3D", gpu.textures3D->GetDescriptorSetLayout());
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            r->CmdSetPipeline(self, cmd);
+            r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
+            r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu.textures3D->GetDescriptorSet());
+            bool canTrace = (!cfg.ptRenderPaused || !*cfg.ptRenderPaused);
+            if (canTrace)
+            {
+                if (shaderExecutionReordering)
+                    cmd->TraceRays(w, h, 1);
+                else
+                    cmd->Dispatch((w - 1) / 8 + 1, (h - 1) / 8 + 1, 1);
+            }
+        });
 
     renderer->CreatePass(
         "Adaptive Filter X", RHIDeviceQueueType::Graphics, 0u,
@@ -169,11 +168,12 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
         {
             if (globals->adaptiveThreshold > 0.0f)
                 r->MakePassUncullable(self);
-            r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", PathsResolve("Data/Shaders/ECSAdaptiveFilter.spv"),
+            r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain",
+                          PathsResolve("Data/Shaders/ECSAdaptiveFilter.spv"),
                           AsBytes(AsSpan(0u))); // Pass 0
-            r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = kPathTracerAOVFormat,
-                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureUAV(
+                self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::ComputeShader,
+                RHITextureViewDesc{.format = kPathTracerAOVFormat, .range = RHITextureSubresourceRange::Create()});
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -191,11 +191,12 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
         {
             if (globals->adaptiveThreshold > 0.0f)
                 r->MakePassUncullable(self);
-            r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", PathsResolve("Data/Shaders/ECSAdaptiveFilter.spv"),
+            r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain",
+                          PathsResolve("Data/Shaders/ECSAdaptiveFilter.spv"),
                           AsBytes(AsSpan(1u))); // Pass 1
-            r->BindTextureUAV(self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = kPathTracerAOVFormat,
-                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureUAV(
+                self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::ComputeShader,
+                RHITextureViewDesc{.format = kPathTracerAOVFormat, .range = RHITextureSubresourceRange::Create()});
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)

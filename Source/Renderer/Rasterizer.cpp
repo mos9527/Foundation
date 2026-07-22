@@ -132,19 +132,16 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         {
             auto* ubo = r->DerefResource(GlobalUBO).Get<RHIBuffer*>();
             auto* counter = r->DerefResource(IndirectTaskCounter).Get<RHIBuffer*>();
-            // Fill, Update are considered Transfer operations
-            // and would require proper barriers - which are automatically handled
-            // by the Renderer *inter* passes.
-            // Note that usage before a Dispatch, etc, may be valid but is still a ROW hazard.
-            // TODO: Document these.
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*globals)));
             cmd->FillBuffer(counter, 0u);
         });
     bool disableRT = cfg.viewFlags & kDisableRTBuildFlags;
     bool useRTShadows = (cfg.viewFlags & kEnableRasterRTShadows) && !disableRT && hasTLAS;
+    // Shadows require AS updates
+    if (useRTShadows)
+        BuildGPUSceneAccelerationStructureUpdatePass(renderer, gpu);
     uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~kEnableRasterRTShadows);
     uint32_t gbufferFlags = cfg.viewFlags | (cfg.forceTextureLOD0 ? kForceTextureLOD0 : 0u);
-    BuildGPUSceneUpdatePasses(renderer, gpu, GlobalUBO, useRTShadows);
     renderer->CreatePass(
         "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)

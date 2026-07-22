@@ -277,7 +277,13 @@ public:
      */
     void UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
     void EndDynamicGeometryUpdate();
-    void UploadDynamicGeometry(RHICommandList* cmd);
+
+    /**
+     * @brief Commits Host-side geometry updates through @ref UpdateDynamicGeometryCPU
+     *        No-op if no @ref UpdateDynamicGeometryCPU calls were made since the last @ref EndDynamicGeometryUpdate.
+     *        GPU-side updates are not required to be committed, as they are already in device-local memory.
+     */
+    void UploadDynamicGeometryCPU(RHICommandList* cmd);
 
     void BuildBLAS(RHICommandList* cmd);
     [[nodiscard]] uint32_t GetDynamicRefitCount() const;

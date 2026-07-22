@@ -164,7 +164,6 @@ struct RendererResources
     ResourceHandle lightBVHNodeIndexBuffer{kInvalidHandle};
     ResourceHandle sobolMatricesBuffer{kInvalidHandle};
     ResourceHandle tlas{kInvalidHandle};
-    PassHandle dynamicGeometryUploadPass{kInvalidHandle};
     BindlessPool* textures2D{nullptr};
     BindlessPool* textures3D{nullptr};
     RHIBuffer* primitiveBufferRHI{nullptr};
@@ -174,9 +173,10 @@ struct RendererResources
 };
 
 [[nodiscard]] RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* scene);
-PassHandle BuildGPUSceneDynamicGeometryUploadPass(Renderer* renderer, RendererResources& resources);
-void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources& resources,
-                               ResourceHandle globalUBO, bool buildTLAS);
+
+void BuildGPUSceneHostUpdatePass(Renderer* renderer, RendererResources& resources);
+void BuildGPUSceneAccelerationStructureUpdatePass(Renderer* renderer, RendererResources& resources);;
+void BuildGPUSceneLightBVHRefitPasses(Renderer* renderer, RendererResources& resources, ResourceHandle ubo);
 
 struct RendererConfig;
 
@@ -282,9 +282,17 @@ struct PostprocessUBO
     uint32_t dbgViewFlags{0u};
 };
 
+/**
+ * @brief Builds the RenderGraph for the Raster renderer.
+ * @note AS updates through (@ref BuildGPUSceneAccelerationStructureUpdatePass) is already conditionally built by this pass
+ */
 extern void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals,
                                    RendererResources& gpu,
                                    RendererConfig const& cfg, RendererOutputs& out);
+/**
+ * @brief Builds the RenderGraph for the Pathtracer.
+ * @note AS updates through (@ref BuildGPUSceneAccelerationStructureUpdatePass) is already conditionally built by this pass
+ */
 extern void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals,
                                        RendererResources& gpu,
                                        RendererConfig const& cfg, RendererOutputs& out);

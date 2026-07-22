@@ -154,6 +154,9 @@ struct FExampleOrbitCamera
     void RefreshMatrices();
 };
 
+void Examples_UpdateCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera& camera,
+                              RendererConfig const& config);
+
 ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc = {});
 bool Examples_PollEvents(SDL_Window* window, ExampleVulkanContext& ctx, ExampleInputState& input, SDL_Event* outLastEvent = nullptr,
                          void (*processEvent)(SDL_Event*) = nullptr);

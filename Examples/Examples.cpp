@@ -546,6 +546,20 @@ void Examples_ReportFatalException()
     }
 }
 
+void Examples_UpdateCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera& camera,
+                              RendererConfig const& config)
+{
+    camera.aspect = static_cast<float>(config.renderExtent.x) / static_cast<float>(config.renderExtent.y);
+    camera.RefreshMatrices();
+    UpdateRendererCameraUBO(ubo, renderer->GetFrame(), camera.view, camera.proj);
+    ubo.zNear = camera.zNear;
+    ubo.projPlanes = planeSymmetric(camera.proj);
+    ubo.camPosition = float4(camera.position, 0.0f);
+    ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
+    ubo.dbgViewFlags = config.viewFlags;
+    ubo.dbgMaterialFlags = config.materialFlags;
+}
+
 ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc)
 {
     argh::parser cmdl(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);

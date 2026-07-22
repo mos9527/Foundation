@@ -35,63 +35,58 @@ RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* 
     return resources;
 }
 
-PassHandle BuildGPUSceneDynamicGeometryUploadPass(Renderer* renderer, RendererResources& resources)
+void BuildGPUSceneHostUpdatePass(Renderer* renderer, RendererResources& resources)
 {
     CHECK(renderer);
     CHECK(resources.scene);
     if (!resources.hasDynamicGeometry)
-        return kInvalidHandle;
-    if (resources.dynamicGeometryUploadPass != kInvalidHandle)
-        return resources.dynamicGeometryUploadPass;
+        return;
     GPUScene* scene = resources.scene;
-    resources.dynamicGeometryUploadPass = renderer->CreatePass(
-        "Dynamic Geometry Upload", RHIDeviceQueueType::Graphics, 0u,
+    renderer->CreatePass(
+        "GPUScene Host Update", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             if (resources.dynamicStagingBuffer != kInvalidHandle)
                 r->BindBufferCopySrc(self, resources.dynamicStagingBuffer);
             r->BindBufferCopyDst(self, resources.dynamicPrimitiveBuffer);
         },
-        [=](PassHandle, Renderer*, RHICommandList* cmd) { scene->UploadDynamicGeometry(cmd); });
-    return resources.dynamicGeometryUploadPass;
+        [=](PassHandle, Renderer*, RHICommandList* cmd) { scene->UploadDynamicGeometryCPU(cmd); });
 }
 
-void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources& resources,
-                               ResourceHandle globalUBO, bool buildTLAS)
+void BuildGPUSceneAccelerationStructureUpdatePass(Renderer* renderer, RendererResources& resources)
 {
-    GPUScene* scene = resources.scene;
     CHECK(renderer);
-    CHECK(scene);
-    BuildGPUSceneDynamicGeometryUploadPass(renderer, resources);
-    if (buildTLAS && resources.tlas != kInvalidHandle)
-    {
-        renderer->CreatePass(
-            "TLAS/BLAS Update", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindAccelerationStructureWrite(self, resources.tlas);
-                if (resources.hasDynamicGeometry)
-                    r->BindBufferShaderRead(self, resources.dynamicPrimitiveBuffer,
-                                            RHIPipelineStageBits::AccelerationBuild);
-            },
-            [=](PassHandle, Renderer*, RHICommandList* cmd)
-            {
-                if (resources.hasDynamicGeometry)
-                    scene->BuildBLAS(cmd);
-                (void)scene->BuildTLAS(cmd, true);
-            });
-    }
+    CHECK(resources.scene);
+    renderer->CreatePass(
+        "GPUScene Acceleration Structure Update", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindAccelerationStructureWrite(self, resources.tlas);
+            if (resources.hasDynamicGeometry)
+                r->BindBufferShaderRead(self, resources.dynamicPrimitiveBuffer,
+                                        RHIPipelineStageBits::AccelerationBuild);
+        },
+        [=](PassHandle, Renderer*, RHICommandList* cmd)
+        {
+            if (resources.hasDynamicGeometry)
+                resources.scene->BuildBLAS(cmd);
+            (void)resources.scene->BuildTLAS(cmd, true);
+        });
+}
 
+void BuildGPUSceneLightBVHRefitPasses(Renderer* renderer, RendererResources& resources, ResourceHandle ubo)
+{
     struct LightBVHRefitPush
     {
         uint32_t firstNodeOffset;
         uint32_t nodeCount;
     };
+    auto* scene = resources.scene;    
     renderer->CreatePass(
-        "Light BVH Refit Leaves", RHIDeviceQueueType::Graphics, 0u,
+        "GPUScene Light BVH Refit Leaves", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindBufferUniform(self, globalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+            r->BindBufferUniform(self, ubo, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferStorageRead(self, resources.lightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
             r->BindBufferUnordered(self, resources.lightBVHNodeBuffer, RHIPipelineStageBits::ComputeShader,
                                    "lightBVHNodes");
@@ -114,8 +109,8 @@ void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources& resources,
             uint32_t count = scene->GetLightBVHRefitLevelNodeCount(leafLevel);
             if (count == 0u)
                 return;
-            LightBVHRefitPush pc{
-                scene->GetLightBVHFirstNodeIndex() + scene->GetLightBVHRefitLevelOffset(leafLevel), count};
+            LightBVHRefitPush pc{scene->GetLightBVHFirstNodeIndex() + scene->GetLightBVHRefitLevelOffset(leafLevel),
+                                 count};
             r->CmdSetPipeline(self, cmd);
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
             cmd->Dispatch((count + 255u) / 256u, 1, 1);
@@ -124,7 +119,7 @@ void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources& resources,
         "Light BVH Refit Internals", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindBufferUniform(self, globalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+            r->BindBufferUniform(self, ubo, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferStorageRead(self, resources.lightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
             r->BindBufferUnordered(self, resources.lightBVHNodeBuffer, RHIPipelineStageBits::ComputeShader,
                                    "lightBVHNodes");
@@ -149,10 +144,9 @@ void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources& resources,
                 uint32_t count = scene->GetLightBVHRefitLevelNodeCount(static_cast<uint32_t>(level));
                 if (count == 0u)
                     continue;
-                LightBVHRefitPush pc{
-                    scene->GetLightBVHFirstNodeIndex() +
-                        scene->GetLightBVHRefitLevelOffset(static_cast<uint32_t>(level)),
-                    count};
+                LightBVHRefitPush pc{scene->GetLightBVHFirstNodeIndex() +
+                                         scene->GetLightBVHRefitLevelOffset(static_cast<uint32_t>(level)),
+                                     count};
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
                 cmd->Dispatch((count + 255u) / 256u, 1, 1);
                 if (level > 0)

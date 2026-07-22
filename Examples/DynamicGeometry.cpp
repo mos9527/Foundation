@@ -32,7 +32,9 @@ namespace
         float amplitudeScale;
     };
 
-    void AddGerstnerPass(Renderer* renderer, RendererResources const& resources, GerstnerState const* state)
+    // GPU Side geometry update
+    // Demonstrates per-frame invocation through a CS pass
+    void BuildGerstnerPass(Renderer* renderer, RendererResources const& resources, GerstnerState const* state)
     {
         renderer->CreatePass(
             "GPU Gerstner Water", RHIDeviceQueueType::Compute, 0u,
@@ -51,11 +53,11 @@ namespace
                 resources.scene->ResolveGeometry(state->water, meshOffset, meshType);
                 CHECK(meshType & kGSInstanceFlagDynamic);
                 GerstnerPush push{.vertexOffset = meshOffset + sizeof(GSMesh),
-                                   .indexOffset = meshOffset + sizeof(GSMesh) + kWaterVerts * sizeof(FQVertex),
-                                   .gridQuads = kWaterQuads,
-                                   .extent = kWaterExtent,
-                                   .time = state->time,
-                                   .amplitudeScale = state->amplitude};
+                                  .indexOffset = meshOffset + sizeof(GSMesh) + kWaterVerts * sizeof(FQVertex),
+                                  .gridQuads = kWaterQuads,
+                                  .extent = kWaterExtent,
+                                  .time = state->time,
+                                  .amplitudeScale = state->amplitude};
                 r->CmdSetPipeline(self, cmd);
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, push);
                 r->CmdDispatch(self, cmd, {std::max(kWaterVerts, kWaterQuads * kWaterQuads), 1, 1});
@@ -141,19 +143,6 @@ namespace
         gpu.UpdateUBO(ubo);
     }
 
-    void UpdateCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera& camera, RendererConfig const& cfg)
-    {
-        camera.aspect = static_cast<float>(cfg.renderExtent.x) / static_cast<float>(cfg.renderExtent.y);
-        camera.RefreshMatrices();
-        UpdateRendererCameraUBO(ubo, renderer->GetFrame(), camera.view, camera.proj);
-        ubo.zNear = camera.zNear;
-        ubo.projPlanes = planeSymmetric(camera.proj);
-        ubo.camPosition = float4(camera.position, 0.0f);
-        ubo.camDirection = float4(camera.rot * float3(0, 0, -1), 0.0f);
-        ubo.dbgViewFlags = cfg.viewFlags;
-        ubo.dbgMaterialFlags = cfg.materialFlags;
-    }
-
     void RebuildGraph(ExampleVulkanContext& ctx, RendererUBO& ubo, GPUScene& gpu, RendererConfig& cfg,
                       RendererOutputs& outputs, ExampleInputState& input, GerstnerState const& gerstner)
     {
@@ -161,7 +150,9 @@ namespace
         ctx.renderer->BeginSetup();
         cfg.renderExtent = ctx.renderer->GetSwapchainExtent();
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
-        AddGerstnerPass(ctx.renderer.get(), resources, &gerstner);
+        BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
+        BuildGerstnerPass(ctx.renderer.get(), resources, &gerstner);
+        // Opt. BuildRasterRenderGraph
         BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
         RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
@@ -173,8 +164,7 @@ int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("GPUScene Dynamic Geometry"), 1280, 720,
                                           Examples_SDLWindowFlagsVulkan);
-    auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});
-    CHECK_MSG(ctx.device->GetCapabilities().meshShaders, "DynamicGeometry example requires mesh shaders");
+    auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});   
 
     GPUSceneDesc desc{};
     desc.primitiveBudget = 64u * 1024u;
@@ -192,13 +182,10 @@ int main(int argc, char** argv)
     CHECK(gpu.AllocateDynamic(kWaterVerts, kWaterIndices, water, true) == GPUScene::Result::Ready);
     CHECK(gpu.AllocateDynamic(kGroundVerts, kGroundIndices, ground) == GPUScene::Result::Ready);
     CHECK(gpu.HasDynamicGeometry());
-    FQVertex groundVertices[kGroundVerts]{};
-    uint32_t groundIndices[kGroundIndices]{};
-    FillGround(groundVertices, groundIndices);
-    bool uploadGround = true;
+
 
     RendererUBO ubo{};
-    RendererConfig cfg{};
+    RendererConfig cfg{.cullFlags{kCullFrustum | kCullBackface}};
     GerstnerState gerstner{.water = water};
     if (!ctx.device->GetCapabilities().raytracingInline)
         cfg.viewFlags &= ~kEnableRasterRTShadows;
@@ -216,6 +203,10 @@ int main(int argc, char** argv)
     float time = 0.0f;
     uint64_t t0 = SDL_GetTicksNS();
 
+    // CPU side data
+    FQVertex groundVertices[kGroundVerts]{};
+    uint32_t groundIndices[kGroundIndices]{};
+    FillGround(groundVertices, groundIndices);
     while (true)
     {
         uint64_t t1 = SDL_GetTicksNS();
@@ -236,13 +227,13 @@ int main(int argc, char** argv)
         }
 
         gpu.BeginDynamicGeometryUpdate();
+        // NOTE: You don't need to do this every frame. This is to demonstrate dynamic geometry updates from host.
+        //       Note that providing indices to be updated/flagging it as true triggers rebuilds. Leaving them empty/false
+        //       singlals that refit can be used.
+        gpu.UpdateDynamicGeometryCPU(ground, groundVertices, groundIndices);
         gpu.UpdateDynamicGeometryGPU(water, true, true);
-        if (uploadGround)
-        {
-            gpu.UpdateDynamicGeometryCPU(ground, groundVertices, groundIndices);
-            uploadGround = false;
-        }
         gpu.EndDynamicGeometryUpdate();
+
         if (paused < 0.5f)
             ubo.ptAccumulatedFrames = 0u;
         else
@@ -251,7 +242,7 @@ int main(int argc, char** argv)
         if (camera.Update(input, dt))
             ubo.ptAccumulatedFrames = 0u;
 
-        UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
+        Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
         CommitDemoScene(gpu, water, ground, ubo);
 
         Examples_Text(input,

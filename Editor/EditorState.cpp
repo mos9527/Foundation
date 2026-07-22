@@ -368,7 +368,7 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
     GEditor.rendererConfig.rasterEffects = Span<const RasterEffect>(sEditorRasterEffects, rasterEffectCount);
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
     auto gpuResources = CreateGPUSceneRendererResources(renderer, context->gpuScene);
-    BuildGPUSceneDynamicGeometryUploadPass(renderer, gpuResources);
+    BuildGPUSceneHostUpdatePass(renderer, gpuResources);
     if (GEditor.animation && GEditor.animation->HasSkinning())
         GEditor.animation->BuildGraph(renderer, gpuResources);
     if (GEditor.rendererMode == ERendererMode::PathTracer)

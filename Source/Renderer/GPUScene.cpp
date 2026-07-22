@@ -368,7 +368,7 @@ struct GPUSceneImpl
     void UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices,
                                Span<const uint32_t> indices);
     void EndDynamicGeometryUpdate();
-    void UploadDynamicGeometry(RHICommandList* cmd);
+    void UploadDynamicGeometryCPU(RHICommandList* cmd);
     void BuildBLAS(RHICommandList* cmd);
 };
 
@@ -2248,10 +2248,10 @@ void GPUSceneImpl::EndDynamicGeometryUpdate()
     mDynamicIsUpdate = false;
 }
 
-void GPUSceneImpl::UploadDynamicGeometry(RHICommandList* cmd)
+void GPUSceneImpl::UploadDynamicGeometryCPU(RHICommandList* cmd)
 {
     CHECK_MSG(!mDynamicIsUpdate,
-              "UploadDynamicGeometry recorded while a dynamic update is still in progress "
+              "UploadDynamicGeometryCPU recorded while a dynamic update is still in progress "
               "(call EndDynamicGeometryUpdate before the upload pass)");
     CHECK(cmd);
     if (!mDynamicPrimitiveBuffer || mDynamicGeometries.empty())
@@ -2912,7 +2912,7 @@ void GPUScene::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVert
     mImpl->UpdateDynamicGeometryCPU(handle, vertices, indices);
 }
 void GPUScene::EndDynamicGeometryUpdate() { mImpl->EndDynamicGeometryUpdate(); }
-void GPUScene::UploadDynamicGeometry(RHICommandList* cmd) { mImpl->UploadDynamicGeometry(cmd); }
+void GPUScene::UploadDynamicGeometryCPU(RHICommandList* cmd) { mImpl->UploadDynamicGeometryCPU(cmd); }
 void GPUScene::BuildBLAS(RHICommandList* cmd) { mImpl->BuildBLAS(cmd); }
 uint32_t GPUScene::GetDynamicRefitCount() const { return mImpl->mLastRefitCount; }
 uint32_t GPUScene::GetDynamicRebuildCount() const { return mImpl->mLastRebuildCount; }
