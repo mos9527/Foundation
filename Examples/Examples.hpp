@@ -9,6 +9,7 @@
 #include <Renderer/Renderer.hpp>
 #include <Renderer/Postprocess.hpp>
 #include <Renderer/Texture.hpp>
+#include <Renderer/Mesh.hpp>
 #include <Math/Math.hpp>
 #include <Math/ModelViewProjection.hpp>
 #include <RenderUtils/CSDebugText.hpp>
@@ -202,3 +203,7 @@ struct ExampleFpsCounter
         return fps;
     }
 };
+
+FImportedMesh Examples_MakePlaneMesh(float extent, float y = 0.0f, Allocator* alloc = GLOBAL_ALLOC);
+FImportedMesh Examples_MakeBoxMesh(float size, Allocator* alloc = GLOBAL_ALLOC);
+FImportedMesh Examples_MakeSphereMesh(float radius, uint32_t segments = 32, uint32_t rings = 16, Allocator* alloc = GLOBAL_ALLOC);

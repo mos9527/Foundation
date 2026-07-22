@@ -63,42 +63,6 @@ namespace
                 r->CmdDispatch(self, cmd, {std::max(kWaterVerts, kWaterQuads * kWaterQuads), 1, 1});
             });
     }
-
-    void FillGround(FImportedMesh& mesh)
-    {
-        float const h = kGroundExtent * 0.5f;
-        float3 const n = float3(0, 1, 0);
-        float3 const t = float3(1, 0, 0);
-        float3 const corners[4] = {
-            float3(-h, kGroundY, -h),
-            float3(h, kGroundY, -h),
-            float3(-h, kGroundY, h),
-            float3(h, kGroundY, h),
-        };
-        float2 const uvs[4] = {float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 1)};
-        
-        mesh.vertices.resize(4);
-        for (uint32_t i = 0; i < 4; ++i)
-        {
-            FVertex src{};
-            src.position = corners[i];
-            src.normal = n;
-            src.tangent = t;
-            src.bitangentSign = 1.0f;
-            src.uv = uvs[i];
-            mesh.vertices[i] = src;
-        }
-        
-        mesh.lods.emplace_back(GLOBAL_ALLOC);
-        mesh.lods[0].indices.resize(6);
-        mesh.lods[0].indices[0] = 0;
-        mesh.lods[0].indices[1] = 2;
-        mesh.lods[0].indices[2] = 1;
-        mesh.lods[0].indices[3] = 1;
-        mesh.lods[0].indices[4] = 2;
-        mesh.lods[0].indices[5] = 3;
-    }
-
     void CommitDemoScene(GPUScene& gpu, GeometryHandle water, GeometryHandle ground, RendererUBO& ubo)
     {
         auto tables = gpu.BeginScene(2, 2, 2);
@@ -152,6 +116,7 @@ namespace
         Examples_ResetRenderer(ctx, RendererDesc{});
         ctx.renderer->BeginSetup();
         cfg.renderExtent = ctx.renderer->GetSwapchainExtent();
+        ubo.ptMaxBounces = 2u;
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
         BuildGerstnerPass(ctx.renderer.get(), resources, &gerstner);
@@ -182,8 +147,7 @@ int main(int argc, char** argv)
     GeometryHandle water{};
     GeometryHandle ground{};
     {
-        FImportedMesh groundMesh(GLOBAL_ALLOC);
-        FillGround(groundMesh);
+        FImportedMesh groundMesh = Examples_MakePlaneMesh(kGroundExtent, kGroundY, GLOBAL_ALLOC);
         groundMesh.Optimize();
         groundMesh.ClusterizeDAG();
 

@@ -100,76 +100,6 @@ namespace
     constexpr float kGroundExtent = 100.0f;
     constexpr float kGroundY = 0.0f;
     
-    void FillGround(FImportedMesh& mesh)
-    {
-        float const h = kGroundExtent * 0.5f;
-        float3 const n = float3(0, 1, 0);
-        float3 const t = float3(1, 0, 0);
-        float3 const corners[4] = {
-            float3(-h, kGroundY, -h),
-            float3(h, kGroundY, -h),
-            float3(-h, kGroundY, h),
-            float3(h, kGroundY, h),
-        };
-        float2 const uvs[4] = {float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 1)};
-        
-        mesh.vertices.resize(4);
-        for (uint32_t i = 0; i < 4; ++i)
-        {
-            FVertex src{};
-            src.position = corners[i];
-            src.normal = n;
-            src.tangent = t;
-            src.bitangentSign = 1.0f;
-            src.uv = uvs[i];
-            mesh.vertices[i] = src;
-        }
-        
-        mesh.lods.emplace_back(GLOBAL_ALLOC);
-        mesh.lods[0].indices.resize(6);
-        mesh.lods[0].indices = { 0, 2, 1, 1, 2, 3 };
-    }
-
-    void FillBox(FImportedMesh& mesh, float size)
-    {
-        float const h = size * 0.5f;
-        struct Face { float3 n, t; float3 p[4]; };
-        Face faces[6] = {
-            { float3(0,0,1), float3(1,0,0), { float3(-h,-h,h), float3(h,-h,h), float3(-h,h,h), float3(h,h,h) } },
-            { float3(0,0,-1), float3(-1,0,0), { float3(h,-h,-h), float3(-h,-h,-h), float3(h,h,-h), float3(-h,h,-h) } },
-            { float3(1,0,0), float3(0,0,-1), { float3(h,-h,h), float3(h,-h,-h), float3(h,h,h), float3(h,h,-h) } },
-            { float3(-1,0,0), float3(0,0,1), { float3(-h,-h,-h), float3(-h,-h,h), float3(-h,h,-h), float3(-h,h,h) } },
-            { float3(0,1,0), float3(1,0,0), { float3(-h,h,h), float3(h,h,h), float3(-h,h,-h), float3(h,h,-h) } },
-            { float3(0,-1,0), float3(1,0,0), { float3(-h,-h,-h), float3(h,-h,-h), float3(-h,-h,h), float3(h,-h,h) } }
-        };
-        float2 const uvs[4] = {float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 1)};
-
-        mesh.vertices.resize(24);
-        mesh.lods.emplace_back(GLOBAL_ALLOC);
-        mesh.lods[0].indices.resize(36);
-
-        for (uint32_t f = 0; f < 6; ++f)
-        {
-            for (uint32_t i = 0; i < 4; ++i)
-            {
-                FVertex src{};
-                src.position = faces[f].p[i];
-                src.normal = faces[f].n;
-                src.tangent = faces[f].t;
-                src.bitangentSign = 1.0f;
-                src.uv = uvs[i];
-                mesh.vertices[f * 4 + i] = src;
-            }
-            uint32_t io = f * 6;
-            uint32_t vo = f * 4;
-            mesh.lods[0].indices[io+0] = vo+0;
-            mesh.lods[0].indices[io+1] = vo+2;
-            mesh.lods[0].indices[io+2] = vo+1;
-            mesh.lods[0].indices[io+3] = vo+1;
-            mesh.lods[0].indices[io+4] = vo+2;
-            mesh.lods[0].indices[io+5] = vo+3;
-        }
-    }
 
     struct SimulationState
     {
@@ -240,6 +170,7 @@ namespace
         Examples_ResetRenderer(ctx, RendererDesc{});
         ctx.renderer->BeginSetup();
         cfg.renderExtent = ctx.renderer->GetSwapchainExtent();
+        ubo.ptMaxBounces = 1u;
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
         BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
@@ -316,14 +247,12 @@ int main(int argc, char** argv)
     state.bodyInterface = &body_interface;
 
     {
-        FImportedMesh groundMesh(GLOBAL_ALLOC);
-        FillGround(groundMesh);
+        FImportedMesh groundMesh = Examples_MakePlaneMesh(kGroundExtent, kGroundY, GLOBAL_ALLOC);
         groundMesh.Optimize();
         groundMesh.ClusterizeDAG();
         gpu.Upload(groundMesh, state.ground);
 
-        FImportedMesh boxMesh(GLOBAL_ALLOC);
-        FillBox(boxMesh, 1.0f);
+        FImportedMesh boxMesh = Examples_MakeBoxMesh(1.0f, GLOBAL_ALLOC);
         boxMesh.Optimize();
         boxMesh.ClusterizeDAG();
         gpu.Upload(boxMesh, state.box);
