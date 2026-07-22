@@ -111,7 +111,7 @@ namespace
     }
 
     void RebuildGraph(ExampleVulkanContext& ctx, RendererUBO& ubo, GPUScene& gpu, RendererConfig& cfg,
-                      RendererOutputs& outputs, ExampleInputState& input, GerstnerState const& gerstner)
+                      RendererOutputs& outputs, ExampleInputState& input, GerstnerState const& gerstner, ExampleRenderer renderer)
     {
         Examples_ResetRenderer(ctx, RendererDesc{});
         ctx.renderer->BeginSetup();
@@ -120,8 +120,10 @@ namespace
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
         BuildGerstnerPass(ctx.renderer.get(), resources, &gerstner);
-        // Opt. BuildRasterRenderGraph BuildPathTracerRenderGraph
-        BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
+        if (renderer == ExampleRenderer::PathTracer)
+            BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
+        else
+            Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
         RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
         ctx.renderer->EndSetup();
@@ -172,6 +174,7 @@ int main(int argc, char** argv)
     float amplitude = 1.0f;
     float paused = 0.0f;
     float time = 0.0f;
+    ExampleRenderer renderer = ExampleRenderer::PathTracer;
     uint64_t t0 = SDL_GetTicksNS();
 
     // CPU side data
@@ -188,10 +191,10 @@ int main(int argc, char** argv)
         gerstner.time = time;
         gerstner.amplitude = amplitude;
 
-        if (input.hasPendingResize)
+        if (input.wantResizeOrRebuild)
         {
-            input.hasPendingResize = false;
-            RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, gerstner);
+            input.wantResizeOrRebuild = false;
+            RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, gerstner, renderer);
         }
 
         gpu.BeginDynamicGeometryUpdate();
@@ -216,6 +219,8 @@ int main(int argc, char** argv)
                       fmt::format("Gerstner Water | {:.0f} FPS | refit {} rebuild {}", fps.Update(),
                                   gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount()));
         Examples_Text(input, FExampleOrbitCamera::kControlsText);
+        if (Examples_RendererSwitchButton(input, renderer))
+            input.wantResizeOrRebuild = true;
         Examples_Slider(input, "Amplitude", amplitude, 0.0f, 2.0f, 0.05f, "x");
         Examples_Slider(input, "Paused", paused, 0.0f, 1.0f, 1.0f, "");
         Examples_NewFrame(window, ctx);

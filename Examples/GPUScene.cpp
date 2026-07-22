@@ -193,6 +193,7 @@ int main(int argc, char** argv)
 #endif
             float maxSamples = 0u;
             bool paused = false;
+            ExampleRenderer renderer = ExampleRenderer::PathTracer;
             cfg.ptRenderPaused = &paused;
             while (true)
             {
@@ -207,9 +208,9 @@ int main(int argc, char** argv)
                 else
                     if (!paused) 
                         ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
-                if (input.hasPendingResize)
+                if (input.wantResizeOrRebuild)
                 {
-                    input.hasPendingResize = paused = false;
+                    input.wantResizeOrRebuild = paused = false;
                     ubo.ptAccumulatedFrames = 0u;
                     Examples_ResetRenderer(ctx, RendererDesc{});
                     ctx.renderer->BeginSetup();      
@@ -217,7 +218,10 @@ int main(int argc, char** argv)
                     renderHeight = ctx.renderer->GetSwapchainExtent().y;
                     cfg.renderExtent = RHIExtent2D{float2(renderWidth, renderHeight) * scaling};
                     auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
-                    BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
+                    if (renderer == ExampleRenderer::PathTracer)
+                        BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
+                    else
+                        Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
                     Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
                     RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
                     ctx.renderer->EndSetup();
@@ -228,7 +232,9 @@ int main(int argc, char** argv)
                 Examples_Text(input,
                               fmt::format("{} meshes, {} instances, {} textures   {:.0f} FPS {} Samples", scene.GetMeshes().size(),
                                           scene.GetInstances().size(), scene.GetTextures().size(), fps.Update(), ubo.ptAccumulatedFrames));
-                input.hasPendingResize |= Examples_Slider(input, "Resolution", scaling, 0.10f, 1.0f, 0.05f, "x", false);
+                if (Examples_RendererSwitchButton(input, renderer))
+                    input.wantResizeOrRebuild = true;
+                input.wantResizeOrRebuild |= Examples_Slider(input, "Resolution", scaling, 0.10f, 1.0f, 0.05f, "x", false);
                 if (Examples_Slider(input, "Samples", maxSamples, 0.0f, 128.0f, 1.0f))
                 {
                     ubo.ptAccumulatedFrames = 0u;

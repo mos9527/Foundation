@@ -46,6 +46,12 @@ using namespace Core;
 using namespace Math;
 using namespace RenderCore;
 
+enum class ExampleRenderer
+{
+    Raster,
+    PathTracer,
+};
+
 // ExampleVulkanContext members, in structured-binding order: [renderer, app, device, surface, swapchain, presenter]
 constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 // Common command-line options shared by all examples (mirrors Editor::SDLMain):
@@ -87,7 +93,8 @@ struct ExampleInputState
     static constexpr size_t kMaxPressedKeys = 16;
     static constexpr size_t kMaxHudLines = 32;
     // Set to true whenever the window is resized. Clear manually.
-    bool hasPendingResize{true};
+    // You can also set this to true to force a resize for e.g. Renderer to be rebuilt.
+    bool wantResizeOrRebuild{true};
     // Inputs
     bool keyForward{};
     bool keyBack{};
@@ -170,6 +177,7 @@ void Examples_Text(ExampleInputState& input, StringView text);
 bool Examples_Button(ExampleInputState& input, StringView text);
 bool Examples_Slider(ExampleInputState& input, StringView label, float& value, float minValue, float maxValue,
                      float step = 0.01f, const char* unit = "x", bool draggable = true);
+bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& currentRenderer);
 Span<const RenderUtils::CSDebugTextData> Examples_HudLines(ExampleInputState const& input);
 void Examples_ResetRenderer(ExampleVulkanContext& ctx, RendererDesc desc = {});
 void Examples_NewFrame(Renderer* renderer); // Headless
@@ -207,3 +215,7 @@ struct ExampleFpsCounter
 FImportedMesh Examples_MakePlaneMesh(float extent, float y = 0.0f, Allocator* alloc = GLOBAL_ALLOC);
 FImportedMesh Examples_MakeBoxMesh(float size, Allocator* alloc = GLOBAL_ALLOC);
 FImportedMesh Examples_MakeSphereMesh(float radius, uint32_t segments = 32, uint32_t rings = 16, Allocator* alloc = GLOBAL_ALLOC);
+
+void Example_BuildExampleRasterRenderGraph(Renderer* renderer, RendererUBO* globals,
+                                           RendererResources& gpu,
+                                           RendererConfig& cfg, RendererOutputs& out);

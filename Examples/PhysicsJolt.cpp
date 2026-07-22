@@ -165,7 +165,7 @@ namespace
     }
 
     void RebuildGraph(ExampleVulkanContext& ctx, RendererUBO& ubo, GPUScene& gpu, RendererConfig& cfg,
-                      RendererOutputs& outputs, ExampleInputState& input)
+                      RendererOutputs& outputs, ExampleInputState& input, ExampleRenderer renderer)
     {
         Examples_ResetRenderer(ctx, RendererDesc{});
         ctx.renderer->BeginSetup();
@@ -173,7 +173,10 @@ namespace
         ubo.ptMaxBounces = 1u;
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
-        BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
+        if (renderer == ExampleRenderer::PathTracer)
+            BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
+        else
+            Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
         RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
         ctx.renderer->EndSetup();
@@ -273,6 +276,7 @@ int main(int argc, char** argv)
     ExampleInputState input{};
     ExampleFpsCounter fps;
     float paused = 0.0f;
+    ExampleRenderer renderer = ExampleRenderer::PathTracer;
     uint64_t t0 = SDL_GetTicksNS();
 
     while (true)
@@ -284,10 +288,10 @@ int main(int argc, char** argv)
         if (Examples_PollEvents(window, ctx, input))
             break;
             
-        if (input.hasPendingResize)
+        if (input.wantResizeOrRebuild)
         {
-            input.hasPendingResize = false;
-            RebuildGraph(ctx, ubo, gpu, cfg, outputs, input);
+            input.wantResizeOrRebuild = false;
+            RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, renderer);
         }
 
         if (paused < 0.5f)
@@ -307,9 +311,12 @@ int main(int argc, char** argv)
         CommitDemoScene(gpu, state, ubo);
 
         Examples_Text(input,
-                      fmt::format("Physics Jolt | {:.0f} FPS", fps.Update()));
+                      fmt::format("Jolt Physics | {:.0f} FPS | refit {} rebuild {}", fps.Update(),
+                                  gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount()));
         Examples_Text(input, FExampleOrbitCamera::kControlsText);
         Examples_Slider(input, "Paused", paused, 0.0f, 1.0f, 1.0f, "");
+        if (Examples_RendererSwitchButton(input, renderer))
+            input.wantResizeOrRebuild = true;
         Examples_NewFrame(window, ctx);
     }
 

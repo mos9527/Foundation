@@ -3,6 +3,7 @@
 #include "Examples.hpp"
 
 #include <RenderCore/Presenter.hpp>
+#include <Renderer/RasterEffects.hpp>
 #include <algorithm>
 #include <argh.h>
 #include <cmath>
@@ -373,7 +374,7 @@ namespace
         case SDL_EVENT_WINDOW_RESTORED:
             try
             {
-                input.hasPendingResize = true;
+                input.wantResizeOrRebuild = true;
                 if (Examples_CreateSwapchain(window, ctx.swapchain.mFactory, ctx.surface, ctx.swapchain))
                     ctx.renderer->SetSwapchain(ctx.swapchain), ctx.presenter->SetSwapchain(ctx.swapchain);
             }
@@ -786,6 +787,18 @@ bool Examples_Slider(ExampleInputState& input, StringView label, float& value, f
     return changed;
 }
 
+bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& currentRenderer)
+{
+    bool changed = false;
+    StringView text = currentRenderer == ExampleRenderer::Raster ? "[ RASTERIZER ]" : "[ PATH TRACER ]";
+    if (Examples_Button(input, text))
+    {
+        currentRenderer = currentRenderer == ExampleRenderer::Raster ? ExampleRenderer::PathTracer : ExampleRenderer::Raster;
+        changed = true;
+    }
+    return changed;
+}
+
 Span<const RenderUtils::CSDebugTextData> Examples_HudLines(ExampleInputState const& input)
 {
     return Span<const RenderUtils::CSDebugTextData>(input.hud.data(), input.hud.size());
@@ -1095,5 +1108,23 @@ FImportedMesh Examples_MakeSphereMesh(float radius, uint32_t segments, uint32_t 
         }
     }
     
+    
     return mesh;
+}
+
+void Example_BuildExampleRasterRenderGraph(Renderer* renderer, RendererUBO* globals,
+                                           RendererResources& gpu,
+                                           RendererConfig& cfg, RendererOutputs& out)
+{
+    static const RasterGTAOConfig gtaoConfig{};
+    
+    // Copy existing effects and append GTAO
+    std::vector<RasterEffect> effects;
+    for (auto const& effect : cfg.rasterEffects)
+        effects.push_back(effect);
+    
+    effects.push_back(MakeRasterGTAOEffect(&gtaoConfig));
+    cfg.rasterEffects = Span<RasterEffect const>(effects.data(), effects.size());
+    
+    BuildRasterRenderGraph(renderer, globals, gpu, cfg, out);
 }
