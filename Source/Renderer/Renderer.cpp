@@ -27,7 +27,7 @@ RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* 
         .hasDynamicGeometry = scene->HasDynamicGeometry(),
         .hasCurveGeometry = scene->HasCurveGeometry(),
     };
-    if (resources.hasDynamicGeometry)
+    if (resources.hasDynamicGeometry && scene->GetDynamicStagingBuffer())
         resources.dynamicStagingBuffer =
             renderer->CreateResource("Dynamic Primitive Staging", scene->GetDynamicStagingBuffer());
     if (scene->GetTLAS())
@@ -48,7 +48,8 @@ PassHandle BuildGPUSceneDynamicGeometryUploadPass(Renderer* renderer, RendererRe
         "Dynamic Geometry Upload", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindBufferCopySrc(self, resources.dynamicStagingBuffer);
+            if (resources.dynamicStagingBuffer != kInvalidHandle)
+                r->BindBufferCopySrc(self, resources.dynamicStagingBuffer);
             r->BindBufferCopyDst(self, resources.dynamicPrimitiveBuffer);
         },
         [=](PassHandle, Renderer*, RHICommandList* cmd) { scene->UploadDynamicGeometry(cmd); });

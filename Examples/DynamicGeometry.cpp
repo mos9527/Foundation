@@ -22,19 +22,6 @@ namespace
         float amplitude{1.0f};
     };
 
-    uint32_t MeshSlotBytes(uint32_t vertexCount, uint32_t indexCount)
-    {
-        uint32_t const footprint = static_cast<uint32_t>(sizeof(GSMesh)) +
-            vertexCount * static_cast<uint32_t>(sizeof(FQVertex)) +
-            indexCount * static_cast<uint32_t>(sizeof(uint32_t));
-        return static_cast<uint32_t>(AlignUp(footprint, 16u));
-    }
-
-    uint32_t DynamicSlotBudgetBytes()
-    {
-        return MeshSlotBytes(kWaterVerts, kWaterIndices) + MeshSlotBytes(kGroundVerts, kGroundIndices);
-    }
-
     struct GerstnerPush
     {
         uint32_t vertexOffset;
@@ -191,13 +178,13 @@ int main(int argc, char** argv)
 
     GPUSceneDesc desc{};
     desc.primitiveBudget = 64u * 1024u;
-    desc.dynamicGeometryBudget = DynamicSlotBudgetBytes();
+    desc.dynamicGeometryBudget = 256u * 1024u;
+    desc.dynamicStagingBudget = 256u * 1024u;
     desc.instanceBudget = 8;
     desc.materialBudget = 8;
     desc.lightBudget = 8;
     desc.geometryBudget = 8;
     desc.tlasInstanceBudget = 8;
-    desc.framesInFlight = 2;
     GPUScene gpu(ctx.device.Get(), GLOBAL_ALLOC, desc);
 
     GeometryHandle water{};

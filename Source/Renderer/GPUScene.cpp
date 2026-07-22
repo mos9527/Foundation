@@ -164,8 +164,6 @@ struct GPUSceneImpl
         bool live{false};
         bool dirty{false}; // BLAS rebuild/refit pending
         bool uploadHeader{false};
-        bool uploadVertices{false};
-        bool uploadIndices{false};
     };
     Vector<Geometry> mGeometry;
     Vector<uint32_t> mGeometryFreelist;
@@ -184,6 +182,8 @@ struct GPUSceneImpl
     uint32_t mDynamicStagingFrames{0};
     uint32_t mDynamicStagingFrameIndex{0};
     uint32_t mDynamicStagingFrameSize{0};
+    uint32_t mDynamicStagingCursor{0};
+    Vector<RHICommandList::CopyBufferRegion> mDynamicUploadRegions;
     Vector<uint32_t> mDynamicGeometries; // index into mGeometry
     uint32_t mLastRefitCount{0};
     uint32_t mLastRebuildCount{0};
@@ -351,10 +351,7 @@ struct GPUSceneImpl
     void Collect();
     void Reset();
     // Dynamic updates
-    [[nodiscard]] inline uint32_t GetDynamicStagingOffset(Geometry const& g) const
-    {
-        return mDynamicStagingFrameIndex * mDynamicStagingFrameSize + g.offset;
-    }
+    [[nodiscard]] uint32_t AllocateDynamicStaging(uint32_t size, uint32_t alignment);
     void AllocateDynamicBLAS(Geometry& g);
     [[nodiscard]] bool HasDynamicGeometry() const { return !mDynamicGeometries.empty(); }
     [[nodiscard]] bool HasCurveGeometry() const
@@ -444,7 +441,7 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
                    {.maxBindings = kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack}),
     mTexture2DSlots(allocator), mTexture3DSlots(allocator), mBLASes(allocator), mBLASBuffers(allocator),
     mBLASFreelist(allocator), mCurveBLASes(allocator), mCurveBLASBuffers(allocator), mCurveBLASFreelist(allocator),
-    mGeometry(allocator), mGeometryFreelist(allocator), mDynamicGeometries(allocator),
+    mGeometry(allocator), mGeometryFreelist(allocator), mDynamicUploadRegions(allocator), mDynamicGeometries(allocator),
     mUploadGeometryQueue(std::bit_ceil(static_cast<size_t>(desc.geometryBudget) + 1), allocator),
     mUploadTextureQueue(std::bit_ceil(static_cast<size_t>(desc.texturesBudget) + 1), allocator),
     mUploadBufferQueue(std::bit_ceil(static_cast<size_t>(kGPUSceneBufferQueueCapacity)), allocator),
@@ -453,6 +450,8 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
 {
     CHECK(mDevice != nullptr);
     CHECK(mAllocator != nullptr);
+    CHECK_MSG(desc.dynamicGeometryBudget != 0 || desc.dynamicStagingBudget == 0,
+              "dynamicStagingBudget requires dynamicGeometryBudget");
 
     static_assert(sizeof(GSLightBVHNode) == 48);
     mGeometry.reserve(desc.geometryBudget);
@@ -487,10 +486,6 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     }
     if (desc.dynamicGeometryBudget != 0)
     {
-        CHECK_MSG(desc.framesInFlight >= 1, "framesInFlight must be >= 1");
-        mDynamicStagingFrames = desc.framesInFlight + 1u;
-        mDynamicStagingFrameSize = desc.dynamicGeometryBudget;
-        const size_t stagingBytes = static_cast<size_t>(desc.dynamicGeometryBudget) * mDynamicStagingFrames;
         mDynamicPrimitiveBuffer = mDevice->CreateBuffer(
             {.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
              .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
@@ -498,20 +493,25 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
                  RHIBufferUsageBits::IndexBuffer,
              .size = desc.dynamicGeometryBudget});
         mDynamicPrimitiveBuffer->DebugSetObjectName("Dynamic Primitive Buffer");
-        mDynamicStagingBuffer = mDevice->CreateBuffer(
-            {.resource = {.heap = RHIDeviceHeapType::Upload,
-                          .hostAccess = RHIResourceHostAccess::WriteOnly,
-                          .coherent = true,
-                          .staging = true},
-             .usage = RHIBufferUsageBits::TransferSource,
-             .size = stagingBytes});
-        mDynamicStagingBuffer->DebugSetObjectName("Dynamic Primitive Staging");
-        mDynamicStagingMapped = mDynamicStagingBuffer->Map<char>();
         mDynamicPrimitiveAlloc = mDevice->CreateVirtualAllocator(desc.dynamicGeometryBudget);
-        LOG(GPUScene, LogInfo,
-            "Dynamic geometry: {} MiB device + {} MiB staging ({} slots, {} frames in flight).",
-            desc.dynamicGeometryBudget / (1u << 20), stagingBytes / (1u << 20), mDynamicStagingFrames,
-            desc.framesInFlight);
+        if (desc.dynamicStagingBudget != 0)
+        {
+            CHECK_MSG(desc.dynamicStagingFramesInFlight >= 1, "dynamicStagingFramesInFlight must be >= 1");
+            mDynamicStagingFrames = desc.dynamicStagingFramesInFlight + 1u;
+            mDynamicStagingFrameSize = desc.dynamicStagingBudget;
+            size_t const stagingBytes = static_cast<size_t>(desc.dynamicStagingBudget) * mDynamicStagingFrames;
+            mDynamicStagingBuffer = mDevice->CreateBuffer(
+                {.resource = {.heap = RHIDeviceHeapType::Upload,
+                              .hostAccess = RHIResourceHostAccess::WriteOnly,
+                              .coherent = true,
+                              .staging = true},
+                 .usage = RHIBufferUsageBits::TransferSource,
+                 .size = stagingBytes});
+            mDynamicStagingBuffer->DebugSetObjectName("Dynamic Primitive Staging");
+            mDynamicStagingMapped = mDynamicStagingBuffer->Map<char>();
+        }
+        LOG(GPUScene, LogInfo, "Dynamic geometry: {} MiB device + {} MiB staging per frame.",
+            desc.dynamicGeometryBudget / (1u << 20), desc.dynamicStagingBudget / (1u << 20));
     }
     mTLASBuffer =
         mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
@@ -2166,28 +2166,32 @@ GPUScene::Result GPUSceneImpl::AllocateDynamic(uint32_t vertexCount, uint32_t in
     }
     Geometry& g = *gp;
 
-    CHECK(mDynamicStagingMapped != nullptr);
-    GSMesh h{};
-    h.vertices.offset = g.offset + sizeof(GSMesh);
-    h.vertices.count = g.mesh.vertices.count;
-    h.indices.offset = h.vertices.offset + g.dynamicVtxBytes;
-    h.indices.count = g.mesh.indices.count;
-    for (uint32_t s = 0; s < mDynamicStagingFrames; ++s)
-    {
-        uint32_t const stagingBase = s * mDynamicStagingFrameSize + g.offset;
-        std::memcpy(mDynamicStagingMapped + stagingBase, &h, sizeof(GSMesh));
-    }
+    g.mesh.vertices.offset = g.offset + sizeof(GSMesh);
+    g.mesh.indices.offset = g.mesh.vertices.offset + g.dynamicVtxBytes;
     AllocateDynamicBLAS(g);
     outHandle = handle;
     return Result::Ready;
 }
 
+uint32_t GPUSceneImpl::AllocateDynamicStaging(uint32_t size, uint32_t alignment)
+{
+    CHECK_MSG(mDynamicStagingMapped, "CPU dynamic updates require GPUSceneDesc::dynamicStagingBudget");
+    uint32_t const offset = AlignUp(mDynamicStagingCursor, alignment);
+    CHECK_MSG(size <= mDynamicStagingFrameSize - std::min(offset, mDynamicStagingFrameSize),
+              "Dynamic staging overflow. Need {} bytes, {} used of {}", size, offset, mDynamicStagingFrameSize);
+    mDynamicStagingCursor = offset + size;
+    return mDynamicStagingFrameIndex * mDynamicStagingFrameSize + offset;
+}
+
 void GPUSceneImpl::BeginDynamicGeometryUpdate()
 {
     CHECK_MSG(!mDynamicIsUpdate, "BeginDynamicGeometryUpdate called while a window is already open");
+    CHECK_MSG(mDynamicUploadRegions.empty(),
+              "BeginDynamicGeometryUpdate called before pending CPU updates were uploaded");
     mDynamicIsUpdate = true;
     if (mDynamicStagingFrames != 0)
         mDynamicStagingFrameIndex = (mDynamicStagingFrameIndex + 1u) % mDynamicStagingFrames;
+    mDynamicStagingCursor = 0;
 }
 
 void GPUSceneImpl::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices)
@@ -2218,18 +2222,21 @@ void GPUSceneImpl::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQ
     CHECK_MSG(indices.empty() || indices.size() == g->mesh.indices.count,
               "Dynamic index update has {} indices; expected {}", indices.size(), g->mesh.indices.count);
 
-    uint32_t const base = GetDynamicStagingOffset(*g);
     if (!vertices.empty())
     {
-        std::memcpy(mDynamicStagingMapped + base + sizeof(GSMesh), vertices.data(),
-                    vertices.size_bytes());
-        g->uploadVertices = true;
+        uint32_t const size = static_cast<uint32_t>(vertices.size_bytes());
+        uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(FQVertex));
+        std::memcpy(mDynamicStagingMapped + srcOffset, vertices.data(), size);
+        mDynamicUploadRegions.push_back(
+            {.srcOffset = srcOffset, .dstOffset = g->mesh.vertices.offset, .size = size});
     }
     if (!indices.empty())
     {
-        std::memcpy(mDynamicStagingMapped + base + sizeof(GSMesh) + g->dynamicVtxBytes, indices.data(),
-                    indices.size_bytes());
-        g->uploadIndices = true;
+        uint32_t const size = static_cast<uint32_t>(indices.size_bytes());
+        uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(uint32_t));
+        std::memcpy(mDynamicStagingMapped + srcOffset, indices.data(), size);
+        mDynamicUploadRegions.push_back(
+            {.srcOffset = srcOffset, .dstOffset = g->mesh.indices.offset, .size = size});
         g->dynamicIndicesDirty = true;
     }
     g->dirty = true;
@@ -2247,41 +2254,26 @@ void GPUSceneImpl::UploadDynamicGeometry(RHICommandList* cmd)
               "UploadDynamicGeometry recorded while a dynamic update is still in progress "
               "(call EndDynamicGeometryUpdate before the upload pass)");
     CHECK(cmd);
-    if (!mDynamicStagingBuffer || !mDynamicPrimitiveBuffer || mDynamicGeometries.empty())
+    if (!mDynamicPrimitiveBuffer || mDynamicGeometries.empty())
         return;
 
-    Vector<RHICommandList::CopyBufferRegion> regions(mAllocator);
-    regions.reserve(mDynamicGeometries.size() * 3);
     for (uint32_t slot : mDynamicGeometries)
     {
         Geometry& g = mGeometry[slot];
         if (!g.live || !g.dynamic)
             continue;
-        uint32_t const srcOffset = GetDynamicStagingOffset(g);
         if (g.uploadHeader)
         {
-            regions.push_back({.srcOffset = srcOffset, .dstOffset = g.offset, .size = sizeof(GSMesh)});
+            cmd->UpdateBuffer(mDynamicPrimitiveBuffer.Get(), g.offset,
+                              AsBytes(AsSpan(g.mesh)));
             g.uploadHeader = false;
         }
-        if (g.uploadVertices)
-        {
-            regions.push_back({.srcOffset = srcOffset + sizeof(GSMesh),
-                               .dstOffset = g.offset + sizeof(GSMesh),
-                               .size = g.dynamicVtxBytes});
-            g.uploadVertices = false;
-        }
-        if (g.uploadIndices)
-        {
-            uint32_t const indexOffset = static_cast<uint32_t>(sizeof(GSMesh)) + g.dynamicVtxBytes;
-            regions.push_back({.srcOffset = srcOffset + indexOffset,
-                               .dstOffset = g.offset + indexOffset,
-                               .size = g.mesh.indices.count * static_cast<uint32_t>(sizeof(uint32_t))});
-            g.uploadIndices = false;
-        }
     }
-    if (regions.empty())
+    if (mDynamicUploadRegions.empty())
         return;
-    cmd->CopyBuffer(mDynamicStagingBuffer.Get(), mDynamicPrimitiveBuffer.Get(), regions);
+    CHECK(mDynamicStagingBuffer);
+    cmd->CopyBuffer(mDynamicStagingBuffer.Get(), mDynamicPrimitiveBuffer.Get(), mDynamicUploadRegions);
+    mDynamicUploadRegions.clear();
 }
 
 void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
@@ -2809,6 +2801,8 @@ void GPUSceneImpl::Reset()
         mUploadWorkerStarted = false;
     }
     mDynamicStagingFrameIndex = 0;
+    mDynamicStagingCursor = 0;
+    mDynamicUploadRegions.clear();
     mDynamicIsUpdate = false;
     mBLASes.clear();
     mBLASBuffers.clear();

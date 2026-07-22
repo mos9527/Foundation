@@ -1967,7 +1967,7 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     desc.dynamicGeometryBudget = ByteGPUSceneBudget(dynamicBytes, 0, size_t(16));
     desc.geometryBudget =
         CountGPUSceneBudget(rigidMeshCount + GetCurves().size() + skinnedInstanceCount);
-    desc.framesInFlight = kGPUSceneRingFrameSlack;
+    desc.dynamicStagingFramesInFlight = kGPUSceneRingFrameSlack;
 
     size_t textureBindings = kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings +
         kGPUSceneTextureBindingSlack;

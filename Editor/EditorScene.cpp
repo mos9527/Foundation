@@ -443,7 +443,8 @@ static size_t GPUSceneBudgetBytes(GPUSceneDesc const& desc)
            size_t(desc.tlasInstanceBudget) * GContext->device->WriteAccelerationStructureInstanceData({}, nullptr) +
            size_t(desc.tlasBudget) +
            size_t(desc.tlasScratchBudget) +
-           size_t(desc.dynamicGeometryBudget) * (size_t(desc.framesInFlight) + 2u);
+           size_t(desc.dynamicGeometryBudget) +
+           size_t(desc.dynamicStagingBudget) * (size_t(desc.dynamicStagingFramesInFlight) + 1u);
 }
 
 static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBytes)

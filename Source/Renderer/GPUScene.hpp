@@ -164,8 +164,9 @@ struct GPUSceneDesc
     uint32_t tlasInstanceBudget = static_cast<uint32_t>(1e4); // # of TLAS instances (ring)
     uint32_t tlasBudget = 16 * (1u << 20); // 16MB
     uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
-    uint32_t dynamicGeometryBudget = 0; // device bytes and staging bytes per slot (0 = disabled)
-    uint32_t framesInFlight = 2; // staging frames in flight, should be conservative (>= N swaps)
+    uint32_t dynamicGeometryBudget = 0; // device-local bytes (0 = disabled)
+    uint32_t dynamicStagingBudget = 0; // CPU staging buffer size for dynamic geometry (0 = disabled)
+    uint32_t dynamicStagingFramesInFlight = 1; // CPU staging frames in flight
 };
 
 class GPUScene
