@@ -158,7 +158,7 @@ void FAnimationRuntime::Initialize(FImportedScene& scene, GPUScene& gpu, RHIDevi
             continue;
         MeshInput const& input = mMeshes[static_cast<uint32_t>(meshIndex)];
         GeometryHandle output;
-        GPUScene::Result result = gpu.AllocateDynamic(input.vertexCount, input.indexCount, output, true);
+        GPUScene::Result result = gpu.Allocate(input.vertexCount, input.indexCount, output, true);
         CHECK_MSG(result == GPUScene::Result::Ready, "Failed to allocate skinned output ({})",
                   static_cast<uint32_t>(result));
         resources.instanceGeometry[instanceIndex] = output;

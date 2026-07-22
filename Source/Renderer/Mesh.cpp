@@ -347,5 +347,4 @@ void FImportedMesh::Optimize() { OptimizeVertexIndex(vertices, lods[0].indices);
 FImportedMesh::FImportedMesh(Allocator* alloc) :
     vertices(alloc), verticesQuantized(alloc), skin(alloc), lods(alloc), dag(alloc)
 {
-    lods.resize(1u, alloc);
 }

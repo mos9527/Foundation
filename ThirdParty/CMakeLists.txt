@@ -159,3 +159,12 @@ target_include_directories(ThirdParty_STB PUBLIC ${stb_SOURCE_DIR})
 # STB_IMAGE on GCC Debug builds without optimization fails to propagate constants to intrinsics -> "argument must be an immediate"
 # Force optimization on this specific file/target to fix it.
 target_compile_options(ThirdParty_STB PRIVATE $<$<CXX_COMPILER_ID:GNU>:-O2>)
+
+# For certain examples only, this is not always pulled.
+FetchContent_Declare(
+    JoltPhysics
+    GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+    GIT_TAG        v5.6.0
+    SOURCE_SUBDIR "Build"
+    GIT_SHALLOW TRUE
+)

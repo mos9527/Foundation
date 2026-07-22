@@ -1,4 +1,4 @@
-// Demonstrates GPU- and CPU-authored dynamic geometry.
+// Demonstrates GPU-generated dynamic geometry and CPU-generated static geo usage.    
 #include <Renderer/Mesh.hpp>
 #include <algorithm>
 #include "Examples.hpp"
@@ -64,10 +64,8 @@ namespace
             });
     }
 
-    void FillGround(Span<FQVertex> verts, Span<uint32_t> indices)
+    void FillGround(FImportedMesh& mesh)
     {
-        CHECK(verts.size() == kGroundVerts);
-        CHECK(indices.size() == kGroundIndices);
         float const h = kGroundExtent * 0.5f;
         float3 const n = float3(0, 1, 0);
         float3 const t = float3(1, 0, 0);
@@ -78,6 +76,8 @@ namespace
             float3(h, kGroundY, h),
         };
         float2 const uvs[4] = {float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 1)};
+        
+        mesh.vertices.resize(4);
         for (uint32_t i = 0; i < 4; ++i)
         {
             FVertex src{};
@@ -86,14 +86,17 @@ namespace
             src.tangent = t;
             src.bitangentSign = 1.0f;
             src.uv = uvs[i];
-            verts[i] = FQVertex::Pack(src);
+            mesh.vertices[i] = src;
         }
-        indices[0] = 0;
-        indices[1] = 2;
-        indices[2] = 1;
-        indices[3] = 1;
-        indices[4] = 2;
-        indices[5] = 3;
+        
+        mesh.lods.emplace_back(GLOBAL_ALLOC);
+        mesh.lods[0].indices.resize(6);
+        mesh.lods[0].indices[0] = 0;
+        mesh.lods[0].indices[1] = 2;
+        mesh.lods[0].indices[2] = 1;
+        mesh.lods[0].indices[3] = 1;
+        mesh.lods[0].indices[4] = 2;
+        mesh.lods[0].indices[5] = 3;
     }
 
     void CommitDemoScene(GPUScene& gpu, GeometryHandle water, GeometryHandle ground, RendererUBO& ubo)
@@ -152,7 +155,7 @@ namespace
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
         BuildGerstnerPass(ctx.renderer.get(), resources, &gerstner);
-        // Opt. BuildRasterRenderGraph
+        // Opt. BuildRasterRenderGraph BuildPathTracerRenderGraph
         BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
         RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
@@ -176,13 +179,18 @@ int main(int argc, char** argv)
     desc.geometryBudget = 8;
     desc.tlasInstanceBudget = 8;
     GPUScene gpu(ctx.device.Get(), GLOBAL_ALLOC, desc);
-
     GeometryHandle water{};
     GeometryHandle ground{};
-    CHECK(gpu.AllocateDynamic(kWaterVerts, kWaterIndices, water, true) == GPUScene::Result::Ready);
-    CHECK(gpu.AllocateDynamic(kGroundVerts, kGroundIndices, ground) == GPUScene::Result::Ready);
-    CHECK(gpu.HasDynamicGeometry());
+    {
+        FImportedMesh groundMesh(GLOBAL_ALLOC);
+        FillGround(groundMesh);
+        groundMesh.Optimize();
+        groundMesh.ClusterizeDAG();
 
+        gpu.Upload(groundMesh, ground);
+        gpu.Allocate(kWaterVerts, kWaterIndices, water, true);
+        gpu.Join();
+    }
 
     RendererUBO ubo{};
     RendererConfig cfg{.cullFlags{kCullFrustum | kCullBackface}};
@@ -204,9 +212,6 @@ int main(int argc, char** argv)
     uint64_t t0 = SDL_GetTicksNS();
 
     // CPU side data
-    FQVertex groundVertices[kGroundVerts]{};
-    uint32_t groundIndices[kGroundIndices]{};
-    FillGround(groundVertices, groundIndices);
     while (true)
     {
         uint64_t t1 = SDL_GetTicksNS();
@@ -230,7 +235,6 @@ int main(int argc, char** argv)
         // NOTE: You don't need to do this every frame. This is to demonstrate dynamic geometry updates from host.
         //       Note that providing indices to be updated/flagging it as true triggers rebuilds. Leaving them empty/false
         //       singlals that refit can be used.
-        gpu.UpdateDynamicGeometryCPU(ground, groundVertices, groundIndices);
         gpu.UpdateDynamicGeometryGPU(water, true, true);
         gpu.EndDynamicGeometryUpdate();
 

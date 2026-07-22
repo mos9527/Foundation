@@ -191,7 +191,13 @@ public:
     ~GPUScene();
 
     Result Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
-    Result AllocateDynamic(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu = false);
+    Result Upload(FImportedMesh const& source, GeometryHandle& outHandle, FUUID skeleton = kNilUUID);
+
+    /**
+     * @brief Allocates a dynamic geometry handle.
+     * @param isGpu Whether the dynamic geometry is GPU-local. See @ref UpdateDynamicGeometryCPU, @ref UpdateDynamicGeometryGPU.
+     */
+    Result Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu = false);
     
     Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
     
@@ -267,12 +273,12 @@ public:
 
     void BeginDynamicGeometryUpdate();
     /**
-	 * @brief Host-mapped copy. Requires isGpu = false with @ref AllocateDynamic, otherwise use UpdateDynamicGeometryGPU.
+	 * @brief Host-mapped copy. Requires isGpu = false with @ref Allocate, otherwise use UpdateDynamicGeometryGPU.
 	 */
     void UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices = {},
                                Span<const uint32_t> indices = {});
     /**
-     * @brief Device local writes.Requires isGpu = true with @ref AllocateDynamic, otherwise use UpdateDynamicGeometryCPU.
+     * @brief Device local writes.Requires isGpu = true with @ref Allocate, otherwise use UpdateDynamicGeometryCPU.
      * @note  This in effect only marks the geometry dirty, and is thread-safe to commit.
      */
     void UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);

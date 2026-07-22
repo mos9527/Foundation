@@ -324,7 +324,8 @@ struct GPUSceneImpl
 
     /* Mesh */
     Result Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
-    Result AllocateDynamic(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu);
+    Result Upload(FImportedMesh const& source, GeometryHandle& outHandle, FUUID skeleton);
+    Result Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu);
     /* Curve */
     Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
     /* Texture */
@@ -1188,6 +1189,48 @@ static uint32_t GetTextureUploadAlignment(FTextureHeader const& metadata)
     return alignment;
 }
 
+static FSerializedBounds BuildMeshBounds(FImportedMesh const& mesh)
+{
+    if (mesh.vertices.empty())
+        return {};
+
+    FSerializedBounds bounds = FSerializedBounds::Empty();
+    for (FVertex const& vertex : mesh.vertices)
+        bounds += vertex.position;
+    return bounds;
+}
+
+static std::pair<FSerializedMesh, Vector<unsigned char>> SerializedFromMesh(FImportedMesh const& mesh, Allocator* alloc, FUUID skeleton)
+{
+    const_cast<FImportedMesh&>(mesh).EnsureQuantized();
+
+    FSerializedMesh desc(alloc);
+    desc.bounds = BuildMeshBounds(mesh);
+    desc.vertexCount = static_cast<uint32_t>(mesh.verticesQuantized.size());
+    desc.skeleton = skeleton;
+
+    Vector<unsigned char> payload(alloc);
+    MemoryBlobSerializer serializer(payload);
+
+    desc.vertices = serializer.AppendArray(mesh.verticesQuantized);
+
+    desc.lods.reserve(mesh.lods.size());
+    for (auto const& lod : mesh.lods)
+    {
+        FSerializedMeshLOD& lodDesc = desc.lods.emplace_back();
+        lodDesc.indexCount = static_cast<uint32_t>(lod.indices.size());
+        lodDesc.indices = serializer.AppendArray(lod.indices);
+    }
+
+    desc.dagGroups = serializer.AppendArray(mesh.dag.groups);
+    desc.dagMeshlets = serializer.AppendArray(mesh.dag.meshlets);
+    desc.dagMeshletTri = serializer.AppendArray(mesh.dag.meshletTri);
+    desc.dagMeshletVtx = serializer.AppendArray(mesh.dag.meshletVtx);
+    desc.skinBinding = serializer.AppendArray(mesh.skin);
+
+    return {desc, std::move(payload)};
+}
+
 static FSerializedTexture SerializedFromTexture(FTexture const& source, Allocator* alloc)
 {
     FSerializedTexture adaptor(alloc);
@@ -1381,6 +1424,23 @@ GPUScene::Result GPUSceneImpl::Upload(FTexture const& source, TextureHandle& out
     FSerializedTexture adaptor = SerializedFromTexture(source, mAllocator);
     FBlobDeserializer blobs(Span<const unsigned char>(source.bytes.data(), source.bytes.size()));
     Result r = Upload(&blobs, adaptor, outTextureIndex, debugName, pinned);
+    // Lifetime for the serialized blob must outlive the upload itself, so we can't really do this asynchronously within this helper func.
+    // See also @ref FImportedMesh upload next, same thing here.
+    // TODO: Just offer SerializedFromTexture, etc as public APIs...
+    if (r != Result::InProgress)
+        return r;
+    Join();
+    return Result::Ready;
+}
+
+GPUScene::Result GPUSceneImpl::Upload(FImportedMesh const& source, GeometryHandle& outHandle, FUUID skeleton)
+{
+    if (source.vertices.empty())
+        return Result::InvalidInput;
+
+    auto [adaptor, payload] = SerializedFromMesh(source, mAllocator, skeleton);
+    FBlobDeserializer blobs(Span<const unsigned char>(payload.data(), payload.size()));
+    Result r = Upload(&blobs, adaptor, outHandle);
     if (r != Result::InProgress)
         return r;
     Join();
@@ -2105,13 +2165,13 @@ void GPUSceneImpl::AllocateDynamicBLAS(Geometry& g)
     g.dynamicIsBuilt = false;
 }
 
-GPUScene::Result GPUSceneImpl::AllocateDynamic(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle,
+GPUScene::Result GPUSceneImpl::Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle,
                                               bool isGpu)
 {
     if (!mDynamicPrimitiveBuffer)
     {
         LOG(GPUScene, LogError,
-            "AllocateDynamic called but GPUSceneDesc::dynamicGeometryBudget is 0 (feature disabled)");
+            "Allocate called but GPUSceneDesc::dynamicGeometryBudget is 0 (feature disabled)");
         return Result::InvalidInput;
     }
     if (vertexCount == 0 || indexCount == 0 || (indexCount % 3u) != 0u)
@@ -2842,15 +2902,20 @@ GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedMesh cons
     return mImpl->Upload(blobs, source, outHandle);
 }
 
+GPUScene::Result GPUScene::Upload(FImportedMesh const& source, GeometryHandle& outHandle, FUUID skeleton)
+{
+    return mImpl->Upload(source, outHandle, skeleton);
+}
+
 GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle)
 {
     return mImpl->Upload(blobs, source, outHandle);
 }
 
-GPUScene::Result GPUScene::AllocateDynamic(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle,
+GPUScene::Result GPUScene::Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle,
                                           bool isGpu)
 {
-    return mImpl->AllocateDynamic(vertexCount, indexCount, outHandle, isGpu);
+    return mImpl->Allocate(vertexCount, indexCount, outHandle, isGpu);
 }
 
 GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedTexture const& source, TextureHandle& outTexture,

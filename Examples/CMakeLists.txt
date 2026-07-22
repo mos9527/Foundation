@@ -68,3 +68,21 @@ add_dependencies(Example_GPUScene Foundation_Shaders Editor_Data Examples_Sample
 add_example(Example_DynamicGeometry "DynamicGeometry.cpp")
 target_link_libraries(Example_DynamicGeometry PUBLIC Example_Common Foundation_Rasterizer)
 add_dependencies(Example_DynamicGeometry Foundation_Shaders Editor_Data Shader_PostprocessBasic Shader_DynamicGerstner)
+
+if (FOUNDATION_WITH_JOLT_EXAMPLES)
+    include(FetchContent)
+    
+    set(TARGET_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+    set(TARGET_HELLO_WORLD OFF CACHE BOOL "" FORCE)
+    set(TARGET_PERFORMANCE_TEST OFF CACHE BOOL "" FORCE)
+    set(TARGET_SAMPLES OFF CACHE BOOL "" FORCE)
+    set(TARGET_VIEWER OFF CACHE BOOL "" FORCE)
+    set(USE_ASSERTS OFF CACHE BOOL "" FORCE)
+    set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(JoltPhysics)
+    
+    add_example(Example_PhysicsJolt "PhysicsJolt.cpp")
+    target_include_directories(Example_PhysicsJolt PUBLIC ${JoltPhysics_SOURCE_DIR}/..)
+    target_link_libraries(Example_PhysicsJolt PUBLIC Example_Common Foundation_Rasterizer Jolt)
+    add_dependencies(Example_PhysicsJolt Foundation_Shaders Editor_Data Shader_PostprocessBasic Shader_DynamicGerstner)
+endif()
