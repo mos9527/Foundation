@@ -29,9 +29,7 @@ String PrepareScenePayload(StringView path)
     {
         MemoryMappedFile sceneFile(scenePayloadPath, 256ull * 1024ull * 1024ull /* grows on demand */);
         FImportedScene writeScene(sceneFile, GLOBAL_ALLOC);
-        LoadScene(path, writeScene, GLOBAL_ALLOC, FSceneBuildOptions{
-            .generateMeshlets = false       
-        });
+        LoadScene(path, writeScene, GLOBAL_ALLOC);
     }
     return scenePayloadPath;
 }
