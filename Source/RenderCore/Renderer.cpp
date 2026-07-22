@@ -7,6 +7,69 @@ using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
 using namespace Foundation::Math;
 
+RHITextureSubresourceRange TrackedResource::SubresourceState::ToRange() const
+{
+    {
+        return RHITextureSubresourceRange{.layer = {.aspect = aspect,
+                                                    .mipLevel = static_cast<uint32_t>(mip),
+                                                    .baseArrayLayer = static_cast<uint32_t>(layer),
+                                                    .layerCount = 1},
+                                          .mipCount = 1};
+    }
+}
+
+TrackedResource::TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc,
+                                 Allocator* alloc) :
+    handle(handle), name(name), desc(resourceDesc), lastSubresourceStates(alloc)
+{
+    // Init texture tracking states
+    auto update_texture_desc = [&](RHITextureDesc const& texture_desc)
+    {
+        textureLayers = texture_desc.arrayLayers;
+        textureMips = texture_desc.mipLevels;
+        lastSubresourceStates.resize(textureMips * textureLayers * kTextureAspectCount);
+        for (uint32_t mip = 0; mip < textureMips; ++mip)
+        {
+            for (uint32_t layer = 0; layer < textureLayers; ++layer)
+            {
+                for (uint32_t aspect = 0; aspect < kTextureAspectCount; ++aspect)
+                {
+                    uint32_t i = mip * (textureLayers * kTextureAspectCount) + layer * kTextureAspectCount + aspect;
+                    auto& state = lastSubresourceStates[i];
+                    state.producer = state.lastProducer = kInvalidHandle;
+                    state.aspect = RHITextureAspectFlag(1u << aspect);
+                    state.mip = mip, state.layer = layer;
+                }
+            }
+        }
+    };
+    desc.VisitDefault([&](RHITextureDesc const& tex) { update_texture_desc(tex); },
+                      [&](RHIDeviceHandle<RHITexture> const& tex) { update_texture_desc(tex->mDesc); },
+                      [&](const RHITexture* const tex) { update_texture_desc(tex->mDesc); });
+}
+
+TrackedPass::TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue,
+                         UniquePtr<RenderPass> renderPass, size_t priority) :
+    name(name), handle(handle), priority(priority), queue(queue), bindPasses(alloc), textureUsages(alloc),
+    bufferUsages(alloc), asUsages(alloc), resources(alloc), texviews(alloc), shaders(alloc), textureBindings(alloc),
+    bufferBindings(alloc), asBindings(alloc), externalBindings(alloc), samplers(alloc), pushConstants(alloc),
+    specializationConstants(alloc), rtvs(alloc), vertexInputBindings(alloc), vertexInputAttributes(alloc),
+    pass(std::move(renderPass)), descriptorLayouts(alloc), pDescriptorLayouts(alloc), descriptorSets(alloc),
+    pDescriptorSets(alloc), pExternalDescriptorSets(alloc)
+{
+}
+void TrackedPass::ResetPipeline()
+{
+    piplineStages = {};
+    // Sets
+    descriptorSets.clear();
+    pDescriptorSets.clear();
+    pExternalDescriptorSets.clear();
+    // Layouts
+    descriptorLayouts.clear();
+    pDescriptorLayouts.clear();
+}
+
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> device,
                    RHIDeviceHandle<RHISwapchain> swapchain, Allocator* allocator) :
     mState(State::Undefined), mAllocator(allocator), mDesc(desc), mSwaps(mAllocator), mDevice(device),
@@ -46,11 +109,13 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> dev
                                               "RT Pipeline w/ Shader Execution Reordering"};
     auto const& caps = device->GetCapabilities();
     int raytracingSupportLevel = 0;
-    if (caps.raytracingInline) raytracingSupportLevel = 1;
-    if (caps.raytracingPipeline) raytracingSupportLevel = 2;
-    if (caps.shaderExecutionReordering) raytracingSupportLevel = 3;
-    LOG(Renderer, LogDebug, "Raytracing:\t{}",
-        kRaytracingSupportLevels[raytracingSupportLevel]);
+    if (caps.raytracingInline)
+        raytracingSupportLevel = 1;
+    if (caps.raytracingPipeline)
+        raytracingSupportLevel = 2;
+    if (caps.shaderExecutionReordering)
+        raytracingSupportLevel = 3;
+    LOG(Renderer, LogDebug, "Raytracing:\t{}", kRaytracingSupportLevels[raytracingSupportLevel]);
     LOG(Renderer, LogDebug, "Mesh Shaders:\t{}", caps.meshShaders ? "Supported" : "No Support");
     LOG(Renderer, LogDebug, "Threads:\t{}", mDesc.threadCount);
     LOG(Renderer, LogDebug, "PSO Cache:\t{:x}", reinterpret_cast<uintptr_t>(mDesc.pipelineCache));
@@ -58,7 +123,8 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> dev
 
 void Renderer::BeginSetup()
 {
-    CHECK_MSG(mState == State::Undefined, "Bad Setup state. Current state is {}. Note that the Renderer can only be set up once.", mState);
+    CHECK_MSG(mState == State::Undefined,
+              "Bad Setup state. Current state is {}. Note that the Renderer can only be set up once.", mState);
     mState = State::Setup;
     mSetup = ConstructUnique<RendererSetup>(mAllocator, mAllocator);
     if (mSwapchain.IsValid())
@@ -156,9 +222,8 @@ void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entr
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
-    auto& [path, ep, st, spec, rtGroup, rtGroupType] =
-        mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage, mAllocator, rtHitGroupIndex,
-                                                         rtHitGroupType);
+    auto& [path, ep, st, spec, rtGroup, rtGroupType] = mSetup->trackedPasses[pass].shaders.emplace_back(
+        shader_path, entry_point, stage, mAllocator, rtHitGroupIndex, rtHitGroupType);
     spec.insert(spec.end(), specializationData.begin(), specializationData.end());
 }
 
@@ -176,9 +241,9 @@ void Renderer::BindPushConstant(PassHandle pass, RHIShaderStage stage, size_t of
     CHECK(mState == State::Setup);
     for (auto const& [st, _offset, _size] : mSetup->trackedPasses[pass].pushConstants)
         CHECK_MSG(!(st & stage),
-              "Shader stage {} already has Push Constant bound in this pass. There can be only one Push Constant "
-              "configuration per shader stage per pass.",
-              st);
+                  "Shader stage {} already has Push Constant bound in this pass. There can be only one Push Constant "
+                  "configuration per shader stage per pass.",
+                  st);
     mSetup->trackedPasses[pass].pushConstants.emplace_back(stage, offset, size);
 }
 
@@ -218,8 +283,7 @@ void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIP
 void Renderer::BindBufferIndirectRead(PassHandle pass, ResourceHandle buffer) const
 {
     CHECK(mState == State::Setup);
-    DeclareBufferAccess(pass, buffer, RHIPipelineStageBits::DrawIndirect,
-                        RHIResourceAccessBits::IndirectCommandRead);
+    DeclareBufferAccess(pass, buffer, RHIPipelineStageBits::DrawIndirect, RHIResourceAccessBits::IndirectCommandRead);
 }
 
 void Renderer::BindBufferCopyDst(PassHandle pass, ResourceHandle buffer) const
@@ -304,7 +368,8 @@ void Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextur
     tpass.rtvs.emplace_back(view, blending);
 }
 
-void Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc, bool readOnly) const
+void Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc,
+                              bool readOnly) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(desc.range.IsValid(), "Binding DSV on {} is of invalid range! Did you specify `desc.range`?",
@@ -315,10 +380,11 @@ void Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextur
     RHITextureAspectFlag kDSVBits = RHITextureAspectFlagBits::Depth | RHITextureAspectFlagBits::Stencil;
     CHECK_MSG(((desc.range.layer.aspect | kDSVBits) == kDSVBits) && (desc.range.layer.aspect & kDSVBits),
               "DSV view must have exactly one layer, and the access flag must be Depth and/or Stencil.");
-    DeclareTextureAccess(pass, texture,
-                         RHIPipelineStageBits::EarlyFragmentTests | RHIPipelineStageBits::LateFragmentTests, desc.range,
-                         readOnly ? RHIResourceAccessBits::DepthStencilRead : (RHIResourceAccessBits::DepthStencilRead | RHIResourceAccessBits::DepthStencilWrite),
-                         readOnly ? RHITextureLayout::DepthStencilReadOnly : RHITextureLayout::DepthStencil);
+    DeclareTextureAccess(
+        pass, texture, RHIPipelineStageBits::EarlyFragmentTests | RHIPipelineStageBits::LateFragmentTests, desc.range,
+        readOnly ? RHIResourceAccessBits::DepthStencilRead
+                 : (RHIResourceAccessBits::DepthStencilRead | RHIResourceAccessBits::DepthStencilWrite),
+        readOnly ? RHITextureLayout::DepthStencilReadOnly : RHITextureLayout::DepthStencil);
     ResourceHandle view = CreateTextureView(pass, texture, desc);
     tpass.dsv = view;
 }
@@ -442,9 +508,11 @@ void Renderer::CullPasses(PassHandle epilogue) const
     // 1. Find live nodes using BFS (reachability from epilogue and uncullable passes)
     Set<PassHandle> live(mAllocator);
     Vector<PassHandle> q(mAllocator);
-    
-    auto addRoot = [&](PassHandle pass) {
-        if (!live.contains(pass)) {
+
+    auto addRoot = [&](PassHandle pass)
+    {
+        if (!live.contains(pass))
+        {
             q.push_back(pass);
             live.insert(pass);
         }
@@ -492,7 +560,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     Vector<PassHandle> topo(mAllocator);
     Vector<int> dis(mSetup->trackedPasses.size(), 0, mAllocator);
     auto& in = mSetup->in; // (Legacy array)
-    
+
     // Nodes with 0 live in-degree are roots of the live graph
     for (auto u : live)
     {
@@ -529,7 +597,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
     for (PassHandle ord = 0; ord < exec.size(); ord++)
     {
         auto& pass = mSetup->trackedPasses[exec[ord]];
-        CHECK_MSG(exec[ord] == epilogue || live_in[exec[ord]] == 0, "Cycles in render graph. Pass {} has at least one cycle connecting to it.", pass.name);
+        CHECK_MSG(exec[ord] == epilogue || live_in[exec[ord]] == 0,
+                  "Cycles in render graph. Pass {} has at least one cycle connecting to it.", pass.name);
         pass.used = true;
         // Derive lifetimes for resources from execution order
         // FinalizeResources() uses this to overlap resources.
@@ -560,15 +629,16 @@ void Renderer::CullPasses(PassHandle epilogue) const
     {
         while (j < exec.size() && mSetup->trackedPasses[exec[j]].depth == mSetup->trackedPasses[exec[i]].depth)
             j++;
-        Ranges::sort(exec.begin() + i, exec.begin() + j, [&](PassHandle a, PassHandle b)
-        {
-            // Graphics passes go first
-            auto const& pa = mSetup->trackedPasses[a];
-            auto const& pb = mSetup->trackedPasses[b];
-            if (pa.queue != pb.queue)
-                return pa.queue == RHIDeviceQueueType::Graphics;
-            return pa.handle < pb.handle;
-        });
+        Ranges::sort(exec.begin() + i, exec.begin() + j,
+                     [&](PassHandle a, PassHandle b)
+                     {
+                         // Graphics passes go first
+                         auto const& pa = mSetup->trackedPasses[a];
+                         auto const& pb = mSetup->trackedPasses[b];
+                         if (pa.queue != pb.queue)
+                             return pa.queue == RHIDeviceQueueType::Graphics;
+                         return pa.handle < pb.handle;
+                     });
     }
     auto& groups = mSetup->executionGroups;
     // Grouping heuristics:
@@ -688,8 +758,9 @@ void Renderer::BuildPipelineState(PassHandle pass)
         // In BindShader we have already guaranteed these to be unique per stage
         if (stage & RHIShaderStageBits::Compute)
             tracked.isComputePass = true, tracked.piplineStages |= RHIPipelineStageBits::ComputeShader;
-        if (stage & (RHIShaderStageBits::RayAnyHit | RHIShaderStageBits::RayClosestHit | RHIShaderStageBits::RayMiss |
-            RHIShaderStageBits::RayIntersection | RHIShaderStageBits::RayGeneration))
+        if (stage &
+            (RHIShaderStageBits::RayAnyHit | RHIShaderStageBits::RayClosestHit | RHIShaderStageBits::RayMiss |
+             RHIShaderStageBits::RayIntersection | RHIShaderStageBits::RayGeneration))
             tracked.isRayTracingPass = true, tracked.piplineStages |= RHIPipelineStageBits::RayTracingShader;
         if (stage & RHIShaderStageBits::Fragment)
             tracked.piplineStages |= RHIPipelineStageBits::FragmentShader;
@@ -710,19 +781,20 @@ void Renderer::BuildPipelineState(PassHandle pass)
                 CHECK_MSG((!spec.empty() && specDecl.size() == 1) || (spec.empty() && specDecl.empty()),
                           "Only zero or one Specialization Constants is allowed in shader bytecode. Shader wants {}, "
                           "declared {} in {}.\n"
-                          "NOTE: No. of Specialization Constants must be uniform across all shader bytecode uint even for different entry points.",
+                          "NOTE: No. of Specialization Constants must be uniform across all shader bytecode uint even "
+                          "for different entry points.",
                           specDecl.size(), spec.empty() ? 0 : 1, tracked.name);
                 if (!specDecl.empty())
                     CHECK_MSG(specDecl.front().id == 0, "Expected Specialization Constant ID to be 0, got {}.",
-                          specDecl.front().id);
+                              specDecl.front().id);
                 pso_stages.push_back({.desc =
-                                      {
-                                          .stage = stage,
-                                          .entryPoint = ep.name.c_str(),
-                                          .specializationData = specializations[entry_point],
-                                          .raytracingHitGroupIndex = rtHitGroups[entry_point],
-                                          .raytracingHitGroupType = rtHitGroupTypes[entry_point],
-                                      },
+                                          {
+                                              .stage = stage,
+                                              .entryPoint = ep.name.c_str(),
+                                              .specializationData = specializations[entry_point],
+                                              .raytracingHitGroupIndex = rtHitGroups[entry_point],
+                                              .raytracingHitGroupType = rtHitGroupTypes[entry_point],
+                                          },
                                       .shaderModule = module.Get()});
                 if (stage & (RHIShaderStageBits::Compute | RHIShaderStageBits::Mesh | RHIShaderStageBits::Task))
                     tracked.groupLocalSize = ep.groupLocalSize;
@@ -881,11 +953,10 @@ void Renderer::BuildPipelineState(PassHandle pass)
         }
         else
         {
-            CHECK_MSG(
-                false,
-                "External descriptor set binding {} is not used by any shader in pass {}. Has the set been used by e.g. Backbuffer?",
-                binding,
-                tracked.name);
+            CHECK_MSG(false,
+                      "External descriptor set binding {} is not used by any shader in pass {}. Has the set been used "
+                      "by e.g. Backbuffer?",
+                      binding, tracked.name);
         }
         var_ext_sets[binding] = desc_set_layout;
     }
@@ -969,66 +1040,65 @@ void Renderer::BuildPipelineState(PassHandle pass)
             switch (type)
             {
             case Sampler:
-            {
-                CHECK_MSG(var_samplers.contains(name),
-                          "Shader expects a Sampler at {}, but it's not bound by pass {}", name, tracked.name);
-                auto samplers = var_samplers.find(name)->second;
-                for (uint e = 0; e < samplers.size(); e++)
                 {
-                    ds->Update({.binding = binding,
-                                .startIndex = e,
-                                .type = type,
-                                .images = {{{.sampler = DerefSampler(samplers[e])}}}});
+                    CHECK_MSG(var_samplers.contains(name),
+                              "Shader expects a Sampler at {}, but it's not bound by pass {}", name, tracked.name);
+                    auto samplers = var_samplers.find(name)->second;
+                    for (uint e = 0; e < samplers.size(); e++)
+                    {
+                        ds->Update({.binding = binding,
+                                    .startIndex = e,
+                                    .type = type,
+                                    .images = {{{.sampler = DerefSampler(samplers[e])}}}});
+                    }
+                    break;
                 }
-                break;
-            }
             case SampledImage:
             case StorageImage:
-            {
-                CHECK_MSG(var_handles.contains(name),
-                          "Shader expects an Image at {}, but it's not bound by pass {}", name, tracked.name);
-                auto images = var_handles.find(name)->second;
-                for (uint e = 0; e < images.size(); e++)
                 {
-                    auto* view = DerefTextureView(images[e]);
-                    ds->Update({.binding = binding,
-                                .startIndex = e,
-                                .type = type,
-                                .images = {{{.imageView = view,
-                                             .layout = type == SampledImage
-                                             ? RHITextureLayout::ShaderReadOnly
-                                             : RHITextureLayout::General}}}});
+                    CHECK_MSG(var_handles.contains(name),
+                              "Shader expects an Image at {}, but it's not bound by pass {}", name, tracked.name);
+                    auto images = var_handles.find(name)->second;
+                    for (uint e = 0; e < images.size(); e++)
+                    {
+                        auto* view = DerefTextureView(images[e]);
+                        ds->Update({.binding = binding,
+                                    .startIndex = e,
+                                    .type = type,
+                                    .images = {{{.imageView = view,
+                                                 .layout = type == SampledImage ? RHITextureLayout::ShaderReadOnly
+                                                                                : RHITextureLayout::General}}}});
+                    }
+                    break;
                 }
-                break;
-            }
             case UniformBuffer:
             case StorageBuffer:
-            {
-                CHECK_MSG(var_handles.contains(name),
-                          "Shader expects an Buffer at {}, but it's not bound by pass {}", name, tracked.name);
-                auto buffers = var_handles.find(name)->second;
-                for (uint e = 0; e < buffers.size(); e++)
                 {
-                    auto* buf = DerefResource(buffers[e]).Get<RHIBuffer*>();
-                    ds->Update({.binding = binding, .startIndex = e, .type = type, .buffers = {{{.buffer = buf}}}});
+                    CHECK_MSG(var_handles.contains(name),
+                              "Shader expects an Buffer at {}, but it's not bound by pass {}", name, tracked.name);
+                    auto buffers = var_handles.find(name)->second;
+                    for (uint e = 0; e < buffers.size(); e++)
+                    {
+                        auto* buf = DerefResource(buffers[e]).Get<RHIBuffer*>();
+                        ds->Update({.binding = binding, .startIndex = e, .type = type, .buffers = {{{.buffer = buf}}}});
+                    }
+                    break;
                 }
-                break;
-            }
             case AccelerationStructure:
-            {
-                CHECK_MSG(var_handles.contains(name),
-                          "Shader expects an Acceleration Structure at {}, but it's not bound by pass {}", name,
-                          tracked.name);
-                auto asses = var_handles.find(name)->second;
-                for (uint e = 0; e < asses.size(); e++)
                 {
-                    auto* as = DerefResource(asses[e]).Get<RHIAccelerationStructure*>();
-                    ds->Update({.binding = binding,
-                                .startIndex = e,
-                                .type = type,
-                                .accelerationStructures = {{{.as = as}}}});
+                    CHECK_MSG(var_handles.contains(name),
+                              "Shader expects an Acceleration Structure at {}, but it's not bound by pass {}", name,
+                              tracked.name);
+                    auto asses = var_handles.find(name)->second;
+                    for (uint e = 0; e < asses.size(); e++)
+                    {
+                        auto* as = DerefResource(asses[e]).Get<RHIAccelerationStructure*>();
+                        ds->Update({.binding = binding,
+                                    .startIndex = e,
+                                    .type = type,
+                                    .accelerationStructures = {{{.as = as}}}});
+                    }
                 }
-            }
             default:
                 break;
             }
@@ -1044,10 +1114,10 @@ void Renderer::BuildPipelineState(PassHandle pass)
     if (backbufferUAVUsage.has_value())
     {
         auto set = backbufferUAVUsage.value();
-        CHECK_MSG(set == tracked.pDescriptorLayouts.size(),
-                  "Backbuffer UAV View MUST be the last descriptor set in pass {}. Declared {}, but pass only has {} sets.",
-                  tracked.name,
-                  set, tracked.pDescriptorLayouts.size());
+        CHECK_MSG(
+            set == tracked.pDescriptorLayouts.size(),
+            "Backbuffer UAV View MUST be the last descriptor set in pass {}. Declared {}, but pass only has {} sets.",
+            tracked.name, set, tracked.pDescriptorLayouts.size());
         tracked.pDescriptorLayouts.emplace_back(mSwapDescriptorSetLayout.Get());
     }
 #pragma endregion
@@ -1176,7 +1246,7 @@ void Renderer::FinalizeResources()
                 RHIBufferDesc maybeShared = desc;
                 if (needShared)
                     maybeShared.resource.shared = true,
-                        maybeShared.resource.sharedQueues =
+                    maybeShared.resource.sharedQueues =
                         RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
                 mResources->resources[handle] = mDevice->CreateBuffer(maybeShared);
                 DerefResource(handle).Get<RHIBuffer*>()->DebugSetObjectName(
@@ -1187,7 +1257,7 @@ void Renderer::FinalizeResources()
                 RHITextureDesc maybeShared = desc;
                 if (needShared)
                     maybeShared.resource.shared = true,
-                        maybeShared.resource.sharedQueues =
+                    maybeShared.resource.sharedQueues =
                         RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
                 mResources->resources[handle] = mDevice->CreateTexture(maybeShared);
                 DerefResource(handle).Get<RHITexture*>()->DebugSetObjectName(
@@ -1262,7 +1332,8 @@ void Renderer::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
             continue;
 
         auto const& tracked = mSetup->trackedResources[handle];
-        // Keep this renderer-owned so the render graph total does not double-count imported GPUScene/backbuffer resources.
+        // Keep this renderer-owned so the render graph total does not double-count imported GPUScene/backbuffer
+        // resources.
         const bool isBuffer = tracked.desc.GetIf<RHIBufferDesc>() != nullptr;
         const bool isTexture = tracked.desc.GetIf<RHITextureDesc>() != nullptr;
         const bool owned = isBuffer || isTexture;
@@ -1302,10 +1373,8 @@ void Renderer::DbgGetTexturePreviews(Vector<TexturePreviewStat>& outStats) const
         if (resourceHandle >= mSetup->trackedResources.size())
             continue;
 
-        RHITextureView* view = mResources->views[viewHandle].Visit([](auto const& handle) -> RHITextureView*
-        {
-            return handle.IsValid() ? handle.Get() : nullptr;
-        });
+        RHITextureView* view = mResources->views[viewHandle].Visit(
+            [](auto const& handle) -> RHITextureView* { return handle.IsValid() ? handle.Get() : nullptr; });
         if (!view)
             continue;
 
@@ -1370,8 +1439,8 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
             {.bindings = {{{.type = RHIDescriptorType::StorageImage, .maxCount = mFrameSwaps}}}});
         mSwaps[i].viewSet = mSwapDescriptorPool->CreateDescriptorSet(mSwapDescriptorSetLayout);
         mSwaps[i].viewSet->Update(
-        {.type = RHIDescriptorType::StorageImage,
-         .images = {{{.imageView = mSwaps[i].view.Get(), .layout = RHITextureLayout::General}}}});
+            {.type = RHIDescriptorType::StorageImage,
+             .images = {{{.imageView = mSwaps[i].view.Get(), .layout = RHITextureLayout::General}}}});
         if (mSwaps[i].backbuffer == kInvalidHandle)
         {
             // First time setup
@@ -1388,7 +1457,7 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
         }
     }
     // Reset semaphores index and swapchain frame count
-    mFrameSwapped = mCurrentSwap = mCurrentSync = 0;    
+    mFrameSwapped = mCurrentSwap = mCurrentSync = 0;
 }
 
 RHIDeviceHandle<RHIDeviceSemaphore> Renderer::GetRenderCompleteSemaphore() const
@@ -1451,7 +1520,7 @@ void Renderer::BeginExecute(uint32_t swapImageIndex, RHIDeviceSemaphore* imageAc
     // Reset per-frame arena
     mExecuteAlloc.Reset(mExecuteArena);
     mExecuteSubmits = Construct<Vector<Pair<RHIDeviceQueueType, RHIDeviceQueue::SubmitDesc>>>(mExecuteAlloc.Ptr(),
-        mExecuteAlloc.Ptr());
+                                                                                              mExecuteAlloc.Ptr());
     mExecuteSubmits->reserve(mSetup->executionGroups.size());
     if (mSwapchain.IsValid())
     {
@@ -1852,12 +1921,8 @@ void Renderer::ExecuteFrame()
                     for (auto& [res, desc] : (*barriers))
                     {
                         res.Visit([&](RHIBuffer* p) { (*cmd)->SetBufferTransition(p, desc); }, [&](RHITexture* p)
-                                  {
-                                      (*cmd)->SetImageTransition(p, desc);
-                                  }, [&](RHIAccelerationStructure* p)
-                                  {
-                                      (*cmd)->SetAccelerationStructureTransition(p, desc);
-                                  });
+                                  { (*cmd)->SetImageTransition(p, desc); }, [&](RHIAccelerationStructure* p)
+                                  { (*cmd)->SetAccelerationStructureTransition(p, desc); });
                     }
                     (*cmd)->EndTransition();
                     (*cmd)->DebugBegin(pass->name.c_str());
@@ -2066,11 +2131,9 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
     CHECK_MSG(tpass.pso.IsValid(), "Current pass {} has no Pipeline state.", tpass.name);
-    cmd->SetPipeline({.pipeline = tpass.pso.Get(),
-                      .type = tpass.GetPipelineType()});
+    cmd->SetPipeline({.pipeline = tpass.pso.Get(), .type = tpass.GetPipelineType()});
     if (!tpass.pDescriptorSets.empty())
-        cmd->BindDescriptorSet(tpass.GetPipelineType(),
-                               tpass.pso.Get(), tpass.pDescriptorSets, 0);
+        cmd->BindDescriptorSet(tpass.GetPipelineType(), tpass.pso.Get(), tpass.pDescriptorSets, 0);
     if (tpass.backbufferUAV)
         CmdBindDescriptorSet(pass, cmd, tpass.backbufferUAV.value(), mSwaps[GetSwap()].viewSet.Get());
 }
@@ -2081,8 +2144,7 @@ void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
     CHECK_MSG(tpass.pso.IsValid(), "Current pass has no Pipeline state.");
-    cmd->BindDescriptorSet(tpass.GetPipelineType(),
-                           tpass.pso.Get(), {{descriptor_set}}, set_index);
+    cmd->BindDescriptorSet(tpass.GetPipelineType(), tpass.pso.Get(), {{descriptor_set}}, set_index);
 }
 
 void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, StringView bind_point,
@@ -2100,8 +2162,7 @@ void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, String
 }
 
 void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2D const& extent,
-                                Span<const RHIColorAttachmentLoad> rtv_loads,
-                                RHIDepthAttachmentLoad dsv_load)
+                                Span<const RHIColorAttachmentLoad> rtv_loads, RHIDepthAttachmentLoad dsv_load)
 {
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
@@ -2113,8 +2174,8 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
     if (tpass.backbufferRTV)
     {
         rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(),
-                        .loadOp    = rtv_loads[0].loadOp,
-                        .storeOp   = RHIAttachmentStoreOp::Store,
+                        .loadOp = rtv_loads[0].loadOp,
+                        .storeOp = RHIAttachmentStoreOp::Store,
                         .clearColor = rtv_loads[0].clearColor});
         rtv_loads = rtv_loads.subspan(1);
     }
@@ -2125,9 +2186,9 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
         RHITexture* res = DerefResource(rhdl).Get<RHITexture*>();
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                   "Graphics extent too large for Render Target on {}", tres.name);
-        rtvs.push_back({.imageView  = DerefTextureView(rtv),
-                        .loadOp     = rtv_loads[i].loadOp,
-                        .storeOp    = RHIAttachmentStoreOp::Store,
+        rtvs.push_back({.imageView = DerefTextureView(rtv),
+                        .loadOp = rtv_loads[i].loadOp,
+                        .storeOp = RHIAttachmentStoreOp::Store,
                         .clearColor = rtv_loads[i].clearColor});
         ++i;
     }
@@ -2139,11 +2200,11 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                   "Graphics extent too large for Depth buffer {}", tres.name);
         cmd->BeginGraphics({.colorAttachments = rtvs,
-                            .depthAttachment  = {.imageView          = DerefTextureView(tpass.dsv),
-                                                 .imageLayout        = RHITextureLayout::DepthStencil,
-                                                 .loadOp             = dsv_load.loadOp,
-                                                 .storeOp            = RHIAttachmentStoreOp::Store,
-                                                 .clearDepthStencil  = dsv_load.clearValue},
+                            .depthAttachment = {.imageView = DerefTextureView(tpass.dsv),
+                                                .imageLayout = RHITextureLayout::DepthStencil,
+                                                .loadOp = dsv_load.loadOp,
+                                                .storeOp = RHIAttachmentStoreOp::Store,
+                                                .clearDepthStencil = dsv_load.clearValue},
                             .width = extent.x,
                             .height = extent.y});
     }

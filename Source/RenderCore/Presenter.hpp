@@ -1,5 +1,5 @@
 #pragma once
-#include <RenderCore/RenderPass.hpp>
+#include <RHICore/Swapchain.hpp>
 #include <chrono>
 #include <vector>
 

@@ -1,6 +1,6 @@
 #pragma once
 #include <Math/Math.hpp>
-#include <RenderCore/RenderPass.hpp>
+#include <RenderCore/Renderer.hpp>
 #include "GPUScene.hpp"
 using namespace Foundation;
 using namespace Foundation::Math;

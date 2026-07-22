@@ -1,6 +1,6 @@
 #pragma once
 #include <Math/Math.hpp>
-#include <RenderCore/RenderResource.hpp>
+#include <RenderCore/Renderer.hpp>
 #include <RHICore/Common.hpp>
 
 namespace Foundation::RenderCore

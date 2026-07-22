@@ -1,6 +1,9 @@
 #pragma once
 #include <RHICore/Common.hpp>
 #include <Core/Allocator.hpp>
+
+using namespace Foundation;
+using namespace RHI;
 namespace Foundation::RenderCore {
     using namespace Core;
     /**
