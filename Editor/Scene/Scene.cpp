@@ -589,6 +589,8 @@ FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratch
             }
         }
     }
+    mesh.lods.emplace_back(scratchAlloc);
+    CHECK(mesh.lods.size() == 1);
     auto& m0 = mesh.lods[0];
     if (submesh->indices)
     {

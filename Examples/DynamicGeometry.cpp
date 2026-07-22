@@ -187,9 +187,8 @@ int main(int argc, char** argv)
         groundMesh.Optimize();
         groundMesh.ClusterizeDAG();
 
-        gpu.Upload(groundMesh, ground);
-        gpu.Allocate(kWaterVerts, kWaterIndices, water, true);
-        gpu.Join();
+        CHECK(gpu.Upload(groundMesh, ground) == GPUScene::Result::Ready);
+        CHECK(gpu.Allocate(kWaterVerts, kWaterIndices, water, true) == GPUScene::Result::Ready);
     }
 
     RendererUBO ubo{};
