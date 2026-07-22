@@ -61,7 +61,7 @@ static void RunRasterEffects(RasterEffectContext& ctx, RasterInjectionPoint poin
     }
 }
 
-void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources const& gpu,
+void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
                             RendererConfig const& cfg, RendererOutputs& out)
 {
     CHECK(renderer);
@@ -144,8 +144,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
     bool useRTShadows = (cfg.viewFlags & kEnableRasterRTShadows) && !disableRT && hasTLAS;
     uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~kEnableRasterRTShadows);
     uint32_t gbufferFlags = cfg.viewFlags | (cfg.forceTextureLOD0 ? kForceTextureLOD0 : 0u);
-    BuildGPUSceneUpdatePasses(renderer, gpu, GlobalUBO, useRTShadows, cfg.dynamicGeometryPassBuilder,
-                              cfg.dynamicGeometryPassContext);
+    BuildGPUSceneUpdatePasses(renderer, gpu, GlobalUBO, useRTShadows);
     renderer->CreatePass(
         "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)

@@ -35,27 +35,33 @@ RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* 
     return resources;
 }
 
-void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources const& resources,
-                               ResourceHandle globalUBO, bool buildTLAS,
-                               DynamicGeometryPassBuilder dynamicGeometryPassBuilder,
-                               void* dynamicGeometryPassContext)
+PassHandle BuildGPUSceneDynamicGeometryUploadPass(Renderer* renderer, RendererResources& resources)
+{
+    CHECK(renderer);
+    CHECK(resources.scene);
+    if (!resources.hasDynamicGeometry)
+        return kInvalidHandle;
+    if (resources.dynamicGeometryUploadPass != kInvalidHandle)
+        return resources.dynamicGeometryUploadPass;
+    GPUScene* scene = resources.scene;
+    resources.dynamicGeometryUploadPass = renderer->CreatePass(
+        "Dynamic Geometry Upload", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindBufferCopySrc(self, resources.dynamicStagingBuffer);
+            r->BindBufferCopyDst(self, resources.dynamicPrimitiveBuffer);
+        },
+        [=](PassHandle, Renderer*, RHICommandList* cmd) { scene->UploadDynamicGeometry(cmd); });
+    return resources.dynamicGeometryUploadPass;
+}
+
+void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources& resources,
+                               ResourceHandle globalUBO, bool buildTLAS)
 {
     GPUScene* scene = resources.scene;
     CHECK(renderer);
     CHECK(scene);
-    if (resources.hasDynamicGeometry)
-    {
-        renderer->CreatePass(
-            "Dynamic Geometry Upload", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindBufferCopySrc(self, resources.dynamicStagingBuffer);
-                r->BindBufferCopyDst(self, resources.dynamicPrimitiveBuffer);
-            },
-            [=](PassHandle, Renderer*, RHICommandList* cmd) { scene->UploadDynamicGeometry(cmd); });
-    }
-    if (dynamicGeometryPassBuilder)
-        dynamicGeometryPassBuilder(dynamicGeometryPassContext, renderer, resources.dynamicPrimitiveBuffer);
+    BuildGPUSceneDynamicGeometryUploadPass(renderer, resources);
     if (buildTLAS && resources.tlas != kInvalidHandle)
     {
         renderer->CreatePass(

@@ -7,7 +7,7 @@
 #include "Camera.hpp"
 #include "Editor.hpp"
 #include "Runtime/GPUScene.hpp"
-#include "Runtime/AnimationRuntime.hpp"
+#include "Runtime/Animation.hpp"
 #include "Scene/Scene.hpp"
 
 namespace Foundation::RenderCore

@@ -265,10 +265,15 @@ public:
     [[nodiscard]] bool HasCurveGeometry() const;
 
     void BeginDynamicGeometryUpdate();
-    // Host-mapped copy. Requires isGpu = false with @ref AllocateDynamic, otherwise use UpdateDynamicGeometryGPU.    
+    /**
+	 * @brief Host-mapped copy. Requires isGpu = false with @ref AllocateDynamic, otherwise use UpdateDynamicGeometryGPU.
+	 */
     void UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices = {},
                                Span<const uint32_t> indices = {});
-    // Device local writes. Requires isGpu = true with @ref AllocateDynamic, otherwise use UpdateDynamicGeometryCPU.
+    /**
+     * @brief Device local writes.Requires isGpu = true with @ref AllocateDynamic, otherwise use UpdateDynamicGeometryCPU.
+     * @note  This in effect only marks the geometry dirty, and is thread-safe to commit.
+     */
     void UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
     void EndDynamicGeometryUpdate();
     void UploadDynamicGeometry(RHICommandList* cmd);

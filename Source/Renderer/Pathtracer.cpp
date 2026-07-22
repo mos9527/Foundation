@@ -4,7 +4,7 @@
 #include <algorithm>
 #include "GPUScene.hpp"
 #include "Renderer.hpp"
-void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources const& gpu,
+void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
                                 RendererConfig const& cfg, RendererOutputs& out)
 {
     CHECK(renderer);
@@ -43,8 +43,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
     auto LightBVHBitmaskBuffer = gpu.lightBVHBitmaskBuffer;
     auto LightBVHNodeIndexBuffer = gpu.lightBVHNodeIndexBuffer;
     auto SobolMatricesBuffer = gpu.sobolMatricesBuffer;
-    BuildGPUSceneUpdatePasses(renderer, gpu, GlobalUBO, true, cfg.dynamicGeometryPassBuilder,
-                              cfg.dynamicGeometryPassContext);
+    BuildGPUSceneUpdatePasses(renderer, gpu, GlobalUBO, true);
     auto TexSampler = renderer->CreateSampler(MakeTextureSamplerDesc(cfg));
     uint32_t w = std::max(renderExtent.x, 1u);
     uint32_t h = std::max(renderExtent.y, 1u);

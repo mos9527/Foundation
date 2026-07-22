@@ -367,11 +367,10 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
         sEditorRasterEffects[rasterEffectCount++] = MakeRasterGTAOEffect(&GEditor.rasterGTAOConfig);
     GEditor.rendererConfig.rasterEffects = Span<const RasterEffect>(sEditorRasterEffects, rasterEffectCount);
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
-    GEditor.rendererConfig.dynamicGeometryPassBuilder =
-        GEditor.animation && GEditor.animation->HasSkinning() ? &FAnimationRuntime::BuildGraphCallback : nullptr;
-    GEditor.rendererConfig.dynamicGeometryPassContext =
-        GEditor.animation && GEditor.animation->HasSkinning() ? &*GEditor.animation : nullptr;
     auto gpuResources = CreateGPUSceneRendererResources(renderer, context->gpuScene);
+    BuildGPUSceneDynamicGeometryUploadPass(renderer, gpuResources);
+    if (GEditor.animation && GEditor.animation->HasSkinning())
+        GEditor.animation->BuildGraph(renderer, gpuResources);
     if (GEditor.rendererMode == ERendererMode::PathTracer)
         BuildPathTracerRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs);
     if (GEditor.rendererMode == ERendererMode::Raster)

@@ -164,6 +164,7 @@ struct RendererResources
     ResourceHandle lightBVHNodeIndexBuffer{kInvalidHandle};
     ResourceHandle sobolMatricesBuffer{kInvalidHandle};
     ResourceHandle tlas{kInvalidHandle};
+    PassHandle dynamicGeometryUploadPass{kInvalidHandle};
     BindlessPool* textures2D{nullptr};
     BindlessPool* textures3D{nullptr};
     RHIBuffer* primitiveBufferRHI{nullptr};
@@ -172,14 +173,10 @@ struct RendererResources
     bool hasCurveGeometry{false};
 };
 
-using DynamicGeometryPassBuilder = void (*)(void* context, Renderer* renderer,
-                                            ResourceHandle dynamicPrimitiveBuffer);
-
 [[nodiscard]] RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* scene);
-void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources const& resources,
-                               ResourceHandle globalUBO, bool buildTLAS,
-                               DynamicGeometryPassBuilder dynamicGeometryPassBuilder = nullptr,
-                               void* dynamicGeometryPassContext = nullptr);
+PassHandle BuildGPUSceneDynamicGeometryUploadPass(Renderer* renderer, RendererResources& resources);
+void BuildGPUSceneUpdatePasses(Renderer* renderer, RendererResources& resources,
+                               ResourceHandle globalUBO, bool buildTLAS);
 
 struct RendererConfig;
 
@@ -235,8 +232,6 @@ struct RendererConfig
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
     RHIExtent2D renderExtent{0u, 0u};
     Span<RasterEffect const> rasterEffects{};
-    DynamicGeometryPassBuilder dynamicGeometryPassBuilder{nullptr};
-    void* dynamicGeometryPassContext{nullptr};
     uint32_t ptSampler{kPTSamplerSobol};
     uint32_t lightSamplerMode{kLightSamplerBVH};
     bool const* ptRenderPaused{nullptr};
@@ -288,8 +283,8 @@ struct PostprocessUBO
 };
 
 extern void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals,
-                                   RendererResources const& gpu,
+                                   RendererResources& gpu,
                                    RendererConfig const& cfg, RendererOutputs& out);
 extern void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals,
-                                       RendererResources const& gpu,
+                                       RendererResources& gpu,
                                        RendererConfig const& cfg, RendererOutputs& out);

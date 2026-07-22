@@ -32,7 +32,7 @@ public:
     void Reset(FSceneGPUResources* resources = nullptr);
     void RemoveInstance(uint32_t instanceIndex, FSceneGPUResources& resources);
     [[nodiscard]] bool Tick(float dt, uint64_t frame);
-    void BuildGraph(Renderer* renderer, ResourceHandle dynamicPrimitiveBuffer);
+    void BuildGraph(Renderer* renderer, RendererResources& resources);
 
     [[nodiscard]] bool HasSkinning() const { return !mOutputs.empty(); }
     [[nodiscard]] Span<FAnimationPlayback> GetPlaybacks() { return {mPlaybacks.data(), mPlaybacks.size()}; }
@@ -41,8 +41,6 @@ public:
         return {mPlaybacks.data(), mPlaybacks.size()};
     }
     [[nodiscard]] Span<const uint32_t> GetSkeletonClips(uint32_t skeletonIndex) const;
-
-    static void BuildGraphCallback(void* context, Renderer* renderer, ResourceHandle dynamicPrimitiveBuffer);
 
 private:
     static constexpr uint32_t kPaletteFrames = 4u;
@@ -62,7 +60,7 @@ private:
         uint32_t instanceIndex{0};
         uint32_t meshIndex{0};
         GeometryHandle geometry{};
-        bool seedIndices{true};
+        bool updateIndices{true};
     };
     struct Dispatch
     {
@@ -76,7 +74,7 @@ private:
         uint32_t vertexCount{0};
         uint32_t indexCount{0};
         uint32_t jointCount{0};
-        bool seedIndices{false};
+        bool updateIndices{false};
     };
 
     Allocator* mAllocator{GLOBAL_ALLOC};

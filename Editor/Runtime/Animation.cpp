@@ -1,4 +1,4 @@
-#include "AnimationRuntime.hpp"
+#include "Animation.hpp"
 #include <Core/Paths.hpp>
 #include <algorithm>
 #include <cmath>
@@ -290,32 +290,27 @@ bool FAnimationRuntime::Tick(float dt, uint64_t frame)
             .vertexCount = input.vertexCount,
             .indexCount = input.indexCount,
             .jointCount = skeletons[input.skeletonIndex].Count(),
-            .seedIndices = output.seedIndices,
+            .updateIndices = output.updateIndices,
         });
-        output.seedIndices = false;
+        output.updateIndices = false;
     }
     if (!mDispatches.empty())
     {
         mGPU->BeginDynamicGeometryUpdate();
         for (Dispatch const& dispatch : mDispatches)
-            mGPU->UpdateDynamicGeometryGPU(dispatch.geometry, true, dispatch.seedIndices);
+            mGPU->UpdateDynamicGeometryGPU(dispatch.geometry, true, dispatch.updateIndices);
         mGPU->EndDynamicGeometryUpdate();
     }
     mForceUpdate = false;
     return !mDispatches.empty();
 }
 
-void FAnimationRuntime::BuildGraphCallback(void* context, Renderer* renderer,
-                                           ResourceHandle dynamicPrimitiveBuffer)
-{
-    static_cast<FAnimationRuntime*>(context)->BuildGraph(renderer, dynamicPrimitiveBuffer);
-}
-
-void FAnimationRuntime::BuildGraph(Renderer* renderer, ResourceHandle dynamicPrimitiveBuffer)
+void FAnimationRuntime::BuildGraph(Renderer* renderer, RendererResources& resources)
 {
     if (!HasSkinning())
         return;
     CHECK(renderer != nullptr);
+    ResourceHandle dynamicPrimitiveBuffer = resources.dynamicPrimitiveBuffer;
     CHECK(dynamicPrimitiveBuffer != kInvalidHandle);
     CHECK_MSG(renderer->GetFrameSwaps() <= kPaletteFrames,
               "Animation palette ring has {} slots but renderer requires {}", kPaletteFrames,
@@ -353,7 +348,7 @@ void FAnimationRuntime::BuildGraph(Renderer* renderer, ResourceHandle dynamicPri
             RHIBuffer* dst = r->DerefResource(dynamicPrimitiveBuffer).Get<RHIBuffer*>();
             for (Dispatch const& dispatch : mDispatches)
             {
-                if (!dispatch.seedIndices)
+                if (!dispatch.updateIndices)
                     continue;
                 RHICommandList::CopyBufferRegion region{
                     .srcOffset = dispatch.indexSourceOffset,
@@ -367,7 +362,7 @@ void FAnimationRuntime::BuildGraph(Renderer* renderer, ResourceHandle dynamicPri
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                          PathsResolve("Data/Shaders/ECSSkinning.spv"));
+                          PathsResolve("Data/Shaders/Editor/ECSSkinning.spv"));
             r->BindBufferStorageRead(self, input, RHIPipelineStageBits::ComputeShader, "skinningInput");
             r->BindBufferStorageRead(self, palettes, RHIPipelineStageBits::ComputeShader, "skinningPalette");
             r->BindBufferUnordered(self, dynamicPrimitiveBuffer, RHIPipelineStageBits::ComputeShader,
