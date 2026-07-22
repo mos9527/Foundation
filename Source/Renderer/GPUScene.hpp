@@ -296,11 +296,11 @@ public:
         return mCommittedInstances[index];
     }
     [[nodiscard]] uint32_t GetInstanceCount() const { return static_cast<uint32_t>(mCommittedInstances.size()); }
-    [[nodiscard]] uint32_t ResolvePickedInstance(uint32_t pickID) const
+    [[nodiscard]] uint32_t InstanceFromTLAS(uint32_t tlasID) const
     {
-        if (pickID >= mTLASInstanceMap.size())
+        if (tlasID >= mTLASInstanceMap.size())
             return UINT32_MAX;
-        return mTLASInstanceMap[pickID];
+        return mTLASInstanceMap[tlasID];
     }
     [[nodiscard]] GSLight GetLight(uint32_t index) const
     {

@@ -523,7 +523,7 @@ static void FRunning()
         // The pick id is a TLAS instanceID, which equals the committed instance index
         // (the editor commits instances 1:1 in scene-row order).
         uint32_t pickedInstance = (id != ~0u && GContext->gpuScene)
-            ? GContext->gpuScene->ResolvePickedInstance(id)
+            ? GContext->gpuScene->InstanceFromTLAS(id)
             : UINT32_MAX;
 
         auto selectLight = [&](int light)
