@@ -1,4 +1,5 @@
 #define SDL_MAIN_HANDLED
+#define FOUNDATION_EXAMPLES_IMPLEMENTATION
 #include "Examples.hpp"
 #include <Renderer/Rasterizer.hpp>
 #include <Renderer/Pathtracer.hpp>
