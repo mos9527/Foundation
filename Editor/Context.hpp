@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/AllocatorStack.hpp>
-#include <Core/ThreadPool.hpp>
+#include <Core/JobSystem.hpp>
 #include <RenderCore/Renderer.hpp>
 #include <RHICore/Surface.hpp>
 #include <SDL3/SDL.h>
@@ -46,8 +46,7 @@ struct FContext
     Renderer* renderer{};
     Presenter* presenter{};
 
-    // Persistent worker pool for main-thread fork-join work (e.g. CPU skinning via ParallelFor).
-    UniquePtr<ThreadPool> jobs;
+    UniquePtr<JobSystem> jobs;
 
     SDL_Event event;
 

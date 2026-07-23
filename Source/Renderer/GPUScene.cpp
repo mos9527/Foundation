@@ -302,12 +302,12 @@ struct GPUSceneImpl
         char* dst{nullptr};
         size_t size{0};
     };
-    size_t StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src, GSMesh const& header, uint32_t offset,
-                     Vector<BlobCopyTask>& outWrites);
-    size_t StageCurve(ImmediateUpload* ctx, FSerializedCurve const& src, GSCurveSet const& header, uint32_t offset,
-                      Vector<BlobCopyTask>& outWrites);
-    size_t StageTextureSubresource(ImmediateUpload* ctx, FSerializedTexture const& source, RHITexture* texture,
-                                   uint32_t layer, uint32_t mip, Vector<BlobCopyTask>& outWrites);
+    size_t StageMesh(ImmediateUpload::UploadBatch* batch, FSerializedMesh const& src, GSMesh const& header,
+                     uint32_t offset, Vector<BlobCopyTask>& outWrites);
+    size_t StageCurve(ImmediateUpload::UploadBatch* batch, FSerializedCurve const& src, GSCurveSet const& header,
+                      uint32_t offset, Vector<BlobCopyTask>& outWrites);
+    size_t StageTextureSubresource(ImmediateUpload::UploadBatch* batch, FSerializedTexture const& source,
+                                   RHITexture* texture, uint32_t layer, uint32_t mip, Vector<BlobCopyTask>& outWrites);
     void ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vector<PendingTextureUpload>& textures,
                         Vector<PendingBufferUpload>& buffers);
     void FlushDirectGeometryUpload();
@@ -554,10 +554,12 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
              .size = sizeof(LightAABBs)});
 
         ImmediateUpload upload(mDevice, sizeof(LightAABBs));
-        upload.Begin();
-        char* ptr = upload.Upload(mLightGeometryBuffer.Get(), sizeof(LightAABBs), 0);
-        std::memcpy(ptr, &geo, sizeof(LightAABBs));
-        upload.End();
+        {
+            ImmediateUpload::UploadBatch batch = upload.BeginBatch();
+            char* ptr = batch.Upload(mLightGeometryBuffer.Get(), sizeof(LightAABBs), 0);
+            std::memcpy(ptr, &geo, sizeof(LightAABBs));
+            batch.End();
+        }
         upload.WaitIdle();
 
         // Build BLAS
@@ -1050,8 +1052,8 @@ GPUScene::Result GPUSceneImpl::ReserveMesh(FSerializedMesh const& src, GSMesh& o
     return Result::InProgress;
 }
 
-size_t GPUSceneImpl::StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src, GSMesh const& header, uint32_t offset,
-                               Vector<BlobCopyTask>& outWrites)
+size_t GPUSceneImpl::StageMesh(ImmediateUpload::UploadBatch* batch, FSerializedMesh const& src, GSMesh const& header,
+                               uint32_t offset, Vector<BlobCopyTask>& outWrites)
 {
     const size_t size = GPUScene::CalculateMeshPrimitiveSize(src);
     char* ptr = nullptr;
@@ -1062,9 +1064,9 @@ size_t GPUSceneImpl::StageMesh(ImmediateUpload* ctx, FSerializedMesh const& src,
     }
     else
     {
-        if (ctx->ptr + size > ctx->end)
+        if (batch->ptr + size > batch->end)
             return 0;
-        ptr = ctx->Upload(owner.mPrimitiveBuffer.Get(), size, offset);
+        ptr = batch->Upload(owner.mPrimitiveBuffer.Get(), size, offset);
         CHECK(ptr != nullptr);
     }
     // The header is a trivial copy, written inline; only payloads need threaded decode.
@@ -1132,8 +1134,8 @@ GPUScene::Result GPUSceneImpl::ReserveCurve(FSerializedCurve const& src, GSCurve
     return Result::InProgress;
 }
 
-size_t GPUSceneImpl::StageCurve(ImmediateUpload* ctx, FSerializedCurve const& src, GSCurveSet const& header,
-                                uint32_t offset, Vector<BlobCopyTask>& outWrites)
+size_t GPUSceneImpl::StageCurve(ImmediateUpload::UploadBatch* batch, FSerializedCurve const& src,
+                                GSCurveSet const& header, uint32_t offset, Vector<BlobCopyTask>& outWrites)
 {
     const size_t size = GPUScene::CalculateCurvePrimitiveSize(src);
     char* ptr = nullptr;
@@ -1144,9 +1146,9 @@ size_t GPUSceneImpl::StageCurve(ImmediateUpload* ctx, FSerializedCurve const& sr
     }
     else
     {
-        if (ctx->ptr + size > ctx->end)
+        if (batch->ptr + size > batch->end)
             return 0;
-        ptr = ctx->Upload(owner.mPrimitiveBuffer.Get(), size, offset);
+        ptr = batch->Upload(owner.mPrimitiveBuffer.Get(), size, offset);
         CHECK(ptr != nullptr);
     }
     std::memcpy(ptr, &header, sizeof(GSCurveSet));
@@ -1258,7 +1260,7 @@ static void TransitionTextureLayout(RHICommandList* cmd, RHITexture* texture, FT
     cmd->EndTransition();
 }
 
-size_t GPUSceneImpl::StageTextureSubresource(ImmediateUpload* ctx, FSerializedTexture const& source,
+size_t GPUSceneImpl::StageTextureSubresource(ImmediateUpload::UploadBatch* batch, FSerializedTexture const& source,
                                              RHITexture* texture, uint32_t layer, uint32_t mip,
                                              Vector<BlobCopyTask>& outWrites)
 {
@@ -1273,13 +1275,13 @@ size_t GPUSceneImpl::StageTextureSubresource(ImmediateUpload* ctx, FSerializedTe
               subresourceBlob.decodedSize, subresourceSize);
 
     uint32_t const alignment = GetTextureUploadAlignment(metadata);
-    char* preflight = reinterpret_cast<char*>(AlignUp(reinterpret_cast<uintptr_t>(ctx->ptr), alignment));
-    if (preflight >= ctx->end || static_cast<size_t>(ctx->end - preflight) < subresourceSize)
+    char* preflight = reinterpret_cast<char*>(AlignUp(reinterpret_cast<uintptr_t>(batch->ptr), alignment));
+    if (preflight >= batch->end || static_cast<size_t>(batch->end - preflight) < subresourceSize)
         return 0;
 
-    CHECK(ctx->Align(alignment));
+    CHECK(batch->Align(alignment));
     RHIExtent3D const mipExtent = metadata.GetMipExtent(mip);
-    char* ptr = ctx->Upload(
+    char* ptr = batch->Upload(
         texture, subresourceSize,
         {.aspect = RHITextureAspectFlagBits::Color, .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1},
         {0, 0, 0}, mipExtent);
@@ -1674,7 +1676,7 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
     Span<AllocatorStack> allocSpan(scratchAllocators.data(), scratchAllocators.size());
 
     ImmediateUpload upload(mDevice, stagingBudget, RHIDeviceQueueType::Transfer, kUploadStagingBuffers);
-    upload.Begin();
+    ImmediateUpload::UploadBatch batch = upload.BeginBatch();
     Atomic<size_t> pendingJobs{0};
     Vector<BlobCopyTask> writes(mAllocator);
     auto ScheduleWrites = [&](FBlobDeserializer const& blobs)
@@ -1689,8 +1691,8 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
     auto FlushUpload = [&]
     {
         GPUSceneWaitJobs(&pendingJobs);
-        upload.End();
-        upload.Begin();
+        batch.End();
+        batch = upload.BeginBatch();
     };
 
     auto uploadTimeline = mDevice->CreateSemaphore(true);
@@ -1709,8 +1711,8 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
             CHECK_MSG(g, "Pending geometry references a freed slot");
             auto Stage = [&]
             {
-                return p.mesh ? StageMesh(&upload, *p.mesh, g->mesh, g->offset, writes)
-                              : StageCurve(&upload, *p.curve, g->curve, g->offset, writes);
+                return p.mesh ? StageMesh(&batch, *p.mesh, g->mesh, g->offset, writes)
+                              : StageCurve(&batch, *p.curve, g->curve, g->offset, writes);
             };
             size_t staged = Stage();
             if (staged == 0)
@@ -1723,11 +1725,11 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
         }
         for (auto const& b : mPendingBuffers)
         {
-            char* ptr = upload.Upload(b.dst, b.data.size(), b.dstOffset);
+            char* ptr = batch.Upload(b.dst, b.data.size(), b.dstOffset);
             if (!ptr)
             {
                 FlushUpload();
-                ptr = upload.Upload(b.dst, b.data.size(), b.dstOffset);
+                ptr = batch.Upload(b.dst, b.data.size(), b.dstOffset);
                 CHECK_MSG(ptr != nullptr, "Staging buffer too small for a single buffer upload");
             }
             std::memcpy(ptr, b.data.data(), b.data.size());
@@ -1736,7 +1738,7 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
         if (direct)
             FlushDirectGeometryUpload();
         RHIDeviceQueue::TimelinePair geomSignal{uploadTimeline.Get(), kGeometryReady};
-        upload.End(ImmediateSubmitDesc{.timelineSignals = {&geomSignal, 1}});
+        batch.End(ImmediateSubmitDesc{.timelineSignals = {&geomSignal, 1}});
     }
 
     if (!mPendingGeometry.empty())
@@ -1794,7 +1796,7 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
     mPendingGeometry.clear();
     if (!mPendingTextures.empty())
     {
-        upload.Begin();
+        batch = upload.BeginBatch();
         struct Subresource
         {
             size_t slot;
@@ -1823,11 +1825,11 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
             {
                 if (!transferDstDone[sub.slot])
                 {
-                    TransitionTextureLayout(upload.Get(), tex, md, RHITextureLayout::Undefined,
+                    TransitionTextureLayout(batch.Get(), tex, md, RHITextureLayout::Undefined,
                                             RHITextureLayout::TransferDst);
                     transferDstDone[sub.slot] = 1u;
                 }
-                return StageTextureSubresource(&upload, *pt.source, tex, sub.layer, sub.mip, writes);
+                return StageTextureSubresource(&batch, *pt.source, tex, sub.layer, sub.mip, writes);
             };
             size_t staged = StageSub();
             if (staged == 0)
@@ -1846,11 +1848,11 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
             PendingTextureUpload& pt = mPendingTextures[slot];
             FTextureHeader const& md = static_cast<FTextureHeader const&>(*pt.source);
             RHITexture* tex = SelectTexturePool(md.GetViewDimension()).GetResource(pt.index);
-            TransitionTextureLayout(upload.Get(), tex, md, RHITextureLayout::TransferDst,
+            TransitionTextureLayout(batch.Get(), tex, md, RHITextureLayout::TransferDst,
                                     RHITextureLayout::ShaderReadOnly);
         }
         RHIDeviceQueue::TimelinePair texSignal{uploadTimeline.Get(), kTextureReady};
-        upload.End(ImmediateSubmitDesc{.timelineSignals = {&texSignal, 1}});
+        batch.End(ImmediateSubmitDesc{.timelineSignals = {&texSignal, 1}});
     }
     // Remember which slots this drain transitioned so they can be published as resident once
     // the transfer completes below (the render thread gates material textures on this).

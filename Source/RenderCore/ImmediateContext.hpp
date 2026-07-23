@@ -42,92 +42,86 @@ namespace Foundation::RenderCore
     };
 
     /**
-     * @brief Persistent staging buffer(s) + immediate context(s) for quick, batchable uploads.
-     * @note  When constructed with more than one buffer, End() advances to the next staging lane and Begin()
-     *        only waits when the next lane is still in flight.
+     * @brief Persistent staging lanes + immediate contexts for batchable uploads.
+     * @note  Acquire an exclusive @ref UploadBatch with @ref BeginBatch / @ref TryBeginBatch.
+     *        Each batch owns one lane until @ref UploadBatch::End, after which the lane stays
+     *        in-flight until its completion timeline value is reached.
      */
     struct ImmediateUpload
     {
+        class UploadBatch
+        {
+            friend struct ImmediateUpload;
+            ImmediateUpload* mOwner{};
+            size_t mLane{SIZE_MAX};
+            size_t mCompletionValue{};
+
+            UploadBatch(ImmediateUpload* owner, size_t lane) noexcept;
+
+        public:
+            char *begin{}, *ptr{}, *end{};
+
+            UploadBatch() = default;
+            UploadBatch(UploadBatch const&) = delete;
+            UploadBatch& operator=(UploadBatch const&) = delete;
+            UploadBatch(UploadBatch&& other) noexcept;
+            UploadBatch& operator=(UploadBatch&& other) noexcept;
+            ~UploadBatch() noexcept;
+
+            [[nodiscard]] bool IsValid() const noexcept { return mOwner != nullptr; }
+            [[nodiscard]] RHICommandList* Get() const;
+            [[nodiscard]] size_t CompletionValue() const noexcept { return mCompletionValue; }
+            [[nodiscard]] RHIDeviceSemaphore* CompletionTimeline() const;
+
+            char* Upload(RHIBuffer* dst, size_t dataSize, size_t dstOffset);
+            char* Upload(RHITexture* dst, size_t dataSize,
+                         RHITextureSubresourceLayer dstLayer = {.aspect = RHITextureAspectFlagBits::Color},
+                         RHIOffset2D dstOffset = {}, RHIExtent2D dstExtent = {});
+            char* Upload(RHITexture* dst, size_t dataSize, RHITextureSubresourceLayer dstLayer, RHIOffset3D dstOffset,
+                         RHIExtent3D dstExtent);
+            bool Align(uint32_t alignment);
+            void End(RHIDeviceFence* completionFence = nullptr);
+            void End(ImmediateSubmitDesc const& desc);
+        };
+
+        ImmediateUpload(RHIDevice* device, size_t capacity, RHIDeviceQueueType type = RHIDeviceQueueType::Graphics,
+                        size_t buffers = 1);
+
+        [[nodiscard]] size_t Capacity() const noexcept { return mCapacity; }
+        [[nodiscard]] size_t LaneCount() const noexcept { return mLanes.size(); }
+        [[nodiscard]] RHIDeviceSemaphore* CompletionTimeline() const { return mCompletionTimeline.Get(); }
+
+        UploadBatch BeginBatch();
+        [[nodiscard]] bool TryBeginBatch(UploadBatch& out);
+        [[nodiscard]] bool WaitTimeline(size_t value, size_t timeout) const;
+        void WaitIdle();
+
+    private:
         struct UploadLane
         {
             ImmediateContext ctx;
             RHIDeviceScopedHandle<RHIBuffer> staging;
-            char* begin;
-            char* end;
-            size_t signalValue{0};
+            char* begin{};
+            char* end{};
+            size_t signalValue{};
+            bool recording{};
 
             UploadLane(RHIDevice* device, size_t capacity, RHIDeviceQueueType type);
         };
 
-        ImmediateContext ctx;
-        RHIDeviceScopedHandle<RHIBuffer> staging;
-
-        char *begin, *ptr, *end;
-        ImmediateUpload(RHIDevice* device, size_t capacity,
-                        RHIDeviceQueueType type = RHIDeviceQueueType::Graphics,
-                        size_t buffers = 1);
-
-        /**
-         * @return Command list for the current upload lane.
-         */
-        [[nodiscard]] RHICommandList* Get() const;
-
-        /**
-         * Resets the upload context for a new series of uploads.
-         * This MUST be called before any Upload calls.
-         */
-        void Begin();
-
-        /**
-         * Uploads data to `dst` buffer with a staging copy.
-         * @return nullptr when upload fails (out of staging memory).
-         *         At which point, a flush with End() -> Begin() is required.
-         *         A mapped, writable pointer to the staging memory where the buffer data is expected to be written otherwise.
-         */
-        char* Upload(RHIBuffer* dst, size_t dataSize, size_t dstOffset);
-        /**
-         * Uploads data to `dst` texture with a staging copy.
-         * @return nullptr when upload fails (out of staging memory).
-         *         At which point, a flush with End() -> Begin() is required.
-         *         A mapped, writable pointer to the staging memory where the texture data is expected to be written otherwise.
-         */
-        char* Upload(RHITexture* dst, size_t dataSize,
-                     RHITextureSubresourceLayer dstLayer = {.aspect = RHITextureAspectFlagBits::Color},
-                     RHIOffset2D dstOffset = {},
-                     RHIExtent2D dstExtent = {});
-        char* Upload(RHITexture* dst, size_t dataSize, RHITextureSubresourceLayer dstLayer, RHIOffset3D dstOffset,
-                     RHIExtent3D dstExtent);
-
-        bool Align(uint32_t alignment);
-        /**
-         * Finalizes the upload context, submitting the copy commands.
-         * @param completionFence Optional fence to signal upon completion.
-         */
-        void End(RHIDeviceFence* completionFence = nullptr);
-        void End(ImmediateSubmitDesc const& desc);
-
-        void WaitIdle();
-
-    private:
         RHIDevice* mDevice;
-        size_t mLaneCount{1};
-        size_t mCurrentLane{0};
+        size_t mCapacity{};
+        size_t mNextLane{};
         size_t mNextSignalValue{1};
-        size_t mLane0SignalValue{0};
-        char* mLane0Begin{nullptr};
-        char* mLane0End{nullptr};
         RHIDeviceScopedHandle<RHIDeviceSemaphore> mCompletionTimeline;
         Core::Vector<Core::UniquePtr<UploadLane>> mLanes;
         Core::Vector<RHIDeviceQueue::TimelinePair> mSubmitSignals;
 
-        [[nodiscard]] ImmediateContext& CurrentContext();
-        [[nodiscard]] ImmediateContext const& CurrentContext() const;
-        [[nodiscard]] RHIBuffer* CurrentStaging() const;
-        [[nodiscard]] char* CurrentBegin() const;
-        [[nodiscard]] char* CurrentEnd() const;
-        [[nodiscard]] size_t& CurrentSignalValue();
-        void WaitCurrentLaneReusable();
-        void SelectCurrentLane();
+        [[nodiscard]] bool IsLaneReusable(size_t lane, size_t timeout);
+        void WaitLaneReusable(size_t lane);
+        [[nodiscard]] bool TryAcquireLane(size_t lane, UploadBatch& out);
+        UploadBatch AcquireLane(size_t lane);
+        void ReleaseRecording(size_t lane) noexcept;
     };
 
     /**
