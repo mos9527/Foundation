@@ -89,13 +89,13 @@ int main()
         return 1;
 
     std::array<int, 257> values{};
-    jobs.ParallelFor(
+    jobs.Wait(jobs.ParallelFor(
         ExecutionPolicy::Par, "Fill values", values.size(), 13,
         [&](size_t begin, size_t end, JobContext&)
         {
             for (size_t i = begin; i < end; ++i)
                 values[i] = static_cast<int>(i);
-        });
+        }));
     int const expected = static_cast<int>((values.size() - 1) * values.size() / 2);
     if (!Require(std::accumulate(values.begin(), values.end(), 0) == expected, "parallel-for"))
         return 1;

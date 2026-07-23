@@ -1,7 +1,7 @@
 #define CGLTF_IMPLEMENTATION
 #define CGLTF_VALIDATE_ENABLE_ASSERTS 1
 #include "Scene.hpp"
-#include <Core/ThreadPool.hpp>
+#include <Core/JobSystem.hpp>
 #include <Math/Decompose.hpp>
 #include <algorithm>
 #include <cctype>
@@ -806,15 +806,10 @@ void LoadGLTFLineCurve(const cgltf_primitive* prim, FImportedCurve& curve, Alloc
     CHECK_MSG(!curve.segments.empty(), "Curve LINES primitive produced no valid segments");
 }
 
-size_t GetSceneWorkerCount()
+size_t GetSceneJobGrain(JobSystem const& jobs, size_t count)
 {
-    return std::max<size_t>(1u, std::thread::hardware_concurrency());
-}
-
-size_t GetSceneTaskQueueSize(size_t taskCount)
-{
-    CHECK(taskCount > 0);
-    return ThreadPool::CalcTaskSize(taskCount);
+    size_t const targetJobs = std::max<size_t>(jobs.GetMaxConcurrency() * 4u, 1u);
+    return std::max<size_t>((count + targetJobs - 1u) / targetJobs, 1u);
 }
 
 struct FBlobJob
@@ -1081,9 +1076,10 @@ bool BuildAnimChannel(cgltf_animation_channel const* ch, uint32_t joint, FAnimCh
     return true;
 }
 
-void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc,
+void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& scene, Allocator* scratchAlloc,
                               FSceneBuildOptions const& buildOptions)
 {
+    CHECK(jobs != nullptr);
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
     CHECK(scene.mWriting);
     CHECK(scene.mFile != nullptr);
@@ -1263,15 +1259,15 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         textureBlobJobs.emplace_back(scratchAlloc);
     if (data->textures_count != 0)
     {
-        ThreadPool pool(GetSceneWorkerCount(), GetSceneTaskQueueSize(data->textures_count), scratchAlloc, "SceneTexture");
-        Vector<Future<void>> futures(scratchAlloc);
-        futures.reserve(data->textures_count);
         for (size_t i = 0; i < data->textures_count; i++)
-        {
-            // Name interning happens on the main thread (the pool must not mutate the string pool).
             scene.mTables.textures[i].name = internString(data->textures[i].name);
-            futures.push_back(pool.Push(
-                [&, i]
+
+        jobs->Wait(jobs->ParallelFor(
+            ExecutionPolicy::Par, "SceneTexture", data->textures_count,
+            GetSceneJobGrain(*jobs, data->textures_count),
+            [&](size_t begin, size_t end, JobContext&)
+            {
+                for (size_t i = begin; i < end; ++i)
                 {
                     cgltf_texture* src = &data->textures[i];
                     String name = src->name ? src->name : fmt::format("{}_{}", path, i);
@@ -1300,11 +1296,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                         LOG(Scene, LogWarn, "No texture loaded for {}", name);
                     }
                     BuildTextureBlobJobs(scene.mTables.textures[i], textureBlobJobs[i].jobs, std::move(texture));
-                }));
-        }
-        pool.Join();
-        for (Future<void>& future : futures)
-            future.get();
+                }
+            }));
         for (size_t i = 0; i < data->textures_count; ++i)
             AppendResourceBlobJobs(blobJobs, textureBlobJobs[i]);
     }
@@ -1416,9 +1409,17 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
     size_t totalPrimitives = numTrianglePrimitives + numCurvePrimitives;
     if (totalPrimitives != 0)
     {
-        ThreadPool pool(GetSceneWorkerCount(), GetSceneTaskQueueSize(totalPrimitives), scratchAlloc, "SceneGeo");
-        Vector<Future<void>> futures(scratchAlloc);
-        futures.reserve(totalPrimitives);
+        struct PrimitiveTask
+        {
+            cgltf_primitive* source{};
+            Vector<uint16_t> const* remap{};
+            FUUID skeleton{};
+            FUUID curve{};
+            uint32_t index{};
+            bool mesh{};
+        };
+        Vector<PrimitiveTask> tasks(scratchAlloc);
+        tasks.reserve(totalPrimitives);
         for (size_t i = 0; i < data->meshes_count; i++)
         {
             auto& mesh = data->meshes[i];
@@ -1434,28 +1435,8 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                     uint32_t meshIndex = nextSubmesh++;
                     meshPrimitiveResources[i].push_back(
                         MeshPrimitiveResource{.type = FInstanceType::Mesh, .index = meshIndex});
-                    futures.push_back(pool.Push(
-                        [&, meshIndex, sub, remap, skeletonId]
-                        {
-                            FImportedMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc, remap);
-                            // Skinned vertices must keep their original order so skin bindings stay
-                            // parallel; vertex-fetch/cache optimization would desync them.
-                            if (submesh.skin.empty() && buildOptions.optimizeMeshes)
-                            {
-                                LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
-                                    submesh.vertices.size(), submesh.lods[0].indices.size());
-                                submesh.Optimize();
-                            }
-                            if (buildOptions.generateMeshlets)
-                            {
-                                LOG(Meshopt, LogInfo, "Clusterizing submesh {}, vtx: {}, idx: {}", meshIndex,
-                                    submesh.vertices.size(), submesh.lods[0].indices.size());
-                                submesh.ClusterizeDAG();
-                            }
-                            submesh.Quantize();
-                            BuildMeshBlobJobs(scene.mTables.meshes[meshIndex], meshBlobJobs[meshIndex].jobs, submesh,
-                                              submesh.skin.empty() ? kNilUUID : skeletonId);
-                        }));
+                    tasks.push_back({.source = sub, .remap = remap, .skeleton = skeletonId,
+                                     .index = meshIndex, .mesh = true});
                 }
                 else
                 {
@@ -1463,20 +1444,45 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
                     FUUID curveId = scene.mTables.curves[curveIndex].id;
                     meshPrimitiveResources[i].push_back(
                         MeshPrimitiveResource{.type = FInstanceType::Curve, .index = curveIndex});
-                    futures.push_back(pool.Push(
-                        [&, curveIndex, curveId, sub]
-                        {
-                            FImportedCurve curve(scratchAlloc);
-                            LoadGLTFLineCurve(sub, curve, scratchAlloc);
-                            BuildCurveBlobJobs(scene.mTables.curves[curveIndex], curveBlobJobs[curveIndex].jobs, curve);
-                            scene.mTables.curves[curveIndex].id = curveId;
-                        }));
+                    tasks.push_back({.source = sub, .curve = curveId, .index = curveIndex, .mesh = false});
                 }
             }
         }
-        pool.Join();
-        for (Future<void>& future : futures)
-            future.get();
+        jobs->Wait(jobs->ParallelFor(
+            ExecutionPolicy::Par, "SceneGeometry", tasks.size(), GetSceneJobGrain(*jobs, tasks.size()),
+            [&](size_t begin, size_t end, JobContext&)
+            {
+                for (size_t i = begin; i < end; ++i)
+                {
+                    PrimitiveTask const& task = tasks[i];
+                    if (task.mesh)
+                    {
+                        FImportedMesh submesh = LoadGLTFSubmesh(task.source, scratchAlloc, task.remap);
+                        if (submesh.skin.empty() && buildOptions.optimizeMeshes)
+                        {
+                            LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", task.index,
+                                submesh.vertices.size(), submesh.lods[0].indices.size());
+                            submesh.Optimize();
+                        }
+                        if (buildOptions.generateMeshlets)
+                        {
+                            LOG(Meshopt, LogInfo, "Clusterizing submesh {}, vtx: {}, idx: {}", task.index,
+                                submesh.vertices.size(), submesh.lods[0].indices.size());
+                            submesh.ClusterizeDAG();
+                        }
+                        submesh.Quantize();
+                        BuildMeshBlobJobs(scene.mTables.meshes[task.index], meshBlobJobs[task.index].jobs, submesh,
+                                          submesh.skin.empty() ? kNilUUID : task.skeleton);
+                    }
+                    else
+                    {
+                        FImportedCurve curve(scratchAlloc);
+                        LoadGLTFLineCurve(task.source, curve, scratchAlloc);
+                        BuildCurveBlobJobs(scene.mTables.curves[task.index], curveBlobJobs[task.index].jobs, curve);
+                        scene.mTables.curves[task.index].id = task.curve;
+                    }
+                }
+            }));
         for (FResourceBlobJobs& jobs : meshBlobJobs)
             AppendResourceBlobJobs(blobJobs, jobs);
         for (FResourceBlobJobs& jobs : curveBlobJobs)
@@ -1541,20 +1547,13 @@ void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator*
         preparedBlobs.emplace_back(scratchAlloc);
     if (!blobJobs.empty())
     {
-        ThreadPool pool(GetSceneWorkerCount(), GetSceneTaskQueueSize(blobJobs.size()), scratchAlloc, "SceneBlob");
-        Vector<Future<void>> futures(scratchAlloc);
-        futures.reserve(blobJobs.size());
-        for (size_t i = 0; i < blobJobs.size(); i++)
-        {
-            futures.push_back(pool.Push(
-                [&, i]
-                {
+        jobs->Wait(jobs->ParallelFor(
+            ExecutionPolicy::Par, "SceneBlob", blobJobs.size(), GetSceneJobGrain(*jobs, blobJobs.size()),
+            [&](size_t begin, size_t end, JobContext&)
+            {
+                for (size_t i = begin; i < end; ++i)
                     PrepareBlobJob(blobJobs[i], preparedBlobs[i]);
-                }));
-        }
-        pool.Join();
-        for (Future<void>& future : futures)
-            future.get();
+            }));
         CommitPreparedBlobJobs(blobSerializer, preparedBlobs);
     }
 
@@ -2022,12 +2021,13 @@ FImportedScene::~FImportedScene()
         FinalizeSceneWriter(*this);
 }
 
-void LoadGLTF(StringView path, FImportedScene& scene, Allocator* scratchAlloc,
+void LoadGLTF(JobSystem* jobs, StringView path, FImportedScene& scene, Allocator* scratchAlloc,
               FSceneBuildOptions const& buildOptions)
 {
+    CHECK(jobs != nullptr);
     CHECK(scene.mWriting);
     CHECK(scratchAlloc != nullptr);
-    BuildGLTFSerializedScene(path, scene, scratchAlloc, buildOptions);
+    BuildGLTFSerializedScene(jobs, path, scene, scratchAlloc, buildOptions);
     scene.RebuildIndex();
 }
 
@@ -2050,9 +2050,10 @@ void LoadFSCN(FImportedScene& scene)
     scene.RebuildIndex();
 }
 
-String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc,
+String LoadScene(JobSystem* jobs, StringView path, FImportedScene& scene, Allocator* scratchAlloc,
                  FSceneBuildOptions const& buildOptions)
 {
+    CHECK(jobs != nullptr);
     CHECK(scratchAlloc != nullptr);
     auto ext = LowerExtension(std::filesystem::path(path.data()));
     if (ext == ".fscn")
@@ -2064,6 +2065,6 @@ String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc
     }
 
     CHECK(scene.mWriting);
-    LoadGLTF(path, scene, scratchAlloc, buildOptions);
+    LoadGLTF(jobs, path, scene, scratchAlloc, buildOptions);
     return String(path);
 }

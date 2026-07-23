@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Container.hpp>
+#include <Core/JobSystem.hpp>
 #include <Math/Math.hpp>
 #include "Texture.hpp"
 using namespace Foundation;
@@ -36,7 +37,7 @@ struct PiecewiseConstant2D
     float2 Sample(float2 u, float& pdf, uint2& offset) const;
     float PDF(float2 sample) const;
 };
-void PrefilterEnvmapSH9(const FTexture& source, Span<float3> sh9);
-FTexture PrefilterEnvmapSpecular(const FTexture& source, Allocator* alloc);
+void PrefilterEnvmapSH9(const FTexture& source, Span<float3> sh9, JobSystem* jobs, Allocator* alloc);
+FTexture PrefilterEnvmapSpecular(const FTexture& source, JobSystem* jobs, Allocator* alloc);
 float ReflectionRoughnessFromMip(uint32_t mip, uint32_t numMips);
 float ReflectionMipFromRoughness(float roughness, uint32_t numMips);

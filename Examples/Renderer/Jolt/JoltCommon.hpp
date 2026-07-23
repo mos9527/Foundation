@@ -33,15 +33,7 @@ namespace Foundation::Examples
         Core::ScopedArena mJobArena;
         Core::Vector<uint32_t> mFreelist;
         Core::Mutex mFreelistMutex;
-        Core::JobSystem mJobs;
-
-        static size_t WorkerCount(int threadCount)
-        {
-            if (threadCount >= 0)
-                return static_cast<size_t>(threadCount);
-            size_t const hardware = std::thread::hardware_concurrency();
-            return hardware > 1 ? hardware - 1 : 0;
-        }
+        Core::JobSystem* mJobs;
 
         JoltJob* JobAt(uint32_t index) const noexcept
         {
@@ -50,35 +42,25 @@ namespace Foundation::Examples
         }
 
     public:
-        FoundationJoltJobSystem(uint32_t maxJobs, uint32_t maxBarriers, int threadCount = -1,
+        FoundationJoltJobSystem(Core::JobSystem* jobs, uint32_t maxJobs, uint32_t maxBarriers,
                                 Core::Allocator* allocator = GLOBAL_ALLOC) :
             JPH::JobSystemWithBarrier(maxBarriers),
             mAllocator(allocator),
             mMaxJobs(maxJobs),
             mJobArena(mAllocator, static_cast<size_t>(maxJobs) * sizeof(JoltJob), alignof(JoltJob)),
             mFreelist(mAllocator),
-            mJobs(Core::JobSystemDesc{
-                .workerCount = WorkerCount(threadCount),
-                .maxJobs = maxJobs,
-                .maxBarriers = 1,
-                .readyQueueSize = Core::ThreadPool::CalcTaskSize(maxJobs),
-                .allocator = mAllocator,
-                .name = "Jolt",
-            })
+            mJobs(jobs)
         {
+            CHECK(mJobs != nullptr);
             CHECK(mJobArena);
             mFreelist.reserve(maxJobs);
             for (uint32_t i = maxJobs; i-- > 0;)
                 mFreelist.push_back(i);
         }
 
-        ~FoundationJoltJobSystem() override
-        {
-            mJobs.Drain();
-            assert(mFreelist.size() == mMaxJobs);
-        }
+        ~FoundationJoltJobSystem() override { assert(mFreelist.size() == mMaxJobs); }
 
-        int GetMaxConcurrency() const override { return static_cast<int>(mJobs.GetMaxConcurrency()); }
+        int GetMaxConcurrency() const override { return static_cast<int>(mJobs->GetMaxConcurrency()); }
 
         JPH::JobHandle CreateJob(char const* name, JPH::ColorArg color, JobFunction const& function,
                                  JPH::uint32 dependencyCount = 0) override
@@ -112,7 +94,6 @@ namespace Foundation::Examples
         void WaitForJobs(Barrier* barrier) override
         {
             JPH::JobSystemWithBarrier::WaitForJobs(barrier);
-            mJobs.Drain();
         }
 
     protected:
@@ -122,7 +103,7 @@ namespace Foundation::Examples
 #if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
             name = job->GetName();
 #endif
-            mJobs.CreateJob(name, Core::JobPriority::Normal, QueuedJob(job));
+            mJobs->CreateJob(name, Core::JobPriority::Normal, QueuedJob(job));
         }
 
         void QueueJobs(JoltJob** jobs, JPH::uint count) override

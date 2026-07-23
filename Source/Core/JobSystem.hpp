@@ -277,6 +277,7 @@ namespace Foundation::Core
 
         JobBarrier CreateBarrier();
         void Wait(JobBarrier& barrier);
+        void Wait(JobBarrier&& barrier) { Wait(barrier); }
         void Cancel(JobHandle const& job);
         void Drain();
         void Shutdown();
@@ -317,23 +318,23 @@ namespace Foundation::Core
         }
 
         template <typename Fn>
-        void ParallelFor(ExecutionPolicy policy, StringView name, size_t count, size_t step, Fn&& function)
+        JobBarrier ParallelFor(ExecutionPolicy policy, StringView name, size_t count, size_t step, Fn&& function)
         {
-            if (count == 0)
-                return;
             if (step == 0)
                 throw std::runtime_error("ParallelFor grain size must be non-zero");
+            if (count == 0)
+                return CreateBarrier();
             if (policy == ExecutionPolicy::Seq || count <= step || mThreads.empty())
             {
                 JobContext context(mThreads.size(), nullptr);
                 std::invoke(function, size_t{0}, count, context);
-                return;
+                return CreateBarrier();
             }
             JobBarrier barrier = CreateBarrier();
             JobHandle completion =
                 Dispatch(name, count, step, JobPriority::Normal, std::forward<Fn>(function));
             barrier.Add(completion);
-            Wait(barrier);
+            return barrier;
         }
     };
 } // namespace Foundation::Core

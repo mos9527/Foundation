@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/JobSystem.hpp>
 #include <Renderer/Mesh.hpp>
 #include <Renderer/Animation.hpp>
 #include <Renderer/Curve.hpp>
@@ -541,7 +542,7 @@ struct FSceneBuildOptions
     bool optimizeMeshes{true};
 };
 
-void LoadGLTF(StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC,
+void LoadGLTF(JobSystem* jobs, StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC,
               FSceneBuildOptions const& buildOptions = FSceneBuildOptions{});
 void LoadFSCN(FImportedScene& scene);
 
@@ -549,5 +550,5 @@ void LoadFSCN(FImportedScene& scene);
  * Loads a scene from a path, inferring format from extension.
  * Returns the FSCN path that backs payload blob reads.
  */
-String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC,
+String LoadScene(JobSystem* jobs, StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC,
                  FSceneBuildOptions const& buildOptions = FSceneBuildOptions{});

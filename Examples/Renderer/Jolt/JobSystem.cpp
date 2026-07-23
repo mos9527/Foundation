@@ -11,7 +11,15 @@ int main()
     JPH::RegisterDefaultAllocator();
 
     constexpr int kJobCount = 128;
-    FoundationJoltJobSystem jobs(kJobCount, 4, 4);
+    Foundation::Core::JobSystem scheduler({
+        .workerCount = 4,
+        .maxJobs = kJobCount,
+        .maxBarriers = 4,
+        .readyQueueSize = kJobCount,
+        .allocator = GLOBAL_ALLOC,
+        .name = "JoltSmoke",
+    });
+    FoundationJoltJobSystem jobs(&scheduler, kJobCount, 4);
     JPH::JobSystem::Barrier* barrier = jobs.CreateBarrier();
     if (!barrier)
         return 1;

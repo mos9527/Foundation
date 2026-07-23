@@ -2,12 +2,12 @@
 #include <Renderer/Texture.hpp>
 #include <Core/AllocatorStack.hpp>
 
-int main_scene(StringView srcPath, StringView dstPath, FSceneBuildOptions const& buildOptions)
+int main_scene(JobSystem* jobs, StringView srcPath, StringView dstPath, FSceneBuildOptions const& buildOptions)
 {
     MemoryMappedFile file(dstPath, 64ull * 1024ull * 1024ull /* grows on demand */);
     FImportedScene scene(file, GLOBAL_ALLOC);
     LOG(Util, LogDebug, "Saving");
-    LoadGLTF(srcPath, scene, GLOBAL_ALLOC, buildOptions);
+    LoadGLTF(jobs, srcPath, scene, GLOBAL_ALLOC, buildOptions);
     return 0;
 }
 int main_texture(StringView srcImagePath, StringView dstDDSPath)
@@ -28,6 +28,15 @@ int main_texture(StringView srcImagePath, StringView dstDDSPath)
 }
 int main(int argc, const char** argv)
 {
+    unsigned const hardware = std::thread::hardware_concurrency();
+    JobSystem jobs({
+        .workerCount = hardware > 1u ? static_cast<size_t>(hardware - 1u) : 1u,
+        .maxJobs = 4096,
+        .maxBarriers = 64,
+        .readyQueueSize = 4096,
+        .allocator = GLOBAL_ALLOC,
+        .name = "UtilJob",
+    });
     if (argc == 1)
         goto END;
     if (strcmp(argv[1], "scene") == 0)
@@ -50,7 +59,7 @@ int main(int argc, const char** argv)
                 CHECK_MSG(false, "usage: util scene [--no-texture-compression] [src] [dst]");
         }
         CHECK_MSG(srcPath && dstPath, "usage: util scene [--no-texture-compression] [src] [dst]");
-        return main_scene(srcPath, dstPath, buildOptions);
+        return main_scene(&jobs, srcPath, dstPath, buildOptions);
     }
     if (strcmp(argv[1], "texture") == 0)
     {

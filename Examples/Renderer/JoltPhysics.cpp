@@ -193,8 +193,6 @@ int main(int argc, char** argv)
     RegisterTypes();
 
     TempAllocatorImpl temp_allocator(10 * 1024 * 1024);
-    Foundation::Examples::FoundationJoltJobSystem job_system(
-        cMaxPhysicsJobs, cMaxPhysicsBarriers, static_cast<int>(thread::hardware_concurrency()) - 1);
     
     const uint cMaxBodies = 1024;
     const uint cNumBodyMutexes = 0;
@@ -236,7 +234,8 @@ int main(int argc, char** argv)
 
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("GPUScene Physics Jolt"), 1280, 720,
                                           Examples_SDLWindowFlagsVulkan);
-    auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});   
+    auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});
+    Foundation::Examples::FoundationJoltJobSystem job_system(ctx.jobs.get(), cMaxPhysicsJobs, cMaxPhysicsBarriers);
 
     GPUSceneDesc desc{};
     desc.primitiveBudget = 64u * 1024u;
@@ -247,7 +246,7 @@ int main(int argc, char** argv)
     desc.lightBudget = 8;
     desc.geometryBudget = 8;
     desc.tlasInstanceBudget = cMaxBodies * 2;
-    GPUScene gpu(ctx.device.Get(), GLOBAL_ALLOC, desc);
+    GPUScene gpu(ctx.device.Get(), ctx.jobs.get(), GLOBAL_ALLOC, desc);
     
     SimulationState state;
     state.bodies = box_bodies;

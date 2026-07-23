@@ -17,7 +17,7 @@
 using Foundation::Core::PathsResolve;
 static constexpr const char* kTempScenePath = "Cache/GPUSceneGLTF.fscn";
 
-String PrepareScenePayload(StringView path)
+String PrepareScenePayload(JobSystem* jobs, StringView path)
 {
     String ext = std::filesystem::path(path.data()).extension().string();
     if (ext == ".fscn")
@@ -31,7 +31,7 @@ String PrepareScenePayload(StringView path)
     {
         MemoryMappedFile sceneFile(scenePayloadPath, 256ull * 1024ull * 1024ull /* grows on demand */);
         FImportedScene writeScene(sceneFile, GLOBAL_ALLOC);
-        LoadScene(path, writeScene, GLOBAL_ALLOC);
+        LoadScene(jobs, path, writeScene, GLOBAL_ALLOC);
     }
     return scenePayloadPath;
 }
@@ -106,13 +106,14 @@ int main(int argc, char** argv)
 
     auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});
     // Prepare scene file
-    String path = PrepareScenePayload(!scenePathArg.empty() ? scenePathArg : PathsResolve("Data/Assets/demo.glb"));
+    String path =
+        PrepareScenePayload(ctx.jobs.get(), !scenePathArg.empty() ? scenePathArg : PathsResolve("Data/Assets/demo.glb"));
     MemoryMappedFile sceneFile(path, MemoryMappedAccess::ReadOnly);
     FImportedScene scene(sceneFile, GLOBAL_ALLOC);
     LoadFSCN(scene);
     {
         GPUSceneDesc desc = CalculateSceneGPUDesc(scene, ctx.device->GetCapabilities());
-        GPUScene gpu(ctx.device.Get(), GLOBAL_ALLOC, desc);
+        GPUScene gpu(ctx.device.Get(), ctx.jobs.get(), GLOBAL_ALLOC, desc);
 
         FSceneGPUResources resources;
         UploadSceneResources(scene, gpu, resources);

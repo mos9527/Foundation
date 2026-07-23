@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Allocator.hpp>
 #include <Core/AllocatorStack.hpp>
+#include <Core/JobSystem.hpp>
 #include <Core/Logging.hpp>
 #include <RenderCore/Bindless.hpp>
 #include <RenderCore/ImmediateContext.hpp>
@@ -182,7 +183,8 @@ public:
     [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FSerializedMesh const& src);
     [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FSerializedCurve const& src);
 
-    GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc, AllocatorStack* frameScratch = nullptr);
+    GPUScene(RHIDevice* device, JobSystem* jobs, Allocator* allocator, GPUSceneDesc const& desc,
+             AllocatorStack* frameScratch = nullptr);
     ~GPUScene();
 
     Result Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);

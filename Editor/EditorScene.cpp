@@ -466,7 +466,7 @@ static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBy
             animationBudget.inputBytes * 2u / static_cast<float>(1u << 20),
             animationBudget.paletteBytes / static_cast<float>(1u << 20));
 
-    auto* gpu = Construct<GPUScene>(GContext->allocator, GContext->device.Get(), GContext->allocator,
+    auto* gpu = Construct<GPUScene>(GContext->allocator, GContext->device.Get(), GContext->jobs.get(), GContext->allocator,
                                     estimatedBudget, GContext->editorFrameScratch.get());
     return gpu;
 }
@@ -500,7 +500,7 @@ static String PrepareScenePayloadFile(StringView path)
     Allocator* importScratch = GLOBAL_ALLOC;
     MemoryMappedFile sceneFile(scenePayloadPath, 64ull * 1024ull * 1024ull /* grows on demand */);
     FImportedScene writeScene(sceneFile, importScratch);
-    LoadScene(path, writeScene, importScratch);
+    LoadScene(GContext->jobs.get(), path, writeScene, importScratch);
     return scenePayloadPath;
 }
 

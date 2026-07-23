@@ -5,7 +5,7 @@
 #include <Core/AtomicQueue.hpp>
 #include <Core/Hash.hpp>
 #include <Core/Thread.hpp>
-#include <Core/ThreadPool.hpp>
+#include <Core/JobSystem.hpp>
 #include <algorithm>
 #include <bit>
 #include <condition_variable>
@@ -44,26 +44,6 @@ static size_t GPUSceneTextureSubresourceFootprint(FTextureHeader const& metadata
     CHECK_MSG(size <= std::numeric_limits<size_t>::max() - (alignment - 1u),
               "Texture subresource staging footprint exceeds addressable range");
     return size + alignment - 1u;
-}
-
-static void GPUSceneCompleteJob(Atomic<size_t>* counter)
-{
-    if (!counter)
-        return;
-    size_t const previous = counter->fetch_sub(1, std::memory_order_release);
-    CHECK_MSG(previous > 0, "GPUScene upload job counter underflow");
-    if (previous == 1)
-        counter->notify_all();
-}
-
-static void GPUSceneWaitJobs(Atomic<size_t>* counter)
-{
-    size_t pending = counter->load(std::memory_order_acquire);
-    while (pending != 0)
-    {
-        counter->wait(pending, std::memory_order_relaxed);
-        pending = counter->load(std::memory_order_acquire);
-    }
 }
 
 static constexpr size_t kMinDirectGeometryUploadHeapSize = 512ull * (1ull << 20);
@@ -131,6 +111,7 @@ struct GPUSceneImpl
     using TLASBuildResult = GPUScene::TLASBuildResult;
     GPUScene& owner;
     RHIDevice* mDevice{nullptr};
+    JobSystem* mJobs{nullptr};
     Allocator* mAllocator{GLOBAL_ALLOC};
     AllocatorStack* mStackAlloc{nullptr};
 
@@ -289,6 +270,8 @@ struct GPUSceneImpl
     bool mUploadWorkerStarted{false};
     Atomic<size_t> mUploadPending{0};
     Atomic<bool> mUploadFailed{false};
+    UniquePtr<ImmediateUpload> mImmediateUpload;
+    size_t mImmediateUploadCapacity{};
     mutable Mutex mUploadStateMutex;
     bool FlushUpload();
     template <typename T>
@@ -318,7 +301,7 @@ struct GPUSceneImpl
     Span<GSLight> AllocateLight(uint32_t count, uint32_t& outOffset);
 
 
-    GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc,
+    GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, Allocator* allocator, GPUSceneDesc const& desc,
                  AllocatorStack* frameScratch);
     ~GPUSceneImpl();
 
@@ -384,36 +367,6 @@ size_t GPUScene::CalculateCurvePrimitiveSize(FSerializedCurve const& src)
     return sizeof(GSCurveSet) + src.vertices.decodedSize + src.indices.decodedSize + src.leaves.decodedSize;
 }
 
-struct GPUSceneBlobDecodeJob final : Foundation::Core::Job
-{
-    GPUSceneImpl::BlobCopyTask write{};
-    FBlobDeserializer blobs{Span<const unsigned char>{}};
-    Span<Arena> scratchArenas{};
-    Span<AllocatorStack> scratchAllocators{};
-    Atomic<size_t>* counter{nullptr};
-
-    GPUSceneBlobDecodeJob(GPUSceneImpl::BlobCopyTask const& write, FBlobDeserializer const& blobs,
-                          Span<Arena> scratchArenas, Span<AllocatorStack> scratchAllocators, Atomic<size_t>* counter) :
-        write(write), blobs(blobs), scratchArenas(scratchArenas), scratchAllocators(scratchAllocators), counter(counter)
-    {
-    }
-
-    void Execute(size_t workerID) noexcept override
-    {
-        if (write.blob.codec != FBlobCodec::None)
-        {
-            AllocatorStack& scratch = scratchAllocators[workerID];
-            scratch.Reset(scratchArenas[workerID]);
-            blobs.ReadBytes(write.blob, write.dst, write.size, &scratch);
-        }
-        else
-        {
-            blobs.ReadBytes(write.blob, write.dst, write.size, nullptr);
-        }
-        GPUSceneCompleteJob(counter);
-    }
-};
-
 void GPUSceneImpl::FlushDirectGeometryUpload()
 {
     if (!mDirectGeometryUpload)
@@ -422,16 +375,18 @@ void GPUSceneImpl::FlushDirectGeometryUpload()
         owner.mPrimitiveBuffer->Flush(0, mPrimitiveAlloc->GetPeakUsage());
 }
 
-GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc, AllocatorStack* frameScratch) :
+GPUScene::GPUScene(RHIDevice* device, JobSystem* jobs, Allocator* allocator, GPUSceneDesc const& desc,
+                   AllocatorStack* frameScratch) :
     mCommittedInstances(allocator), mCommittedLights(allocator), mCommittedMaterials(allocator),
     mTLASInstanceMap(allocator)
 {
-    mImpl = ConstructUnique<GPUSceneImpl>(allocator, *this, device, allocator, desc, frameScratch);
+    mImpl = ConstructUnique<GPUSceneImpl>(allocator, *this, device, jobs, allocator, desc, frameScratch);
 }
 
-GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc,
+GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, Allocator* allocator,
+                           GPUSceneDesc const& desc,
                            AllocatorStack* frameScratch) :
-    owner(owner), mDevice(device), mAllocator(allocator), mStackAlloc(frameScratch),
+    owner(owner), mDevice(device), mJobs(jobs), mAllocator(allocator), mStackAlloc(frameScratch),
     mInstanceBuffer(device, desc.instanceBudget), mMaterialBuffer(device, desc.materialBudget),
     mLightBuffer(device, desc.lightBudget), mLightBVHNodeBuffer(device, desc.lightBudget * 2u),
     mLightBVHLightIndexBuffer(device, desc.lightBudget), mLightBVHBitmaskBuffer(device, desc.lightBudget),
@@ -449,6 +404,7 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
     mTLASInstances(device, desc.tlasInstanceBudget * mTLASInstanceStride)
 {
     CHECK(mDevice != nullptr);
+    CHECK(mJobs != nullptr);
     CHECK(mAllocator != nullptr);
     CHECK_MSG(desc.dynamicGeometryBudget != 0 || desc.dynamicStagingBudget == 0,
               "dynamicStagingBudget requires dynamicGeometryBudget");
@@ -1656,11 +1612,7 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
     }
     const size_t stagingSlack = std::min(totalFootprint, kUploadStagingBudgetSlack);
     const size_t stagingBudget = std::max<size_t>(maxFootprint, 1u) + stagingSlack;
-    const size_t taskUpper = mPendingGeometry.size() * 7u + textureSubresCount;
-    const size_t workerCount =
-        std::min<size_t>(std::max<size_t>(1u, std::thread::hardware_concurrency()), std::max<size_t>(1u, taskUpper));
-    ThreadPool pool(workerCount, ThreadPool::CalcTaskSize(std::max<size_t>(taskUpper, 1u) + 2u), mAllocator,
-                    "GPUSceneUpload");
+    const size_t workerCount = mJobs->GetMaxConcurrency();
     const size_t laneBudget = std::max<size_t>(maxBlob + kUploadBudgetSlack, alignof(std::max_align_t));
     ScopedArena scratchArena(mAllocator, laneBudget * workerCount);
     CHECK(scratchArena);
@@ -1675,22 +1627,44 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
     Span<Arena> arenaSpan(scratchArenas.data(), scratchArenas.size());
     Span<AllocatorStack> allocSpan(scratchAllocators.data(), scratchAllocators.size());
 
-    ImmediateUpload upload(mDevice, stagingBudget, RHIDeviceQueueType::Transfer, kUploadStagingBuffers);
+    if (!mImmediateUpload || mImmediateUploadCapacity < stagingBudget)
+    {
+        if (mImmediateUpload)
+            mImmediateUpload->WaitIdle();
+        mImmediateUploadCapacity = std::bit_ceil(stagingBudget);
+        mImmediateUpload = ConstructUnique<ImmediateUpload>(
+            mAllocator, mDevice, mImmediateUploadCapacity, RHIDeviceQueueType::Transfer, kUploadStagingBuffers);
+    }
+    ImmediateUpload& upload = *mImmediateUpload;
     ImmediateUpload::UploadBatch batch = upload.BeginBatch();
-    Atomic<size_t> pendingJobs{0};
     Vector<BlobCopyTask> writes(mAllocator);
     auto ScheduleWrites = [&](FBlobDeserializer const& blobs)
     {
         if (writes.empty())
             return;
-        pendingJobs.fetch_add(writes.size(), std::memory_order_relaxed);
-        for (auto const& w : writes)
-            pool.PushImpl<GPUSceneBlobDecodeJob>(w, blobs, arenaSpan, allocSpan, &pendingJobs);
+        size_t const grain = std::max<size_t>(
+            1u, writes.size() / std::max<size_t>(mJobs->GetMaxConcurrency() * 4u, 1u));
+        mJobs->Wait(mJobs->ParallelFor(
+            ExecutionPolicy::Par, "GPUSceneDecode", writes.size(), grain,
+            [&](size_t begin, size_t end, JobContext& context)
+            {
+                AllocatorStack& scratch = allocSpan[context.GetWorkerId()];
+                for (size_t i = begin; i < end; ++i)
+                {
+                    BlobCopyTask const& write = writes[i];
+                    if (write.blob.codec != FBlobCodec::None)
+                    {
+                        scratch.Reset(arenaSpan[context.GetWorkerId()]);
+                        blobs.ReadBytes(write.blob, write.dst, write.size, &scratch);
+                    }
+                    else
+                        blobs.ReadBytes(write.blob, write.dst, write.size, nullptr);
+                }
+            }));
         writes.clear();
     };
     auto FlushUpload = [&]
     {
-        GPUSceneWaitJobs(&pendingJobs);
         batch.End();
         batch = upload.BeginBatch();
     };
@@ -1734,7 +1708,6 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
             }
             std::memcpy(ptr, b.data.data(), b.data.size());
         }
-        GPUSceneWaitJobs(&pendingJobs);
         if (direct)
             FlushDirectGeometryUpload();
         RHIDeviceQueue::TimelinePair geomSignal{uploadTimeline.Get(), kGeometryReady};
@@ -1840,7 +1813,6 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
             }
             ScheduleWrites(pt.blobs);
         }
-        GPUSceneWaitJobs(&pendingJobs);
         for (size_t slot = 0; slot < mPendingTextures.size(); ++slot)
         {
             if (!transferDstDone[slot])
@@ -1881,7 +1853,6 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
         }
     }
 
-    pool.Join();
 }
 
 // Reference:
@@ -2744,17 +2715,24 @@ GPUScene::Result GPUSceneImpl::UploadEnvironmentMap(FTexture const& source)
     const float4* pixels = reinterpret_cast<const float4*>(data.data());
 
     Vector<float> f(width * height, mAllocator);
-    for (uint32_t y = 0; y < height; ++y)
-    {
-        float v = (y + 0.5f) / height;
-        float sinTheta = std::sin(pi<float>() * v);
-        for (uint32_t x = 0; x < width; ++x)
+    size_t const grain = std::max<size_t>(
+        1u, height / std::max<size_t>(mJobs->GetMaxConcurrency() * 4u, 1u));
+    mJobs->Wait(mJobs->ParallelFor(
+        ExecutionPolicy::Par, "EnvLuminance", height, grain,
+        [&](size_t begin, size_t end, JobContext&)
         {
-            float4 pixel = pixels[y * width + x];
-            float luminance = max(pixel.x, max(pixel.y, pixel.z));
-            f[y * width + x] = luminance * sinTheta;
-        }
-    }
+            for (size_t y = begin; y < end; ++y)
+            {
+                float v = (static_cast<float>(y) + 0.5f) / height;
+                float sinTheta = std::sin(pi<float>() * v);
+                for (uint32_t x = 0; x < width; ++x)
+                {
+                    float4 pixel = pixels[y * width + x];
+                    float luminance = max(pixel.x, max(pixel.y, pixel.z));
+                    f[y * width + x] = luminance * sinTheta;
+                }
+            }
+        }));
 
     PiecewiseConstant2D cdf(f, width, height, mAllocator);
     owner.mEnvMapAverageRadiance = cdf.Int() * pi<float>() / 2.0f;
@@ -2790,11 +2768,11 @@ GPUScene::Result GPUSceneImpl::UploadEnvironmentMap(FTexture const& source)
         return r;
 
     float3 shCoeffs[9];
-    PrefilterEnvmapSH9(source, shCoeffs);
+    PrefilterEnvmapSH9(source, shCoeffs, mJobs, mAllocator);
     for (int i = 0; i < 9; ++i)
         owner.mEnvSHCoeffs[static_cast<size_t>(i)] = shCoeffs[i];
 
-    FTexture prefiltered = PrefilterEnvmapSpecular(source, mAllocator);
+    FTexture prefiltered = PrefilterEnvmapSpecular(source, mJobs, mAllocator);
     owner.mEnvMapPrefilteredMips = prefiltered.GetNumMips();
     if (Result r = Upload(prefiltered, owner.mEnvMapIndex, "Environment Map", true); r != Result::Ready)
         return r;

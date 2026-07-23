@@ -1,5 +1,5 @@
 #include "Precompute.hpp"
-#include <Core/ThreadPool.hpp>
+#include <Core/JobSystem.hpp>
 #include <cmath>
 #include <numbers>
 PiecewiseConstant1D::PiecewiseConstant1D(Span<const float> f, Allocator* alloc) :
@@ -120,39 +120,53 @@ float ReflectionMipFromRoughness(float roughness, uint32_t numMips)
     float levelFrom1x1 = kReflectionRoughestMip - kReflectionRoughnessMipScale * std::log2(std::max(roughness, 0.001f));
     return static_cast<float>(numMips - 1) - levelFrom1x1;
 }
-void PrefilterEnvmapSH9(const FTexture& source, Span<float3> sh9)
+void PrefilterEnvmapSH9(const FTexture& source, Span<float3> sh9, JobSystem* jobs, Allocator* alloc)
 {
+    CHECK(jobs != nullptr);
+    CHECK(alloc != nullptr);
     CHECK(sh9.size() == 9);
     CHECK_MSG(source.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat,
               "Envmap prefilter expects RGBA32F. Got {}", source.GetFormat());
     const uint32_t width = source.GetWidth();
     const uint32_t height = source.GetHeight();
     const float4* pixels = reinterpret_cast<const float4*>(source.GetSubresource(0, 0).data());
+    using SHRow = Array<float3, 9>;
+    Vector<SHRow> rows(height, SHRow{}, alloc);
+    size_t const grain = std::max<size_t>(1u, height / std::max<size_t>(jobs->GetMaxConcurrency() * 4u, 1u));
+    jobs->Wait(jobs->ParallelFor(
+        ExecutionPolicy::Par, "EnvSH", height, grain,
+        [&](size_t begin, size_t end, JobContext&)
+        {
+            for (size_t y = begin; y < end; ++y)
+            {
+                float v = (static_cast<float>(y) + 0.5f) / height;
+                float theta = v * kPi;
+                float sinTheta = std::sin(theta);
+                float dw = (kPi / height) * (2.0f * kPi / width) * sinTheta;
+                for (uint32_t x = 0; x < width; ++x)
+                {
+                    float u = (x + 0.5f) / width;
+                    float3 dir = EquirectUVToDirection({u, v});
+                    float yb[9];
+                    SHEvalBasis9(dir, yb);
+                    float4 p = pixels[y * width + x];
+                    float3 rad = {p.x, p.y, p.z};
+                    for (int b = 0; b < 9; ++b)
+                        rows[y][b] += rad * yb[b] * dw;
+                }
+            }
+        }));
     for (float3& coeff : sh9)
         coeff = float3(0.0f);
-    for (uint32_t y = 0; y < height; ++y)
-    {
-        float v = (y + 0.5f) / height;
-        float theta = v * kPi;
-        float sinTheta = std::sin(theta);
-        float dw = (kPi / height) * (2.0f * kPi / width) * sinTheta;
-        for (uint32_t x = 0; x < width; ++x)
-        {
-            float u = (x + 0.5f) / width;
-            float3 dir = EquirectUVToDirection({u, v});
-            float yb[9];
-            SHEvalBasis9(dir, yb);
-            float4 p = pixels[y * width + x];
-            float3 rad = {p.x, p.y, p.z};
-            for (int b = 0; b < 9; ++b)
-                sh9[b] += rad * yb[b] * dw;
-        }
-    }
+    for (SHRow const& row : rows)
+        for (int b = 0; b < 9; ++b)
+            sh9[b] += row[b];
     for (int b = 0; b < 9; ++b)
         sh9[b] *= kSHConvScale[b] * kInvPi;
 }
-FTexture PrefilterEnvmapSpecular(const FTexture& source, Allocator* alloc)
+FTexture PrefilterEnvmapSpecular(const FTexture& source, JobSystem* jobs, Allocator* alloc)
 {
+    CHECK(jobs != nullptr);
     CHECK_MSG(source.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat,
               "Envmap prefilter expects RGBA32F. Got {}", source.GetFormat());
     const uint32_t width = source.GetWidth();
@@ -189,61 +203,66 @@ FTexture PrefilterEnvmapSpecular(const FTexture& source, Allocator* alloc)
         const float texelSolidAngle = (4.0f * kPi) / static_cast<float>(6u * mipWidth * mipHeight) * 2.0f;
         float4* dst = reinterpret_cast<float4*>(result.GetSubresource(mip, 0).data());
 
-        for (uint32_t y = 0; y < mipHeight; ++y)
-        {
-            for (uint32_t x = 0; x < mipWidth; ++x)
+        size_t const grain =
+            std::max<size_t>(1u, mipHeight / std::max<size_t>(jobs->GetMaxConcurrency() * 4u, 1u));
+        jobs->Wait(jobs->ParallelFor(
+            ExecutionPolicy::Par, "EnvSpecular", mipHeight, grain,
+            [&](size_t begin, size_t end, JobContext&)
             {
-                float u = (x + 0.5f) / mipWidth;
-                float v = (y + 0.5f) / mipHeight;
-                float3 n = EquirectUVToDirection({u, v});
-                float3 up = std::abs(n.y) < 0.999f ? float3(0, 1, 0) : float3(1, 0, 0);
-                float3 t = normalize(cross(up, n));
-                float3 b = cross(n, t);
-                mat3 toWorld(t, b, n);
-
-                float4 filtered(0.0f);
-                float weight = 0.0f;
-                auto AccumulateSample = [&](float3 l, float pdf)
-                {
-                    float NoL = l.z;
-                    if (NoL <= 0.0f || pdf <= 0.0f)
-                        return;
-                    float sampleSolidAngle = 1.0f / (numSamples * pdf);
-                    float srcMip = 0.5f * std::log2(sampleSolidAngle / texelSolidAngle);
-                    float3 w = normalize(toWorld * l);
-                    float2 uv = EquirectDirectionToUV(w);
-                    float4 s =
-                        SampleF32Trilinear(mipPtrs.data(), mipW.data(), mipH.data(), numMips, uv.x, uv.y, srcMip);
-                    filtered += s * NoL;
-                    weight += NoL;
-                };
-
-                if (roughness > 0.99f)
-                {
-                    for (uint32_t i = 0; i < numSamples; ++i)
+                for (size_t y = begin; y < end; ++y)
+                    for (uint32_t x = 0; x < mipWidth; ++x)
                     {
-                        float2 e = Hammersley2D(i, numSamples);
-                        float3 l = CosineSampleHemisphere(e);
-                        AccumulateSample(l, l.z * kInvPi);
+                        float u = (x + 0.5f) / mipWidth;
+                        float v = (static_cast<float>(y) + 0.5f) / mipHeight;
+                        float3 n = EquirectUVToDirection({u, v});
+                        float3 up = std::abs(n.y) < 0.999f ? float3(0, 1, 0) : float3(1, 0, 0);
+                        float3 t = normalize(cross(up, n));
+                        float3 b = cross(n, t);
+                        mat3 toWorld(t, b, n);
+
+                        float4 filtered(0.0f);
+                        float weight = 0.0f;
+                        auto AccumulateSample = [&](float3 l, float pdf)
+                        {
+                            float NoL = l.z;
+                            if (NoL <= 0.0f || pdf <= 0.0f)
+                                return;
+                            float sampleSolidAngle = 1.0f / (numSamples * pdf);
+                            float srcMip = 0.5f * std::log2(sampleSolidAngle / texelSolidAngle);
+                            float3 w = normalize(toWorld * l);
+                            float2 uv = EquirectDirectionToUV(w);
+                            float4 s = SampleF32Trilinear(
+                                mipPtrs.data(), mipW.data(), mipH.data(), numMips, uv.x, uv.y, srcMip);
+                            filtered += s * NoL;
+                            weight += NoL;
+                        };
+
+                        if (roughness > 0.99f)
+                        {
+                            for (uint32_t i = 0; i < numSamples; ++i)
+                            {
+                                float2 e = Hammersley2D(i, numSamples);
+                                float3 l = CosineSampleHemisphere(e);
+                                AccumulateSample(l, l.z * kInvPi);
+                            }
+                        }
+                        else
+                        {
+                            for (uint32_t i = 0; i < numSamples; ++i)
+                            {
+                                float2 e = Hammersley2D(i, numSamples);
+                                e.y *= 0.995f;
+                                float3 h = ImportanceSampleGGX(e, a2);
+                                float3 l = 2.0f * h.z * h - float3(0, 0, 1);
+                                float NoH = h.z;
+                                float denom = std::pow(1.0f - NoH * NoH * (1.0f - a2), 2.0f);
+                                float pdf = std::max(1e-8f, a2 * NoH / (denom * 4.0f));
+                                AccumulateSample(l, pdf);
+                            }
+                        }
+                        dst[y * mipWidth + x] = weight > 0.0f ? filtered / weight : float4(0.0f);
                     }
-                }
-                else
-                {
-                    for (uint32_t i = 0; i < numSamples; ++i)
-                    {
-                        float2 e = Hammersley2D(i, numSamples);
-                        e.y *= 0.995f;
-                        float3 h = ImportanceSampleGGX(e, a2);
-                        float3 l = 2.0f * h.z * h - float3(0, 0, 1);
-                        float NoH = h.z;
-                        float denom = std::pow(1.0f - NoH * NoH * (1.0f - a2), 2.0f);
-                        float pdf = std::max(1e-8f, a2 * NoH / (denom * 4.0f));
-                        AccumulateSample(l, pdf);
-                    }
-                }
-                dst[y * mipWidth + x] = weight > 0.0f ? filtered / weight : float4(0.0f);
-            }
-        }
+            }));
     }
     return result;
 }

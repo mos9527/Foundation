@@ -147,7 +147,7 @@ int main(int argc, char** argv)
     desc.lightBudget = 8;
     desc.geometryBudget = 8;
     desc.tlasInstanceBudget = 8;
-    GPUScene gpu(ctx.device.Get(), GLOBAL_ALLOC, desc);
+    GPUScene gpu(ctx.device.Get(), ctx.jobs.get(), GLOBAL_ALLOC, desc);
     GeometryHandle water{};
     GeometryHandle ground{};
     {

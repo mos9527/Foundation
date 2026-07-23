@@ -597,6 +597,16 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
 #endif
     }
     ExampleVulkanContext ctx{};
+    unsigned const hardware = std::thread::hardware_concurrency();
+    size_t const workers = hardware > 1u ? static_cast<size_t>(hardware - 1u) : 1u;
+    ctx.jobs = ConstructUnique<JobSystem>(GLOBAL_ALLOC, JobSystemDesc{
+        .workerCount = workers,
+        .maxJobs = 4096,
+        .maxBarriers = 64,
+        .readyQueueSize = 4096,
+        .allocator = GLOBAL_ALLOC,
+        .name = "ExampleJob",
+    });
 
     auto app = ConstructUnique<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
     auto device = app->CreateDevice({.id = static_cast<uint32_t>(gpuId)});
@@ -816,6 +826,8 @@ void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx)
 {
     if (ctx.device)
         ctx.device->WaitIdle();
+    if (ctx.jobs)
+        ctx.jobs->Drain();
 
     auto psoCache = ctx.psoCache.Get();
     auto cachePath = PipelineCachePathForDevice(*ctx.device.Get());
