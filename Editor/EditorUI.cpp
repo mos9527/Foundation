@@ -2961,15 +2961,29 @@ void FRunningImGui()
                 sLastSampleTime = now;
                 sFramesPerSec   = 0.0f;
             }
+            ImGui::SeparatorText(PSI_BOLT " Path Tracer");
             float samplesPerSec = sFramesPerSec * static_cast<float>(samplesPerDispatch);
             ImGui::Text("samples: %u (%.2f sps), frames: %u (%.1f fps)",
                         completedSamples, samplesPerSec, frameCount, sFramesPerSec);
-            // Auto-Pause sample limit slider. 0 = disabled.
+            if (ImModalButton(PSI_ADJUST " 1sp", 0, 3))
+            {
+                GEditor.renderTask.autoPauseSampleLimit = 1;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            };
+            if (ImModalButton(PSI_ADJUST " 8sp", 1, 3))
+            {
+                GEditor.renderTask.autoPauseSampleLimit = 8;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            };
+            if (ImModalButton(PSI_ADJUST " NoLimit", 2, 3))
+            {
+                GEditor.renderTask.autoPauseSampleLimit = 0;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            };
             int limit = GEditor.renderTask.autoPauseSampleLimit;
-            if (ImGui::SliderInt("Auto-Pause Samples", &limit, 0, 4096, limit > 0 ? "%d" : "Off"))
+            if (ImGui::SliderInt("Samples", &limit, 0, 4096, limit > 0 ? "%d" : "Off"))
             {
                 GEditor.renderTask.autoPauseSampleLimit = std::max(0, limit);
-                // Re-arm auto-pause if user raised the limit above current count
                 if (GEditor.renderTask.renderAutoPaused &&
                     GEditor.renderTask.autoPauseSampleLimit > static_cast<int>(completedSamples))
                 {
@@ -2978,7 +2992,6 @@ void FRunningImGui()
                 }
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
-            ImGui::SeparatorText(PSI_BOLT " Path Tracer");
             if (ImModalButton(PSI_CODE " Direct", 0, 4))
             {
                 GEditor.shaderGlobals.ptMaxBounces = 0;
@@ -3001,6 +3014,11 @@ void FRunningImGui()
             {
                 GEditor.shaderGlobals.ptMaxBounces = 100;
                 GEditor.shaderGlobals.ptFireflyClamp = 100.0f;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
+            ImGui::SeparatorText(PSI_RANDOM " Ray Bounce");
+            if (ImGui::SliderInt("Max Bounces", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBounces), 0, 100))
+            {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::SeparatorText(PSI_DASHBOARD " Performance");
@@ -3030,8 +3048,6 @@ void FRunningImGui()
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
-            ImGui::SeparatorText(PSI_RANDOM " Ray Bounce");
-            ImGui::SliderInt("Max Bounces", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBounces), 0, 100);
             ImGui::SeparatorText(PSI_RANDOM " Sampling");
             const char* lightSamplerItems[] = {"Light BVH", "Uniform (Reference)"};
             int lightSampler = static_cast<int>(GEditor.rendererConfig.lightSamplerMode);

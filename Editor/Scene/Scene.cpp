@@ -1740,7 +1740,7 @@ static_assert(std::is_trivially_copyable_v<FSceneHeader>);
 static_assert(std::is_trivially_copyable_v<FSerializedMeshLOD>);
 static_assert(std::is_trivially_copyable_v<FSerializedCurve>);
 
-static constexpr uint32_t kGPUSceneRingFrameSlack = 3u;
+static constexpr uint32_t kGPUSceneRingFrameSlack = 4u;
 static constexpr uint32_t kGPUScenePersistentTexture2DBindings = 2u; // GGX LUT + Sheen LTC LUT.
 static constexpr uint32_t kGPUScenePersistentTexture3DBindings = 2u; // default SDR/HDR view LUTs.
 static constexpr uint32_t kGPUSceneDefaultTextureBindings = 2u; // _FoundationDefault Texture2D + Texture2DFloat.
