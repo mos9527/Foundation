@@ -150,7 +150,6 @@ namespace
         tables.materials[1].baseColorFactor = float4(0.2f, 0.6f, 0.9f, 1.0f);
         tables.materials[1].metallicFactor = 0.0f;
         tables.materials[1].roughnessFactor = 0.5f;
-        tables.materials[1].transmissionFactor = 1.0f;
         tables.materials[1].ior = 1.5f;
 
         tables.lights[0] = GSLight{
@@ -173,7 +172,7 @@ namespace
         Examples_ResetRenderer(ctx, RendererDesc{});
         ctx.renderer->BeginSetup();
         cfg.renderExtent = ctx.renderer->GetSwapchainExtent();
-        ubo.ptMaxBounces = 4u;
+        ubo.ptMaxBounces = 1u;
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
         if (renderer == ExampleRenderer::PathTracer)
@@ -320,7 +319,7 @@ int main(int argc, char** argv)
 
         if (paused < 0.5f || clicked)
         {
-            physics_system.Update(1.0f / 60.0f, 1, &temp_allocator, &job_system);
+            physics_system.Update(dt, 1, &temp_allocator, &job_system);
             ubo.ptAccumulatedFrames = 0u;
         }
         else
