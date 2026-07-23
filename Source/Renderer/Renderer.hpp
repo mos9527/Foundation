@@ -74,6 +74,21 @@ struct RendererUBO
     float adaptiveThreshold{0.10f}; // 0 = disabled
     float rasterRTShadowBias{0.01f};
 };
+
+struct PostprocessUBO
+{
+    float camEV{0.0f};
+    uint32_t viewLutIndex{UINT32_MAX};
+    uint32_t dbgShowOutline{0u};
+    uint32_t ptAccumulatedFrames{0u};
+    float fbWidth{1.0f};
+    float fbHeight{1.0f};
+    uint32_t outlineInstanceId{~0u};
+    float renderWidth{1.0f};   // Internal render target width
+    float renderHeight{1.0f};  // Internal render target height
+    uint32_t dbgViewFlags{0u};
+};
+
 #pragma pack(pop)
 
 inline void UpdateRendererCameraUBO(RendererUBO& ubo, uint32_t frameNumber, float4x4 const& view,
@@ -136,15 +151,34 @@ static constexpr uint32_t kPTCompileOptionEnergyCompensation = 1u << 5;
 static constexpr uint32_t kCameraProjectionPerspective = 0u;
 static constexpr uint32_t kCameraProjectionPanoramic = 1u;
 
-inline uint32_t PTPackCompileOptions(uint32_t sampler, bool forceTextureLOD0, uint32_t lightSamplerMode,
-                                    bool energyCompensation)
+struct RendererConfig
 {
-    uint32_t options = 0u;
-    options |= sampler == kPTSamplerPCG ? kPTCompileOptionSamplerPCG : kPTCompileOptionSamplerSobol;
-    options |= forceTextureLOD0 ? kPTCompileOptionForceTextureLOD0 : 0u;
-    options |= lightSamplerMode == kLightSamplerUniform ? kPTCompileOptionLightSamplerUniform : 0u;
-    options |= energyCompensation ? kPTCompileOptionEnergyCompensation : 0u;
-    return options;
+    unsigned viewFlags{kEnableRasterRTShadows};
+    unsigned materialFlags{0u};
+    unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
+    RHIExtent2D renderExtent{0u, 0u};
+    uint32_t ptSampler{kPTSamplerSobol};
+    uint32_t lightSamplerMode{kLightSamplerBVH};
+    bool const* ptRenderPaused{nullptr};
+    bool ptShaderExecutionReordering{true};
+    bool forceTextureLOD0{false};
+    bool energyCompensation{true};
+    bool ptPrimaryLightVisibility{false};
+    bool textureAnisoEnable{true};
+    float textureAnisoLevel{16.0f};
+    bool textureTrilinear{true};
+    bool isRendering{false};
+};
+
+inline RHIDeviceSampler::SamplerDesc MakeTextureSamplerDesc(RendererConfig const& cfg)
+{
+    using SamplerDesc = RHIDeviceSampler::SamplerDesc;
+    using MipmapMode = SamplerDesc::Mipmap::MipmapMode;
+    return {
+        .anisotropy = {.enable = cfg.textureAnisoEnable, .maxLevel = cfg.textureAnisoLevel},
+        .mipmap = {.mipmapMode = cfg.textureTrilinear ? MipmapMode::Linear : MipmapMode::Nearest},
+        .lod = {.max = 16.0f},
+    };
 }
 
 struct RendererResources
@@ -176,84 +210,6 @@ void BuildGPUSceneHostUpdatePass(Renderer* renderer, RendererResources& resource
 void BuildGPUSceneAccelerationStructureUpdatePass(Renderer* renderer, RendererResources& resources);;
 void BuildGPUSceneLightBVHRefitPasses(Renderer* renderer, RendererResources& resources, ResourceHandle ubo);
 
-struct RendererConfig;
-
-enum class RasterInjectionPoint : uint8_t
-{
-    AfterGBuffer,
-    BeforeLighting,
-    AfterLighting,
-    BeforePostprocess,
-};
-
-struct RasterEffectContext
-{
-    Renderer* renderer{nullptr};
-    RendererUBO* globals{nullptr};
-    GPUScene* gpu{nullptr};
-    RendererConfig const* cfg{nullptr};
-    RHIExtent2D extent{0u, 0u};
-    ResourceHandle globalUBO{kInvalidHandle};
-    ResourceHandle primitiveBuffer{kInvalidHandle};
-    ResourceHandle dynamicPrimitiveBuffer{kInvalidHandle};
-    ResourceHandle instanceBuffer{kInvalidHandle};
-    ResourceHandle materialBuffer{kInvalidHandle};
-    ResourceHandle lightBuffer{kInvalidHandle};
-    ResourceHandle tlas{kInvalidHandle};
-    ResourceHandle gbuffer0{kInvalidHandle};
-    ResourceHandle gbuffer1{kInvalidHandle};
-    ResourceHandle gbuffer2{kInvalidHandle};
-    ResourceHandle depth{kInvalidHandle};
-    ResourceHandle instanceID{kInvalidHandle};
-    ResourceHandle motionVectors{kInvalidHandle};
-    ResourceHandle hiz{kInvalidHandle};
-    ResourceHandle hizSampler{kInvalidHandle};
-    ResourceHandle diffuse{kInvalidHandle};
-    ResourceHandle specular{kInvalidHandle};
-    ResourceHandle ambientOcclusion{kInvalidHandle};
-};
-
-using RasterEffectCallback = void (*)(RasterEffectContext& ctx, void const* config);
-
-struct RasterEffect
-{
-    RasterInjectionPoint injectionPoint{RasterInjectionPoint::BeforeLighting};
-    int order{0};
-    RasterEffectCallback callback{nullptr};
-    void const* config{nullptr};
-};
-
-struct RendererConfig
-{
-    unsigned viewFlags{kEnableRasterRTShadows};
-    unsigned materialFlags{0u};
-    unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
-    RHIExtent2D renderExtent{0u, 0u};
-    Span<RasterEffect const> rasterEffects{};
-    uint32_t ptSampler{kPTSamplerSobol};
-    uint32_t lightSamplerMode{kLightSamplerBVH};
-    bool const* ptRenderPaused{nullptr};
-    bool ptShaderExecutionReordering{true};
-    bool forceTextureLOD0{false};
-    bool energyCompensation{true};
-    bool ptPrimaryLightVisibility{false};
-    bool textureAnisoEnable{true};
-    float textureAnisoLevel{16.0f};
-    bool textureTrilinear{true};
-    bool isRendering{false};
-};
-
-inline RHIDeviceSampler::SamplerDesc MakeTextureSamplerDesc(RendererConfig const& cfg)
-{
-    using SamplerDesc = RHIDeviceSampler::SamplerDesc;
-    using MipmapMode = SamplerDesc::Mipmap::MipmapMode;
-    return {
-        .anisotropy = {.enable = cfg.textureAnisoEnable, .maxLevel = cfg.textureAnisoLevel},
-        .mipmap = {.mipmapMode = cfg.textureTrilinear ? MipmapMode::Linear : MipmapMode::Nearest},
-        .lod = {.max = 16.0f},
-    };
-}
-
 struct RendererOutputs
 {
     RHIExtent2D extent{0u, 0u};
@@ -265,32 +221,3 @@ struct RendererOutputs
     ResourceHandle instanceID{kInvalidHandle};
     ResourceHandle debugOutput{kInvalidHandle};
 };
-
-struct PostprocessUBO
-{
-    float camEV{0.0f};
-    uint32_t viewLutIndex{UINT32_MAX};
-    uint32_t dbgShowOutline{0u};
-    uint32_t ptAccumulatedFrames{0u};
-    float fbWidth{1.0f};
-    float fbHeight{1.0f};
-    uint32_t outlineInstanceId{~0u};
-    float renderWidth{1.0f};   // Internal render target width
-    float renderHeight{1.0f};  // Internal render target height
-    uint32_t dbgViewFlags{0u};
-};
-
-/**
- * @brief Builds the RenderGraph for the Raster renderer.
- * @note AS updates through (@ref BuildGPUSceneAccelerationStructureUpdatePass) is already conditionally built by this pass
- */
-extern void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals,
-                                   RendererResources& gpu,
-                                   RendererConfig const& cfg, RendererOutputs& out);
-/**
- * @brief Builds the RenderGraph for the Pathtracer.
- * @note AS updates through (@ref BuildGPUSceneAccelerationStructureUpdatePass) is already conditionally built by this pass
- */
-extern void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals,
-                                       RendererResources& gpu,
-                                       RendererConfig const& cfg, RendererOutputs& out);

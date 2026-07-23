@@ -1,13 +1,12 @@
+#include "EditorState.hpp"
 #include <Core/Paths.hpp>
-#include <cmath>
+#include <ImGuizmo.h>
+#include <RenderCore/Presenter.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
 #include <Renderer/Postprocess.hpp>
-#include <Renderer/RasterEffects.hpp>
-#include "EditorGizmos.hpp"
-#include "EditorState.hpp"
-#include <RenderCore/Presenter.hpp>
+#include <cmath>
 #include <imgui.h>
-#include <ImGuizmo.h>
+#include "EditorGizmos.hpp"
 using namespace RenderUtils;
 using Foundation::Core::PathsResolve;
 
@@ -16,12 +15,9 @@ static ResourceHandle sPickResultBuffer;
 static RendererOutputs sRenderOutputs;
 static int2 sPickingPixel;
 static bool sPickingDoubleClick = false;
-static RasterEffect sEditorRasterEffects[2];
+static RasterFeature sEditorRasterEffects[2];
 
-uint32_t EditorBeginFrame(Renderer* renderer, Presenter* presenter)
-{
-    return renderer->BeginExecute(presenter);
-}
+uint32_t EditorBeginFrame(Renderer* renderer, Presenter* presenter) { return renderer->BeginExecute(presenter); }
 
 void EditorEndFrame(Renderer* renderer, Presenter* presenter)
 {
@@ -29,20 +25,11 @@ void EditorEndFrame(Renderer* renderer, Presenter* presenter)
     presenter->Present(renderer->GetRenderCompleteSemaphore().Get());
 }
 
-int SceneInstanceIndexFromId(FUUID id)
-{
-    return GEditor.HasScene() ? GEditor.Scene().InstanceIndex(id) : -1;
-}
+int SceneInstanceIndexFromId(FUUID id) { return GEditor.HasScene() ? GEditor.Scene().InstanceIndex(id) : -1; }
 
-int SceneLightIndexFromId(FUUID id)
-{
-    return GEditor.HasScene() ? GEditor.Scene().LightIndex(id) : -1;
-}
+int SceneLightIndexFromId(FUUID id) { return GEditor.HasScene() ? GEditor.Scene().LightIndex(id) : -1; }
 
-int SceneMaterialIndexFromId(FUUID id)
-{
-    return GEditor.HasScene() ? GEditor.Scene().MaterialIndex(id) : -1;
-}
+int SceneMaterialIndexFromId(FUUID id) { return GEditor.HasScene() ? GEditor.Scene().MaterialIndex(id) : -1; }
 
 bool IsSelectedInstanceValid()
 {
@@ -142,10 +129,11 @@ static Renderer* BeginEditorRendererSetup(FContext* context, uint32_t threadCoun
     desc.asyncCompute = true;
     desc.threadCount = threadCount;
     desc.pipelineCache = context->psoCache.Get();
-    auto* renderer = context->renderer = Construct<Renderer>(context->allocator, desc, context->device,
-                                                             context->swapchain, context->allocator);
+    auto* renderer = context->renderer =
+        Construct<Renderer>(context->allocator, desc, context->device, context->swapchain, context->allocator);
     if (context->swapchain.IsValid())
-        context->presenter = Construct<Presenter>(context->allocator, context->device.Get(), context->swapchain, context->allocator);
+        context->presenter =
+            Construct<Presenter>(context->allocator, context->device.Get(), context->swapchain, context->allocator);
     renderer->BeginSetup();
     return renderer;
 }
@@ -164,16 +152,17 @@ static void RefreshPostprocessState(RHIExtent2D renderExtent)
     // renderWidth/renderHeight = internal (scaled) render resolution
     GEditor.postprocessGlobals.renderWidth = static_cast<float>(renderExtent.x);
     GEditor.postprocessGlobals.renderHeight = static_cast<float>(renderExtent.y);
-    GEditor.postprocessGlobals.viewLutIndex =
-        Postprocess::ResolvePostprocessViewLutIndex(GEditor.viewLUTSdrHandle, GEditor.viewLUTHdrHandle, GContext->enableHDR);
+    GEditor.postprocessGlobals.viewLutIndex = Postprocess::ResolvePostprocessViewLutIndex(
+        GEditor.viewLUTSdrHandle, GEditor.viewLUTHdrHandle, GContext->enableHDR);
     GEditor.postprocessGlobals.dbgViewFlags = GEditor.rendererConfig.viewFlags;
 }
 
-static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer, RendererOutputs& outputs, bool isRendering)
+static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer, RendererOutputs& outputs,
+                                          bool isRendering)
 {
     CHECK(context);
     CHECK(renderer);
-    CHECK(context->gpuScene);    
+    CHECK(context->gpuScene);
     CHECK_MSG(outputs.instanceID != kInvalidHandle, "Renderer outputs missing instance ID texture");
     if (outputs.extent.x == 0u || outputs.extent.y == 0u)
         outputs.extent = ClampViewportExtent(renderer->GetSwapchainExtent());
@@ -195,14 +184,14 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(GEditor.postprocessGlobals)));
         });
 
-    auto PostprocessBuffer = renderer->CreateResource(
-        "Postprocess",
-        RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                  RHITextureUsageBits::SampledImage |
-                                  RHITextureUsageBits::TransferSource,
-                       .extent = {w, h, 1},
-                       .format = postprocessFormat});
-    sPickResultBuffer = renderer->CreateResource("Pick Result Buffer",
+    auto PostprocessBuffer = renderer->CreateResource("Postprocess",
+                                                      RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                                                         RHITextureUsageBits::SampledImage |
+                                                                         RHITextureUsageBits::TransferSource,
+                                                                     .extent = {w, h, 1},
+                                                                     .format = postprocessFormat});
+    sPickResultBuffer = renderer->CreateResource(
+        "Pick Result Buffer",
         RHIBufferDesc{.resource = {.heap = RHIDeviceHeapType::Readback,
                                    .hostAccess = RHIResourceHostAccess::ReadWrite,
                                    .coherent = true},
@@ -227,27 +216,27 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
     {
         createPSFullscreenPassRTV(
             renderer, "Editor Postprocess PT", PostprocessBuffer,
-            RHITextureViewDesc{.format = postprocessFormat,
-                               .range = RHITextureSubresourceRange::Create()},
-            {w, h},
+            RHITextureViewDesc{.format = postprocessFormat, .range = RHITextureSubresourceRange::Create()}, {w, h},
             [=](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
                               PathsResolve("Data/Shaders/EPSPostprocessPT.spv"));
-                r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = outputs.aovFormat,
-                                                     .range = RHITextureSubresourceRange::Create()});
+                r->BindTextureSRV(
+                    self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
+                    RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
                 ResourceHandle specular = outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
-                r->BindTextureSRV(self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = outputs.aovFormat,
-                                                     .range = RHITextureSubresourceRange::Create()});
+                r->BindTextureSRV(
+                    self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
+                    RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
                 r->BindBufferUniform(self, PostprocessGlobals, RHIPipelineStageBits::FragmentShader, "globalParams");
-                r->BindDescriptorSet(self, "textures3D", context->gpuScene->GetTexture3DPool()->GetDescriptorSetLayout());
+                r->BindDescriptorSet(self, "textures3D",
+                                     context->gpuScene->GetTexture3DPool()->GetDescriptorSetLayout());
                 r->BindTextureSampler(self, LUTSampler, "lutSampler");
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
-                r->CmdBindDescriptorSet(self, cmd, "textures3D", context->gpuScene->GetTexture3DPool()->GetDescriptorSet());
+                r->CmdBindDescriptorSet(self, cmd, "textures3D",
+                                        context->gpuScene->GetTexture3DPool()->GetDescriptorSet());
             });
     }
     else
@@ -257,12 +246,11 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
         {
             createPSFullscreenPassRTV(
                 renderer, "Editor Debug Blit Raster", PostprocessBuffer,
-                RHITextureViewDesc{.format = postprocessFormat,
-                                   .range = RHITextureSubresourceRange::Create()},
-                {w, h},
+                RHITextureViewDesc{.format = postprocessFormat, .range = RHITextureSubresourceRange::Create()}, {w, h},
                 [=](PassHandle self, Renderer* r)
                 {
-                    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve("Data/Shaders/PSCopy.spv"));
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                                  PathsResolve("Data/Shaders/PSCopy.spv"));
                     r->BindTextureSampler(self, CopySampler, "sampler");
                     r->BindTextureSRV(self, outputs.debugOutput, "srcTexture", RHIPipelineStageBits::FragmentShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
@@ -272,56 +260,59 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
         }
         else
         {
-        createPSFullscreenPassRTV(
-            renderer, "Editor Postprocess Raster", PostprocessBuffer,
-            RHITextureViewDesc{.format = postprocessFormat,
-                               .range = RHITextureSubresourceRange::Create()},
-            {w, h},
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                              PathsResolve("Data/Shaders/EPSPostprocess.spv"));
-                CHECK_MSG(outputs.diffuse != kInvalidHandle, "Raster postprocess missing diffuse output");
-                ResourceHandle specular = outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
-                r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = outputs.aovFormat,
-                                                     .range = RHITextureSubresourceRange::Create(
-                                                         RHITextureAspectFlagBits::Color, 0, 1)});
-                r->BindTextureSRV(self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = outputs.aovFormat,
-                                                     .range = RHITextureSubresourceRange::Create(
-                                                         RHITextureAspectFlagBits::Color, 0, 1)});
-                r->BindBufferUniform(self, PostprocessGlobals, RHIPipelineStageBits::FragmentShader, "globalParams");
-                r->BindDescriptorSet(self, "textures3D", context->gpuScene->GetTexture3DPool()->GetDescriptorSetLayout());
-                r->BindTextureSampler(self, LUTSampler, "lutSampler");
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                r->CmdBindDescriptorSet(self, cmd, "textures3D", context->gpuScene->GetTexture3DPool()->GetDescriptorSet());
-            });
+            createPSFullscreenPassRTV(
+                renderer, "Editor Postprocess Raster", PostprocessBuffer,
+                RHITextureViewDesc{.format = postprocessFormat, .range = RHITextureSubresourceRange::Create()}, {w, h},
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                                  PathsResolve("Data/Shaders/EPSPostprocess.spv"));
+                    CHECK_MSG(outputs.diffuse != kInvalidHandle, "Raster postprocess missing diffuse output");
+                    ResourceHandle specular = outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
+                    r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
+                                      RHITextureViewDesc{.format = outputs.aovFormat,
+                                                         .range = RHITextureSubresourceRange::Create(
+                                                             RHITextureAspectFlagBits::Color, 0, 1)});
+                    r->BindTextureSRV(self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
+                                      RHITextureViewDesc{.format = outputs.aovFormat,
+                                                         .range = RHITextureSubresourceRange::Create(
+                                                             RHITextureAspectFlagBits::Color, 0, 1)});
+                    r->BindBufferUniform(self, PostprocessGlobals, RHIPipelineStageBits::FragmentShader,
+                                         "globalParams");
+                    r->BindDescriptorSet(self, "textures3D",
+                                         context->gpuScene->GetTexture3DPool()->GetDescriptorSetLayout());
+                    r->BindTextureSampler(self, LUTSampler, "lutSampler");
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    r->CmdBindDescriptorSet(self, cmd, "textures3D",
+                                            context->gpuScene->GetTexture3DPool()->GetDescriptorSet());
+                });
         }
     }
 
     auto BlitSampler = renderer->CreateSampler({
-        .addressMode = {
-            .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
-            .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
-            .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
-        },
+        .addressMode =
+            {
+                .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+            },
         .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear, RHIDeviceSampler::SamplerDesc::Filter::Linear},
     });
     createPSFullscreenPass(
         renderer, "Editor Blit",
         [=](PassHandle self, Renderer* r)
         {
-            const int kViewInteractive = 1 << 0; 
+            const int kViewInteractive = 1 << 0;
             uint flags{};
             if (!isRendering)
                 flags |= kViewInteractive;
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve("Data/Shaders/EPSBlit.spv"), AsBytes(AsSpan(flags)));
-            r->BindTextureSRV(self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = postprocessFormat,
-                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve("Data/Shaders/EPSBlit.spv"),
+                          AsBytes(AsSpan(flags)));
+            r->BindTextureSRV(
+                self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,
+                RHITextureViewDesc{.format = postprocessFormat, .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, BlitSampler, "displaySampler");
             r->BindTextureSRV(self, outputs.instanceID, "instanceIDBuffer", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
@@ -331,9 +322,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
             r->BindBufferUniform(self, PostprocessGlobals, RHIPipelineStageBits::FragmentShader, "globalParams");
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, sPickingPixel);
-        });
+        { r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, sPickingPixel); });
     auto [screenWidth, screenHeight] = renderer->GetSwapchainExtent();
     if (!isRendering)
         EditorGizmos::InsertPass(renderer, outputs.depth, {screenWidth, screenHeight});
@@ -357,15 +346,12 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
     RHIExtent2D renderExtent = ClampViewportExtent(renderer->GetSwapchainExtent());
     GEditor.viewport.renderExtent = renderExtent; // display extent (for mouse mapping)
     // Apply render resolution scale for internal render targets
-    RHIExtent2D scaledExtent = {
-        std::max(16u, static_cast<uint32_t>(renderExtent.x * GEditor.renderResolutionScale)),
-        std::max(16u, static_cast<uint32_t>(renderExtent.y * GEditor.renderResolutionScale))
-    };
+    RHIExtent2D scaledExtent = {std::max(16u, static_cast<uint32_t>(renderExtent.x * GEditor.renderResolutionScale)),
+                                std::max(16u, static_cast<uint32_t>(renderExtent.y * GEditor.renderResolutionScale))};
     GEditor.rendererConfig.renderExtent = scaledExtent;
     size_t rasterEffectCount = 0;
     if (GEditor.rasterGTAO)
-        sEditorRasterEffects[rasterEffectCount++] = MakeRasterGTAOEffect(&GEditor.rasterGTAOConfig);
-    GEditor.rendererConfig.rasterEffects = Span<const RasterEffect>(sEditorRasterEffects, rasterEffectCount);
+        sEditorRasterEffects[rasterEffectCount++] = GTAOFeature(&GEditor.rasterGTAOConfig);
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
     auto gpuResources = CreateGPUSceneRendererResources(renderer, context->gpuScene);
     BuildGPUSceneHostUpdatePass(renderer, gpuResources);
@@ -374,7 +360,8 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
     if (GEditor.rendererMode == ERendererMode::PathTracer)
         BuildPathTracerRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs);
     if (GEditor.rendererMode == ERendererMode::Raster)
-        BuildRasterRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs);
+        BuildRasterRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs,
+                               sEditorRasterEffects);
     InsertEditorPostprocessPasses(context, renderer, outOutputs, GEditor.rendererConfig.isRendering);
     EndEditorRendererSetup(renderer);
 }
@@ -469,10 +456,8 @@ static void FRunning()
     float dt = ImGui::GetIO().DeltaTime;
     RHIExtent2D displayExtent = ClampViewportExtent(GEditor.viewport.renderExtent);
     // Apply render resolution scale for internal render targets
-    RHIExtent2D renderExtent = {
-        std::max(16u, static_cast<uint32_t>(displayExtent.x * GEditor.renderResolutionScale)),
-        std::max(16u, static_cast<uint32_t>(displayExtent.y * GEditor.renderResolutionScale))
-    };
+    RHIExtent2D renderExtent = {std::max(16u, static_cast<uint32_t>(displayExtent.x * GEditor.renderResolutionScale)),
+                                std::max(16u, static_cast<uint32_t>(displayExtent.y * GEditor.renderResolutionScale))};
     GEditor.camera.aspect = static_cast<float>(displayExtent.x) / static_cast<float>(displayExtent.y);
     GEditor.cameraUpdated |= GEditor.camera.UpdateMovement(dt);
     GEditor.camera.Update({});
@@ -483,16 +468,14 @@ static void FRunning()
     GEditor.shaderGlobals.camPosition = float4(GEditor.camera.position, 0);
     GEditor.shaderGlobals.camDirection = float4(GEditor.camera.rot * float3(0, 0, -1), 0);
     GEditor.shaderGlobals.aperture = GEditor.aperture.dofEnabled
-        ? ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm * 1e-3f,
-                                  GEditor.camera.fovY)
+        ? ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm * 1e-3f, GEditor.camera.fovY)
         : 0.0f;
     GEditor.shaderGlobals.dbgViewFlags = GEditor.rendererConfig.viewFlags;
     GEditor.shaderGlobals.dbgMaterialFlags = GEditor.rendererConfig.materialFlags;
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
     GEditor.shaderGlobals.ptPrimaryLightVisibility = GEditor.rendererConfig.ptPrimaryLightVisibility ? 1u : 0u;
 
-    bool animationChanged =
-        GEditor.animation && GEditor.animation->Tick(dt, renderer->GetFrame());
+    bool animationChanged = GEditor.animation && GEditor.animation->Tick(dt, renderer->GetFrame());
     if (animationChanged)
         GEditor.shaderGlobals.ptAccumulatedFrames = 0;
 
@@ -522,9 +505,8 @@ static void FRunning()
         uint32_t id = *pPickResultBuffer->Map<uint32_t>();
         // The pick id is a TLAS instanceID, which equals the committed instance index
         // (the editor commits instances 1:1 in scene-row order).
-        uint32_t pickedInstance = (id != ~0u && GContext->gpuScene)
-            ? GContext->gpuScene->InstanceFromTLAS(id)
-            : UINT32_MAX;
+        uint32_t pickedInstance =
+            (id != ~0u && GContext->gpuScene) ? GContext->gpuScene->InstanceFromTLAS(id) : UINT32_MAX;
 
         auto selectLight = [&](int light)
         {
@@ -582,8 +564,7 @@ static void FRunning()
         GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
 
     // If the sample limit is reached, auto-pause the render.
-    if (GEditor.rendererMode == ERendererMode::PathTracer &&
-        !GEditor.renderTask.renderPaused &&
+    if (GEditor.rendererMode == ERendererMode::PathTracer && !GEditor.renderTask.renderPaused &&
         GEditor.renderTask.autoPauseSampleLimit > 0)
     {
         uint32_t completed = GEditor.shaderGlobals.ptAccumulatedFrames;
@@ -596,9 +577,10 @@ static void FRunning()
     sPrevPTAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
 }
 
-static void FRenderingEnter() { 
+static void FRenderingEnter()
+{
     GEditor.rendererConfig.isRendering = true;
-    FRunningEnter();  // Rebuild graph
+    FRunningEnter(); // Rebuild graph
     GEditor.state = FERendering;
 }
 
@@ -696,14 +678,13 @@ bool EditorProcessEvent(SDL_Event* event)
     ImGui_ImplFoundation_ProcessEvent(event);
     auto& io = ImGui::GetIO();
     bool isRelative = SDL_GetWindowRelativeMouseMode(GContext->window);
-    bool rightMouseEvent =
-        (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_RIGHT) ||
+    bool rightMouseEvent = (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_RIGHT) ||
         (event->type == SDL_EVENT_MOUSE_BUTTON_UP && event->button.button == SDL_BUTTON_RIGHT) ||
         (event->type == SDL_EVENT_MOUSE_MOTION && (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_RMASK));
     bool gizmoOver = GEditor.gizmo.showImGuizmo && ImGuizmo::IsOver();
     bool gizmoUsing = GEditor.gizmo.showImGuizmo && ImGuizmo::IsUsing();
-    bool viewportMouse = ViewportAcceptsMouse(*event) ||
-        (rightMouseEvent && gizmoOver && ViewportContainsMouse(*event));
+    bool viewportMouse =
+        ViewportAcceptsMouse(*event) || (rightMouseEvent && gizmoOver && ViewportContainsMouse(*event));
     bool gizmoBlocksMouse = gizmoUsing || (gizmoOver && !rightMouseEvent);
     static bool sViewportRightDown = false;
     static bool sViewportRightDragged = false;
@@ -757,19 +738,32 @@ bool EditorProcessEvent(SDL_Event* event)
             bool pressed = (event->type == SDL_EVENT_KEY_DOWN);
             switch (event->key.key)
             {
-            case SDLK_W: GEditor.camera.keyW = pressed; break;
-            case SDLK_A: GEditor.camera.keyA = pressed; break;
-            case SDLK_S: GEditor.camera.keyS = pressed; break;
-            case SDLK_D: GEditor.camera.keyD = pressed; break;
-            case SDLK_LSHIFT: case SDLK_RSHIFT: GEditor.camera.keyShift = pressed; break;
-            default: break;
+            case SDLK_W:
+                GEditor.camera.keyW = pressed;
+                break;
+            case SDLK_A:
+                GEditor.camera.keyA = pressed;
+                break;
+            case SDLK_S:
+                GEditor.camera.keyS = pressed;
+                break;
+            case SDLK_D:
+                GEditor.camera.keyD = pressed;
+                break;
+            case SDLK_LSHIFT:
+            case SDLK_RSHIFT:
+                GEditor.camera.keyShift = pressed;
+                break;
+            default:
+                break;
             }
         }
     }
     else
     {
         // When ImGui wants the keyboard, clear all movement key states to prevent stuck keys
-        GEditor.camera.keyW = GEditor.camera.keyA = GEditor.camera.keyS = GEditor.camera.keyD = GEditor.camera.keyShift = false;
+        GEditor.camera.keyW = GEditor.camera.keyA = GEditor.camera.keyS = GEditor.camera.keyD =
+            GEditor.camera.keyShift = false;
     }
     return false;
 }

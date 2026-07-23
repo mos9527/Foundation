@@ -1,11 +1,11 @@
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
-#include <algorithm>
 #include <Core/Paths.hpp>
+#include <algorithm>
 #include <limits>
 #include "GPUScene.hpp"
-#include "Renderer.hpp"
+#include "Rasterizer.hpp"
 using namespace Foundation;
 using namespace RenderUtils;
 #pragma pack(push, 1)
@@ -43,18 +43,18 @@ constexpr size_t kMaxCurveDraws = 4096; // curve (DOTS) instances drawn per fram
 constexpr size_t kDisableRTBuildFlags = kViewOverdraw | kViewMeshlet | kViewBaseColor | kViewNormal | kViewPosition | kViewMatcap;
 constexpr RHIResourceFormat kGBufferNormalFormat = RHIResourceFormat::A2B10G10R10Unorm;
 
-static void RunRasterEffects(RasterEffectContext& ctx, RasterInjectionPoint point)
+static void BuildRasterFeature(RasterFeatureContext& ctx, RasterInjectionPoint point, Span<const RasterFeature> features)
 {
     int lastOrder = std::numeric_limits<int>::min();
     for (;;)
     {
         int nextOrder = std::numeric_limits<int>::max();
-        for (RasterEffect const& effect : ctx.cfg->rasterEffects)
+        for (RasterFeature const& effect : features)
             if (effect.callback && effect.injectionPoint == point && effect.order > lastOrder)
                 nextOrder = std::min(nextOrder, effect.order);
         if (nextOrder == std::numeric_limits<int>::max())
             break;
-        for (RasterEffect const& effect : ctx.cfg->rasterEffects)
+        for (RasterFeature const& effect : features)
             if (effect.callback && effect.injectionPoint == point && effect.order == nextOrder)
                 effect.callback(ctx, effect.config);
         lastOrder = nextOrder;
@@ -62,7 +62,7 @@ static void RunRasterEffects(RasterEffectContext& ctx, RasterInjectionPoint poin
 }
 
 void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
-                            RendererConfig const& cfg, RendererOutputs& out)
+                            RendererConfig const& cfg, RendererOutputs& out, Span<const RasterFeature> features)
 {
     CHECK(renderer);
     CHECK(globals);
@@ -735,7 +735,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
             }
         });
-        RasterEffectContext effectCtx{
+        RasterFeatureContext effectCtx{
             .renderer = renderer,
             .globals = globals,
             .gpu = gpu.scene,
@@ -759,8 +759,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             .diffuse = DiffuseBuffer,
             .specular = SpecularBuffer,
         };
-        RunRasterEffects(effectCtx, RasterInjectionPoint::AfterGBuffer);
-        RunRasterEffects(effectCtx, RasterInjectionPoint::BeforeLighting);
+        BuildRasterFeature(effectCtx, RasterInjectionPoint::AfterGBuffer, features);
+        BuildRasterFeature(effectCtx, RasterInjectionPoint::BeforeLighting, features);
         bool hasAmbientOcclusion = effectCtx.ambientOcclusion != kInvalidHandle;
         if (!hasAmbientOcclusion)
         {
@@ -834,7 +834,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu.textures3D->GetDescriptorSet());
                 r->CmdDispatch(self, cmd, {w, h, 1});
             });
-        RunRasterEffects(effectCtx, RasterInjectionPoint::AfterLighting);
+        BuildRasterFeature(effectCtx, RasterInjectionPoint::AfterLighting, features);
         out.diffuse = effectCtx.diffuse;
         out.specular = effectCtx.specular;
     }

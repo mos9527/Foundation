@@ -1,19 +1,12 @@
-#include <Core/Paths.hpp>
-#include <algorithm>
-#include "RasterEffects.hpp"
-using namespace Foundation;
-using namespace Foundation::Core;
-using namespace Foundation::RenderCore;
+#include "GTAO.hpp"
 
-namespace
-{
 constexpr RHIResourceFormat kGBufferNormalFormat = RHIResourceFormat::A2B10G10R10Unorm;
 constexpr RHIResourceFormat kAOFormat = RHIResourceFormat::R16Unorm;
 
-void BuildRasterGTAO(RasterEffectContext& ctx, void const* configPtr)
+void GTAOFeatureCallback(RasterFeatureContext& ctx, void const* configPtr)
 {
     CHECK(configPtr);
-    auto* config = static_cast<RasterGTAOConfig const*>(configPtr);
+    auto* config = static_cast<GTAOConfig const*>(configPtr);
     auto* renderer = ctx.renderer;
     uint32_t w = ctx.extent.x;
     uint32_t h = ctx.extent.y;
@@ -36,17 +29,16 @@ void BuildRasterGTAO(RasterEffectContext& ctx, void const* configPtr)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSGTAO.spv"));
             r->BindBufferUniform(self, ctx.globalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindTextureSRV(self, ctx.gbuffer1, "RT1", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = kGBufferNormalFormat,
-                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(
+                self, ctx.gbuffer1, "RT1", RHIPipelineStageBits::ComputeShader,
+                RHITextureViewDesc{.format = kGBufferNormalFormat, .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(
                 self, ctx.depth, "depth", RHIPipelineStageBits::ComputeShader,
                 RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
             r->BindTextureUAV(self, HalfAO, "aoOutput", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = kAOFormat,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(RasterGTAOConfig));
+                              RHITextureViewDesc{.format = kAOFormat, .range = RHITextureSubresourceRange::Create()});
+            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(GTAOConfig));
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
@@ -62,15 +54,13 @@ void BuildRasterGTAO(RasterEffectContext& ctx, void const* configPtr)
             r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSGTAOUpsample.spv"));
             r->BindBufferUniform(self, ctx.globalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindTextureSRV(self, HalfAO, "halfAO", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = kAOFormat,
-                                                 .range = RHITextureSubresourceRange::Create()});
+                              RHITextureViewDesc{.format = kAOFormat, .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(
                 self, ctx.depth, "depth", RHIPipelineStageBits::ComputeShader,
                 RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
             r->BindTextureUAV(self, AO, "aoOutput", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = kAOFormat,
-                                                 .range = RHITextureSubresourceRange::Create()});
+                              RHITextureViewDesc{.format = kAOFormat, .range = RHITextureSubresourceRange::Create()});
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
@@ -79,16 +69,4 @@ void BuildRasterGTAO(RasterEffectContext& ctx, void const* configPtr)
         });
 
     ctx.ambientOcclusion = AO;
-}
-
-} // namespace
-
-RasterEffect MakeRasterGTAOEffect(RasterGTAOConfig const* config)
-{
-    return RasterEffect{
-        .injectionPoint = RasterInjectionPoint::BeforeLighting,
-        .order = 0,
-        .callback = BuildRasterGTAO,
-        .config = config,
-    };
 }

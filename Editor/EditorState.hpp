@@ -3,7 +3,9 @@
 #include <cmath>
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Postprocess.hpp>
-#include <Renderer/RasterEffects.hpp>
+#include <Renderer/Rasterizer.hpp>
+#include <Renderer/Pathtracer.hpp>
+#include <Renderer/Rasterizer/GTAO.hpp>
 #include "Camera.hpp"
 #include "Editor.hpp"
 #include "Runtime/GPUScene.hpp"
@@ -163,7 +165,7 @@ struct EditorState
     bool            cameraUpdated = true;
     float           renderResolutionScale = 1.0f; // 0.25 .. 1.0
     bool            rasterGTAO = true;
-    RasterGTAOConfig rasterGTAOConfig{};
+    GTAOConfig rasterGTAOConfig{};
 
     [[nodiscard]] bool HasScene() const { return scene.has_value(); }
     FImportedScene& Scene()

@@ -1,7 +1,4 @@
-// GPU auto-differentiation demo: BC7-style block compression via gradient descent.
-// Ports NVIDIA Falcor's TinyBC sample. A compute pass jointly optimizes BC interpolation
-// weights and endpoints per 4x4 tile using reverse-mode autodiff (__bwd_diff) and Adam,
-// then the decoded (compressed->decompressed) result is blitted to the screen.
+// GPU BC7-style block compression via gradient descent. Port of NVIDIA Falcor's TinyBC sample.
 #include <RenderUtils/CSDebugText.hpp>
 #include "Examples.hpp"
 #include <stb_image.h>

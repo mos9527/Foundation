@@ -3,7 +3,19 @@
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <algorithm>
 #include "GPUScene.hpp"
-#include "Renderer.hpp"
+#include "Pathtracer.hpp"
+
+uint32_t PackCompileOptions(uint32_t sampler, bool forceTextureLOD0, uint32_t lightSamplerMode,
+                              bool energyCompensation)
+{
+    uint32_t options = 0u;
+    options |= sampler == kPTSamplerPCG ? kPTCompileOptionSamplerPCG : kPTCompileOptionSamplerSobol;
+    options |= forceTextureLOD0 ? kPTCompileOptionForceTextureLOD0 : 0u;
+    options |= lightSamplerMode == kLightSamplerUniform ? kPTCompileOptionLightSamplerUniform : 0u;
+    options |= energyCompensation ? kPTCompileOptionEnergyCompensation : 0u;
+    return options;
+}
+
 void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
                                 RendererConfig const& cfg, RendererOutputs& out)
 {
@@ -102,7 +114,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
             r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
             r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "AS");
             const uint ptCompileOptions =
-                PTPackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode, cfg.energyCompensation);
+                PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode, cfg.energyCompensation);
             const auto shader = PathsResolve(!shaderExecutionReordering ? "Data/Shaders/ERTPathTracer.spv"
                                                                         : "Data/Shaders/ERTPathTracer_SER.spv");
             if (shaderExecutionReordering)

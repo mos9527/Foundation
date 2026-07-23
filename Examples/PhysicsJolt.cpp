@@ -16,6 +16,8 @@
 #include "Examples.hpp"
 
 #include <Renderer/Mesh.hpp>
+#include <Renderer/Rasterizer.hpp>
+#include <Renderer/Pathtracer.hpp>
 
 JPH_SUPPRESS_WARNINGS
 using namespace JPH;

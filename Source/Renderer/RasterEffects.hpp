@@ -1,7 +1,7 @@
 #pragma once
 #include "Renderer.hpp"
 
-struct RasterGTAOConfig
+struct GTAOConfig
 {
     float radiusPixels{36.0f};
     float radiusWorld{2.0f};
@@ -11,4 +11,4 @@ struct RasterGTAOConfig
     uint32_t stepCount{6u};
 };
 
-RasterEffect MakeRasterGTAOEffect(RasterGTAOConfig const* config);
+RasterFeature GTAOFeature(GTAOConfig const* config);

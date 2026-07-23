@@ -3111,7 +3111,7 @@ void FRunningImGui()
                     ImGui::PushID("GTAO");
                     changed |= ImGui::Checkbox("Enable GTAO", &GEditor.rasterGTAO);
                     ImGui::BeginDisabled(!GEditor.rasterGTAO);
-                    RasterGTAOConfig& gtao = GEditor.rasterGTAOConfig;
+                    GTAOConfig& gtao = GEditor.rasterGTAOConfig;
                     ImGui::SliderFloat("Radius Pixels", &gtao.radiusPixels, 4.0f, 96.0f, "%.0f");
                     ImGui::SliderFloat("Radius World", &gtao.radiusWorld, 0.1f, 8.0f, "%.2f");
                     ImGui::SliderFloat("Intensity", &gtao.intensity, 0.0f, 6.0f, "%.2f");

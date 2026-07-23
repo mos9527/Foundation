@@ -3,7 +3,8 @@
 #include "Examples.hpp"
 
 #include <RenderCore/Presenter.hpp>
-#include <Renderer/RasterEffects.hpp>
+#include <Renderer/Rasterizer.hpp>
+#include <Renderer/Rasterizer/GTAO.hpp>
 #include <algorithm>
 #include <argh.h>
 #include <cmath>
@@ -601,12 +602,12 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     ExampleVulkanContext ctx{};
 
     auto app = ConstructUnique<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
-    auto device = app->CreateDevice({.id = static_cast<uint32_t>(gpuId)});    
+    auto device = app->CreateDevice({.id = static_cast<uint32_t>(gpuId)});
     if (!headless)
         CHECK(Examples_CreateSwapchain(window, device.Get(), ctx.surface, ctx.swapchain))
     if (ctx.swapchain.IsValid())
         ctx.presenter = ConstructUnique<Presenter>(GLOBAL_ALLOC, device.Get(), ctx.swapchain, GLOBAL_ALLOC);
-    
+
     String psoCachePath;
     psoCachePath = PipelineCachePathForDevice(*device.Get());
     ClearStalePipelineCaches(psoCachePath);
@@ -619,7 +620,7 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     ctx.app = std::move(app);
     ctx.device = std::move(device);
 
-    desc.pipelineCache = ctx.psoCache.Get();    
+    desc.pipelineCache = ctx.psoCache.Get();
     Examples_ResetRenderer(ctx, desc);
     return ctx;
 }
@@ -793,7 +794,8 @@ bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& cu
     StringView text = currentRenderer == ExampleRenderer::Raster ? "[ RASTERIZER ]" : "[ PATH TRACER ]";
     if (Examples_Button(input, text))
     {
-        currentRenderer = currentRenderer == ExampleRenderer::Raster ? ExampleRenderer::PathTracer : ExampleRenderer::Raster;
+        currentRenderer =
+            currentRenderer == ExampleRenderer::Raster ? ExampleRenderer::PathTracer : ExampleRenderer::Raster;
         changed = true;
     }
     return changed;
@@ -943,11 +945,12 @@ ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs
         return kInvalidHandle;
     }
 
-    auto postprocess = renderer->CreateResource(
-        "Final Image", RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::SampledImage |
-                                           RHITextureUsageBits::TransferSource,
-                                       .extent = {w, h, 1},
-                                       .format = kOutputFormat});
+    auto postprocess = renderer->CreateResource("Final Image",
+                                                RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                                                   RHITextureUsageBits::SampledImage |
+                                                                   RHITextureUsageBits::TransferSource,
+                                                               .extent = {w, h, 1},
+                                                               .format = kOutputFormat});
     createPSFullscreenPassRTV(
         renderer, "Final Blit To Image", postprocess,
         RHITextureViewDesc{.format = kOutputFormat, .range = RHITextureSubresourceRange::Create()}, postprocessSetup);
@@ -967,7 +970,7 @@ FImportedMesh Examples_MakePlaneMesh(float extent, float y, Allocator* alloc)
         float3(h, y, h),
     };
     float2 const uvs[4] = {float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 1)};
-    
+
     mesh.vertices.resize(4);
     for (uint32_t i = 0; i < 4; ++i)
     {
@@ -979,10 +982,10 @@ FImportedMesh Examples_MakePlaneMesh(float extent, float y, Allocator* alloc)
         src.uv = uvs[i];
         mesh.vertices[i] = src;
     }
-    
+
     mesh.lods.emplace_back(alloc);
     mesh.lods[0].indices.resize(6);
-    mesh.lods[0].indices = { 0, 2, 1, 1, 2, 3 };
+    mesh.lods[0].indices = {0, 2, 1, 1, 2, 3};
     return mesh;
 }
 
@@ -1050,44 +1053,44 @@ FImportedMesh Examples_MakeBoxMesh(float size, Allocator* alloc)
 FImportedMesh Examples_MakeSphereMesh(float radius, uint32_t segments, uint32_t rings, Allocator* alloc)
 {
     FImportedMesh mesh(alloc);
-    
+
     uint32_t vertexCount = (rings + 1) * (segments + 1);
     uint32_t indexCount = rings * segments * 6;
-    
+
     mesh.vertices.resize(vertexCount);
     mesh.lods.emplace_back(alloc);
     mesh.lods[0].indices.resize(indexCount);
-    
+
     uint32_t v = 0;
     for (uint32_t r = 0; r <= rings; ++r)
     {
         float v_uv = static_cast<float>(r) / static_cast<float>(rings);
         float phi = v_uv * glm::pi<float>();
-        
+
         for (uint32_t s = 0; s <= segments; ++s)
         {
             float u_uv = static_cast<float>(s) / static_cast<float>(segments);
             float theta = u_uv * 2.0f * glm::pi<float>();
-            
+
             float x = std::cos(theta) * std::sin(phi);
             float y = std::cos(phi);
             float z = std::sin(theta) * std::sin(phi);
-            
+
             FVertex& vert = mesh.vertices[v++];
             vert.position = float3(x, y, z) * radius;
             vert.normal = float3(x, y, z);
-            
+
             float3 tangent(-std::sin(theta), 0.0f, std::cos(theta));
             if (length(tangent) > 0.0001f)
                 vert.tangent = normalize(tangent);
             else
                 vert.tangent = float3(1, 0, 0);
-            
+
             vert.bitangentSign = 1.0f;
             vert.uv = float2(u_uv, v_uv);
         }
     }
-    
+
     uint32_t i = 0;
     for (uint32_t r = 0; r < rings; ++r)
     {
@@ -1097,34 +1100,27 @@ FImportedMesh Examples_MakeSphereMesh(float radius, uint32_t segments, uint32_t 
             uint32_t v1 = v0 + 1;
             uint32_t v2 = v0 + (segments + 1);
             uint32_t v3 = v2 + 1;
-            
+
             mesh.lods[0].indices[i++] = v0;
             mesh.lods[0].indices[i++] = v2;
             mesh.lods[0].indices[i++] = v1;
-            
+
             mesh.lods[0].indices[i++] = v1;
             mesh.lods[0].indices[i++] = v2;
             mesh.lods[0].indices[i++] = v3;
         }
     }
-    
-    
+
+
     return mesh;
 }
 
-void Example_BuildExampleRasterRenderGraph(Renderer* renderer, RendererUBO* globals,
-                                           RendererResources& gpu,
+void Example_BuildExampleRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
                                            RendererConfig& cfg, RendererOutputs& out)
 {
-    static const RasterGTAOConfig gtaoConfig{};
-    
-    // Copy existing effects and append GTAO
-    std::vector<RasterEffect> effects;
-    for (auto const& effect : cfg.rasterEffects)
-        effects.push_back(effect);
-    
-    effects.push_back(MakeRasterGTAOEffect(&gtaoConfig));
-    cfg.rasterEffects = Span<RasterEffect const>(effects.data(), effects.size());
-    
-    BuildRasterRenderGraph(renderer, globals, gpu, cfg, out);
+    static const GTAOConfig gtaoConfig{};
+
+    RasterFeature features[] = {GTAOFeature(&gtaoConfig)};
+
+    BuildRasterRenderGraph(renderer, globals, gpu, cfg, out, features);
 }

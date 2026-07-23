@@ -3,6 +3,8 @@
 #include <Editor/Runtime/GPUScene.hpp>
 #include <RenderCore/ImmediateContext.hpp> // For ImmediateReadback
 #include <Renderer/Renderer.hpp>
+#include <Renderer/Rasterizer.hpp>
+#include <Renderer/Pathtracer.hpp>
 #include <algorithm>
 #include <argh.h>
 #include <cctype>

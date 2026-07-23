@@ -2,7 +2,8 @@
 #include <Renderer/Mesh.hpp>
 #include <algorithm>
 #include "Examples.hpp"
-
+#include <Renderer/Rasterizer.hpp>
+#include <Renderer/Pathtracer.hpp>
 namespace
 {
     constexpr uint32_t kWaterQuads = 64u;
