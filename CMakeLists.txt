@@ -36,6 +36,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
     add_compile_options("/Zc:preprocessor")
     add_compile_options("/utf-8")    
+    add_compile_options("/GR-")    
     add_compile_options(
         "$<$<CONFIG:Release>:/Gy>"
         "$<$<CONFIG:Release>:/Gw>"
@@ -47,6 +48,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     )
 else()
     add_compile_options("-Wall")
+    add_compile_options("-fno-rtti")
     # Statically link all MinGW runtime libs (libgcc, libstdc++, winpthread, atomic, etc.)
     if (WIN32)
         add_link_options(-static)

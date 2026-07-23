@@ -20,6 +20,8 @@ if (FOUNDATION_WITH_JOLT_EXAMPLES)
     set(TARGET_VIEWER OFF CACHE BOOL "" FORCE)
     set(USE_ASSERTS OFF CACHE BOOL "" FORCE)
     set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(CPP_RTTI_ENABLED OFF CACHE BOOL "" FORCE)
+
     FetchContent_MakeAvailable(JoltPhysics)
     
     add_example(ExampleRenderer_JoltPhysics "JoltPhysics.cpp")
