@@ -1,5 +1,6 @@
 #include "JobSystem.hpp"
 #include <cassert>
+#include <tracy/Tracy.hpp>
 #include <tracy/TracyC.h>
 
 namespace Foundation::Core
@@ -743,6 +744,8 @@ namespace Foundation::Core
         JobSystem* previousSystem = std::exchange(gExecutingJobSystem, this);
         try
         {
+            ZoneScoped;
+            ZoneName(node.name.data(), node.name.size());
             JobContext context(workerId, &node.cancellation);
             node.callable->Execute(context);
             Finish(job, node.cancellation.load(std::memory_order_acquire) ? JobStatus::Cancelled

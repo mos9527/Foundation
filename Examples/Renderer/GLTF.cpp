@@ -67,6 +67,30 @@ void ApplySceneCamera(FImportedScene const& scene, RendererUBO& ubo, FExampleOrb
     }
 }
 
+ResourceHandle RebuildGraph(ExampleVulkanContext& ctx, RendererUBO& ubo, GPUScene& gpu, RendererConfig& cfg,
+                            RendererOutputs& outputs, ExampleInputState& input, ExampleRenderer renderer,
+                            bool headless, float scaling = 1.0f)
+{
+    if (!headless)
+        Examples_ResetRenderer(ctx, RendererDesc{});
+    ctx.renderer->BeginSetup();
+    if (!headless)
+    {
+        auto const swapExtent = ctx.renderer->GetSwapchainExtent();
+        cfg.renderExtent = RHIExtent2D{float2(swapExtent.x, swapExtent.y) * scaling};
+    }
+    auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
+    if (renderer == ExampleRenderer::PathTracer)
+        Example_BuildExamplePathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
+    else
+        Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
+    ResourceHandle output = Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, !headless);
+    if (!headless)
+        RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
+    ctx.renderer->EndSetup();
+    return output;
+}
+
 int main(int argc, char** argv)
 {
     // --- Command line ---------------------------------------------------------------------
@@ -133,15 +157,14 @@ int main(int argc, char** argv)
         RendererOutputs outputs{};
         ApplySceneCamera(scene, ubo, camera);
         CommitSceneToGPU(scene, gpu, resources, ubo);
+        ExampleInputState input{};
+        ExampleRenderer renderer = ExampleRenderer::PathTracer;
         if (headless)
         {
-            ctx.renderer->BeginSetup();
             cfg.renderExtent = RHIExtent2D{renderWidth, renderHeight};
-            auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
-            Example_BuildExamplePathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
-            const ResourceHandle output = Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, false);
-            ctx.renderer->EndSetup();
-            // Accumalate
+            const ResourceHandle output =
+                RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, renderer, true /* headless */);
+            // Accumulate
             gpu.Join();
             for (uint32_t f = 0; f < sampleCount; ++f)
             {
@@ -183,9 +206,8 @@ int main(int argc, char** argv)
         }
         else
         {
-            ExampleInputState input{};
             ExampleFpsCounter fps;
-            uint64_t t0 = SDL_GetTicksNS();            
+            uint64_t t0 = SDL_GetTicksNS();
 #if defined(__ANDROID__)
             // TDRs are...expected otherwise
             float scaling = 0.10f;
@@ -194,7 +216,6 @@ int main(int argc, char** argv)
 #endif
             float maxSamples = 0u;
             bool paused = false;
-            ExampleRenderer renderer = ExampleRenderer::PathTracer;
             cfg.ptRenderPaused = &paused;
             while (true)
             {
@@ -206,36 +227,25 @@ int main(int argc, char** argv)
                     break;
                 if (camera.Update(input, dt) /* moved */)
                     ubo.ptAccumulatedFrames = 0u, paused = false;
-                else
-                    if (!paused) 
-                        ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
+                else if (!paused)
+                    ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
                 if (input.wantResizeOrRebuild)
                 {
                     input.wantResizeOrRebuild = paused = false;
                     ubo.ptAccumulatedFrames = 0u;
-                    Examples_ResetRenderer(ctx, RendererDesc{});
-                    ctx.renderer->BeginSetup();      
-                    renderWidth = ctx.renderer->GetSwapchainExtent().x;
-                    renderHeight = ctx.renderer->GetSwapchainExtent().y;
-                    cfg.renderExtent = RHIExtent2D{float2(renderWidth, renderHeight) * scaling};
-                    auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
-                    if (renderer == ExampleRenderer::PathTracer)
-                        Example_BuildExamplePathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
-                    else
-                        Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
-                    Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
-                    RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
-                    ctx.renderer->EndSetup();
-                }                
+                    RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, renderer, false /* headless */, scaling);
+                }
                 Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
                 CommitSceneToGPU(scene, gpu, resources, ubo);
                 // Debug Text
                 Examples_Text(input,
-                              fmt::format("{} meshes, {} instances, {} textures   {:.0f} FPS {} Samples", scene.GetMeshes().size(),
-                                          scene.GetInstances().size(), scene.GetTextures().size(), fps.Update(), ubo.ptAccumulatedFrames));
+                              fmt::format("{} meshes, {} instances, {} textures   {:.0f} FPS {} Samples",
+                                          scene.GetMeshes().size(), scene.GetInstances().size(),
+                                          scene.GetTextures().size(), fps.Update(), ubo.ptAccumulatedFrames));
                 if (Examples_RendererSwitchButton(input, renderer))
                     input.wantResizeOrRebuild = true;
-                input.wantResizeOrRebuild |= Examples_Slider(input, "Resolution", scaling, 0.10f, 1.0f, 0.05f, "x", false);
+                input.wantResizeOrRebuild |=
+                    Examples_Slider(input, "Resolution", scaling, 0.10f, 1.0f, 0.05f, "x", false);
                 if (Examples_Slider(input, "Samples", maxSamples, 0.0f, 128.0f, 1.0f))
                 {
                     ubo.ptAccumulatedFrames = 0u;

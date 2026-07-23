@@ -1514,7 +1514,7 @@ void Renderer::WaitForFrame()
 
 void Renderer::WaitAndResetCurrentSync()
 {
-    ZoneScopedN("Wait for Sync Slot");
+    ZoneScopedN("Wait for GPU");
     Vector<RHIDeviceFence*> wait(mAllocator);
     wait.reserve(2);
     if (mSetup && mSetup->executionAnyGraphics)
