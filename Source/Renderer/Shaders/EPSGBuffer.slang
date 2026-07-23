@@ -38,7 +38,7 @@ Fragment drawTextureLOD(V2F input)
     {
         uint width, height;
         textures[NonUniformResourceIndex(material.baseColorTexture)].GetDimensions(width, height);
-        float mipLevel = (flags & kForceTextureLOD0) != 0
+        float mipLevel = (flags & uint32_t(ViewFlagsBits.ForceTextureLOD0)) != 0
             ? 0.0f
             : ApproximateMipLevelFromUVGradient(ddx(input.uv), ddy(input.uv), width, height);
         color = VisualizeApproximateMipLevel(mipLevel);
@@ -52,7 +52,7 @@ Fragment drawTextureLOD(V2F input)
 
 float4 SampleMaterialTexture(uint textureIndex, float2 uv)
 {
-    if ((flags & kForceTextureLOD0) != 0)
+    if ((flags & uint32_t(ViewFlagsBits.ForceTextureLOD0)) != 0)
         return textures[NonUniformResourceIndex(textureIndex)].SampleLevel(textureSampler, uv, 0);
     return textures[NonUniformResourceIndex(textureIndex)].Sample(textureSampler, uv);
 }
@@ -64,7 +64,7 @@ Fragment drawGBuffer(V2F input){
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
         baseColor *= SampleMaterialTexture(material.baseColorTexture, input.uv);
-    if ((materialFlags & kMaterialDbgWhiteBaseColor) != 0u)
+    if ((materialFlags & uint32_t(MaterialFlagsBits.DbgWhiteBaseColor)) != 0u)
         baseColor = float4(1.0f, 1.0f, 1.0f, baseColor.a);
     // TODO TODO TODO Actual transparency pipeline    
     if (baseColor.a < 0.5f)
@@ -96,13 +96,13 @@ import glsl; // https://github.com/shader-slang/slang/issues/4120
 Fragment main(V2F input, float2 fragCoord : SV_Position /* pixel space */)
 {
     Fragment output;
-    if ((flags & kViewMeshlet) != 0)
+    if ((flags & uint32_t(ViewFlagsBits.Meshlet)) != 0)
         output = drawMeshlet(input);
-    else if ((flags & kViewTextureLOD) != 0)
+    else if ((flags & uint32_t(ViewFlagsBits.TextureLOD)) != 0)
         output = drawTextureLOD(input);
     else
         output = drawGBuffer(input);
-    if ((flags & kViewOverdraw) != 0)
+    if ((flags & uint32_t(ViewFlagsBits.Overdraw)) != 0)
         imageAtomicAdd(overdraw, int2(fragCoord), 1);
     return output;
 }

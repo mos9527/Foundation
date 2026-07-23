@@ -40,8 +40,9 @@ constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
 constexpr size_t kMaxCurveDraws = 4096; // curve (DOTS) instances drawn per frame (raster)
-constexpr size_t kDisableRTBuildFlags = kViewOverdraw | kViewMeshlet | kViewBaseColor | kViewNormal | kViewPosition | kViewMatcap;
-constexpr RHIResourceFormat kGBufferNormalFormat = RHIResourceFormat::A2B10G10R10Unorm;
+const ViewFlags kDisableRTBuildFlags = ViewFlagsBits::Overdraw | ViewFlagsBits::Meshlet | ViewFlagsBits::BaseColor |
+                                           ViewFlagsBits::Normal | ViewFlagsBits::Position | ViewFlagsBits::Matcap;
+const RHIResourceFormat kGBufferNormalFormat = RHIResourceFormat::A2B10G10R10Unorm;
 
 static void BuildRasterFeature(RasterFeatureContext& ctx, RasterInjectionPoint point, Span<const RasterFeature> features)
 {
@@ -136,12 +137,16 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             cmd->FillBuffer(counter, 0u);
         });
     bool disableRT = cfg.viewFlags & kDisableRTBuildFlags;
-    bool useRTShadows = (cfg.viewFlags & kEnableRasterRTShadows) && !disableRT && hasTLAS;
+    bool useRTShadows = (cfg.viewFlags & ViewFlagsBits::EnableRasterRTShadows) && !disableRT && hasTLAS;
     // Shadows require AS updates
     if (useRTShadows)
         BuildGPUSceneAccelerationStructureUpdatePass(renderer, gpu);
-    uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~kEnableRasterRTShadows);
-    uint32_t gbufferFlags = cfg.viewFlags | (cfg.forceTextureLOD0 ? kForceTextureLOD0 : 0u);
+    uint32_t lightingViewFlags =
+        useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~ViewFlagsBits::EnableRasterRTShadows);
+    ViewFlags gbufferViewFlags = cfg.viewFlags;
+    if (cfg.forceTextureLOD0)
+        gbufferViewFlags |= ViewFlagsBits::ForceTextureLOD0;
+    uint32_t gbufferFlags = gbufferViewFlags;
     renderer->CreatePass(
         "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -246,7 +251,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                        .format = RHIResourceFormat::R16G16SignedFloat});
     auto ReduceBuffer = renderer->CreateResource(
         "Reduced Values", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 256});
-    if (cfg.viewFlags & kViewOverdraw)
+    if (cfg.viewFlags & ViewFlagsBits::Overdraw)
     {
         renderer->CreatePass(
             "Clear Overdraw+Reduce Buffer", RHIDeviceQueueType::Compute, 0u,
@@ -295,11 +300,11 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 RHIDeviceQueueType::Graphics, 0u,
                 [=](PassHandle self, Renderer* r)
                 {
-                    int flags = cfg.cullFlags;
+                    uint32_t flags = cfg.cullFlags;
                     if (early)
-                        flags |= kCullStageEarly;
+                        flags |= to_integer(CullFlagsBits::StageEarly);
                     else
-                        flags |= kCullStageLate;
+                        flags |= to_integer(CullFlagsBits::StageLate);
                     r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSCullMeshlets.spv"),
                                   AsBytes(AsSpan(flags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
@@ -392,7 +397,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
                     cmd->EndGraphics();
                 });
-            if (early && cfg.cullFlags & kCullOcclusion)
+            if (early && cfg.cullFlags & CullFlagsBits::Occlusion)
             {
                 // TODO: Single pass currently present higher register pressure than expected (72 VGPRs?)
                 //       Figure out where I messed up.                
@@ -410,7 +415,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             }
         };
         AddCullPass(true), AddMainPass(true);
-        if (cfg.cullFlags & kCullOcclusion)
+        if (cfg.cullFlags & CullFlagsBits::Occlusion)
             AddCullPass(false), AddMainPass(false);
     }
     /* Dynamic (CPU-updateable) geometry: drawn outside the meshlet pipeline (no DAG/meshlets)
@@ -665,7 +670,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {w, h, 1});
         });
-    if (cfg.viewFlags & kViewOverdraw)
+    if (cfg.viewFlags & ViewFlagsBits::Overdraw)
     {
         renderer->CreatePass(
             "Overdraw CS Reduce", RHIDeviceQueueType::Compute, 0u,
@@ -688,7 +693,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
     }
     ResourceHandle DebugOutput = kInvalidHandle;
     // Debug views
-    if (cfg.viewFlags & kViewOverdraw)
+    if (cfg.viewFlags & ViewFlagsBits::Overdraw)
     {
         DebugOutput = renderer->CreateResource(
             "Overdraw Debug Output",
@@ -793,7 +798,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             "Lighting", RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r)
             {
-                uint32_t lightingFlags = lightingViewFlags | (hasAmbientOcclusion ? kEnableRasterAmbientOcclusion : 0u);
+                uint32_t lightingFlags = lightingViewFlags | (hasAmbientOcclusion ? to_integer(ViewFlagsBits::EnableRasterAmbientOcclusion) : 0u);
                 r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSLighting.spv"),
                               AsBytes(AsSpan(lightingFlags)));
                 r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");

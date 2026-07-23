@@ -12,7 +12,7 @@ uniform PostprocessUBO globalParams;
 
 float3 LoadPTPostprocessRadiance(int3 coord)
 {
-    if ((globalParams.dbgViewFlags & kViewAOVSampleCount) != 0)
+    if ((globalParams.dbgViewFlags & uint32_t(ViewFlagsBits.AOVSampleCount)) != 0)
     {
         float samples = diffuseTex.Load(coord).a;
         float maxSamples = float(globalParams.ptAccumulatedFrames);
@@ -24,9 +24,9 @@ float3 LoadPTPostprocessRadiance(int3 coord)
             ratio < 0.5f ? 1.0f - ratio * 2.0f : 0.0f
         );
     }
-    if ((globalParams.dbgViewFlags & kViewAOVDiffuse) != 0)
+    if ((globalParams.dbgViewFlags & uint32_t(ViewFlagsBits.AOVDiffuse)) != 0)
         return diffuseTex.Load(coord).xyz;
-    if ((globalParams.dbgViewFlags & kViewAOVSpecular) != 0)
+    if ((globalParams.dbgViewFlags & uint32_t(ViewFlagsBits.AOVSpecular)) != 0)
         return specularTex.Load(coord).xyz;
     return diffuseTex.Load(coord).xyz + specularTex.Load(coord).xyz;
 }
@@ -39,7 +39,10 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     
     PostprocessInfo pp;
     pp.Exposure = globalParams.camEV;
-    if ((globalParams.dbgViewFlags & (kViewBaseColor | kViewNormal | kViewPosition | kViewTextureLOD | kViewAOVSampleCount)) != 0)
+    uint32_t debugViews = uint32_t(ViewFlagsBits.BaseColor) | uint32_t(ViewFlagsBits.Normal) |
+                          uint32_t(ViewFlagsBits.Position) | uint32_t(ViewFlagsBits.TextureLOD) |
+                          uint32_t(ViewFlagsBits.AOVSampleCount);
+    if ((globalParams.dbgViewFlags & debugViews) != 0)
         pp.Exposure = 0.0f;
 
     return float4(Postprocess(src, pp, textures3D[NonUniformResourceIndex(globalParams.viewLutIndex)], lutSampler), 1.0f);

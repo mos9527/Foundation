@@ -660,7 +660,7 @@ void ComputeAnalyticalLightBounds(GSLight const& light, float3& aabbMin, float3&
         aabbMin = bounds.minPoint;
         aabbMax = bounds.maxPoint;
         center = light.position;
-        if ((light.flags & kGSLightFlagTwoSided) == 0u)
+        if ((light.flags & to_integer(GSLightFlagsBits::TwoSided)) == 0u)
         {
             coneDirection = normalize(light.direction);
             cosConeAngle = 1.0f;
@@ -677,7 +677,7 @@ void ComputeAnalyticalLightBounds(GSLight const& light, float3& aabbMin, float3&
         aabbMin = bounds.minPoint;
         aabbMax = bounds.maxPoint;
         center = light.position;
-        if ((light.flags & kGSLightFlagTwoSided) == 0u)
+        if ((light.flags & to_integer(GSLightFlagsBits::TwoSided)) == 0u)
         {
             coneDirection = normalize(light.direction);
             cosConeAngle = 1.0f;

@@ -337,7 +337,7 @@ public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
     if (globalParams.lights.count == 0u || lightIndex >= globalParams.lights.count)
         return 0.0f;
 
-    if ((ptCompileOptions & kPTCompileOptionLightSamplerUniform) != 0u)
+    if ((ptCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u)
         return 1.0f / float(globalParams.lights.count);
 
     float3 posW = ctx.p();
@@ -378,7 +378,7 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
     if (globalParams.lights.count == 0u)
         return false;
 
-    if ((ptCompileOptions & kPTCompileOptionLightSamplerUniform) != 0u)
+    if ((ptCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u)
     {
         uint n = globalParams.lights.count;
         lightIndex = min(uint(u * float(n)), n - 1u);

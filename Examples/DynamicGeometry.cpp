@@ -51,8 +51,9 @@ namespace
             {
                 uint32_t meshOffset = 0;
                 uint32_t meshType = 0;
-                resources.scene->ResolveGeometry(state->water, meshOffset, meshType);
-                CHECK(meshType & kGSInstanceFlagDynamic);
+                GSInstanceFlags meshFlags;
+                resources.scene->ResolveGeometry(state->water, meshOffset, meshType, meshFlags);
+                CHECK(meshFlags & GSInstanceFlagsBits::Dynamic);
                 GerstnerPush push{.vertexOffset = static_cast<uint32_t>(meshOffset + sizeof(GSMesh)),
                                   .indexOffset = static_cast<uint32_t>(meshOffset + sizeof(GSMesh) + kWaterVerts * sizeof(FQVertex)),
                                   .gridQuads = kWaterQuads,
@@ -159,10 +160,10 @@ int main(int argc, char** argv)
     }
 
     RendererUBO ubo{};
-    RendererConfig cfg{.cullFlags{kCullFrustum | kCullBackface}};
+    RendererConfig cfg{.cullFlags{CullFlagsBits::Frustum | CullFlagsBits::Backface}};
     GerstnerState gerstner{.water = water};
     if (!ctx.device->GetCapabilities().raytracingInline)
-        cfg.viewFlags &= ~kEnableRasterRTShadows;
+        cfg.viewFlags &= ~ViewFlagsBits::EnableRasterRTShadows;
 
     FExampleOrbitCamera camera{.center = {0.0f, 0.0f, 0.0f},
                                .radius = 2.0f,

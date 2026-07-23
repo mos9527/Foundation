@@ -5,14 +5,15 @@
 #include "GPUScene.hpp"
 #include "Pathtracer.hpp"
 
-uint32_t PackCompileOptions(uint32_t sampler, bool forceTextureLOD0, uint32_t lightSamplerMode,
+uint32_t PackCompileOptions(PTSampler sampler, bool forceTextureLOD0, LightSampler lightSamplerMode,
                               bool energyCompensation)
 {
     uint32_t options = 0u;
-    options |= sampler == kPTSamplerPCG ? kPTCompileOptionSamplerPCG : kPTCompileOptionSamplerSobol;
-    options |= forceTextureLOD0 ? kPTCompileOptionForceTextureLOD0 : 0u;
-    options |= lightSamplerMode == kLightSamplerUniform ? kPTCompileOptionLightSamplerUniform : 0u;
-    options |= energyCompensation ? kPTCompileOptionEnergyCompensation : 0u;
+    options |= sampler == PTSampler::PCG ? to_integer(PTCompileOptionsBits::SamplerPCG)
+                                         : to_integer(PTCompileOptionsBits::SamplerSobol);
+    options |= forceTextureLOD0 ? to_integer(PTCompileOptionsBits::ForceTextureLOD0) : 0u;
+    options |= lightSamplerMode == LightSampler::Uniform ? to_integer(PTCompileOptionsBits::LightSamplerUniform) : 0u;
+    options |= energyCompensation ? to_integer(PTCompileOptionsBits::EnergyCompensation) : 0u;
     return options;
 }
 
@@ -44,7 +45,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
         });
     CHECK(gpu.tlas != kInvalidHandle && "Pathtracer requires a TLAS to be built/updated from.");
     BuildGPUSceneAccelerationStructureUpdatePass(renderer, gpu);
-    if (cfg.lightSamplerMode == kLightSamplerBVH)
+    if (cfg.lightSamplerMode == LightSampler::BVH)
         BuildGPUSceneLightBVHRefitPasses(renderer, gpu, GlobalUBO);
     ResourceHandle TLAS = gpu.tlas;
     /* Instance and Primitive buffers */

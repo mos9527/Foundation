@@ -86,7 +86,7 @@ void ComputeLightBounds(GSLight light, out float3 aabbMin, out float3 aabbMax, o
         float3 c3 = light.position - u - v;
         aabbMin = min(min(c0, c1), min(c2, c3));
         aabbMax = max(max(c0, c1), max(c2, c3));
-        if ((light.flags & kGSLightFlagTwoSided) == 0u)
+        if ((light.flags & uint32_t(GSLightFlagsBits.TwoSided)) == 0u)
         {
             coneDirection = SafeNormalize(light.direction);
             cosConeAngle = 1.0f;
@@ -101,7 +101,7 @@ void ComputeLightBounds(GSLight light, out float3 aabbMin, out float3 aabbMax, o
         float3 c3 = light.position - light.dpdu - light.dpdv;
         aabbMin = min(min(c0, c1), min(c2, c3));
         aabbMax = max(max(c0, c1), max(c2, c3));
-        if ((light.flags & kGSLightFlagTwoSided) == 0u)
+        if ((light.flags & uint32_t(GSLightFlagsBits.TwoSided)) == 0u)
         {
             coneDirection = SafeNormalize(light.direction);
             cosConeAngle = 1.0f;

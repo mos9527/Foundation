@@ -800,7 +800,8 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
               "First light must be an environment light, got {}", GSLightTypeCPU(environment));
     // When not using a HDRI, we set env's radiance to 0...so it in effect never particpates in NEE evaluation
     // and improves NEE for the rest of the lights.
-    environment.params.y = (environment.flags & kGSLightFlagEnvironmentMap) != 0u ? owner.mEnvMapAverageRadiance : 0.0f;
+    environment.params.y =
+        (environment.flags & to_integer(GSLightFlagsBits::EnvironmentMap)) != 0u ? owner.mEnvMapAverageRadiance : 0.0f;
     res.lightsHash = FNV1a64(tables.lights);
     // Resolve instance resources
     for (auto& inst : tables.instances)
@@ -808,7 +809,8 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
         Geometry* g = ResolveGeometry({inst.resourceIndex, 0u});
         CHECK_MSG(g, "Instance isn't assigned with a valid resourceIndex");
         uint32_t const resourceOffset = g->offset;
-        uint32_t const type = g->type | (g->dynamic ? kGSInstanceFlagDynamic : 0u);
+        GSInstanceFlags const flags = g->dynamic ? GSInstanceFlagsBits::Dynamic : GSInstanceFlagsBits{};
+        uint32_t const type = g->type | static_cast<uint32_t>(flags);
         inst.resourceOffset = resourceOffset;
         inst.type = type;
     }
@@ -2930,12 +2932,14 @@ GPUScene::GPUSceneTables GPUScene::BeginScene(uint32_t instanceCount, uint32_t m
 {
     return mImpl->BeginScene(instanceCount, materialCount, lightCount);
 }
-void GPUScene::ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffset, uint32_t& outPrimitiveType) const
+void GPUScene::ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffset, uint32_t& outPrimitiveType,
+                               GSInstanceFlags& outPrimitiveFlags) const
 {
     GPUSceneImpl::Geometry* g = mImpl->ResolveGeometry(handle);
     CHECK_MSG(g, "ResolveGeometry on an invalid geometry handle");
     outPrimitiveOffset = g->offset;
-    outPrimitiveType = g->type | (g->dynamic ? kGSInstanceFlagDynamic : 0u);
+    outPrimitiveType = g->type;
+    outPrimitiveFlags = g->dynamic ? GSInstanceFlagsBits::Dynamic : GSInstanceFlagsBits{};
 }
 GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables) { return mImpl->EndScene(tables); }
 void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const { mImpl->DbgGetMemoryStatistics(outStats); }

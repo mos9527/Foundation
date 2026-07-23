@@ -1,10 +1,9 @@
 import IMath;
+import IFlags;
 public static const uint kMeshWorkGroupSize = 64;
 public static const uint kMeshIndirectPerDrawMeshlets = 65536;
 public static const uint kMaterialShaderBlockPrincipled = 0;
 public static const uint kMaterialShaderBlockHair = 1;
-public static const uint kCameraProjectionPerspective = 0;
-public static const uint kCameraProjectionPanoramic = 1;
 // Definitions From C++ sources
 public struct FVertex {
     public float3 position;
@@ -92,7 +91,6 @@ public struct MIndex {
 }
 
 public static const uint32_t kGSInstanceTypeMask = 0xFFu;
-public static const uint32_t kGSInstanceFlagDynamic = 0x100u;
 public static const uint32_t kGSLightTypeMask = 0xFFu;
 public static const uint32_t kGSLightTypeEnvironment = 0u;
 public static const uint32_t kGSLightTypeDirectional = 1u;
@@ -100,11 +98,6 @@ public static const uint32_t kGSLightTypePoint = 2u;
 public static const uint32_t kGSLightTypeSpot = 3u;
 public static const uint32_t kGSLightTypeDisk = 4u;
 public static const uint32_t kGSLightTypeRect = 5u;
-public static const uint32_t kGSLightFlagTwoSided = 0x100u;
-public static const uint32_t kGSLightFlagUseShadow = 0x200u;
-public static const uint32_t kGSLightFlagEnvironmentMap = 0x400u;
-public static const uint32_t kLightSamplerBVH = 0u;
-public static const uint32_t kLightSamplerUniform = 1u;
 public struct GSInstance
 {
     // TRS
@@ -114,12 +107,12 @@ public struct GSInstance
     public uint32_t resourceOffset; // Mesh or curve set offset in the (static or dynamic) Primitive buffer (bytes)
     public uint32_t materialIndex; // In Material buffer (offset)
     public uint32_t resourceIndex; // Debug use
-    public uint32_t type; // [7:0] 0=Mesh, 1=Curve; bit 8 = dynamic (see kGSInstanceFlag*)
+    public uint32_t type; // [7:0] 0=Mesh, 1=Curve; bit 8 = dynamic
 };
 // Geometry kind (mesh/curve), ignoring feature flags.
 public uint32_t GSInstanceType(GSInstance i) { return i.type & kGSInstanceTypeMask; }
 // True when the instance's primitive data lives in the dynamic (CPU-updateable) ring buffer.
-public bool GSInstanceIsDynamic(GSInstance i) { return (i.type & kGSInstanceFlagDynamic) != 0u; }
+public bool GSInstanceIsDynamic(GSInstance i) { return (i.type & uint32_t(GSInstanceFlagsBits.Dynamic)) != 0u; }
 public struct GSCurveSet
 {
     public GSOffsetCount vertices;
@@ -206,7 +199,7 @@ public struct MeshletTaskWork
 };
 public struct GSLight
 {
-    public uint32_t flags;      // type in low byte; see kGSLightFlag*
+    public uint32_t flags;      // type in low byte; see GSLightFlagsBits
     public float3 color;        // Normalized RGB color
     public float power;         // Radiant power (type-dependent unit)
     public float3 position;
@@ -244,7 +237,7 @@ public float ComputeLightProposalWeight(GSLight light) {
         float area = type == kGSLightTypeDisk
             ? Pi * light.params.x * light.params.y
             : 4.0f * length(cross(light.dpdu, light.dpdv));
-        float sides = GSLightHasFlag(light, kGSLightFlagTwoSided) ? 2.0f : 1.0f;
+        float sides = GSLightHasFlag(light, uint32_t(GSLightFlagsBits.TwoSided)) ? 2.0f : 1.0f;
         return radiometricWeight * area * Pi * sides;
     }
     return 0.0f;

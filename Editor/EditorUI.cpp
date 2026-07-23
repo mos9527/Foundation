@@ -2583,10 +2583,10 @@ void FRunningImGui()
         int cameraProjection = static_cast<int>(GEditor.shaderGlobals.cameraProjection);
         if (ImGui::Combo("Projection", &cameraProjection, projectionItems, IM_ARRAYSIZE(projectionItems)))
         {
-            GEditor.shaderGlobals.cameraProjection = static_cast<uint32_t>(cameraProjection);
+            GEditor.shaderGlobals.cameraProjection = to_integer(static_cast<CameraProjection>(cameraProjection));
             GEditor.cameraUpdated = true;
         }
-        bool perspectiveCamera = GEditor.shaderGlobals.cameraProjection == kCameraProjectionPerspective;
+        bool perspectiveCamera = GEditor.shaderGlobals.cameraProjection == to_integer(CameraProjection::Perspective);
         if (perspectiveCamera)
             GEditor.cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GEditor.camera.fovY);
         else
@@ -3053,7 +3053,7 @@ void FRunningImGui()
             int lightSampler = static_cast<int>(GEditor.rendererConfig.lightSamplerMode);
             if (ImGui::Combo("Light Sampler", &lightSampler, lightSamplerItems, 2))
             {
-                GEditor.rendererConfig.lightSamplerMode = static_cast<uint32_t>(lightSampler);
+                GEditor.rendererConfig.lightSamplerMode = static_cast<LightSampler>(lightSampler);
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
@@ -3075,7 +3075,7 @@ void FRunningImGui()
             int ptSampler = static_cast<int>(GEditor.rendererConfig.ptSampler);
             if (ImGui::Combo("Sampler", &ptSampler, samplerItems, 2))
             {
-                GEditor.rendererConfig.ptSampler = static_cast<uint32_t>(ptSampler);
+                GEditor.rendererConfig.ptSampler = static_cast<PTSampler>(ptSampler);
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;                
                 GEditor.state = FERunningEnter;
             }
@@ -3090,16 +3090,16 @@ void FRunningImGui()
             changed |= ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0);
             {
                 const char* names[] = {"Overdraw", "Meshlet", "Matcap"};
-                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMatcap};
+                const ViewFlagsBits values[] = {ViewFlagsBits::Overdraw, ViewFlagsBits::Meshlet, ViewFlagsBits::Matcap};
                 ImGui::SeparatorText(PSI_EYE_OPEN " Raster Debug View");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, names, values, true /* solo */);
             }
             {
                 const char* items[] = {"RT Shadows"};
-                const unsigned values[] = {kEnableRasterRTShadows};
+                const ViewFlagsBits values[] = {ViewFlagsBits::EnableRasterRTShadows};
                 ImGui::SeparatorText(PSI_COG " Options");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values);
-                ImGui::BeginDisabled((GEditor.rendererConfig.viewFlags & kEnableRasterRTShadows) == 0u);
+                ImGui::BeginDisabled((GEditor.rendererConfig.viewFlags & ViewFlagsBits::EnableRasterRTShadows) == 0u);
                 ImGui::SliderFloat("RT Shadow Bias", &GEditor.shaderGlobals.rasterRTShadowBias,
                                    0.0f, 0.05f, "%.4f");
                 ImGui::EndDisabled();
@@ -3126,7 +3126,7 @@ void FRunningImGui()
                     ImGui::PopID();
                 }                
             }
-            if ((GEditor.rendererConfig.viewFlags & kViewMatcap) != 0u)
+            if ((GEditor.rendererConfig.viewFlags & ViewFlagsBits::Matcap) != 0u)
             {
                 ImGui::SeparatorText(PSI_TINT " Matcap");
                 if (GEditor.matcapIndex < 0 || GEditor.matcapIndex > kMatcapCount ||
@@ -3176,7 +3176,7 @@ void FRunningImGui()
             }
             {
                 const char* items[] = {"Frustum", "Occlusion"};
-                const unsigned values[] = {kCullFrustum, kCullOcclusion};
+                const CullFlagsBits values[] = {CullFlagsBits::Frustum, CullFlagsBits::Occlusion};
                 ImGui::SeparatorText(PSI_FILTER " Culling");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.cullFlags, items, values);
             }
@@ -3185,17 +3185,19 @@ void FRunningImGui()
         {
             {
                 const char* items[] = {"Diffuse Buffer", "Specular Buffer", "Sample Count (Heatmap)"};
-                const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular, kViewAOVSampleCount};
+                const ViewFlagsBits values[] = {ViewFlagsBits::AOVDiffuse, ViewFlagsBits::AOVSpecular,
+                                                ViewFlagsBits::AOVSampleCount};
                 ImGui::SeparatorText(PSI_EYE_OPEN " AOV View");
                 if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
                 {
-                    GEditor.rendererConfig.viewFlags &= ~kViewTextureLOD;
+                    GEditor.rendererConfig.viewFlags &= ~ViewFlagsBits::TextureLOD;
                 }
             }
         }
         {
             const char* items[] = {"BaseColor", "Normal", "Position", "Texture LOD"};
-            const unsigned values[] = {kViewBaseColor, kViewNormal, kViewPosition, kViewTextureLOD};
+            const ViewFlagsBits values[] = {ViewFlagsBits::BaseColor, ViewFlagsBits::Normal, ViewFlagsBits::Position,
+                                            ViewFlagsBits::TextureLOD};
             ImGui::SeparatorText(PSI_BUG " Debug View");
             if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
             {
@@ -3207,7 +3209,7 @@ void FRunningImGui()
         }
         {
             const char* items[] = {"White Base Color"};
-            const unsigned values[] = {kMaterialDbgWhiteBaseColor};
+            const MaterialFlagsBits values[] = {MaterialFlagsBits::DbgWhiteBaseColor};
             ImGui::SeparatorText(PSI_ADJUST " Material Debug");
             if (ImBitmaskOptionPicker(GEditor.rendererConfig.materialFlags, items, values, true /* solo */))
             {

@@ -2,6 +2,7 @@
 #include <Math/Math.hpp>
 #include <RenderCore/Renderer.hpp>
 #include "GPUScene.hpp"
+#include "Shaders/Flags.h"
 using namespace Foundation;
 using namespace Foundation::Math;
 using namespace Foundation::RenderCore;
@@ -108,57 +109,14 @@ inline void UpdateRendererCameraUBO(RendererUBO& ubo, uint32_t frameNumber, floa
 }
 
 
-static const int kViewOverdraw = 1 << 0;
-static const int kViewMeshlet = 1 << 1;
-static const int kViewBaseColor = 1 << 2;
-static const int kViewNormal = 1 << 3;
-
-static const int kViewPosition = 1 << 5;
-static const int kViewMatcap = 1 << 6;
-static const int kViewTextureLOD = 1 << 7;
-
-// Per-lobe AOV view flags (Diffuse / Specular)
-static const int kViewAOVDiffuse  = 1 << 8;
-static const int kViewAOVSpecular = 1 << 9;
-static const int kViewAOVSampleCount = 1 << 10;
-
-// Material debug flags
-static const int kMaterialDbgWhiteBaseColor = 1 << 0;
-
-static const int kEnableRasterRTShadows = 1 << 16;
-static const int kEnableRasterAmbientOcclusion = 1 << 17;
-static const int kForceTextureLOD0 = 1 << 24;
-
-static const int kCullFrustum = 1 << 0;
-static const int kCullOcclusion = 1 << 1;
-static const int kCullBackface = 1 << 2;
-
-static const int kCullStageEarly = 1 << 16;
-static const int kCullStageLate = 1 << 17;
-
-static constexpr uint32_t kPTSamplerPCG = 0u;
-static constexpr uint32_t kPTSamplerSobol = 1u;
-
-static constexpr uint32_t kLightSamplerBVH = 0u;
-static constexpr uint32_t kLightSamplerUniform = 1u;
-
-static constexpr uint32_t kPTCompileOptionSamplerSobol = 1u << 1;
-static constexpr uint32_t kPTCompileOptionSamplerPCG = 1u << 2;
-static constexpr uint32_t kPTCompileOptionForceTextureLOD0 = 1u << 3;
-static constexpr uint32_t kPTCompileOptionLightSamplerUniform = 1u << 4;
-static constexpr uint32_t kPTCompileOptionEnergyCompensation = 1u << 5;
-
-static constexpr uint32_t kCameraProjectionPerspective = 0u;
-static constexpr uint32_t kCameraProjectionPanoramic = 1u;
-
 struct RendererConfig
 {
-    unsigned viewFlags{kEnableRasterRTShadows};
-    unsigned materialFlags{0u};
-    unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
+    ViewFlags viewFlags{ViewFlagsBits::EnableRasterRTShadows};
+    MaterialFlags materialFlags{0u};
+    CullFlags cullFlags{CullFlagsBits::Frustum | CullFlagsBits::Occlusion | CullFlagsBits::Backface};
     RHIExtent2D renderExtent{0u, 0u};
-    uint32_t ptSampler{kPTSamplerSobol};
-    uint32_t lightSamplerMode{kLightSamplerBVH};
+    PTSampler ptSampler{PTSampler::Sobol};
+    LightSampler lightSamplerMode{LightSampler::BVH};
     bool const* ptRenderPaused{nullptr};
     bool ptShaderExecutionReordering{true};
     bool forceTextureLOD0{false};

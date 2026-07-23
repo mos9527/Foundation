@@ -14,12 +14,6 @@ import IMaterial;
 import IMath;
 import IBxDF;
 
-// Packed path-tracer compile options. Must match Renderer.hpp.
-static const uint kPTCompileOptionSamplerSobol = 1u << 1;
-static const uint kPTCompileOptionSamplerPCG = 1u << 2;
-static const uint kPTCompileOptionForceTextureLOD0 = 1u << 3;
-static const uint kPTCompileOptionLightSamplerUniform = 1u << 4;
-static const uint kPTCompileOptionEnergyCompensation = 1u << 5;
 [[SpecializationConstant]] uint ptCompileOptions;
 
 uniform UBO globalParams;
@@ -625,7 +619,7 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out fl
     return PrincipledMaterial(
         baseColor4.xyz, pbrMetalRough.z, pbrMetalRough.y,
         material.ior, specularFactor, transmission,
-        (ptCompileOptions & kPTCompileOptionEnergyCompensation) != 0u, wo,
+        (ptCompileOptions & uint32_t(PTCompileOptionsBits.EnergyCompensation)) != 0u, wo,
         subsurface, material.subsurfaceColor, material.subsurfaceRadius, material.subsurfaceScale,
         anisotropyStrength, specularColorFactor, globalParams.ggxLutEIndex, globalParams.ggxLutEavgIndex, globalParams.ggxLutEIORIndex, globalParams.ggxLutEIORavgIndex, globalParams.ggxLutEIORInvIndex, globalParams.ggxLutEIORInvavgIndex,
         sheenWeight, sheenRoughness, sheenTint, globalParams.sheenLtcIndex,
@@ -636,7 +630,7 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out fl
 
 float4 SampleMaterialTexture(uint textureIndex, float2 uv, float2 uvDX, float2 uvDY)
 {
-    if ((ptCompileOptions & kPTCompileOptionForceTextureLOD0) != 0)
+    if ((ptCompileOptions & uint32_t(PTCompileOptionsBits.ForceTextureLOD0)) != 0)
         return textures[NonUniformResourceIndex(textureIndex)].SampleLevel(textureSampler, uv, 0);
     return textures[NonUniformResourceIndex(textureIndex)].SampleGrad(textureSampler, uv, uvDX, uvDY);
 }
@@ -652,7 +646,7 @@ void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
     baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
         baseColor *= SampleMaterialTexture(material.baseColorTexture, uv, uvDX, uvDY);
-    if ((materialFlags & kMaterialDbgWhiteBaseColor) != 0u)
+    if ((materialFlags & uint32_t(MaterialFlagsBits.DbgWhiteBaseColor)) != 0u)
         baseColor = float4(1.0f, 1.0f, 1.0f, baseColor.a);    
     normalTBN = float4(0, 0, 1, 0);
     if (material.normalTexture != ~0u)
@@ -742,7 +736,7 @@ void AddRadiance(inout float3 L, float3 v, bool direct = false)
 
 bool IsPanoramicCamera()
 {
-    return globalParams.cameraProjection == kCameraProjectionPanoramic;
+    return globalParams.cameraProjection == uint32_t(CameraProjection::Panoramic);
 }
 
 float3 GeneratePanoramicRayDirection(float2 pixelSample)
@@ -839,7 +833,7 @@ CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng, bool debugVi
     float3 p1 = GeneratePrimaryRayDirection(pixelSample + float2(1.0f, 0.0f));
     cameraRay.rayCone.spreadAngle = acos(clamp(dot(p0, p1), -1.0f, 1.0f));
 
-    if ((ptCompileOptions & kPTCompileOptionForceTextureLOD0) != 0)
+    if ((ptCompileOptions & uint32_t(PTCompileOptionsBits.ForceTextureLOD0)) != 0)
     {
         cameraRay.rayCone.spreadAngle = 0.0f;
     }
@@ -853,7 +847,7 @@ float3 VisualizeTextureLOD(HitPayload payload, float2 uvDX, float2 uvDY)
     if (material.baseColorTexture == ~0u)
         return float3(0.0f);
 
-    if ((ptCompileOptions & kPTCompileOptionForceTextureLOD0) != 0)
+    if ((ptCompileOptions & uint32_t(PTCompileOptionsBits.ForceTextureLOD0)) != 0)
         return VisualizeApproximateMipLevel(0.0f);
 
     uint width, height;
@@ -1107,7 +1101,7 @@ InfiniteLight MakeEnvironmentLight(GSLight gl)
 {
     return InfiniteLight(
         SampledSpectrum(gl.color * gl.power),
-        GSLightHasFlag(gl, kGSLightFlagEnvironmentMap),
+        GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.EnvironmentMap)),
         gl.params.x,
         globalParams.envMapTextureIndex,
         globalParams.envMapMarginalCDFIndex,
@@ -1137,12 +1131,13 @@ LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
         return light.Sample_Li(ctx, u);
     }
     case kGSLightTypeDisk: {
-        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.params.xy, GSLightHasFlag(gl, kGSLightFlagTwoSided));
+        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.params.xy,
+                                    GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.TwoSided)));
         return light.Sample_Li(ctx, u);
     }
     case kGSLightTypeRect: {
         RectLight light = RectLight(Lemit, gl.position,
-            gl.dpdu, gl.dpdv, GSLightHasFlag(gl, kGSLightFlagTwoSided));
+            gl.dpdu, gl.dpdv, GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.TwoSided)));
         return light.Sample_Li(ctx, u);
     }
     default:
@@ -1163,7 +1158,8 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, float uc, float2 u)
     {
         SampledSpectrum radiance = Li.Li / (Li.pdf * selectionPMF);
         float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * selectionPMF);
-        return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist, GSLightHasFlag(gl, kGSLightFlagUseShadow));
+        return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist,
+                             GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.UseShadow)));
     }
     return LightLiSample();
 }
@@ -1397,14 +1393,16 @@ bool AddAnalyticLightHitEmission(
     }
     else if (hit.kind == HitKind::Disk)
     {
-        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.params.xy, GSLightHasFlag(gl, kGSLightFlagTwoSided));
+        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.params.xy,
+                                    GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.TwoSided)));
         float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
         Le = light.L(hitPoint, normal, float3(0), view);
         pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
     }
     else if (hit.kind == HitKind::Rect)
     {
-        RectLight light = RectLight(Lemit, gl.position, gl.dpdu, gl.dpdv, GSLightHasFlag(gl, kGSLightFlagTwoSided));
+        RectLight light =
+            RectLight(Lemit, gl.position, gl.dpdu, gl.dpdv, GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.TwoSided)));
         float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
         Le = light.L(hitPoint, normal, float3(0), view);
         pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
@@ -1463,7 +1461,7 @@ void RayGenerationImpl(uint2 pix)
         uint sampleIndex = globalParams.ptAccumulatedFrames + subSample;
 
         // PCG or Sobol
-        if ((ptCompileOptions & kPTCompileOptionSamplerPCG) != 0)
+        if ((ptCompileOptions & uint32_t(PTCompileOptionsBits.SamplerPCG)) != 0)
         {
             PCG rng = PCG(pix, sampleIndex);
             PathTrace(pix, subSample, rng);
@@ -1503,7 +1501,8 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     GSLight envLight = LoadSceneLight(0u);
     InfiniteLight env = MakeEnvironmentLight(envLight);
     DirectLightingState lighting = DirectLightingState(env);
-    const int supportDebugViewFlags = kViewBaseColor | kViewNormal | kViewPosition | kViewTextureLOD;
+    const int supportDebugViewFlags = int(uint32_t(ViewFlagsBits.BaseColor) | uint32_t(ViewFlagsBits.Normal) |
+                                          uint32_t(ViewFlagsBits.Position) | uint32_t(ViewFlagsBits.TextureLOD));
     bool hasAnyDebugView = (globalParams.dbgViewFlags & supportDebugViewFlags) != 0u;
     CameraRay cameraRay = GenerateCameraRay(pix, rng, hasAnyDebugView);
     RayDesc ray = cameraRay.ray;
@@ -1618,14 +1617,14 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         {
             specular[pix] = diffuse[pix] = float4(0.0f);
             int flag = globalParams.dbgViewFlags;
-            if ((flag & kViewBaseColor) != 0)
+            if ((flag & int(uint32_t(ViewFlagsBits.BaseColor))) != 0)
                 diffuse[pix] = float4(baseColorOut, 1.0f);
-            if ((flag & kViewNormal) != 0)
+            if ((flag & int(uint32_t(ViewFlagsBits.Normal))) != 0)
                 diffuse[pix] = float4(hitState.normal * 0.5f + 0.5f, 1.0f);
 
-            if ((flag & kViewPosition) != 0)
+            if ((flag & int(uint32_t(ViewFlagsBits.Position))) != 0)
                 diffuse[pix] = float4(hitState.position, 1.0f);
-            if ((flag & kViewTextureLOD) != 0)
+            if ((flag & int(uint32_t(ViewFlagsBits.TextureLOD))) != 0)
                 diffuse[pix] = float4(VisualizeTextureLOD(hit.raw, hitState.uvDX, hitState.uvDY), 1.0f);            
             // ...
             WritePrimaryInstanceID(pix, hit.raw.instance);

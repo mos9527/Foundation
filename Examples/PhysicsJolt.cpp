@@ -158,7 +158,7 @@ namespace
             .color = float3(0.45f, 0.55f, 0.7f),
             .power = 1.0f,
         };
-        tables.lights[1] = GSLight{.flags = kGSLightTypeDirectional | kGSLightFlagUseShadow,
+        tables.lights[1] = GSLight{.flags = kGSLightTypeDirectional | to_integer(GSLightFlagsBits::UseShadow),
                                    .color = float3(1.0f, 0.96f, 0.9f),
                                    .power = 2.0f,            
                                    .direction = float3(0.0f, -1.0f, 0.0f),
@@ -266,9 +266,9 @@ int main(int argc, char** argv)
     }
 
     RendererUBO ubo{};
-    RendererConfig cfg{.cullFlags{kCullFrustum | kCullBackface}};
+    RendererConfig cfg{.cullFlags{CullFlagsBits::Frustum | CullFlagsBits::Backface}};
     if (!ctx.device->GetCapabilities().raytracingInline)
-        cfg.viewFlags &= ~kEnableRasterRTShadows;
+        cfg.viewFlags &= ~ViewFlagsBits::EnableRasterRTShadows;
 
     FExampleOrbitCamera camera{.center = {0.0f, 5.0f, 0.0f},
                                .radius = 20.0f,

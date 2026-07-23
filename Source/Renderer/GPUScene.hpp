@@ -8,6 +8,7 @@
 #include "Curve.hpp"
 #include "Mesh.hpp"
 #include "Precompute.hpp"
+#include "Shaders/Flags.h"
 #include "Texture.hpp"
 
 using namespace Math;
@@ -23,9 +24,6 @@ inline constexpr uint32_t kSphereLightSBTOffset = 6u;
 inline constexpr uint32_t kGSInstanceTypeMesh = 0u;
 inline constexpr uint32_t kGSInstanceTypeCurve = 1u;
 inline constexpr uint32_t kGSInstanceTypeMask = 0xFFu;
-// Flags
-// TODO Opaque? Transparent? etc...
-inline constexpr uint32_t kGSInstanceFlagDynamic = 0x100u;
 // Light Flags
 inline constexpr uint32_t kGSLightTypeMask = 0xFFu;
 inline constexpr uint32_t kGSLightTypeEnvironment = 0u;
@@ -34,9 +32,6 @@ inline constexpr uint32_t kGSLightTypePoint = 2u;
 inline constexpr uint32_t kGSLightTypeSpot = 3u;
 inline constexpr uint32_t kGSLightTypeDisk = 4u;
 inline constexpr uint32_t kGSLightTypeRect = 5u;
-inline constexpr uint32_t kGSLightFlagTwoSided = 0x100u;
-inline constexpr uint32_t kGSLightFlagUseShadow = 0x200u;
-inline constexpr uint32_t kGSLightFlagEnvironmentMap = 0x400u;
 
 struct GSOffsetCount
 {
@@ -127,7 +122,7 @@ struct GSMaterial
 };
 struct GSLight
 {
-    uint32_t flags; // type in low byte; see kGSLightFlag*
+    uint32_t flags; // type in low byte; see GSLightFlagsBits
     float3 color; // Normalized RGB color
     float power; // Radiant power (type-dependent unit)
     float3 position;
@@ -250,7 +245,8 @@ public:
     };
 
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
-    void ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffset, uint32_t& outPrimitiveType) const;
+    void ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffset, uint32_t& outPrimitiveType,
+                         GSInstanceFlags& outPrimitiveFlags) const;
     UpdateResult EndScene(GPUSceneTables& tables);
 
     struct MemoryStat

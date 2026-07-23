@@ -73,10 +73,10 @@ bool projSphereAABB(float3 c /* view */, float r /* scaled */, float P00, float 
 [shader("compute")]
 [numthreads(kMeshWorkGroupSize, 1, 1)]
 void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
-    const bool early = (cullFlags & kCullStageFirst) != 0;
-    const bool late = (cullFlags & kCullStageLate) != 0;
-    const bool cullFrustum = (cullFlags & kCullFrustum) != 0;
-    const bool cullOcclusion = (cullFlags & kCullOcclusion) != 0;
+    const bool early = (cullFlags & uint32_t(CullFlagsBits.StageEarly)) != 0;
+    const bool late = (cullFlags & uint32_t(CullFlagsBits.StageLate)) != 0;
+    const bool cullFrustum = (cullFlags & uint32_t(CullFlagsBits.Frustum)) != 0;
+    const bool cullOcclusion = (cullFlags & uint32_t(CullFlagsBits.Occlusion)) != 0;
     // -- Global Load --
     uint count = inTasksCounter[0];
     uint dispatchIndex = dot(groupID, uint2(kMeshWorkGroupSize, 1)); // ID of this group, flattened    

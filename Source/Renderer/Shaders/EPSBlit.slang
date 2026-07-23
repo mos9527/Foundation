@@ -1,5 +1,5 @@
-#include "IFlags.slang"
-#include "ICommon.slang"
+import IFlags;
+import ICommon;
 
 Texture2D<uint32_t> instanceIDBuffer; // Instance ID map (R32_UINT), ~0u = no object
 RWStructuredBuffer<uint32_t> pickResult; // [0] written when fragCoord == pickPixel

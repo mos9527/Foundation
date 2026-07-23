@@ -179,7 +179,7 @@ struct LightBVHBuild
         float area = type == kGSLightTypeDisk
             ? std::numbers::pi_v<float> * light.params.x * light.params.y
             : 4.0f * length(cross(light.dpdu, light.dpdv));
-        float sides = (light.flags & kGSLightFlagTwoSided) != 0u ? 2.0f : 1.0f;
+        float sides = (light.flags & to_integer(GSLightFlagsBits::TwoSided)) != 0u ? 2.0f : 1.0f;
         return radiometricWeight * area * std::numbers::pi_v<float> * sides;
     }
     return 0.0f;

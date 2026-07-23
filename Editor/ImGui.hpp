@@ -79,6 +79,37 @@ bool ImBitmaskOptionPicker(unsigned& value, const char* (&labels)[N], const unsi
 {
     return ImBitmaskOptionPicker(value, labels, masks, N, solo, columns);
 }
+template <typename T, typename Mask, size_t N>
+bool ImBitmaskOptionPicker(T& value, const char* (&labels)[N], const Mask (&masks)[N], bool solo = false,
+                           int columns = 1)
+{
+    bool any = false;
+    for (unsigned i = 0; i < N; i++)
+    {
+        bool selected = (value & masks[i]) != 0;
+        if (ImGui::Checkbox(labels[i], &selected))
+        {
+            if (selected)
+            {
+                value |= masks[i];
+                if (solo)
+                {
+                    for (unsigned j = 0; j < N; j++)
+                    {
+                        if (j != i)
+                            value &= ~masks[j];
+                    }
+                }
+            }
+            else
+                value &= ~masks[i];
+            any = true;
+        }
+        if (i != N - 1 && (i + 1) % columns != 0)
+            ImGui::SameLine();
+    }
+    return any;
+}
 float LinearToSRGB(float linear);
 float SRGBToLinear(float srgb);
 float3 LinearToSRGB(float3 linear);

@@ -48,13 +48,13 @@ namespace Foundation::Core
 enum class T##Bits : INT_T;	\
 inline constexpr INT_T to_integer(T##Bits e) { return static_cast<INT_T>(e); } \
 using T = Foundation::Core::BitmaskEnumWrapper<T##Bits, INT_T>; \
-inline T##Bits   operator	&	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) & static_cast<INT_T>(y));	}; \
-inline T##Bits   operator	|	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) | static_cast<INT_T>(y));	}; \
-inline T##Bits   operator	^	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) ^ static_cast<INT_T>(y));	}; \
-inline T##Bits   operator	~	(T##Bits x)			        {	return static_cast<T##Bits>(~static_cast<INT_T>(x));                    	}; \
-inline T##Bits&	 operator	&=	(T##Bits& x, T##Bits y)		{	x = static_cast<T##Bits>(x & y);	return x; }; \
-inline T##Bits&	 operator	|=	(T##Bits& x, T##Bits y)		{	x = static_cast<T##Bits>(x | y);	return x; }; \
-inline T##Bits&	 operator	^=	(T##Bits& x, T##Bits y)		{	x = static_cast<T##Bits>(x ^ y);	return x; }; \
+inline constexpr T##Bits   operator	&	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) & static_cast<INT_T>(y));	}; \
+inline constexpr T##Bits   operator	|	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) | static_cast<INT_T>(y));	}; \
+inline constexpr T##Bits   operator	^	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) ^ static_cast<INT_T>(y));	}; \
+inline constexpr T##Bits   operator	~	(T##Bits x)			        {	return static_cast<T##Bits>(~static_cast<INT_T>(x));                    	}; \
+inline constexpr T##Bits&	 operator	&=	(T##Bits& x, T##Bits y)		{	x = static_cast<T##Bits>(x & y);	return x; }; \
+inline constexpr T##Bits&	 operator	|=	(T##Bits& x, T##Bits y)		{	x = static_cast<T##Bits>(x | y);	return x; }; \
+inline constexpr T##Bits&	 operator	^=	(T##Bits& x, T##Bits y)		{	x = static_cast<T##Bits>(x ^ y);	return x; }; \
 enum class T##Bits : INT_T {
 
 #define BITMASK_ENUM_END() };

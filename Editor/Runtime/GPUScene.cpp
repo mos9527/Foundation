@@ -135,9 +135,9 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu)
     dst = GSLight{};
     dst.flags = static_cast<uint32_t>(src.type);
     if (src.twoSided)
-        dst.flags |= kGSLightFlagTwoSided;
+        dst.flags |= to_integer(GSLightFlagsBits::TwoSided);
     if (src.useShadow)
-        dst.flags |= kGSLightFlagUseShadow;
+        dst.flags |= to_integer(GSLightFlagsBits::UseShadow);
     dst.color = src.color;
     dst.power = src.power;
     dst.position = src.transform.transform;
@@ -184,7 +184,7 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu)
         dst.color = hasEnvMap ? float3(1.0f) : src.color;
         dst.power = src.power;
         if (hasEnvMap)
-            dst.flags |= kGSLightFlagEnvironmentMap;
+            dst.flags |= to_integer(GSLightFlagsBits::EnvironmentMap);
         dst.params.x = src.environmentAzimuthOffset;
     }
 }

@@ -275,8 +275,9 @@ bool FAnimationRuntime::Tick(float dt, uint64_t frame)
             continue;
         uint32_t outputOffset = 0;
         uint32_t outputType = 0;
-        mGPU->ResolveGeometry(output.geometry, outputOffset, outputType);
-        CHECK(outputType & kGSInstanceFlagDynamic);
+        GSInstanceFlags outputFlags;
+        mGPU->ResolveGeometry(output.geometry, outputOffset, outputType, outputFlags);
+        CHECK(outputFlags & GSInstanceFlagsBits::Dynamic);
         uint32_t paletteOffset = frameBase + mPaletteSkeletonOffsets[input.skeletonIndex];
         mDispatches.push_back({
             .geometry = output.geometry,

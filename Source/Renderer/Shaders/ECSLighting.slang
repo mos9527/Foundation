@@ -70,7 +70,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
     if (ndcDepth <= EPS) {
         diffuseOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         float3 envLight = EnvLightTint();
-        if (globalParams.hasEnvMap != 0u && GSLightHasFlag(lights[globalParams.lights.offset], kGSLightFlagEnvironmentMap)) {
+        if (globalParams.hasEnvMap != 0u &&
+            GSLightHasFlag(lights[globalParams.lights.offset], uint32_t(GSLightFlagsBits.EnvironmentMap))) {
             float2 uvNdc = (tid.xy + 0.5f) / float2(globalParams.fbWidth, globalParams.fbHeight);
             float4 ndcFar = float4(uvNdc.x * 2.0f - 1.0f, 1.0f - uvNdc.y * 2.0f, 1.0f, 1.0f);
             float4 wsFar = mul(globalParams.inverseViewProj, ndcFar);
@@ -98,16 +99,17 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float roughness = color0.w;
     float3 emissive = color2.xyz;
 
-    if ((flags & (kViewBaseColor | kViewMeshlet | kViewTextureLOD)) != 0) {
+    if ((flags & (uint32_t(ViewFlagsBits.BaseColor) | uint32_t(ViewFlagsBits.Meshlet) |
+                  uint32_t(ViewFlagsBits.TextureLOD))) != 0) {
         // Meshlet and Texture LOD are passed down to GBuffer RT0.
         diffuseOutput[tid] = float4(baseColor, 1.0f);
         specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
-    } else if ((flags & kViewNormal) != 0) {
+    } else if ((flags & uint32_t(ViewFlagsBits.Normal)) != 0) {
         diffuseOutput[tid] = float4(normalWS * 0.5f + 0.5f, 1.0f);
         specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
-    } else if ((flags & kViewMatcap) != 0) {
+    } else if ((flags & uint32_t(ViewFlagsBits.Matcap)) != 0) {
         // https://projects.blender.org/blender/blender/src/commit/e1d15b8920616df11437fd24189064275995b6f6/source/blender/draw/engines/workbench/shaders/workbench_matcap.bsl.hh#L13
         float3 normalVS = normalize(mul((float3x3)globalParams.view, normalWS));
         float2 uv = saturate(normalVS.xy * 0.496f + 0.5f);
@@ -118,7 +120,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         diffuseOutput[tid] = float4(matcap * baseColor, 1.0f);
         specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
-    } else if ((flags & kViewPosition) != 0) {
+    } else if ((flags & uint32_t(ViewFlagsBits.Position)) != 0) {
         diffuseOutput[tid] = float4(p.xyz, 1.0f);
         specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
@@ -173,7 +175,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
             float3 fs;
             bsdf.f(wo, wi, TransportMode::Radiance, fd, fs);
             float vis = 1.0f;
-            if ((flags & kEnableRasterRTShadows) != 0 && GSLightHasFlag(gl, kGSLightFlagUseShadow)) {
+            if ((flags & uint32_t(ViewFlagsBits.EnableRasterRTShadows)) != 0 &&
+                GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.UseShadow))) {
                 if (lightType < kGSLightTypeDisk /* Anything not area lights */) {
                     float3 shadowNormalFF = dot(l, normalWS) < 0.0f ? -normalWS : normalWS;
                     float3 shadowOrigin = OffsetRay(
@@ -190,7 +193,9 @@ void main(uint2 tid: SV_DispatchThreadID) {
 
         float3 envTint = EnvLightTint();
         float3 diffuseAlbedo = baseColor * (1.0f - metallic);
-        float ao = (flags & kEnableRasterAmbientOcclusion) != 0 ? ambientOcclusion.Load(uint3(tid, 0)) : 1.0f;
+        float ao = (flags & uint32_t(ViewFlagsBits.EnableRasterAmbientOcclusion)) != 0
+                     ? ambientOcclusion.Load(uint3(tid, 0))
+                     : 1.0f;
         Ld += ao * diffuseAlbedo * (globalParams.hasEnvMap != 0u ? SHIrradiance(globalParams.envSHCoeffs, normalWS) * envTint : envTint);
 
         float NoV = clamp(dot(normalWS, v), 0.0f, 1.0f);
