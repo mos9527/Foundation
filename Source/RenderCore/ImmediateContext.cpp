@@ -313,6 +313,17 @@ namespace Foundation::RenderCore
         begin = ptr = end = nullptr;
     }
 
+    void ImmediateUpload::UploadBatch::Abort()
+    {
+        CHECK(IsValid());
+        UploadLane& state = *mOwner->mLanes[mLane];
+        state.ctx->End();
+        mOwner->ReleaseRecording(mLane);
+        mOwner = nullptr;
+        mLane = SIZE_MAX;
+        begin = ptr = end = nullptr;
+    }
+
     void ImmediateReadback::Begin()
     {
         ctx->Reset();

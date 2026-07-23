@@ -19,7 +19,6 @@
 #include "Tables/Sobol.hpp"
 
 static constexpr size_t kUploadBudgetSlack = 1ull * (1ull << 20);
-static constexpr size_t kUploadStagingBudgetSlack = 32ull * (1ull << 20);
 static constexpr size_t kUploadStagingBuffers = 3u;
 static constexpr size_t kGPUSceneBufferQueueCapacity = 256u;
 static constexpr uint32_t kGPUSceneDynamicRebuildRate = 60u; // frames
@@ -208,10 +207,6 @@ struct GPUSceneImpl
     [[nodiscard]] Geometry* ResolveGeometry(GeometryHandle handle);
     [[nodiscard]] Geometry const* ResolveGeometry(GeometryHandle handle) const;
     void FreeGeometry(uint32_t slot);
-    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
-                   ImmediateSubmitDesc const& firstSubmitDesc = {});
-    void BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices,
-                        ImmediateSubmitDesc const& firstSubmitDesc = {});
 
     /* Textures */
     BindlessPool mTexture2DPool;
@@ -258,41 +253,95 @@ struct GPUSceneImpl
         Vector<unsigned char> data{GLOBAL_ALLOC};
     };
 
-    // Async upload queues
-    MPMCQueue<PendingGeometryUpload> mUploadGeometryQueue;
-    MPMCQueue<PendingTextureUpload> mUploadTextureQueue;
-    MPMCQueue<PendingBufferUpload> mUploadBufferQueue;
-    Thread mUploadThread;
-    Mutex mUploadWorkMutex;
-    CondVar mUploadWorkCV, mUploadDoneCV;
-    bool mUploadHasWork{false};
-    bool mUploadStop{false};
-    bool mUploadWorkerStarted{false};
-    Atomic<size_t> mUploadPending{0};
-    Atomic<bool> mUploadFailed{false};
-    UniquePtr<ImmediateUpload> mImmediateUpload;
-    size_t mImmediateUploadCapacity{};
-    mutable Mutex mUploadStateMutex;
-    bool FlushUpload();
-    template <typename T>
-    void EnqueueUpload(MPMCQueue<T>& queue, T&& item);
-    Result ReserveMesh(FSerializedMesh const& src, GSMesh& outHeader, uint32_t& outOffset);
-    Result ReserveCurve(FSerializedCurve const& src, GSCurveSet& outHeader, uint32_t& outOffset);
-
     struct BlobCopyTask
     {
         FBlobRef blob{};
         char* dst{nullptr};
         size_t size{0};
+        FBlobDeserializer const* blobs{};
     };
+
+    struct UploadBatchState
+    {
+        explicit UploadBatchState(Allocator* allocator) :
+            allocator(allocator), geometry(allocator), textures(allocator), buffers(allocator), writes(allocator),
+            scratchArenas(allocator), scratchAllocators(allocator), geometryHandles(allocator),
+            geometryBLAS(allocator), uploadedTextures(allocator), uncompactedBLAS(allocator),
+            meshGeometryIndices(allocator)
+        {
+        }
+        ~UploadBatchState()
+        {
+            if (batch.IsValid())
+                batch.Abort();
+            if (scratchArena.memory)
+                allocator->DeallocateArena(scratchArena);
+        }
+
+        Allocator* allocator{};
+        Vector<PendingGeometryUpload> geometry;
+        Vector<PendingTextureUpload> textures;
+        Vector<PendingBufferUpload> buffers;
+        ImmediateUpload::UploadBatch batch;
+        Vector<BlobCopyTask> writes;
+        Arena scratchArena{};
+        Vector<Arena> scratchArenas;
+        Vector<UniquePtr<AllocatorStack>> scratchAllocators;
+        Vector<GeometryHandle> geometryHandles;
+        Vector<uint32_t> geometryBLAS;
+        Vector<std::pair<uint32_t, bool>> uploadedTextures;
+        RHIDeviceScopedHandle<RHIDeviceSemaphore> completionTimeline;
+        RHIDeviceScopedHandle<RHIDeviceQueryPool> compactionQueries;
+        RHIDeviceScopedHandle<RHIBuffer> uncompactedBLASBuffer;
+        Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> uncompactedBLAS;
+        Vector<size_t> meshGeometryIndices;
+        UniquePtr<ImmediateContext> blasContext;
+        RHIDeviceScopedHandle<RHIBuffer> blasScratch;
+        JobHandle prepareJob;
+        JobHandle decodeJob;
+        JobHandle submitJob;
+        JobHandle publishJob;
+        JobDependency prepareGate;
+        JobDependency publishGate;
+        RHIDeviceSemaphore* finalTimeline{};
+        size_t finalTimelineValue{};
+        size_t itemCount{};
+        Atomic<bool> submitted{false};
+        Atomic<bool> failed{false};
+        bool needsCompaction{false};
+        bool gpuComplete{false};
+        bool publicationReleased{false};
+    };
+
+    // Async upload queues
+    MPMCQueue<PendingGeometryUpload> mUploadGeometryQueue;
+    MPMCQueue<PendingTextureUpload> mUploadTextureQueue;
+    MPMCQueue<PendingBufferUpload> mUploadBufferQueue;
+    Atomic<size_t> mUploadPending{0};
+    Atomic<bool> mUploadFailed{false};
+    UniquePtr<ImmediateUpload> mImmediateUpload;
+    size_t mImmediateUploadCapacity{};
+    UniquePtr<UploadBatchState> mActiveUpload;
+    Mutex mUploadDriveMutex;
+    mutable Mutex mUploadStateMutex;
+    template <typename T>
+    void EnqueueUpload(MPMCQueue<T>& queue, T&& item);
+    bool StartUploadBatch();
+    bool DriveUploadBatch(size_t timeout);
+    void PrepareUploads(UploadBatchState& state);
+    void DecodeUploads(UploadBatchState& state, size_t begin, size_t end, JobContext& context);
+    void SubmitUploads(UploadBatchState& state);
+    void PublishUploads(UploadBatchState& state);
+    void SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const& submitDesc);
+    void SubmitBLASCompaction(UploadBatchState& state);
+    Result ReserveMesh(FSerializedMesh const& src, GSMesh& outHeader, uint32_t& outOffset);
+    Result ReserveCurve(FSerializedCurve const& src, GSCurveSet& outHeader, uint32_t& outOffset);
     size_t StageMesh(ImmediateUpload::UploadBatch* batch, FSerializedMesh const& src, GSMesh const& header,
                      uint32_t offset, Vector<BlobCopyTask>& outWrites);
     size_t StageCurve(ImmediateUpload::UploadBatch* batch, FSerializedCurve const& src, GSCurveSet const& header,
                       uint32_t offset, Vector<BlobCopyTask>& outWrites);
     size_t StageTextureSubresource(ImmediateUpload::UploadBatch* batch, FSerializedTexture const& source,
                                    RHITexture* texture, uint32_t layer, uint32_t mip, Vector<BlobCopyTask>& outWrites);
-    void ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vector<PendingTextureUpload>& textures,
-                        Vector<PendingBufferUpload>& buffers);
     void FlushDirectGeometryUpload();
 
     // Allocation in ring buffers
@@ -691,13 +740,9 @@ GPUScene::~GPUScene() = default;
 
 GPUSceneImpl::~GPUSceneImpl()
 {
-    {
-        std::lock_guard<Mutex> lock(mUploadWorkMutex);
-        mUploadStop = true;
-    }
-    mUploadWorkCV.notify_all();
-    if (mUploadThread.joinable())
-        mUploadThread.join();
+    Join();
+    if (mImmediateUpload)
+        mImmediateUpload->WaitIdle();
     if (mPrimitiveAlloc)
         mPrimitiveAlloc->Clear();
     for (auto& g : mGeometry)
@@ -1440,192 +1485,42 @@ void GPUSceneImpl::EnqueueUpload(MPMCQueue<T>& queue, T&& item)
     mUploadPending.fetch_add(1, std::memory_order_release);
     while (!queue.Push(std::move(item)))
         std::this_thread::yield();
-    {
-        std::lock_guard<Mutex> lock(mUploadWorkMutex);
-        mUploadHasWork = true;
-    }
-    mUploadWorkCV.notify_one();
 }
 
-bool GPUSceneImpl::FlushUpload()
+bool GPUSceneImpl::StartUploadBatch()
 {
-    Vector<PendingGeometryUpload> geometry(mAllocator);
-    Vector<PendingTextureUpload> textures(mAllocator);
-    Vector<PendingBufferUpload> buffers(mAllocator);
-    PendingGeometryUpload g;
-    while (mUploadGeometryQueue.Pop(g))
-        geometry.push_back(std::move(g));
-    PendingTextureUpload t;
-    while (mUploadTextureQueue.Pop(t))
-        textures.push_back(std::move(t));
-    PendingBufferUpload b;
-    while (mUploadBufferQueue.Pop(b))
-        buffers.push_back(std::move(b));
-
-    size_t const count = geometry.size() + textures.size() + buffers.size();
-    if (count == 0)
+    if (mActiveUpload || mUploadFailed.load(std::memory_order_acquire))
         return false;
 
-    try
-    {
-        ProcessUploads(geometry, textures, buffers);
-    }
-    catch (std::exception const& e)
-    {
-        mUploadFailed.store(true, std::memory_order_release);
-        LOG(GPUScene, LogError, "Background upload failed: {}", e.what());
-    }
-    catch (...)
-    {
-        mUploadFailed.store(true, std::memory_order_release);
-        LOG(GPUScene, LogError, "Background upload failed");
-    }
+    auto state = ConstructUnique<UploadBatchState>(mAllocator, mAllocator);
+    PendingGeometryUpload g;
+    while (mUploadGeometryQueue.Pop(g))
+        state->geometry.push_back(std::move(g));
+    PendingTextureUpload t;
+    while (mUploadTextureQueue.Pop(t))
+        state->textures.push_back(std::move(t));
+    PendingBufferUpload b;
+    while (mUploadBufferQueue.Pop(b))
+        state->buffers.push_back(std::move(b));
 
-    mUploadPending.fetch_sub(count, std::memory_order_release);
-    {
-        std::lock_guard<Mutex> lock(mUploadWorkMutex);
-    }
-    mUploadDoneCV.notify_all();
-    return true;
-}
+    state->itemCount = state->geometry.size() + state->textures.size() + state->buffers.size();
+    if (state->itemCount == 0)
+        return false;
 
-void GPUSceneImpl::Join()
-{
-    bool started;
+    size_t stagingBudget = 0;
+    if (!mDirectGeometryUpload)
+        for (PendingGeometryUpload const& pending : state->geometry)
+            stagingBudget += pending.footprint;
+    for (PendingTextureUpload const& pending : state->textures)
     {
-        std::lock_guard<Mutex> lock(mUploadWorkMutex);
-        started = mUploadWorkerStarted;
+        FTextureHeader const& metadata = static_cast<FTextureHeader const&>(*pending.source);
+        for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
+            for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
+                stagingBudget += GPUSceneTextureSubresourceFootprint(metadata, layer, mip) + kUploadBudgetSlack;
     }
-    if (started)
-    {
-        std::unique_lock<Mutex> lock(mUploadWorkMutex);
-        mUploadDoneCV.wait(lock,
-                           [this]
-                           {
-                               return mUploadPending.load(std::memory_order_acquire) == 0 ||
-                                   mUploadFailed.load(std::memory_order_acquire);
-                           });
-        return;
-    }
-    while (FlushUpload())
-    {
-    }
-}
-
-GPUScene::Result GPUSceneImpl::Poll()
-{
-    if (mUploadFailed.load(std::memory_order_acquire))
-        return Result::SubmitFailed;
-    if (mUploadPending.load(std::memory_order_acquire) == 0)
-        return Result::Ready;
-    {
-        std::lock_guard<Mutex> lock(mUploadWorkMutex);
-        if (!mUploadWorkerStarted)
-        {
-            mUploadWorkerStarted = true;
-            mUploadThread = Thread(
-                [this]
-                {
-                    while (true)
-                    {
-                        while (FlushUpload())
-                        {
-                        }
-                        std::unique_lock<Mutex> lock(mUploadWorkMutex);
-                        if (mUploadStop)
-                            return;
-                        if (mUploadHasWork)
-                        {
-                            mUploadHasWork = false;
-                            continue;
-                        }
-                        mUploadWorkCV.wait(lock, [this] { return mUploadHasWork || mUploadStop; });
-                        mUploadHasWork = false;
-                        if (mUploadStop)
-                            return;
-                    }
-                });
-        }
-    }
-    return Result::InProgress;
-}
-
-void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vector<PendingTextureUpload>& textures,
-                                  Vector<PendingBufferUpload>& buffers)
-{
-    auto& mPendingGeometry = geometry;
-    auto& mPendingTextures = textures;
-    auto& mPendingBuffers = buffers;
-    const bool direct = mDirectGeometryUpload;
-    const bool hadTextures = !mPendingTextures.empty();
-    size_t maxFootprint = 0;
-    size_t maxBlob = 0;
-    auto IncludeBlobScratch = [&](FBlobRef const& b)
-    {
-        if (b.codec != FBlobCodec::None)
-            maxBlob = std::max(maxBlob, static_cast<size_t>(b.decodedSize));
-    };
-    size_t totalFootprint = 0;
-    if (!direct)
-        for (auto const& p : mPendingGeometry)
-        {
-            maxFootprint = std::max(maxFootprint, p.footprint);
-            totalFootprint += p.footprint;
-        }
-    for (auto const& p : mPendingGeometry)
-    {
-        if (p.mesh)
-        {
-            IncludeBlobScratch(p.mesh->vertices);
-            if (!p.mesh->lods.empty())
-                IncludeBlobScratch(p.mesh->lods[0].indices);
-            IncludeBlobScratch(p.mesh->dagGroups);
-            IncludeBlobScratch(p.mesh->dagMeshlets);
-            IncludeBlobScratch(p.mesh->dagMeshletVtx);
-            IncludeBlobScratch(p.mesh->dagMeshletTri);
-        }
-        else if (p.curve)
-        {
-            IncludeBlobScratch(p.curve->vertices);
-            IncludeBlobScratch(p.curve->indices);
-            IncludeBlobScratch(p.curve->leaves);
-        }
-    }
-    size_t textureSubresCount = 0;
-    for (auto const& p : mPendingTextures)
-    {
-        FTextureHeader const& md = static_cast<FTextureHeader const&>(*p.source);
-        for (uint32_t layer = 0; layer < md.GetNumLayers(); ++layer)
-            for (uint32_t mip = 0; mip < md.GetNumMips(); ++mip)
-            {
-                size_t fp = GPUSceneTextureSubresourceFootprint(md, layer, mip) + kUploadBudgetSlack;
-                maxFootprint = std::max(maxFootprint, fp);
-                totalFootprint += fp;
-                IncludeBlobScratch(p.source->GetSubresourceBlob(layer, mip));
-                ++textureSubresCount;
-            }
-    }
-    for (auto const& b : mPendingBuffers)
-    {
-        maxFootprint = std::max(maxFootprint, b.data.size());
-        totalFootprint += b.data.size();
-    }
-    const size_t stagingSlack = std::min(totalFootprint, kUploadStagingBudgetSlack);
-    const size_t stagingBudget = std::max<size_t>(maxFootprint, 1u) + stagingSlack;
-    const size_t workerCount = mJobs->GetMaxConcurrency();
-    const size_t laneBudget = std::max<size_t>(maxBlob + kUploadBudgetSlack, alignof(std::max_align_t));
-    ScopedArena scratchArena(mAllocator, laneBudget * workerCount);
-    CHECK(scratchArena);
-    Vector<Arena> scratchArenas(workerCount, mAllocator);
-    Vector<AllocatorStack> scratchAllocators(workerCount, mAllocator);
-    char* scratchMem = static_cast<char*>(scratchArena.arena.memory);
-    for (size_t i = 0; i < workerCount; ++i)
-    {
-        scratchArenas[i] = Arena{scratchMem + i * laneBudget, laneBudget};
-        scratchAllocators[i].Reset(scratchArenas[i]);
-    }
-    Span<Arena> arenaSpan(scratchArenas.data(), scratchArenas.size());
-    Span<AllocatorStack> allocSpan(scratchAllocators.data(), scratchAllocators.size());
+    for (PendingBufferUpload const& pending : state->buffers)
+        stagingBudget += pending.data.size();
+    stagingBudget = std::max<size_t>(stagingBudget, 1u);
 
     if (!mImmediateUpload || mImmediateUploadCapacity < stagingBudget)
     {
@@ -1635,451 +1530,603 @@ void GPUSceneImpl::ProcessUploads(Vector<PendingGeometryUpload>& geometry, Vecto
         mImmediateUpload = ConstructUnique<ImmediateUpload>(
             mAllocator, mDevice, mImmediateUploadCapacity, RHIDeviceQueueType::Transfer, kUploadStagingBuffers);
     }
-    ImmediateUpload& upload = *mImmediateUpload;
-    ImmediateUpload::UploadBatch batch = upload.BeginBatch();
-    Vector<BlobCopyTask> writes(mAllocator);
-    auto ScheduleWrites = [&](FBlobDeserializer const& blobs)
+    size_t taskCount = 0;
+    for (PendingGeometryUpload const& pending : state->geometry)
     {
-        if (writes.empty())
-            return;
-        size_t const grain = std::max<size_t>(
-            1u, writes.size() / std::max<size_t>(mJobs->GetMaxConcurrency() * 4u, 1u));
-        mJobs->Wait(mJobs->ParallelFor(
-            ExecutionPolicy::Par, "GPUSceneDecode", writes.size(), grain,
-            [&](size_t begin, size_t end, JobContext& context)
-            {
-                AllocatorStack& scratch = allocSpan[context.GetWorkerId()];
-                for (size_t i = begin; i < end; ++i)
-                {
-                    BlobCopyTask const& write = writes[i];
-                    if (write.blob.codec != FBlobCodec::None)
-                    {
-                        scratch.Reset(arenaSpan[context.GetWorkerId()]);
-                        blobs.ReadBytes(write.blob, write.dst, write.size, &scratch);
-                    }
-                    else
-                        blobs.ReadBytes(write.blob, write.dst, write.size, nullptr);
-                }
-            }));
-        writes.clear();
-    };
-    auto FlushUpload = [&]
+        if (pending.mesh)
+            taskCount += 5u + (!pending.mesh->lods.empty() ? 1u : 0u);
+        else
+            taskCount += 3u;
+    }
+    for (PendingTextureUpload const& pending : state->textures)
     {
-        batch.End();
-        batch = upload.BeginBatch();
-    };
-
-    auto uploadTimeline = mDevice->CreateSemaphore(true);
-    constexpr size_t kGeometryReady = 1u;
-    constexpr size_t kTextureReady = 2u;
-    {
-        Vector<size_t> order(mPendingGeometry.size(), mAllocator);
-        for (size_t i = 0; i < order.size(); ++i)
-            order[i] = i;
-        std::sort(order.begin(), order.end(),
-                  [&](size_t a, size_t b) { return mPendingGeometry[a].footprint > mPendingGeometry[b].footprint; });
-        for (size_t idx : order)
-        {
-            PendingGeometryUpload& p = mPendingGeometry[idx];
-            Geometry* g = ResolveGeometry(p.handle);
-            CHECK_MSG(g, "Pending geometry references a freed slot");
-            auto Stage = [&]
-            {
-                return p.mesh ? StageMesh(&batch, *p.mesh, g->mesh, g->offset, writes)
-                              : StageCurve(&batch, *p.curve, g->curve, g->offset, writes);
-            };
-            size_t staged = Stage();
-            if (staged == 0)
-            {
-                FlushUpload();
-                staged = Stage();
-                CHECK_MSG(staged != 0, "Staging buffer too small for a single geometry upload");
-            }
-            ScheduleWrites(p.blobs);
-        }
-        for (auto const& b : mPendingBuffers)
-        {
-            char* ptr = batch.Upload(b.dst, b.data.size(), b.dstOffset);
-            if (!ptr)
-            {
-                FlushUpload();
-                ptr = batch.Upload(b.dst, b.data.size(), b.dstOffset);
-                CHECK_MSG(ptr != nullptr, "Staging buffer too small for a single buffer upload");
-            }
-            std::memcpy(ptr, b.data.data(), b.data.size());
-        }
-        if (direct)
-            FlushDirectGeometryUpload();
-        RHIDeviceQueue::TimelinePair geomSignal{uploadTimeline.Get(), kGeometryReady};
-        batch.End(ImmediateSubmitDesc{.timelineSignals = {&geomSignal, 1}});
+        FTextureHeader const& metadata = static_cast<FTextureHeader const&>(*pending.source);
+        taskCount += static_cast<size_t>(metadata.GetNumLayers()) * metadata.GetNumMips();
     }
 
-    if (!mPendingGeometry.empty())
+    UploadBatchState* batchState = state.get();
+    state->prepareJob = mJobs->CreateJob(
+        "GPUScenePrepare", [this, batchState] { PrepareUploads(*batchState); }, 1);
+    state->prepareGate = state->prepareJob.AdoptDependencyGuard();
+
+    size_t const chunkCount =
+        std::min(taskCount, std::max<size_t>(mJobs->GetMaxConcurrency() * 4u, 1u));
+    Vector<JobHandle> decodeJobs(mAllocator);
+    decodeJobs.reserve(chunkCount);
+    for (size_t chunk = 0; chunk < chunkCount; ++chunk)
     {
-        ImmediateContext blasCtx(RHIDeviceQueueType::Compute, mDevice);
-        Vector<GeometryHandle> meshHandles(mAllocator), curveHandles(mAllocator);
-        Vector<GSMesh> meshHeaders(mAllocator);
-        Vector<GSCurveSet> curveHeaders(mAllocator);
-        for (auto const& p : mPendingGeometry)
+        decodeJobs.push_back(mJobs->CreateJobAfter(
+            "GPUSceneDecode", Span<const JobHandle>(&state->prepareJob, 1),
+            [this, batchState, chunk, chunkCount](JobContext& context)
+            {
+                size_t const count = batchState->writes.size();
+                size_t const begin = count * chunk / chunkCount;
+                size_t const end = count * (chunk + 1u) / chunkCount;
+                DecodeUploads(*batchState, begin, end, context);
+            }));
+    }
+    state->decodeJob = decodeJobs.empty()
+        ? mJobs->CreateJobAfter("GPUSceneDecode", Span<const JobHandle>(&state->prepareJob, 1), [] {})
+        : mJobs->CreateJobAfter("GPUSceneDecode", decodeJobs, [] {});
+    state->submitJob = mJobs->CreateJobAfter(
+        "GPUSceneSubmit", Span<const JobHandle>(&state->decodeJob, 1),
+        [this, batchState] { SubmitUploads(*batchState); });
+    state->publishJob =
+        mJobs->CreateJob("GPUScenePublish", [this, batchState] { PublishUploads(*batchState); }, 1);
+    state->publishGate = state->publishJob.AdoptDependencyGuard();
+    mActiveUpload = std::move(state);
+    mActiveUpload->prepareGate.Release();
+    return true;
+}
+
+bool GPUSceneImpl::DriveUploadBatch(size_t timeout)
+{
+    if (!mActiveUpload)
+        return false;
+    UploadBatchState& state = *mActiveUpload;
+
+    if (state.submitJob.IsDone() && !state.submitted.load(std::memory_order_acquire))
+    {
+        if (state.batch.IsValid())
+            state.batch.Abort();
+        state.failed.store(true, std::memory_order_release);
+    }
+
+    if (state.submitted.load(std::memory_order_acquire) && !state.publicationReleased)
+    {
+        state.gpuComplete = !state.finalTimeline || state.finalTimelineValue == 0;
+        if (!state.gpuComplete)
         {
-            Geometry* g = ResolveGeometry(p.handle);
-            CHECK(g);
-            if (g->type == kGSInstanceTypeCurve)
-                curveHandles.push_back(p.handle), curveHeaders.push_back(g->curve);
-            else
-                meshHandles.push_back(p.handle), meshHeaders.push_back(g->mesh);
+            RHIDeviceQueue::TimelinePair wait{state.finalTimeline, state.finalTimelineValue};
+            state.gpuComplete = mDevice->WaitForTimelineSemaphores(
+                Span<const RHIDeviceQueue::TimelinePair>(&wait, 1), timeout);
         }
-        RHIDeviceQueue::TimelinePair wait{uploadTimeline.Get(), kGeometryReady};
-        RHIPipelineStage waitStage = RHIPipelineStageBits::AccelerationBuild;
-        ImmediateSubmitDesc firstSubmit{.timelineWaits = {&wait, 1}, .waitStages = {&waitStage, 1}};
-        constexpr size_t kBLASBuildBatch = 32u;
-        bool usedFirst = false;
-        auto Publish = [&](Span<const GeometryHandle> handles, Span<const uint32_t> slots)
+        if (state.gpuComplete && state.needsCompaction && !state.failed.load(std::memory_order_acquire))
+        {
+            try
+            {
+                SubmitBLASCompaction(state);
+                state.gpuComplete = false;
+                return false;
+            }
+            catch (...)
+            {
+                state.failed.store(true, std::memory_order_release);
+            }
+        }
+        if (state.gpuComplete && !state.failed.load(std::memory_order_acquire))
+        {
+            state.publicationReleased = true;
+            state.publishGate.Release();
+        }
+    }
+
+    if (state.failed.load(std::memory_order_acquire))
+    {
+        if (state.submitted.load(std::memory_order_acquire) && !state.gpuComplete)
+            return false;
+        if (!state.publicationReleased)
+        {
+            mJobs->Cancel(state.publishJob);
+            state.publishGate.Release();
+            state.publicationReleased = true;
+        }
         {
             std::lock_guard<Mutex> lock(mUploadStateMutex);
-            for (size_t j = 0; j < handles.size(); ++j)
-            {
-                Geometry* g = ResolveGeometry(handles[j]);
-                CHECK(g);
-                g->blas = slots[j];
-                g->state = ResourceState::Ready;
-            }
-        };
-        Vector<uint32_t> meshSlots(meshHeaders.size(), mAllocator);
-        for (size_t i = 0; i < meshHeaders.size(); i += kBLASBuildBatch)
-        {
-            size_t bs = std::min(kBLASBuildBatch, meshHeaders.size() - i);
-            BuildBLAS(&blasCtx, Span<const GSMesh>(meshHeaders.data() + i, bs),
-                      Span<uint32_t>(meshSlots.data() + i, bs), usedFirst ? ImmediateSubmitDesc{} : firstSubmit);
-            usedFirst = true;
-            Publish(Span<const GeometryHandle>(meshHandles.data() + i, bs),
-                    Span<const uint32_t>(meshSlots.data() + i, bs));
+            for (GeometryHandle handle : state.geometryHandles)
+                if (Geometry* geometry = ResolveGeometry(handle))
+                    geometry->state = ResourceState::Failed;
         }
-        Vector<uint32_t> curveSlots(curveHeaders.size(), mAllocator);
-        for (size_t i = 0; i < curveHeaders.size(); i += kBLASBuildBatch)
-        {
-            size_t bs = std::min(kBLASBuildBatch, curveHeaders.size() - i);
-            BuildCurveBLAS(&blasCtx, Span<const GSCurveSet>(curveHeaders.data() + i, bs),
-                           Span<uint32_t>(curveSlots.data() + i, bs), usedFirst ? ImmediateSubmitDesc{} : firstSubmit);
-            usedFirst = true;
-            Publish(Span<const GeometryHandle>(curveHandles.data() + i, bs),
-                    Span<const uint32_t>(curveSlots.data() + i, bs));
-        }
+        mUploadPending.fetch_sub(state.itemCount, std::memory_order_release);
+        mUploadFailed.store(true, std::memory_order_release);
+        mActiveUpload.reset();
+        return true;
     }
-    mPendingGeometry.clear();
-    if (!mPendingTextures.empty())
+
+    if (state.publicationReleased && state.publishJob.IsDone())
     {
-        batch = upload.BeginBatch();
-        struct Subresource
-        {
-            size_t slot;
-            uint32_t layer;
-            uint32_t mip;
-            size_t footprint;
-        };
-        Vector<Subresource> subs(mAllocator);
-        for (size_t slot = 0; slot < mPendingTextures.size(); ++slot)
-        {
-            FTextureHeader const& md = static_cast<FTextureHeader const&>(*mPendingTextures[slot].source);
-            for (uint32_t layer = 0; layer < md.GetNumLayers(); ++layer)
-                for (uint32_t mip = 0; mip < md.GetNumMips(); ++mip)
-                    subs.push_back({slot, layer, mip, GPUSceneTextureSubresourceFootprint(md, layer, mip)});
-        }
-        std::sort(subs.begin(), subs.end(),
-                  [](Subresource const& a, Subresource const& b) { return a.footprint > b.footprint; });
-        Vector<uint8_t> transferDstDone(mPendingTextures.size(), 0u, mAllocator);
-        for (Subresource const& sub : subs)
-        {
-            PendingTextureUpload& pt = mPendingTextures[sub.slot];
-            FTextureHeader const& md = static_cast<FTextureHeader const&>(*pt.source);
-            RHITexture* tex = SelectTexturePool(md.GetViewDimension()).GetResource(pt.index);
-            CHECK(tex != nullptr);
-            auto StageSub = [&]
-            {
-                if (!transferDstDone[sub.slot])
-                {
-                    TransitionTextureLayout(batch.Get(), tex, md, RHITextureLayout::Undefined,
-                                            RHITextureLayout::TransferDst);
-                    transferDstDone[sub.slot] = 1u;
-                }
-                return StageTextureSubresource(&batch, *pt.source, tex, sub.layer, sub.mip, writes);
-            };
-            size_t staged = StageSub();
-            if (staged == 0)
-            {
-                FlushUpload();
-                staged = StageSub();
-                CHECK_MSG(staged != 0, "Staging buffer too small for a single texture subresource");
-            }
-            ScheduleWrites(pt.blobs);
-        }
-        for (size_t slot = 0; slot < mPendingTextures.size(); ++slot)
-        {
-            if (!transferDstDone[slot])
-                continue;
-            PendingTextureUpload& pt = mPendingTextures[slot];
-            FTextureHeader const& md = static_cast<FTextureHeader const&>(*pt.source);
-            RHITexture* tex = SelectTexturePool(md.GetViewDimension()).GetResource(pt.index);
-            TransitionTextureLayout(batch.Get(), tex, md, RHITextureLayout::TransferDst,
-                                    RHITextureLayout::ShaderReadOnly);
-        }
-        RHIDeviceQueue::TimelinePair texSignal{uploadTimeline.Get(), kTextureReady};
-        batch.End(ImmediateSubmitDesc{.timelineSignals = {&texSignal, 1}});
+        if (state.publishJob.Status() != JobStatus::Completed)
+            mUploadFailed.store(true, std::memory_order_release);
+        mActiveUpload.reset();
+        return true;
     }
-    // Remember which slots this drain transitioned so they can be published as resident once
-    // the transfer completes below (the render thread gates material textures on this).
-    Vector<std::pair<uint32_t, bool>> uploadedTextures(mAllocator);
-    uploadedTextures.reserve(mPendingTextures.size());
-    for (auto const& pt : mPendingTextures)
-        uploadedTextures.emplace_back(
-            pt.index, IsTexture3DView(static_cast<FTextureHeader const&>(*pt.source).GetViewDimension()));
-    mPendingTextures.clear();
-    mPendingBuffers.clear();
-
-    // Block until the last submitted transfer completes. The texture submit (if any)
-    // chains after the geometry+buffer submit on the Transfer queue, so waiting the
-    // highest signaled value covers everything.
-    RHIDeviceQueue::TimelinePair finalWait{uploadTimeline.Get(), hadTextures ? kTextureReady : kGeometryReady};
-    mDevice->WaitForTimelineSemaphores(Span<const RHIDeviceQueue::TimelinePair>(&finalWait, 1), -1);
-
-    if (!uploadedTextures.empty())
-    {
-        std::lock_guard<Mutex> lock(mUploadStateMutex);
-        for (auto const& [index, is3D] : uploadedTextures)
-        {
-            Vector<Texture>& slots = TextureSlots(is3D);
-            if (index < slots.size())
-                slots[index].resident = true;
-        }
-    }
-
+    return false;
 }
 
-// Reference:
-// - https://github.com/zeux/niagara/blob/master/src/scenert.cpp
-// - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/02_Acceleration_structures.html
-// - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/04_TLAS_animation.html
-void GPUSceneImpl::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
-                             ImmediateSubmitDesc const& firstSubmitDesc)
+void GPUSceneImpl::Join()
 {
-    CHECK_MSG(meshes.size() == outBLASIndices.size(), "Mismatched BLAS indices size");
-    if (meshes.empty())
-        return;
-
-    auto* device = mDevice;
-    // Build
-    Vector<RHIAccelerationStructureGeometryInfo> geometries(meshes.size(), mAllocator);
-    Vector<RHIAccelerationStructureBuildRangeInfo> buildRanges(meshes.size(), mAllocator);
-    Vector<RHIAccelerationStructureBuildDesc> buildDesc(meshes.size(), mAllocator);
-    Vector<RHIAccelerationStructureSizeInfo> sizeInfo(meshes.size(), mAllocator);
-    Vector<uint32_t> blasOffsets(meshes.size(), mAllocator);
-    Vector<uint32_t> scratchOffsets(meshes.size(), mAllocator);
-    StackArena<4096> sizeInfoArena;
-    AllocatorStack sizeInfoScratch(sizeInfoArena);
-    auto* primitiveBuffer = owner.mPrimitiveBuffer.Get();
-    uint32_t scratchOffset = 0, blasOffset = 0;
-    for (size_t i = 0; i < meshes.size(); i++)
+    while (true)
     {
-        auto const& mesh = meshes[i];
-        auto& geo = geometries[i];
-        auto& range = buildRanges[i];
-        geo.type = RHIAccelerationGeometryType::Triangles;
-        geo.triangleData =
-            RHIAccelerationStructureGeometryTriangleData{// FP16 positions
-                                                         .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
-                                                         .vertexBuffer = primitiveBuffer,
-                                                         .vertexOffset = mesh.vertices.offset,
-                                                         .vertexCount = mesh.vertices.count,
-                                                         .vertexStride = sizeof(FQVertex),
-                                                         .indexFormat = RHIResourceFormat::R32Uint,
-                                                         .indexBuffer = primitiveBuffer,
-                                                         .indexOffset = mesh.indices.offset,
-                                                         .indexCount = mesh.indices.count};
-        range = RHIAccelerationStructureBuildRangeInfo{.primitiveCount = mesh.indices.count / 3};
-        auto& desc = buildDesc[i];
-        desc =
-            RHIAccelerationStructureBuildDesc{.type = RHIAccelerationStructureType::BottomLevel,
-                                              .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
-                                                  RHIAccelerationStructureBuildFlagsBits::AllowUpdate |
-                                                  RHIAccelerationStructureBuildFlagsBits::AllowCompaction,
-                                              .operation = RHIAccelerationStructureBuildOp::Build,
-                                              .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geo, 1},
-                                              .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}};
-        sizeInfoScratch.Reset(sizeInfoArena);
-        sizeInfo[i] = device->GetAccelerationStructureSizeInfo(desc, sizeInfoScratch.Ptr());
-        blasOffsets[i] = blasOffset;
-        // minAccelerationStructureScratchOffsetAlignment is 256
-        blasOffset = AlignUp(blasOffset + sizeInfo[i].accelerationStructureSize, 256u);
-        scratchOffsets[i] = scratchOffset;
-        scratchOffset = AlignUp(scratchOffset + sizeInfo[i].buildScratchSize, 256u);
+        JobBarrier barrier;
+        {
+            std::lock_guard<Mutex> lock(mUploadDriveMutex);
+            if (mUploadFailed.load(std::memory_order_acquire))
+                return;
+            if (!mActiveUpload)
+                StartUploadBatch();
+            if (!mActiveUpload)
+            {
+                if (mUploadPending.load(std::memory_order_acquire) == 0)
+                    return;
+                std::this_thread::yield();
+                continue;
+            }
+
+            DriveUploadBatch(static_cast<size_t>(-1));
+            if (!mActiveUpload)
+                continue;
+
+            barrier = mJobs->CreateBarrier();
+            UploadBatchState& state = *mActiveUpload;
+            if (!state.submitted.load(std::memory_order_acquire))
+                barrier.Add(state.submitJob);
+            else if (state.publicationReleased && !state.publishJob.IsDone())
+                barrier.Add(state.publishJob);
+        }
+        if (!barrier.IsEmpty())
+        {
+            try
+            {
+                mJobs->Wait(barrier);
+            }
+            catch (std::exception const& e)
+            {
+                LOG(GPUScene, LogError, "Upload job failed: {}", e.what());
+            }
+            catch (...)
+            {
+                LOG(GPUScene, LogError, "Upload job failed");
+            }
+        }
+        else
+            std::this_thread::yield();
     }
-    auto scratch = mDevice->CreateBuffer({
+}
+
+GPUScene::Result GPUSceneImpl::Poll()
+{
+    std::lock_guard<Mutex> lock(mUploadDriveMutex);
+    if (mUploadFailed.load(std::memory_order_acquire))
+        return Result::SubmitFailed;
+    if (mActiveUpload)
+        DriveUploadBatch(0);
+    if (!mActiveUpload)
+        StartUploadBatch();
+    if (mUploadFailed.load(std::memory_order_acquire))
+        return Result::SubmitFailed;
+    return mUploadPending.load(std::memory_order_acquire) == 0 ? Result::Ready : Result::InProgress;
+}
+
+void GPUSceneImpl::PrepareUploads(UploadBatchState& state)
+{
+    CHECK_MSG(mImmediateUpload->TryBeginBatch(state.batch), "No reusable GPUScene upload lane");
+    size_t maxBlob = 0;
+    auto IncludeBlob = [&](FBlobRef const& blob)
+    {
+        if (blob.codec != FBlobCodec::None)
+            maxBlob = std::max(maxBlob, static_cast<size_t>(blob.decodedSize));
+    };
+    for (PendingGeometryUpload const& pending : state.geometry)
+    {
+        if (pending.mesh)
+        {
+            IncludeBlob(pending.mesh->vertices);
+            if (!pending.mesh->lods.empty())
+                IncludeBlob(pending.mesh->lods[0].indices);
+            IncludeBlob(pending.mesh->dagGroups);
+            IncludeBlob(pending.mesh->dagMeshlets);
+            IncludeBlob(pending.mesh->dagMeshletVtx);
+            IncludeBlob(pending.mesh->dagMeshletTri);
+        }
+        else
+        {
+            IncludeBlob(pending.curve->vertices);
+            IncludeBlob(pending.curve->indices);
+            IncludeBlob(pending.curve->leaves);
+        }
+    }
+    for (PendingTextureUpload const& pending : state.textures)
+    {
+        FTextureHeader const& metadata = static_cast<FTextureHeader const&>(*pending.source);
+        for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
+            for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
+                IncludeBlob(pending.source->GetSubresourceBlob(layer, mip));
+    }
+
+    size_t const workerCount = mJobs->GetMaxConcurrency();
+    size_t const laneBudget = std::max<size_t>(maxBlob + kUploadBudgetSlack, alignof(std::max_align_t));
+    state.scratchArena = mAllocator->AllocateArena(laneBudget * workerCount);
+    CHECK(state.scratchArena.memory != nullptr);
+    state.scratchArenas.resize(workerCount);
+    state.scratchAllocators.reserve(workerCount);
+    char* scratch = static_cast<char*>(state.scratchArena.memory);
+    for (size_t i = 0; i < workerCount; ++i)
+    {
+        state.scratchArenas[i] = {scratch + i * laneBudget, laneBudget};
+        state.scratchAllocators.push_back(
+            ConstructUnique<AllocatorStack>(mAllocator, state.scratchArenas[i]));
+    }
+
+    Vector<size_t> order(state.geometry.size(), mAllocator);
+    for (size_t i = 0; i < order.size(); ++i)
+        order[i] = i;
+    std::sort(order.begin(), order.end(),
+              [&](size_t a, size_t b) { return state.geometry[a].footprint > state.geometry[b].footprint; });
+    for (size_t index : order)
+    {
+        PendingGeometryUpload& pending = state.geometry[index];
+        Geometry* geometry = ResolveGeometry(pending.handle);
+        CHECK_MSG(geometry, "Pending geometry references a freed slot");
+        size_t const firstWrite = state.writes.size();
+        size_t const staged = pending.mesh
+            ? StageMesh(&state.batch, *pending.mesh, geometry->mesh, geometry->offset, state.writes)
+            : StageCurve(&state.batch, *pending.curve, geometry->curve, geometry->offset, state.writes);
+        CHECK_MSG(staged != 0, "Staging buffer too small for geometry upload");
+        for (size_t i = firstWrite; i < state.writes.size(); ++i)
+            state.writes[i].blobs = &pending.blobs;
+        state.geometryHandles.push_back(pending.handle);
+    }
+    for (PendingBufferUpload const& pending : state.buffers)
+    {
+        char* dst = state.batch.Upload(pending.dst, pending.data.size(), pending.dstOffset);
+        CHECK_MSG(dst != nullptr, "Staging buffer too small for buffer upload");
+        std::memcpy(dst, pending.data.data(), pending.data.size());
+    }
+    if (mDirectGeometryUpload)
+        FlushDirectGeometryUpload();
+
+    struct Subresource
+    {
+        size_t slot;
+        uint32_t layer;
+        uint32_t mip;
+        size_t footprint;
+    };
+    Vector<Subresource> subresources(mAllocator);
+    for (size_t slot = 0; slot < state.textures.size(); ++slot)
+    {
+        FTextureHeader const& metadata = static_cast<FTextureHeader const&>(*state.textures[slot].source);
+        for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
+            for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
+                subresources.push_back(
+                    {slot, layer, mip, GPUSceneTextureSubresourceFootprint(metadata, layer, mip)});
+    }
+    std::sort(subresources.begin(), subresources.end(),
+              [](Subresource const& a, Subresource const& b) { return a.footprint > b.footprint; });
+    Vector<uint8_t> transitioned(state.textures.size(), 0u, mAllocator);
+    for (Subresource const& subresource : subresources)
+    {
+        PendingTextureUpload& pending = state.textures[subresource.slot];
+        FTextureHeader const& metadata = static_cast<FTextureHeader const&>(*pending.source);
+        RHITexture* texture = SelectTexturePool(metadata.GetViewDimension()).GetResource(pending.index);
+        CHECK(texture != nullptr);
+        if (!transitioned[subresource.slot])
+        {
+            TransitionTextureLayout(state.batch.Get(), texture, metadata, RHITextureLayout::Undefined,
+                                    RHITextureLayout::TransferDst);
+            transitioned[subresource.slot] = 1u;
+        }
+        size_t const firstWrite = state.writes.size();
+        size_t const staged = StageTextureSubresource(
+            &state.batch, *pending.source, texture, subresource.layer, subresource.mip, state.writes);
+        CHECK_MSG(staged != 0, "Staging buffer too small for texture subresource");
+        for (size_t i = firstWrite; i < state.writes.size(); ++i)
+            state.writes[i].blobs = &pending.blobs;
+    }
+    for (size_t slot = 0; slot < state.textures.size(); ++slot)
+    {
+        if (!transitioned[slot])
+            continue;
+        PendingTextureUpload& pending = state.textures[slot];
+        FTextureHeader const& metadata = static_cast<FTextureHeader const&>(*pending.source);
+        RHITexture* texture = SelectTexturePool(metadata.GetViewDimension()).GetResource(pending.index);
+        TransitionTextureLayout(state.batch.Get(), texture, metadata, RHITextureLayout::TransferDst,
+                                RHITextureLayout::ShaderReadOnly);
+        state.uploadedTextures.emplace_back(pending.index, IsTexture3DView(metadata.GetViewDimension()));
+    }
+}
+
+void GPUSceneImpl::DecodeUploads(UploadBatchState& state, size_t begin, size_t end, JobContext& context)
+{
+    AllocatorStack& scratch = *state.scratchAllocators[context.GetWorkerId()];
+    for (size_t i = begin; i < end; ++i)
+    {
+        BlobCopyTask const& write = state.writes[i];
+        CHECK(write.blobs != nullptr);
+        if (write.blob.codec != FBlobCodec::None)
+        {
+            scratch.Reset(state.scratchArenas[context.GetWorkerId()]);
+            write.blobs->ReadBytes(write.blob, write.dst, write.size, &scratch);
+        }
+        else
+            write.blobs->ReadBytes(write.blob, write.dst, write.size, nullptr);
+    }
+}
+
+void GPUSceneImpl::SubmitUploads(UploadBatchState& state)
+{
+    try
+    {
+        state.batch.End();
+        state.finalTimeline = mImmediateUpload->CompletionTimeline();
+        state.finalTimelineValue = state.batch.CompletionValue();
+        if (!state.geometryHandles.empty())
+        {
+            RHIDeviceQueue::TimelinePair wait{state.finalTimeline, state.finalTimelineValue};
+            RHIPipelineStage waitStage = RHIPipelineStageBits::AccelerationBuild;
+            SubmitBLAS(state, {.timelineWaits = {&wait, 1}, .waitStages = {&waitStage, 1}});
+        }
+    }
+    catch (...)
+    {
+        if (state.batch.IsValid())
+            state.batch.Abort();
+        state.failed.store(true, std::memory_order_release);
+    }
+    state.submitted.store(true, std::memory_order_release);
+}
+
+void GPUSceneImpl::PublishUploads(UploadBatchState& state)
+{
+    std::lock_guard<Mutex> lock(mUploadStateMutex);
+    CHECK(state.geometryHandles.size() == state.geometryBLAS.size());
+    for (size_t i = 0; i < state.geometryHandles.size(); ++i)
+    {
+        if (Geometry* geometry = ResolveGeometry(state.geometryHandles[i]))
+        {
+            geometry->blas = state.geometryBLAS[i];
+            geometry->state = ResourceState::Ready;
+        }
+    }
+    for (auto const& [index, is3D] : state.uploadedTextures)
+    {
+        Vector<Texture>& slots = TextureSlots(is3D);
+        if (index < slots.size())
+            slots[index].resident = true;
+    }
+    mUploadPending.fetch_sub(state.itemCount, std::memory_order_release);
+}
+
+void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const& submitDesc)
+{
+    size_t const count = state.geometryHandles.size();
+    Vector<RHIAccelerationStructureGeometryInfo> geometries(count, mAllocator);
+    Vector<RHIAccelerationStructureBuildRangeInfo> ranges(count, mAllocator);
+    Vector<RHIAccelerationStructureBuildDesc> builds(count, mAllocator);
+    Vector<RHIAccelerationStructureSizeInfo> sizes(count, mAllocator);
+    Vector<uint32_t> resultOffsets(count, mAllocator);
+    Vector<uint32_t> scratchOffsets(count, mAllocator);
+    Vector<uint8_t> curves(count, 0u, mAllocator);
+    StackArena<4096> sizeArena;
+    AllocatorStack sizeScratch(sizeArena);
+    uint32_t meshBytes = 0;
+    uint32_t curveBytes = 0;
+    uint32_t scratchBytes = 0;
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        Geometry* geometry = ResolveGeometry(state.geometryHandles[i]);
+        CHECK(geometry != nullptr);
+        bool const curve = geometry->type == kGSInstanceTypeCurve;
+        curves[i] = curve;
+        RHIAccelerationStructureGeometryInfo& info = geometries[i];
+        info.type = RHIAccelerationGeometryType::Triangles;
+        if (curve)
+        {
+            GSCurveSet const& source = geometry->curve;
+            info.triangleData = {
+                .vertexFormat = RHIResourceFormat::R32G32B32A32SignedFloat,
+                .vertexBuffer = owner.mPrimitiveBuffer.Get(),
+                .vertexOffset = source.vertices.offset,
+                .vertexCount = source.vertices.count,
+                .vertexStride = sizeof(FCurveDOTSVertex),
+                .indexFormat = RHIResourceFormat::R32Uint,
+                .indexBuffer = owner.mPrimitiveBuffer.Get(),
+                .indexOffset = source.indices.offset,
+                .indexCount = source.indices.count,
+            };
+            ranges[i] = {.primitiveCount = source.indices.count / 3};
+        }
+        else
+        {
+            GSMesh const& source = geometry->mesh;
+            info.triangleData = {
+                .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
+                .vertexBuffer = owner.mPrimitiveBuffer.Get(),
+                .vertexOffset = source.vertices.offset,
+                .vertexCount = source.vertices.count,
+                .vertexStride = sizeof(FQVertex),
+                .indexFormat = RHIResourceFormat::R32Uint,
+                .indexBuffer = owner.mPrimitiveBuffer.Get(),
+                .indexOffset = source.indices.offset,
+                .indexCount = source.indices.count,
+            };
+            ranges[i] = {.primitiveCount = source.indices.count / 3};
+        }
+        RHIAccelerationStructureBuildFlags const flags = curve
+            ? RHIAccelerationStructureBuildFlagsBits::PreferFastTrace
+            : RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
+                RHIAccelerationStructureBuildFlagsBits::AllowUpdate |
+                RHIAccelerationStructureBuildFlagsBits::AllowCompaction;
+        builds[i] = {
+            .type = RHIAccelerationStructureType::BottomLevel,
+            .flags = flags,
+            .operation = RHIAccelerationStructureBuildOp::Build,
+            .geometries = {&geometries[i], 1},
+            .ranges = {&ranges[i], 1},
+        };
+        sizeScratch.Reset(sizeArena);
+        sizes[i] = mDevice->GetAccelerationStructureSizeInfo(builds[i], sizeScratch.Ptr());
+        uint32_t& bytes = curve ? curveBytes : meshBytes;
+        resultOffsets[i] = bytes = AlignUp(bytes, 256u);
+        bytes += sizes[i].accelerationStructureSize;
+        scratchOffsets[i] = scratchBytes = AlignUp(scratchBytes, 256u);
+        scratchBytes += sizes[i].buildScratchSize;
+    }
+
+    RHIDeviceScopedHandle<RHIBuffer> meshBuffer;
+    RHIDeviceScopedHandle<RHIBuffer> curveBuffer;
+    auto CreateBLASBuffer = [&](uint32_t bytes)
+    {
+        return mDevice->CreateBuffer({
+            .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+            .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
+                RHIBufferUsageBits::AccelerationStructureStorage,
+            .size = bytes,
+        });
+    };
+    if (meshBytes)
+        meshBuffer = CreateBLASBuffer(meshBytes);
+    if (curveBytes)
+        curveBuffer = CreateBLASBuffer(curveBytes);
+    state.blasScratch = mDevice->CreateBuffer({
         .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
         .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
-        .size = scratchOffset,
-        .alignment = 256 // Aligned to Vulkan spec. Should be large enough for other APIs as well?
+        .size = scratchBytes,
+        .alignment = 256,
     });
-    auto buffer =
-        mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
-                               .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
-                                   RHIBufferUsageBits::AccelerationStructureStorage,
-                               .size = blasOffset});
-    Vector<RHIDeviceHandle<RHIAccelerationStructure>> newBLASHandles(mAllocator);
-    Vector<RHIAccelerationStructure*> newBLASPtrs(mAllocator);
-    newBLASHandles.reserve(meshes.size());
-    newBLASPtrs.reserve(meshes.size());
-    auto* cmd = ctx->Get();
+    state.blasContext = ConstructUnique<ImmediateContext>(
+        mAllocator, RHIDeviceQueueType::Compute, mDevice);
+    RHICommandList* cmd = state.blasContext->Get();
     cmd->Begin();
-    for (size_t i = 0; i < meshes.size(); i++)
+    state.geometryBLAS.resize(count, UINT32_MAX);
+
     {
-        RHIAccelerationStructureDesc as{.type = RHIAccelerationStructureType::BottomLevel,
-                                        .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
-                                            RHIAccelerationStructureBuildFlagsBits::AllowCompaction,
-                                        .buffer = buffer.Get(),
-                                        .offset = blasOffsets[i],
-                                        .size = sizeInfo[i].accelerationStructureSize};
-        auto blasHandle = device->CreateAccelerationStructure(as);
-        RHIAccelerationStructure* blas = blasHandle.Get();
-        newBLASHandles.push_back(blasHandle.Release());
-        newBLASPtrs.push_back(blas);
-        auto& desc = buildDesc[i];
+        std::lock_guard<Mutex> lock(mUploadStateMutex);
+        if (meshBuffer)
+            state.uncompactedBLASBuffer = std::move(meshBuffer);
+        if (curveBuffer)
+            mCurveBLASBuffers.push_back(std::move(curveBuffer));
+        RHIBuffer* meshStorage = state.uncompactedBLASBuffer.Get();
+        RHIBuffer* curveStorage = curveBytes ? mCurveBLASBuffers.back().Get() : nullptr;
+        for (size_t i = 0; i < count; ++i)
+        {
+            bool const curve = curves[i] != 0;
+            RHIAccelerationStructureDesc desc{
+                .type = RHIAccelerationStructureType::BottomLevel,
+                .flags = builds[i].flags,
+                .buffer = curve ? curveStorage : meshStorage,
+                .offset = resultOffsets[i],
+                .size = sizes[i].accelerationStructureSize,
+            };
+            RHIAccelerationStructure* accelerationStructure = nullptr;
+            if (curve)
+            {
+                uint32_t const slot = FreelistPop(mCurveBLASes, mCurveBLASFreelist);
+                state.geometryBLAS[i] = slot;
+                mCurveBLASes[slot] = mDevice->CreateAccelerationStructure(desc);
+                accelerationStructure = mCurveBLASes[slot].Get();
+            }
+            else
+            {
+                state.meshGeometryIndices.push_back(i);
+                state.uncompactedBLAS.push_back(mDevice->CreateAccelerationStructure(desc));
+                accelerationStructure = state.uncompactedBLAS.back().Get();
+            }
+            builds[i].scratchBuffer = state.blasScratch.Get();
+            builds[i].scratchBufferOffset = scratchOffsets[i];
+            builds[i].dstAS = accelerationStructure;
+            cmd->BuildAccelerationStructure({{{builds[i]}}});
+        }
+    }
+    if (!state.uncompactedBLAS.empty())
+    {
+        state.compactionQueries = mDevice->CreateQueryPool(
+            {.type = RHIDeviceQueryPool::QueryPoolDesc::AccelerationStructureCompactedSize,
+             .count = static_cast<uint32_t>(state.uncompactedBLAS.size())});
+        state.compactionQueries->Reset();
         cmd->BeginTransition();
         cmd->SetBufferTransition(
-            scratch.Get(),
-            {.srcStage = RHIPipelineStageBits::AccelerationBuild, .dstStage = RHIPipelineStageBits::AccelerationBuild});
+            state.uncompactedBLASBuffer.Get(),
+            {.srcAccess = RHIResourceAccessBits::AccelerationStructureWrite,
+             .dstAccess = RHIResourceAccessBits::AccelerationStructureRead,
+             .srcStage = RHIPipelineStageBits::AccelerationBuild,
+             .dstStage = RHIPipelineStageBits::AccelerationBuild});
         cmd->EndTransition();
-        desc.scratchBuffer = scratch.Get();
-        desc.scratchBufferOffset = scratchOffsets[i];
-        desc.dstAS = blas;
-        cmd->BuildAccelerationStructure({{{desc}}});
+        Vector<RHIAccelerationStructure*> pointers(mAllocator);
+        pointers.reserve(state.uncompactedBLAS.size());
+        for (auto const& accelerationStructure : state.uncompactedBLAS)
+            pointers.push_back(accelerationStructure.Get());
+        cmd->WriteAccelerationStructureCompactedSize(pointers, state.compactionQueries.Get(), 0);
+        state.needsCompaction = true;
     }
     cmd->End();
-    ctx->Submit(firstSubmitDesc), ctx->WaitIdle();
-    // Compact
-    auto queryPool =
-        device->CreateQueryPool({.type = RHIDeviceQueryPool::QueryPoolDesc::AccelerationStructureCompactedSize,
-                                 .count = static_cast<uint32_t>(meshes.size())});
-    queryPool->Reset();
-    cmd->Begin();
-    cmd->WriteAccelerationStructureCompactedSize(newBLASPtrs, queryPool.Get(), 0);
-    cmd->End(), ctx->Submit(), ctx->WaitIdle();
-    uint32_t compactOffset = 0;
-    Vector<uint32_t> compactOffsets(meshes.size(), mAllocator);
-    auto compactSizes = queryPool->GetResults();
-    for (size_t i = 0; i < meshes.size(); i++)
-    {
-        auto compactedSize = compactSizes[i];
-        compactOffsets[i] = compactOffset;
-        compactOffset = AlignUp(compactOffset + static_cast<uint32_t>(compactedSize), 256u);
-    }
-    auto& compactBuffer = mBLASBuffers.emplace_back(
-        mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
-                               .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
-                                   RHIBufferUsageBits::AccelerationStructureStorage,
-                               .size = compactOffset}));
-    cmd->Begin();
-    for (size_t i = 0; i < meshes.size(); i++)
-    {
-        RHIAccelerationStructureDesc as{.type = RHIAccelerationStructureType::BottomLevel,
-                                        .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
-                                            RHIAccelerationStructureBuildFlagsBits::AllowCompaction,
-                                        .buffer = compactBuffer.Get(),
-                                        .offset = compactOffsets[i],
-                                        .size = static_cast<uint32_t>(compactSizes[i])};
-        uint32_t slot = FreelistPop(mBLASes, mBLASFreelist);
-        outBLASIndices[i] = slot;
-        mBLASes[slot] = device->CreateAccelerationStructure(as);
-        cmd->CopyAccelerationStructure(newBLASPtrs[i], mBLASes[slot].Get(), true /* compact */);
-    }
-    cmd->End(), ctx->Submit(), ctx->WaitIdle();
-    for (auto handle : newBLASHandles)
-        RHIDeviceScopedHandle<RHIAccelerationStructure>(handle.mFactory, handle.mHandle).Reset();
-    LOG(GPUScene, LogDebug, "BLAS Upload Complete: {} BLASes, {} MB used (compacted from {} MB)", meshes.size(),
-        compactOffset / 1e6, blasOffset / 1e6);
+
+    state.completionTimeline = mDevice->CreateSemaphore(true);
+    RHIDeviceQueue::TimelinePair signal{state.completionTimeline.Get(), 1u};
+    ImmediateSubmitDesc finalSubmit = submitDesc;
+    finalSubmit.timelineSignals = {&signal, 1};
+    state.blasContext->Submit(finalSubmit);
+    state.finalTimeline = state.completionTimeline.Get();
+    state.finalTimelineValue = 1u;
 }
 
-void GPUSceneImpl::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices,
-                                  ImmediateSubmitDesc const& firstSubmitDesc)
+void GPUSceneImpl::SubmitBLASCompaction(UploadBatchState& state)
 {
-    CHECK_MSG(curves.size() == outBLASIndices.size(), "Mismatched curve BLAS indices size");
-    if (curves.empty())
-        return;
-
-    auto* device = mDevice;
-    Vector<RHIAccelerationStructureGeometryInfo> geometries(curves.size(), mAllocator);
-    Vector<RHIAccelerationStructureBuildRangeInfo> buildRanges(curves.size(), mAllocator);
-    Vector<RHIAccelerationStructureBuildDesc> buildDesc(curves.size(), mAllocator);
-    Vector<RHIAccelerationStructureSizeInfo> sizeInfo(curves.size(), mAllocator);
-    Vector<uint32_t> blasOffsets(curves.size(), mAllocator);
-    Vector<uint32_t> scratchOffsets(curves.size(), mAllocator);
-    StackArena<4096> sizeInfoArena;
-    AllocatorStack sizeInfoScratch(sizeInfoArena);
-    auto* primitiveBuffer = owner.mPrimitiveBuffer.Get();
-    uint32_t scratchOffset = 0, blasOffset = 0;
-    for (size_t i = 0; i < curves.size(); i++)
+    CHECK(state.needsCompaction);
+    auto compactSizes = state.compactionQueries->GetResults();
+    CHECK(compactSizes.size() == state.meshGeometryIndices.size());
+    Vector<uint32_t> offsets(compactSizes.size(), mAllocator);
+    uint32_t compactBytes = 0;
+    for (size_t i = 0; i < compactSizes.size(); ++i)
     {
-        auto const& curve = curves[i];
-        auto& geo = geometries[i];
-        auto& range = buildRanges[i];
-        geo.type = RHIAccelerationGeometryType::Triangles;
-        geo.triangleData =
-            RHIAccelerationStructureGeometryTriangleData{.vertexFormat = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                         .vertexBuffer = primitiveBuffer,
-                                                         .vertexOffset = curve.vertices.offset,
-                                                         .vertexCount = curve.vertices.count,
-                                                         .vertexStride = sizeof(FCurveDOTSVertex),
-                                                         .indexFormat = RHIResourceFormat::R32Uint,
-                                                         .indexBuffer = primitiveBuffer,
-                                                         .indexOffset = curve.indices.offset,
-                                                         .indexCount = curve.indices.count};
-        range = RHIAccelerationStructureBuildRangeInfo{.primitiveCount = curve.indices.count / 3};
-        auto& desc = buildDesc[i];
-        desc =
-            RHIAccelerationStructureBuildDesc{.type = RHIAccelerationStructureType::BottomLevel,
-                                              .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace,
-                                              .operation = RHIAccelerationStructureBuildOp::Build,
-                                              .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geo, 1},
-                                              .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}};
-        sizeInfoScratch.Reset(sizeInfoArena);
-        sizeInfo[i] = device->GetAccelerationStructureSizeInfo(desc, sizeInfoScratch.Ptr());
-        blasOffsets[i] = blasOffset = AlignUp(blasOffset, 256u);
-        blasOffset += sizeInfo[i].accelerationStructureSize;
-        scratchOffsets[i] = scratchOffset = AlignUp(scratchOffset, 256u);
-        scratchOffset += sizeInfo[i].buildScratchSize;
+        offsets[i] = compactBytes = AlignUp(compactBytes, 256u);
+        compactBytes += static_cast<uint32_t>(compactSizes[i]);
     }
-
-    mCurveBLASBuffers.emplace_back(
-        device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
-                              .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
-                                  RHIBufferUsageBits::AccelerationStructureStorage,
-                              .size = blasOffset}));
-    auto scratchBuffer =
-        device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
-                              .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
-                              .size = scratchOffset,
-                              .alignment = 256});
-
-    RHIBuffer* blasBuffer = mCurveBLASBuffers.back().Get();
-    auto* cmd = ctx->Get();
+    auto compactBuffer = mDevice->CreateBuffer({
+        .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
+            RHIBufferUsageBits::AccelerationStructureStorage,
+        .size = compactBytes,
+    });
+    RHICommandList* cmd = state.blasContext->Get();
     cmd->Begin();
-    for (size_t i = 0; i < curves.size(); i++)
     {
-        auto& desc = buildDesc[i];
-        RHIAccelerationStructureDesc as{.type = RHIAccelerationStructureType::BottomLevel,
-                                        .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace,
-                                        .buffer = blasBuffer,
-                                        .offset = blasOffsets[i],
-                                        .size = sizeInfo[i].accelerationStructureSize};
-        uint32_t slot = FreelistPop(mCurveBLASes, mCurveBLASFreelist);
-        outBLASIndices[i] = slot;
-        mCurveBLASes[slot] = device->CreateAccelerationStructure(as);
-        desc.scratchBuffer = scratchBuffer.Get();
-        desc.scratchBufferOffset = scratchOffsets[i];
-        desc.dstAS = mCurveBLASes[slot].Get();
-        cmd->BuildAccelerationStructure({{{desc}}});
+        std::lock_guard<Mutex> lock(mUploadStateMutex);
+        mBLASBuffers.push_back(std::move(compactBuffer));
+        RHIBuffer* storage = mBLASBuffers.back().Get();
+        for (size_t i = 0; i < state.meshGeometryIndices.size(); ++i)
+        {
+            size_t const geometryIndex = state.meshGeometryIndices[i];
+            RHIAccelerationStructureDesc desc{
+                .type = RHIAccelerationStructureType::BottomLevel,
+                .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
+                    RHIAccelerationStructureBuildFlagsBits::AllowCompaction,
+                .buffer = storage,
+                .offset = offsets[i],
+                .size = static_cast<uint32_t>(compactSizes[i]),
+            };
+            uint32_t const slot = FreelistPop(mBLASes, mBLASFreelist);
+            state.geometryBLAS[geometryIndex] = slot;
+            mBLASes[slot] = mDevice->CreateAccelerationStructure(desc);
+            cmd->CopyAccelerationStructure(state.uncompactedBLAS[i].Get(), mBLASes[slot].Get(), true);
+        }
     }
-    cmd->End(), ctx->Submit(firstSubmitDesc), ctx->WaitIdle();
-    LOG(GPUScene, LogDebug, "Curve BLAS Upload Complete: {} BLASes, {} MB used", curves.size(), blasOffset / 1e6);
+    cmd->End();
+    RHIDeviceQueue::TimelinePair signal{state.completionTimeline.Get(), 2u};
+    state.blasContext->Submit({.timelineSignals = {&signal, 1}});
+    state.finalTimelineValue = 2u;
+    state.needsCompaction = false;
 }
 
 void GPUSceneImpl::AllocateDynamicBLAS(Geometry& g)
@@ -2802,13 +2849,10 @@ RHITexture* GPUScene::GetFoundationDefaultTexture2DFloat() const
 
 void GPUSceneImpl::Reset()
 {
-    {
-        std::lock_guard<Mutex> lock(mUploadWorkMutex);
-        mUploadStop = true;
-    }
-    mUploadWorkCV.notify_all();
-    if (mUploadThread.joinable())
-        mUploadThread.join();
+    Join();
+    if (mImmediateUpload)
+        mImmediateUpload->WaitIdle();
+    mActiveUpload.reset();
     PendingGeometryUpload g;
     while (mUploadGeometryQueue.Pop(g))
     {
@@ -2823,12 +2867,6 @@ void GPUSceneImpl::Reset()
     }
     mUploadPending.store(0, std::memory_order_release);
     mUploadFailed.store(false, std::memory_order_release);
-    {
-        std::lock_guard<Mutex> lock(mUploadWorkMutex);
-        mUploadStop = false;
-        mUploadHasWork = false;
-        mUploadWorkerStarted = false;
-    }
     mDynamicStagingFrameIndex = 0;
     mDynamicStagingCursor = 0;
     mDynamicUploadRegions.clear();

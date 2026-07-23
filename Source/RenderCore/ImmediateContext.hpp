@@ -82,6 +82,7 @@ namespace Foundation::RenderCore
             bool Align(uint32_t alignment);
             void End(RHIDeviceFence* completionFence = nullptr);
             void End(ImmediateSubmitDesc const& desc);
+            void Abort();
         };
 
         ImmediateUpload(RHIDevice* device, size_t capacity, RHIDeviceQueueType type = RHIDeviceQueueType::Graphics,
