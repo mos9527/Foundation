@@ -164,7 +164,7 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 24;
+static constexpr uint32_t kSceneVersion = 25;
 
 // Stringpool entry
 struct FStringEntry

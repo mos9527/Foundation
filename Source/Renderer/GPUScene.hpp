@@ -146,7 +146,7 @@ static_assert(sizeof(GSInstance) == 56);
 static_assert(sizeof(GSMaterial) == 192);
 static_assert(sizeof(GSLight) == 84);
 static_assert(sizeof(GSCurveSet) == 24);
-static_assert(sizeof(FCurveDOTSVertex) == 16);
+static_assert(sizeof(FCurveDOTSVertex) == 8);
 static_assert(sizeof(FCurveLeaf) == 40);
 
 struct GPUSceneDesc

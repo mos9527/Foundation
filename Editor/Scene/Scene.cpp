@@ -3,6 +3,7 @@
 #include "Scene.hpp"
 #include <Core/JobSystem.hpp>
 #include <Math/Decompose.hpp>
+#include <Math/Quantize.hpp>
 #include <algorithm>
 #include <cctype>
 #include <cgltf.h>
@@ -86,6 +87,12 @@ bool IsLineCurvePrimitive(const cgltf_primitive* prim)
 // Volume-compensated DOTS radius scale: 1 / (sin(pi/4) / (pi/4)).
 static constexpr float kDOTSRadiusScale = 1.1107207345f;
 
+FCurveDOTSVertex PackDOTSVertex(float3 const& position)
+{
+    return FCurveDOTSVertex{.position = {quantizeFP16(position.x), quantizeFP16(position.y),
+                                        quantizeFP16(position.z), 0u}};
+}
+
 void EmitDOTSLeaf(FImportedCurveSegment const& segment, Vector<FCurveDOTSVertex>& vertices, Vector<uint32_t>& indices,
                   Vector<FCurveLeaf>& leaves)
 {
@@ -111,10 +118,10 @@ void EmitDOTSLeaf(FImportedCurveSegment const& segment, Vector<FCurveDOTSVertex>
     for (float3 const& side : axes)
     {
         uint32_t base = static_cast<uint32_t>(vertices.size());
-        vertices.push_back(FCurveDOTSVertex{.position = segment.p0 + side * sr0, .pad = 0.0f});
-        vertices.push_back(FCurveDOTSVertex{.position = segment.p1 + side * sr1, .pad = 0.0f});
-        vertices.push_back(FCurveDOTSVertex{.position = segment.p1 - side * sr1, .pad = 0.0f});
-        vertices.push_back(FCurveDOTSVertex{.position = segment.p0 - side * sr0, .pad = 0.0f});
+        vertices.push_back(PackDOTSVertex(segment.p0 + side * sr0));
+        vertices.push_back(PackDOTSVertex(segment.p1 + side * sr1));
+        vertices.push_back(PackDOTSVertex(segment.p1 - side * sr1));
+        vertices.push_back(PackDOTSVertex(segment.p0 - side * sr0));
         indices.push_back(base + 0);
         indices.push_back(base + 1);
         indices.push_back(base + 2);

@@ -6,11 +6,10 @@ using namespace Foundation;
 using namespace Core;
 using namespace Math;
 #pragma pack(push, 1)
-// Triangle BLAS vertex for DOTS (position + pad for 16-byte stride).
+// Triangle BLAS vertex for DOTS.
 struct FCurveDOTSVertex
 {
-    float3 position;
-    float pad;
+    uint16_t position[4]; // quantized FP16 [xyz] padding [w]
 };
 // Tapered capsule leaf reconstructed at shading time (primitiveIndex / 4).
 struct FCurveLeaf
