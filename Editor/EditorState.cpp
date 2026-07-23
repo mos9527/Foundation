@@ -130,7 +130,8 @@ static Renderer* BeginEditorRendererSetup(FContext* context, uint32_t threadCoun
     desc.threadCount = threadCount;
     desc.pipelineCache = context->psoCache.Get();
     auto* renderer = context->renderer =
-        Construct<Renderer>(context->allocator, desc, context->device, context->swapchain, context->allocator);
+        Construct<Renderer>(context->allocator, desc, context->device, context->swapchain, context->jobs.get(),
+                            context->allocator);
     if (context->swapchain.IsValid())
         context->presenter =
             Construct<Presenter>(context->allocator, context->device.Get(), context->swapchain, context->allocator);

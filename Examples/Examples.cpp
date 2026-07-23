@@ -804,7 +804,8 @@ void Examples_ResetRenderer(ExampleVulkanContext& ctx, RendererDesc desc)
 {
     desc.pipelineCache = ctx.psoCache.Get();
     ctx.renderer.reset();
-    ctx.renderer = ConstructUnique<Renderer>(GLOBAL_ALLOC, desc, ctx.device, ctx.swapchain, GLOBAL_ALLOC);
+    ctx.renderer =
+        ConstructUnique<Renderer>(GLOBAL_ALLOC, desc, ctx.device, ctx.swapchain, ctx.jobs.get(), GLOBAL_ALLOC);
 }
 
 void Examples_NewFrame(Renderer* renderer)

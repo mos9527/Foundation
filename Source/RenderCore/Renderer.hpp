@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/AllocatorStack.hpp>
+#include <Core/JobSystem.hpp>
 #include <Core/Logging.hpp>
 #include <Core/ThreadPool.hpp>
 #include <Core/Variant.hpp>
@@ -445,6 +446,8 @@ namespace Foundation::RenderCore
     private:
         State mState;
         Allocator* mAllocator{nullptr};
+        Core::JobSystem* mJobs{nullptr};
+        Atomic<bool> mPipelineStateCompilationComplete{false};
 
         RendererDesc mDesc{};
 
@@ -496,7 +499,7 @@ namespace Foundation::RenderCore
         // PostSetup
         void CullPasses(PassHandle epilogue) const;
         void BuildPipelineState(PassHandle pass);
-        void BuildPipelineStateAll();
+        Core::JobBarrier BuildPipelineStateAll();
         void FinalizeResources();
         void FinalizePasses();
         // Temporary memory arena for execution
@@ -616,7 +619,7 @@ namespace Foundation::RenderCore
     public:
         Renderer() = delete;
         Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> device,
-                 RHIDeviceHandle<RHISwapchain> swapchain, Allocator* allocator);
+                 RHIDeviceHandle<RHISwapchain> swapchain, Core::JobSystem* jobs, Allocator* allocator);
 
 #pragma region Render Graph Setup
         /**
@@ -971,8 +974,11 @@ namespace Foundation::RenderCore
          * and will be used to determine active passes and resource lifetimes.
          *
          * You must call this before Execute().
+         *
+         * @param wait Wait for pipeline state compilation before returning.
+         * @return A barrier covering all pipeline state compilation jobs.
          */
-        void EndSetup();
+        Core::JobBarrier EndSetup(bool wait = true);
 #pragma endregion
 #pragma region Diagnostics
         struct MemoryStat

@@ -71,13 +71,14 @@ void TrackedPass::ResetPipeline()
 }
 
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> device,
-                   RHIDeviceHandle<RHISwapchain> swapchain, Allocator* allocator) :
-    mState(State::Undefined), mAllocator(allocator), mDesc(desc), mSwaps(mAllocator), mDevice(device),
+                   RHIDeviceHandle<RHISwapchain> swapchain, Core::JobSystem* jobs, Allocator* allocator) :
+    mState(State::Undefined), mAllocator(allocator), mJobs(jobs), mDesc(desc), mSwaps(mAllocator), mDevice(device),
     mSwapchain(swapchain), mExecuteArena(mAllocator, kExecuteArenaSize), mExecuteAlloc(mExecuteArena),
     mExecuteSubmits(nullptr),
     mExecuteThreadPool(mDesc.threadCount, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
     mExecutePerSwapCmds(allocator), mWaitIdle(device.Get())
 {
+    CHECK(mJobs);
     mGraphicsQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     mGraphicsQueue->DebugSetObjectName("Graphics Queue");
     mComputeQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Compute);
@@ -480,7 +481,7 @@ void Renderer::PassSetTopology(PassHandle pass, RHIPipelineState::PipelineStateD
 }
 
 /* --- */
-void Renderer::EndSetup()
+Core::JobBarrier Renderer::EndSetup(bool wait)
 {
     CHECK_MSG(mState == State::Setup, "Bad renderer state ({}). Did you call BeginSetup()?", mState);
     if (!mSetup->trackedPasses.empty())
@@ -499,6 +500,10 @@ void Renderer::EndSetup()
         LOG(Renderer, LogWarn, "No passes created in render graph.");
     }
     mState = State::PostSetup;
+    Core::JobBarrier barrier = BuildPipelineStateAll();
+    if (wait)
+        mJobs->Wait(barrier);
+    return barrier;
 }
 
 void Renderer::CullPasses(PassHandle epilogue) const
@@ -1178,33 +1183,45 @@ void Renderer::BuildPipelineState(PassHandle pass)
 #pragma endregion
 }
 
-void Renderer::BuildPipelineStateAll()
+Core::JobBarrier Renderer::BuildPipelineStateAll()
 {
     CHECK(mState == State::Setup | mState == State::PostSetup);
     LOG(Renderer, LogInfo, "Compiling Shaders");
-    ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
-    Vector<Pair<PassHandle, Future<void>>> futures(mAllocator);
+    mPipelineStateCompilationComplete.store(false, std::memory_order_release);
+    Vector<Core::JobHandle> compilationJobs(mAllocator);
+    compilationJobs.reserve(mSetup->trackedPasses.size());
     for (auto& pass : mSetup->trackedPasses)
     {
         if (!pass.used)
             continue;
         auto handle = pass.handle;
-        futures.emplace_back(handle, pool.Push([this, handle] { BuildPipelineState(handle); }));
+        compilationJobs.push_back(mJobs->CreateJob(
+            "RendererPSO",
+            [this, handle]
+            {
+                try
+                {
+                    BuildPipelineState(handle);
+                }
+                catch (std::exception const& e)
+                {
+                    LOG(Renderer, LogError, "Failed to build PSO for pass {}: {}",
+                        mSetup->trackedPasses[handle].name, e.what());
+                    throw;
+                }
+            }));
     }
-    for (auto& [pass, future] : futures)
-    {
-        auto& tpass = mSetup->trackedPasses[pass];
-        try
+    Core::JobHandle epilogue = mJobs->CreateJobAfter(
+        "RendererPSOEpilogue", compilationJobs,
+        [this]
         {
-            future.get();
-        }
-        catch (std::runtime_error const& e)
-        {
-            LOG(Renderer, LogError, "Failed to build PSO for pass {}: {}", tpass.name, e.what());
-            throw; // Failfast
-        }
-    }
-    LOG(Renderer, LogInfo, "Compiled Shaders.");
+            mPipelineStateCompilationComplete.store(true, std::memory_order_release);
+            LOG(Renderer, LogInfo, "Compiled Shaders.");
+        });
+    Core::JobBarrier barrier = mJobs->CreateBarrier();
+    barrier.Add(compilationJobs);
+    barrier.Add(epilogue);
+    return barrier;
 }
 
 void Renderer::FinalizePasses()
@@ -1225,7 +1242,6 @@ void Renderer::FinalizePasses()
         mDescPool = mDevice->CreateDescriptorPool({bindings});
         mDescPool->DebugSetObjectName("Renderer Descriptor Pool");
     }
-    BuildPipelineStateAll();
 }
 
 void Renderer::FinalizeResources()
@@ -1791,6 +1807,8 @@ void Renderer::ExecuteFrame()
 {
     ZoneScoped;
     CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", mState);
+    CHECK_MSG(mPipelineStateCompilationComplete.load(std::memory_order_acquire),
+              "Renderer PSO compilation is not complete.");
     auto& passes = mSetup->trackedPasses;
     // Execute by groups
     auto& groups = mSetup->executionGroups;
