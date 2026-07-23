@@ -11,13 +11,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES_CMAKE = REPO_ROOT / "Examples" / "CMakeLists.txt"
+EXAMPLES_RENDERER_CMAKE = REPO_ROOT / "Examples" / "Renderer" / "CMakeLists.txt"
 MAIN_ACTIVITY = REPO_ROOT / "Android" / "app" / "src" / "main" / "java" / "foundation" / "examples" / "MainActivity.java"
 BUILD_GRADLE = REPO_ROOT / "Android" / "app" / "build.gradle.kts"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build.yml"
 
 ANDROID_EXCLUDED_EXAMPLES = {
-    "Example_HeadlessTriangle",
-    "Example_HeadlessPathTracer",
 }
 
 CI_EXCLUDED_EXAMPLES = {
@@ -31,8 +30,11 @@ class Example:
     description: str
 
     @property
+    def is_renderer(self) -> bool:
+        return "ExampleRenderer_" in self.target
+    @property
     def title(self) -> str:
-        return self.target.removeprefix("Example_")
+        return self.target.removeprefix("ExampleRenderer_").removeprefix("Example_")
 
 
 def parse_examples(cmake_path: Path) -> list[Example]:
@@ -42,12 +44,11 @@ def parse_examples(cmake_path: Path) -> list[Example]:
         target = match.group(1)
         source = cmake_path.parent / match.group(2)
         examples.append(Example(target=target, source=source, description=read_source_description(source)))
-
-    return sorted(examples, key=example_sort_key)
+    return examples
 
 
 def example_sort_key(example: Example) -> tuple[str, str, str]:
-    return (example.description.casefold(), example.title.casefold(), example.target.casefold())
+    return (not example.is_renderer, example.description.casefold(), example.title.casefold(), example.target.casefold())
 
 
 def read_source_description(source: Path, max_lines: int = 5) -> str:
@@ -142,7 +143,9 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="Report whether files would change without writing them.")
     args = parser.parse_args()
 
-    examples = parse_examples(EXAMPLES_CMAKE)
+    examples = parse_examples(EXAMPLES_CMAKE) +  parse_examples(EXAMPLES_RENDERER_CMAKE)
+    examples = sorted(examples, key=example_sort_key)
+
     android_examples = [example for example in examples if example.target not in ANDROID_EXCLUDED_EXAMPLES]
     ci_examples = [example for example in examples if example.target not in CI_EXCLUDED_EXAMPLES]
 

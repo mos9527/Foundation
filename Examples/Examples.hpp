@@ -7,7 +7,6 @@
 #include <RHICore/Surface.hpp>
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Renderer.hpp>
-#include <Renderer/Postprocess.hpp>
 #include <Renderer/Texture.hpp>
 #include <Renderer/Mesh.hpp>
 #include <Math/Math.hpp>
@@ -177,18 +176,14 @@ void Examples_Text(ExampleInputState& input, StringView text);
 bool Examples_Button(ExampleInputState& input, StringView text);
 bool Examples_Slider(ExampleInputState& input, StringView label, float& value, float minValue, float maxValue,
                      float step = 0.01f, const char* unit = "x", bool draggable = true);
-bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& currentRenderer);
 Span<const RenderUtils::CSDebugTextData> Examples_HudLines(ExampleInputState const& input);
-void Examples_ResetRenderer(ExampleVulkanContext& ctx, RendererDesc desc = {});
 void Examples_NewFrame(Renderer* renderer); // Headless
 void Examples_NewFrame(SDL_Window* window, ExampleVulkanContext& ctx); // To Window WSI
+void Examples_ResetRenderer(ExampleVulkanContext& ctx, RendererDesc desc = {});
 void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx);
 bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISurface>& outSurface, RHIDeviceScopedHandle<RHISwapchain>& outSwapchain);
 void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* data,
                                int channels = 4, int strideBytes = 0);
-// Basic diffuse+specular tonemap. Returns an offscreen image when isPresent is false.
-ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs const& outputs, bool isPresent);
-
 float Examples_GetTime();
 
 
@@ -211,11 +206,3 @@ struct ExampleFpsCounter
         return fps;
     }
 };
-
-FImportedMesh Examples_MakePlaneMesh(float extent, float y = 0.0f, Allocator* alloc = GLOBAL_ALLOC);
-FImportedMesh Examples_MakeBoxMesh(float size, Allocator* alloc = GLOBAL_ALLOC);
-FImportedMesh Examples_MakeSphereMesh(float radius, uint32_t segments = 32, uint32_t rings = 16, Allocator* alloc = GLOBAL_ALLOC);
-
-void Example_BuildExampleRasterRenderGraph(Renderer* renderer, RendererUBO* globals,
-                                           RendererResources& gpu,
-                                           RendererConfig& cfg, RendererOutputs& out);

@@ -137,7 +137,7 @@ int main(int argc, char** argv)
             ctx.renderer->BeginSetup();
             cfg.renderExtent = RHIExtent2D{renderWidth, renderHeight};
             auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
-            BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
+            Example_BuildExamplePathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
             const ResourceHandle output = Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, false);
             ctx.renderer->EndSetup();
             // Accumalate
@@ -219,7 +219,7 @@ int main(int argc, char** argv)
                     cfg.renderExtent = RHIExtent2D{float2(renderWidth, renderHeight) * scaling};
                     auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
                     if (renderer == ExampleRenderer::PathTracer)
-                        BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
+                        Example_BuildExamplePathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
                     else
                         Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
                     Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);

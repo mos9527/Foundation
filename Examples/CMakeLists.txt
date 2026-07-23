@@ -7,7 +7,7 @@ add_subdirectory(Shaders)
 add_subdirectory(Samples)
 
 add_library(Example_Common STATIC Examples.cpp)
-target_link_libraries(Example_Common PUBLIC Foundation_RenderCore Foundation_RHIVulkan Foundation_RenderUtils Foundation_Rasterizer Foundation_Pathtracer ThirdParty_STB argh)
+target_link_libraries(Example_Common PUBLIC Foundation_RenderCore Foundation_RHIVulkan Foundation_RenderUtils ThirdParty_STB argh)
 target_include_directories(Example_Common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (ANDROID)
@@ -56,28 +56,4 @@ add_example(Example_CIEChromacity "CIEChromacity.cpp")
 target_link_libraries(Example_CIEChromacity PUBLIC Example_Common)
 add_dependencies(Example_CIEChromacity Shader_CIEChromacity)
 
-add_example(Example_GPUScene "GPUScene.cpp")
-target_link_libraries(Example_GPUScene PUBLIC Example_Common Editor_Assets Foundation_Rasterizer Foundation_Pathtracer)
-add_dependencies(Example_GPUScene Foundation_Shaders Editor_Data Examples_SampleFiles Shader_PostprocessBasic)
-
-add_example(Example_DynamicGeometry "DynamicGeometry.cpp")
-target_link_libraries(Example_DynamicGeometry PUBLIC Example_Common Foundation_Rasterizer)
-add_dependencies(Example_DynamicGeometry Foundation_Shaders Editor_Data Shader_PostprocessBasic Shader_DynamicGerstner)
-
-if (FOUNDATION_WITH_JOLT_EXAMPLES)
-    
-    
-    set(TARGET_UNIT_TESTS OFF CACHE BOOL "" FORCE)
-    set(TARGET_HELLO_WORLD OFF CACHE BOOL "" FORCE)
-    set(TARGET_PERFORMANCE_TEST OFF CACHE BOOL "" FORCE)
-    set(TARGET_SAMPLES OFF CACHE BOOL "" FORCE)
-    set(TARGET_VIEWER OFF CACHE BOOL "" FORCE)
-    set(USE_ASSERTS OFF CACHE BOOL "" FORCE)
-    set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(JoltPhysics)
-    
-    add_example(Example_PhysicsJolt "PhysicsJolt.cpp")
-    target_include_directories(Example_PhysicsJolt PUBLIC ${JoltPhysics_SOURCE_DIR}/..)
-    target_link_libraries(Example_PhysicsJolt PUBLIC Example_Common Foundation_Rasterizer Jolt)
-    add_dependencies(Example_PhysicsJolt Foundation_Shaders Editor_Data Shader_PostprocessBasic Shader_DynamicGerstner)
-endif()
+add_subdirectory(Renderer)

@@ -177,7 +177,7 @@ namespace
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
         if (renderer == ExampleRenderer::PathTracer)
-            BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
+            Example_BuildExamplePathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         else
             Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
