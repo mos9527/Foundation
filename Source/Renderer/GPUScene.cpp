@@ -366,8 +366,7 @@ struct GPUSceneImpl
     }
     void BeginDynamicGeometryUpdate();
     void UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
-    void UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices,
-                               Span<const uint32_t> indices);
+    void UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices, Span<const uint32_t> indices);
     void EndDynamicGeometryUpdate();
     void UploadDynamicGeometryCPU(RHICommandList* cmd);
     void BuildBLAS(RHICommandList* cmd);
@@ -501,13 +500,12 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, Allocator* alloca
             mDynamicStagingFrames = desc.dynamicStagingFramesInFlight + 1u;
             mDynamicStagingFrameSize = desc.dynamicStagingBudget;
             size_t const stagingBytes = static_cast<size_t>(desc.dynamicStagingBudget) * mDynamicStagingFrames;
-            mDynamicStagingBuffer = mDevice->CreateBuffer(
-                {.resource = {.heap = RHIDeviceHeapType::Upload,
-                              .hostAccess = RHIResourceHostAccess::WriteOnly,
-                              .coherent = true,
-                              .staging = true},
-                 .usage = RHIBufferUsageBits::TransferSource,
-                 .size = stagingBytes});
+            mDynamicStagingBuffer = mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
+                                                                        .hostAccess = RHIResourceHostAccess::WriteOnly,
+                                                                        .coherent = true,
+                                                                        .staging = true},
+                                                           .usage = RHIBufferUsageBits::TransferSource,
+                                                           .size = stagingBytes});
             mDynamicStagingBuffer->DebugSetObjectName("Dynamic Primitive Staging");
             mDynamicStagingMapped = mDynamicStagingBuffer->Map<char>();
         }
@@ -795,22 +793,14 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     res.materialsHash = FNV1a64(tables.materials);
     res.lights = tables.lightRange;
     CHECK_MSG(!tables.lights.empty(), "Scene must contain an environment light");
-    auto LightOrder = [](GSLight const& light)
-    {
-        uint32_t const type = GSLightTypeCPU(light);
-        if (type == kGSLightTypeEnvironment)
-            return 0u;
-        if (type == kGSLightTypeDirectional && light.params.x > 0.0f)
-            return 1u;
-        return 2u;
-    };
-    std::stable_sort(tables.lights.begin(), tables.lights.end(),
-                     [&](GSLight const& a, GSLight const& b) { return LightOrder(a) < LightOrder(b); });
+    std::sort(tables.lights.begin(), tables.lights.end(), [&](GSLight const& a, GSLight const& b)
+              { return (a.flags & kGSLightTypeMask) < (b.flags & kGSLightTypeMask); });
     GSLight& environment = tables.lights.front();
     CHECK_MSG(GSLightTypeCPU(environment) == kGSLightTypeEnvironment,
               "First light must be an environment light, got {}", GSLightTypeCPU(environment));
-    environment.params.y =
-        (environment.flags & kGSLightFlagEnvironmentMap) != 0u ? owner.mEnvMapAverageRadiance : 1.0f;
+    // When not using a HDRI, we set env's radiance to 0...so it in effect never particpates in NEE evaluation
+    // and improves NEE for the rest of the lights.
+    environment.params.y = (environment.flags & kGSLightFlagEnvironmentMap) != 0u ? owner.mEnvMapAverageRadiance : 0.0f;
     res.lightsHash = FNV1a64(tables.lights);
     // Resolve instance resources
     for (auto& inst : tables.instances)
@@ -835,8 +825,8 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
         LightBVHBuild bvh = BuildLightBVH(tables.lights, options, mStackAlloc ? mStackAlloc : mAllocator);
 #ifndef NDEBUG
         String validationError;
-        CHECK_MSG(ValidateLightBVH(bvh, tables.lights, &validationError),
-                  "Light BVH validation failed: {}", validationError);
+        CHECK_MSG(ValidateLightBVH(bvh, tables.lights, &validationError), "Light BVH validation failed: {}",
+                  validationError);
 #endif
         UpdateResult::LightBVH& lightBVH = res.lightBVH;
         lightBVH.valid = bvh.valid;
@@ -1200,7 +1190,8 @@ static FSerializedBounds BuildMeshBounds(FImportedMesh const& mesh)
     return bounds;
 }
 
-static std::pair<FSerializedMesh, Vector<unsigned char>> SerializedFromMesh(FImportedMesh const& mesh, Allocator* alloc, FUUID skeleton)
+static std::pair<FSerializedMesh, Vector<unsigned char>> SerializedFromMesh(FImportedMesh const& mesh, Allocator* alloc,
+                                                                            FUUID skeleton)
 {
     const_cast<FImportedMesh&>(mesh).EnsureQuantized();
 
@@ -1424,8 +1415,8 @@ GPUScene::Result GPUSceneImpl::Upload(FTexture const& source, TextureHandle& out
     FSerializedTexture adaptor = SerializedFromTexture(source, mAllocator);
     FBlobDeserializer blobs(Span<const unsigned char>(source.bytes.data(), source.bytes.size()));
     Result r = Upload(&blobs, adaptor, outTextureIndex, debugName, pinned);
-    // Lifetime for the serialized blob must outlive the upload itself, so we can't really do this asynchronously within this helper func.
-    // See also @ref FImportedMesh upload next, same thing here.
+    // Lifetime for the serialized blob must outlive the upload itself, so we can't really do this asynchronously within
+    // this helper func. See also @ref FImportedMesh upload next, same thing here.
     // TODO: Just offer SerializedFromTexture, etc as public APIs...
     if (r != Result::InProgress)
         return r;
@@ -2166,12 +2157,11 @@ void GPUSceneImpl::AllocateDynamicBLAS(Geometry& g)
 }
 
 GPUScene::Result GPUSceneImpl::Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle,
-                                              bool isGpu)
+                                        bool isGpu)
 {
     if (!mDynamicPrimitiveBuffer)
     {
-        LOG(GPUScene, LogError,
-            "Allocate called but GPUSceneDesc::dynamicGeometryBudget is 0 (feature disabled)");
+        LOG(GPUScene, LogError, "Allocate called but GPUSceneDesc::dynamicGeometryBudget is 0 (feature disabled)");
         return Result::InvalidInput;
     }
     if (vertexCount == 0 || indexCount == 0 || (indexCount % 3u) != 0u)
@@ -2256,9 +2246,9 @@ void GPUSceneImpl::BeginDynamicGeometryUpdate()
 
 void GPUSceneImpl::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices)
 {
-    CHECK_MSG(
-        mDynamicIsUpdate,
-        "UpdateDynamicGeometryGPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+    CHECK_MSG(mDynamicIsUpdate,
+              "UpdateDynamicGeometryGPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate "
+              "window");
     Geometry* g = ResolveGeometry(handle);
     CHECK_MSG(g && g->dynamic, "UpdateDynamicGeometryGPU on a non-dynamic or invalid geometry handle");
     CHECK_MSG(g->isGpu, "UpdateDynamicGeometryGPU called on CPU-authored geometry");
@@ -2268,11 +2258,11 @@ void GPUSceneImpl::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVe
 }
 
 void GPUSceneImpl::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices,
-                                         Span<const uint32_t> indices)
+                                            Span<const uint32_t> indices)
 {
-    CHECK_MSG(
-        mDynamicIsUpdate,
-        "UpdateDynamicGeometryCPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+    CHECK_MSG(mDynamicIsUpdate,
+              "UpdateDynamicGeometryCPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate "
+              "window");
     Geometry* g = ResolveGeometry(handle);
     CHECK_MSG(g && g->dynamic, "UpdateDynamicGeometryCPU on a non-dynamic or invalid geometry handle");
     CHECK_MSG(!g->isGpu, "CPU-authored UpdateDynamicGeometryCPU called on GPU-authored geometry");
@@ -2287,16 +2277,14 @@ void GPUSceneImpl::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQ
         uint32_t const size = static_cast<uint32_t>(vertices.size_bytes());
         uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(FQVertex));
         std::memcpy(mDynamicStagingMapped + srcOffset, vertices.data(), size);
-        mDynamicUploadRegions.push_back(
-            {.srcOffset = srcOffset, .dstOffset = g->mesh.vertices.offset, .size = size});
+        mDynamicUploadRegions.push_back({.srcOffset = srcOffset, .dstOffset = g->mesh.vertices.offset, .size = size});
     }
     if (!indices.empty())
     {
         uint32_t const size = static_cast<uint32_t>(indices.size_bytes());
         uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(uint32_t));
         std::memcpy(mDynamicStagingMapped + srcOffset, indices.data(), size);
-        mDynamicUploadRegions.push_back(
-            {.srcOffset = srcOffset, .dstOffset = g->mesh.indices.offset, .size = size});
+        mDynamicUploadRegions.push_back({.srcOffset = srcOffset, .dstOffset = g->mesh.indices.offset, .size = size});
         g->dynamicIndicesDirty = true;
     }
     g->dirty = true;
@@ -2324,8 +2312,7 @@ void GPUSceneImpl::UploadDynamicGeometryCPU(RHICommandList* cmd)
             continue;
         if (g.uploadHeader)
         {
-            cmd->UpdateBuffer(mDynamicPrimitiveBuffer.Get(), g.offset,
-                              AsBytes(AsSpan(g.mesh)));
+            cmd->UpdateBuffer(mDynamicPrimitiveBuffer.Get(), g.offset, AsBytes(AsSpan(g.mesh)));
             g.uploadHeader = false;
         }
     }
@@ -2912,8 +2899,7 @@ GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedCurve con
     return mImpl->Upload(blobs, source, outHandle);
 }
 
-GPUScene::Result GPUScene::Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle,
-                                          bool isGpu)
+GPUScene::Result GPUScene::Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu)
 {
     return mImpl->Allocate(vertexCount, indexCount, outHandle, isGpu);
 }
@@ -2951,10 +2937,7 @@ void GPUScene::ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffs
     outPrimitiveOffset = g->offset;
     outPrimitiveType = g->type | (g->dynamic ? kGSInstanceFlagDynamic : 0u);
 }
-GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables)
-{
-    return mImpl->EndScene(tables);
-}
+GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables) { return mImpl->EndScene(tables); }
 void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const { mImpl->DbgGetMemoryStatistics(outStats); }
 String GPUScene::DbgGetBufferStatistics() const { return mImpl->DbgGetBufferStatistics(); }
 GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update)
@@ -2972,7 +2955,7 @@ void GPUScene::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertic
     mImpl->UpdateDynamicGeometryGPU(handle, updateVertices, updateIndices);
 }
 void GPUScene::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices,
-                                     Span<const uint32_t> indices)
+                                        Span<const uint32_t> indices)
 {
     mImpl->UpdateDynamicGeometryCPU(handle, vertices, indices);
 }

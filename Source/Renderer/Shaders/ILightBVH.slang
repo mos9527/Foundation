@@ -1,4 +1,6 @@
 // Included after `uniform UBO globalParams` and `StructuredBuffer<GSLight> lights`.
+import ICommon;
+import ILight;
 
 public static const float kLightBVHInvalidCosConeAngle = -1.0f;
 public static const uint kLightBVHLeafBit = 1u << 31;
@@ -394,6 +396,7 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
         return false;
 
     float uScaled = u * total;
+    // Distant light path
     if (distantWeight > 0.0f && uScaled < distantWeight)
     {
         float uDistant = saturate(uScaled / distantWeight);
@@ -408,6 +411,7 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
         return selectionPMF > 0.0f;
     }
 
+    // Finite light path
     if (finiteWeight <= 0.0f || globalParams.lightBVHValid == 0u)
         return false;
 

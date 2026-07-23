@@ -28,8 +28,11 @@ uniform UBO globalParams;
 RaytracingAccelerationStructure AS;
 StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitives;
-ByteAddressBuffer dynamicPrimitives; // CPU-updateable geometry ring (current frame slot); aliases `primitives` when the feature is off
+ByteAddressBuffer dynamicPrimitives;
 StructuredBuffer<GSMaterial> materials;
+// -- Lights
+// GPUScene sorts these by type (env, directional, ...see kGSLightType*)
+// lights[0] always exists and is the environment light.
 StructuredBuffer<GSLight> lights;
 #include "ILightBVH.slang"
 SamplerState textureSampler;
@@ -39,7 +42,7 @@ RWTexture2D<float4> diffuse;            // Diffuse lobe radiance
 RWTexture2D<float4> specular;           // Specular lobe radiance (incl. transmission)
 RWTexture2D<float> depth;               // NDC depth
 // -- Debug buffers
-RWTexture2D<uint32_t> instanceIDBuffer; // Instance ID map, ~0u = no object (written on primary hit only)
+RWTexture2D<uint32_t> instanceIDBuffer;
 RWTexture2D<float4> adaptiveAux; // xyz = Half-samples, w = Convergence flag
 
 // SER coherence hint layout:
@@ -55,8 +58,6 @@ static const uint32_t kGSInstanceTypeMesh = 0u;
 static const uint32_t kGSInstanceTypeCurve = 1u;
 static const uint kMeshMask = 0x01;
 static const uint kCurveMask = 0x04;
-
-
 
 // Hit state helpers
 struct RayCone
@@ -1436,33 +1437,11 @@ void AddEnvironmentMiss(
     float3 Le = lighting.env.Le(wi);
     float pdf = EvalLightSelectionPMF(lighting.lastLightCtx, 0u) *
         lighting.env.PDF_Li(lighting.lastLightCtx, wi, true);
-    // Sun disks follow the environment light.
-    for (uint i = 1u; i < globalParams.lights.count; ++i)
-    {
-        GSLight gl = LoadSceneLight(i);
-        if (GSLightType(gl) != kGSLightTypeDirectional || gl.params.x <= 0.0f)
-            break;
-        DistantLight sun = DistantLight(SampledSpectrum(gl.color * gl.power), gl.direction, gl.params.x);
-        float3 sunLe = sun.Le(wi);
-        if (!any(sunLe > 0.0f))
-            continue;
-
-        float pSel = EvalLightSelectionPMF(lighting.lastLightCtx, i);
-        pdf += pSel * sun.PDF_Li(lighting.lastLightCtx, wi, true);
-        if (bounce > 0 || globalParams.ptPrimaryLightVisibility != 0u)
-            Le += sunLe;
-    }
 
     if (!any(Le > 0.0f))
         return;
-
-    if (bounce == 0)
-    {
-        AddRadiance(radiance.specular, Le, true);
-        return;
-    }
-
-    float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+    
+    float mis = (lastSamplePDF > EPS && bounce > 0) ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
     float3 contrib = beta * Le * mis;
     AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, false);
 }
@@ -1517,7 +1496,6 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     float3 beta = float3(1);
     PathRadiance radiance = PathRadiance();
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
-    bool pickingWritten = false;
     bool resetAccumulation = globalParams.ptAccumulatedFrames == 0u && subSample == 0u;
     float sampleCount = resetAccumulation ? 1.0f : diffuse[pix].a + 1.0f;
     float lastSamplePDF = 0.0f;
@@ -1530,7 +1508,8 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     CameraRay cameraRay = GenerateCameraRay(pix, rng, hasAnyDebugView);
     RayDesc ray = cameraRay.ray;
     RayCone currentRayCone = cameraRay.rayCone;
-    float chitNDCDepth = 0.0f;
+    HitRecord chit;
+    HitState chitState;
     for (uint bounce = 0; bounce <= globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
 
@@ -1653,15 +1632,9 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             return;
         }
 
-        if (bounce == 0 && !pickingWritten)
-        {
-            WritePrimaryInstanceID(pix, hit.raw.instance);
-            pickingWritten = true;
-        }
-
         if (bounce == 0)
-            chitNDCDepth = WorldToNDCDepth(hitState.position);
-
+            chit = hit, chitState = hitState;     
+        
         // Local frame setup
         // Subsurface events are non-local. The closure picks the event
         // the integrator performs the scene query.
@@ -1753,10 +1726,8 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             beta /= rrPCount; // Boost non-terminated paths
         }
     }
-    if (!pickingWritten)
-        WritePrimaryInstanceID(pix, ~0u);
-
-    AccumulatePathRadiance(pix, radiance, chitNDCDepth, sampleCount);
+    WritePrimaryInstanceID(pix, chit.raw.instance);
+    AccumulatePathRadiance(pix, radiance, WorldToNDCDepth(chitState.position), sampleCount);
 }
 
 bool EvaluateOpacityAlphaTest<S : ISampler>(uint instance, uint primitive, float2 bary, inout S rng)

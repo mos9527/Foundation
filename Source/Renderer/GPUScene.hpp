@@ -133,7 +133,7 @@ struct GSLight
     float3 position;
     float3 direction;
     // Directional: x=angularDiameter. Point: x=radius. Spot: x=radius, y=innerCos, z=outerCos.
-    // Disk: xy=radius. Environment: x=azimuthOffset.
+    // Disk: xy=radius. Environment: x=azimuthOffset, y=averageRadiance, 0 when solid color
     float4 params;
     float3 dpdu; // tangent u-axis (Rect: half-extent u)
     float3 dpdv; // tangent v-axis (Rect: half-extent v)

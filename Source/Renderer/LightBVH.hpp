@@ -150,7 +150,7 @@ struct LightBVHBuild
 {
     return light.power > 0.0f && any(greaterThan(light.color, float3(0.0f)));
 }
-
+// NOTE: Must match ComputeLightProposalWeight in ICommon.slang
 [[nodiscard]] inline float ComputeLightProposalWeight(GSLight const& light)
 {
     float colorWeight = (std::abs(light.color.x) + std::abs(light.color.y) + std::abs(light.color.z)) / 3.0f;
@@ -162,8 +162,7 @@ struct LightBVHBuild
     }
     if (type == kGSLightTypeEnvironment)
     {
-        float averageRadiance = light.params.y > 0.0f ? light.params.y : 1.0f;
-        return radiometricWeight * averageRadiance * std::numbers::pi_v<float>;
+        return radiometricWeight * light.params.y * std::numbers::pi_v<float>;
     }
     if (type == kGSLightTypePoint)
         return radiometricWeight * (4.0f * std::numbers::pi_v<float>);
