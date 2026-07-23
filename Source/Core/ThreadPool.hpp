@@ -83,7 +83,13 @@ namespace Foundation::Core
     {
         Allocator* mAllocator;
         String mName;
+        Atomic<bool> mAccepting{true};
+        Mutex mSubmitMutex;
+        CondVar mSubmitCV;
+        size_t mSubmitting{};
         Atomic<bool> mShutdown{false};
+        Atomic<size_t> mWakeEpoch{0};
+        Atomic<size_t> mProgressEpoch{0};
         Atomic<size_t> mComplete{0};
         Atomic<size_t> mTotal{0};
 
@@ -91,23 +97,53 @@ namespace Foundation::Core
         // Ensure threads are joined first on destruction
         Vector<Thread> mThreads;
         void ThreadPoolWorker(size_t id);
+        bool BeginSubmit() noexcept
+        {
+            std::lock_guard lock(mSubmitMutex);
+            if (!mAccepting.load(std::memory_order_relaxed))
+                return false;
+            ++mSubmitting;
+            return true;
+        }
+        void EndSubmit() noexcept
+        {
+            std::lock_guard lock(mSubmitMutex);
+            if (--mSubmitting == 0)
+                mSubmitCV.notify_all();
+        }
         static constexpr size_t PriorityIndex(JobPriority priority) noexcept { return static_cast<size_t>(priority); }
         template <typename T, typename... Args>
             requires std::is_base_of_v<Job, T>
-        T* PushImplInternal(JobPriority priority, Allocator* jobAllocator, Args&&... args)
+        void PushImplInternal(JobPriority priority, Allocator* jobAllocator, Args&&... args)
         {
-            if (mShutdown)
+            if (!BeginSubmit())
                 throw std::runtime_error("ThreadPool shutting down");
-            if (PriorityIndex(priority) >= kJobPriorityCount)
-                throw std::runtime_error("Invalid job priority");
-            Allocator* allocator = jobAllocator ? jobAllocator : mAllocator;
-            auto task = ConstructUniqueBase<Job, T>(allocator, std::forward<Args>(args)...);
-            T* ptr = static_cast<T*>(task.get());
-            if (!mJobs[PriorityIndex(priority)].Push(std::move(task)))
-                throw std::runtime_error("Jobs full");
-            mTotal.fetch_add(1, std::memory_order_relaxed);
-            mTotal.notify_one();
-            return ptr;
+            try
+            {
+                if (mThreads.empty())
+                    throw std::runtime_error("ThreadPool has no worker threads");
+                if (PriorityIndex(priority) >= kJobPriorityCount)
+                    throw std::runtime_error("Invalid job priority");
+                Allocator* allocator = jobAllocator ? jobAllocator : mAllocator;
+                auto task = ConstructUniqueBase<Job, T>(allocator, std::forward<Args>(args)...);
+                mTotal.fetch_add(1, std::memory_order_release);
+                if (!mJobs[PriorityIndex(priority)].Push(std::move(task)))
+                {
+                    mTotal.fetch_sub(1, std::memory_order_release);
+                    mProgressEpoch.fetch_add(1, std::memory_order_release);
+                    mProgressEpoch.notify_all();
+                    throw std::runtime_error("Jobs full");
+                }
+                mWakeEpoch.fetch_add(1, std::memory_order_release);
+                mWakeEpoch.notify_one();
+                EndSubmit();
+                return;
+            }
+            catch (...)
+            {
+                EndSubmit();
+                throw;
+            }
         }
         template <typename Lambda, typename... Args>
         auto PushLambdaInternal(JobPriority priority, Allocator* jobAllocator, Lambda&& func, Args const&... args)
@@ -135,36 +171,34 @@ namespace Foundation::Core
          * @note This by itself does not return a future or any way to get the result of the job
          *       It's up to the implementation of the job to provide a way to get the result.
          *       See also @ref ThreadPoolLambdaJob
-         * @return Stable pointer of the pushed job. Lifetime guaranteed until the job's completion.
          */
         template <typename T, typename... Args>
             requires std::is_base_of_v<Job, T>
-        T* PushImpl(JobPriority priority, Args&&... args)
+        void PushImpl(JobPriority priority, Args&&... args)
         {
-            return PushImplInternal<T>(priority, nullptr, std::forward<Args>(args)...);
+            PushImplInternal<T>(priority, nullptr, std::forward<Args>(args)...);
         }
         template <typename T, typename... Args>
             requires std::is_base_of_v<Job, T>
-        T* PushImpl(Args&&... args)
+        void PushImpl(Args&&... args)
         {
-            return PushImplInternal<T>(JobPriority::Normal, nullptr, std::forward<Args>(args)...);
+            PushImplInternal<T>(JobPriority::Normal, nullptr, std::forward<Args>(args)...);
         }
         /**
          * @brief Push a job with an explicit allocator for the job object.
          * @param jobAllocator Optional allocator for the job object. If null, the thread pool allocator is used.
-         * @return Stable pointer of the pushed job. Lifetime guaranteed until the job's completion.
          */
         template <typename T, typename... Args>
             requires std::is_base_of_v<Job, T>
-        T* PushImplAlloc(Allocator* jobAllocator, Args&&... args)
+        void PushImplAlloc(Allocator* jobAllocator, Args&&... args)
         {
-            return PushImplInternal<T>(JobPriority::Normal, jobAllocator, std::forward<Args>(args)...);
+            PushImplInternal<T>(JobPriority::Normal, jobAllocator, std::forward<Args>(args)...);
         }
         template <typename T, typename... Args>
             requires std::is_base_of_v<Job, T>
-        T* PushImplAlloc(JobPriority priority, Allocator* jobAllocator, Args&&... args)
+        void PushImplAlloc(JobPriority priority, Allocator* jobAllocator, Args&&... args)
         {
-            return PushImplInternal<T>(priority, jobAllocator, std::forward<Args>(args)...);
+            PushImplInternal<T>(priority, jobAllocator, std::forward<Args>(args)...);
         }
         /**
          * @brief Push a lambda job to the thread pool.
@@ -205,18 +239,15 @@ namespace Foundation::Core
         [[nodiscard]] size_t GetParallelForConcurrency() const noexcept { return mThreads.size() + 1; }
 
         /**
-         * @brief Shutdown the @ref ThreadPool, potentially cancelling all pending jobs.
-         * @note This does not cancel running jobs, but prevents any new jobs from being run/scheduled.
+         * @brief Stop accepting work, drain accepted jobs, and stop all workers.
          */
         void Shutdown();
         /**
          * @brief Wait for all scheduled jobs to complete.
-         * @note This _MUST_ be called if you'd like all submitted work to complete before destruction.
+         * @note Concurrent submission must be externally synchronized with this call.
          */
         void Join();
-        /**
-         * @brief Shutdown, without waiting for pending jobs.
-         */
+        /** @brief Drain accepted jobs and stop all workers. */
         ~ThreadPool();
 
         [[nodiscard]] size_t GetPendingJobCount() const noexcept
@@ -229,6 +260,6 @@ namespace Foundation::Core
         /**
          * Aligns a number to upper, closest power of 2 so that it's a valid @ref maxTasks size.
          */
-        const static size_t CalcTaskSize(size_t size) { return 1ULL << static_cast<size_t>(std::ceil(std::log2f(size))); }
+        const static size_t CalcTaskSize(size_t size) { return std::bit_ceil(std::max<size_t>(size, 1)); }
     };
 } // namespace Foundation::Core

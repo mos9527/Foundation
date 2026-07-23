@@ -99,9 +99,7 @@ namespace Foundation::Core {
         void deallocate(pointer p, size_type n) noexcept {
             mResource->Deallocate(p);
         }
-        void deallocate(pointer p) noexcept { 
-            mResource->Deallocate(p, sizeof(T)); 
-        }
+        void deallocate(pointer p) noexcept { mResource->Deallocate(p); }
 		// Allocators are deemed equal if they point to the same resource
         friend bool operator==(const StlAllocator& lhs, const StlAllocator& rhs) noexcept {
             return lhs.mResource == rhs.mResource;
@@ -195,6 +193,8 @@ namespace Foundation::Core {
      */
     template<typename T>
     using SharedPtr = std::shared_ptr<T>;
+    template<typename T>
+    using WeakPtr = std::weak_ptr<T>;
 
     /**
      * @brief Helper function for constructing a ref-counted resource with a @ref Foundation::Core::Allocator.
@@ -204,8 +204,7 @@ namespace Foundation::Core {
      */
     template<typename Base, typename Derived, typename ...Args>
     SharedPtr<Base> ConstructSharedBase(Allocator* resource, Args&& ...args) {
-        Base* obj = ConstructBase<Base, Derived>(resource, std::forward<Args>(args)...);
-        return { obj, StlDeleter<Base>{ resource } };
+        return std::allocate_shared<Derived>(StlAllocator<Derived>{resource}, std::forward<Args>(args)...);
     }
 
     /**

@@ -101,7 +101,7 @@ namespace Foundation::Core {
             for (T& item : span)
                 std::destroy_at(&item);
         }
-        resource->Deallocate(span.data(), span.size() * sizeof(T));
+        resource->Deallocate(span.data());
     }
     /* -- STL Containers -- */
 

@@ -12,6 +12,7 @@ set(CMAKE_C_STANDARD 17)
 option(FOUNDATION_WITH_ASAN "Build with ASAN (Address) enabled" OFF)
 option(FOUNDATION_WITH_TSAN "Build with TSAN (Thread) enabled" OFF)
 option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
+option(FOUNDATION_WITH_TESTS "Build and register tests" ON)
 option(FOUNDATION_WITH_JOLT_EXAMPLES "Build Jolt Physics examples" OFF)
 # Android defaults: No Tracy, No VVL (you need to vendor the binary yourself..)
 if (ANDROID)
@@ -108,6 +109,10 @@ add_compile_definitions(
 
 add_subdirectory(ThirdParty)
 add_subdirectory(Source)
+
+if (FOUNDATION_WITH_TESTS)
+    enable_testing()
+endif()
 
 # NOTE: ImGui's SDL3 backend compiles on Android (SDL3 is built as a shared lib
 # for the APK), but docking/keyboard/mouse IO isn't wired up yet. We build the

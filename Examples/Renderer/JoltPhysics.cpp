@@ -2,7 +2,6 @@
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/TempAllocator.h>
-#include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -14,6 +13,7 @@
 #include <vector>
 #include <thread>
 #include "Examples.hpp"
+#include "Jolt/JoltCommon.hpp"
 
 #include <Renderer/Mesh.hpp>
 #include <Renderer/Rasterizer.hpp>
@@ -193,7 +193,8 @@ int main(int argc, char** argv)
     RegisterTypes();
 
     TempAllocatorImpl temp_allocator(10 * 1024 * 1024);
-    JobSystemThreadPool job_system(cMaxPhysicsJobs, cMaxPhysicsBarriers, thread::hardware_concurrency() - 1);
+    Foundation::Examples::FoundationJoltJobSystem job_system(
+        cMaxPhysicsJobs, cMaxPhysicsBarriers, static_cast<int>(thread::hardware_concurrency()) - 1);
     
     const uint cMaxBodies = 1024;
     const uint cNumBodyMutexes = 0;
