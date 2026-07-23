@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
+include(FetchContent)
 FetchContent_MakeAvailable(argh)
 
 add_subdirectory(Shaders)
@@ -38,8 +39,10 @@ add_dependencies(Example_BindlessSimple Shader_BindlessSimple)
 add_example(Example_DebugText "DebugText.cpp")
 target_link_libraries(Example_DebugText PUBLIC Example_Common)
 
-add_example(Example_ImGui "ImGui.cpp" ${imgui_SOURCE_DIR}/imgui_demo.cpp)
+FetchContent_MakeAvailable(imgui)
+add_example(Example_ImGui "ImGui.cpp")
 target_link_libraries(Example_ImGui PUBLIC Example_Common ThirdParty_ImGui)
+target_sources(Example_ImGui PRIVATE "${imgui_SOURCE_DIR}/imgui_demo.cpp")
 
 add_example(Example_MipGeneration "MipGeneration.cpp")
 target_link_libraries(Example_MipGeneration PUBLIC Example_Common ThirdParty_ImGui)
@@ -48,14 +51,6 @@ add_dependencies(Example_MipGeneration Shader_MipGenerationBlur Examples_SampleF
 add_example(Example_AutodiffSimple "AutodiffSimple.cpp")
 target_link_libraries(Example_AutodiffSimple PUBLIC Example_Common ThirdParty_ImGui)
 add_dependencies(Example_AutodiffSimple Shader_AutodiffSimple Examples_SampleFiles)
-
-add_example(Example_MeshShaderHello "MeshShaderHello.cpp")
-target_link_libraries(Example_MeshShaderHello PUBLIC Example_Common)
-add_dependencies(Example_MeshShaderHello Shader_MeshShaderHelloTask Shader_MeshShaderHelloMesh Shader_MeshShaderHelloFrag)
-
-add_example(Example_MeshShaderHierarchicalLOD "MeshShaderHierarchicalLOD.cpp")
-target_link_libraries(Example_MeshShaderHierarchicalLOD PUBLIC Editor_Assets Example_Common)
-add_dependencies(Example_MeshShaderHierarchicalLOD Shader_MeshShaderHierarchicalLODMesh Shader_MeshShaderBasicFrag Examples_SampleFiles)
 
 add_example(Example_CIEChromacity "CIEChromacity.cpp")
 target_link_libraries(Example_CIEChromacity PUBLIC Example_Common)
@@ -70,7 +65,7 @@ target_link_libraries(Example_DynamicGeometry PUBLIC Example_Common Foundation_R
 add_dependencies(Example_DynamicGeometry Foundation_Shaders Editor_Data Shader_PostprocessBasic Shader_DynamicGerstner)
 
 if (FOUNDATION_WITH_JOLT_EXAMPLES)
-    include(FetchContent)
+    
     
     set(TARGET_UNIT_TESTS OFF CACHE BOOL "" FORCE)
     set(TARGET_HELLO_WORLD OFF CACHE BOOL "" FORCE)

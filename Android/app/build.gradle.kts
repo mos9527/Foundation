@@ -39,9 +39,7 @@ android {
                     "Example_MipGeneration",
                     "Example_AutodiffSimple",
                     "Example_Triangle",
-                    "Example_MeshShaderHierarchicalLOD",
                     "Example_ImGui",
-                    "Example_MeshShaderHello",
                     "Example_MandelbrotCompute",
                     "Example_CIEChromacity"
                 )
