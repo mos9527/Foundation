@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
+set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 project(Foundation C CXX)
 if(APPLE)
     enable_language(OBJC)
@@ -34,12 +35,27 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
     add_compile_options("/Zc:preprocessor")
     add_compile_options("/utf-8")    
+    add_compile_options(
+        "$<$<CONFIG:Release>:/Gy>"
+        "$<$<CONFIG:Release>:/Gw>"
+    )
+    add_link_options(
+        "$<$<CONFIG:Release>:/INCREMENTAL:NO>"
+        "$<$<CONFIG:Release>:/OPT:REF>"
+        "$<$<CONFIG:Release>:/OPT:ICF>"
+    )
 else()
     add_compile_options("-Wall")
     # Statically link all MinGW runtime libs (libgcc, libstdc++, winpthread, atomic, etc.)
     if (WIN32)
         add_link_options(-static)
     endif()
+endif()
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT FOUNDATION_IPO_SUPPORTED LANGUAGES C CXX)
+if (FOUNDATION_IPO_SUPPORTED)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 endif()
 
 set(MI_TRACK_ASAN ${FOUNDATION_WITH_ASAN} CACHE BOOL "" FORCE)

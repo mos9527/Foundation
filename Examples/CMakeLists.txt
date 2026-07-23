@@ -38,7 +38,7 @@ add_dependencies(Example_BindlessSimple Shader_BindlessSimple)
 add_example(Example_DebugText "DebugText.cpp")
 target_link_libraries(Example_DebugText PUBLIC Example_Common)
 
-add_example(Example_ImGui "ImGui.cpp")
+add_example(Example_ImGui "ImGui.cpp" ${imgui_SOURCE_DIR}/imgui_demo.cpp)
 target_link_libraries(Example_ImGui PUBLIC Example_Common ThirdParty_ImGui)
 
 add_example(Example_MipGeneration "MipGeneration.cpp")
