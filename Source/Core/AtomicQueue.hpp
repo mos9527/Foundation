@@ -19,14 +19,15 @@ namespace Foundation::Core
         size_t mReadCached{};
         // Only used in writer thread
         size_t mWriteCached{};
+
     public:
         /**
          * @brief Construct the SPSC Queue.
          * @param size Bounded size of the queue. Must be a power of two.
          * @param alloc Allocator to use for internal storage.
          */
-        SPSCQueue(size_t size, Allocator* alloc) :
-            mModulo(size - 1), mBuffer(size, alloc) {
+        SPSCQueue(size_t size, Allocator* alloc) : mModulo(size - 1), mBuffer(size, alloc)
+        {
             if ((size & mModulo) != 0)
                 throw std::runtime_error("Size must be a power of two");
         }
@@ -36,7 +37,7 @@ namespace Foundation::Core
          * @param data The data to push.
          * @return Whether the push was successful. Returns false if the queue is full.
          */
-        template<typename U>
+        template <typename U>
         bool Push(U&& data)
         {
             size_t write = mWrite.load(std::memory_order_relaxed);
@@ -79,37 +80,37 @@ namespace Foundation::Core
      * @brief Atomic, bounded multi-producer multi-consumer FIFO ring buffer with a fixed maximum size
      * @tparam T Data type, must be default constructible.
      */
-    template<typename T>
+    template <typename T>
     class MPMCQueue
     {
         struct Data
         {
             T data{};
-            Atomic<size_t> writeCycle{} /* when to write */ , readCycle{} /* when to read */;
+            Atomic<size_t> writeCycle{} /* when to write */, readCycle{} /* when to read */;
         };
         const size_t mModulo, mShift;
         Vector<Data> mBuffer;
         Atomic<size_t> mRead{}, mWrite{};
         size_t mWriteCached{};
+
     public:
         MPMCQueue(size_t size, Allocator* alloc) :
-            mModulo(size - 1), mShift(std::countr_zero(size)), mBuffer(size, alloc) {
+            mModulo(size - 1), mShift(std::countr_zero(size)), mBuffer(size, alloc)
+        {
             if ((size & mModulo) != 0)
                 throw std::runtime_error("Size must be a power of two");
         }
-        template<typename U>
-        bool Push(U&& data) {
+        template <typename U>
+        bool Push(U&& data)
+        {
             size_t write = mWrite.load(std::memory_order_relaxed);
             while (true)
             {
-                // Stick with the current write index until we succeed
                 auto& elem = mBuffer[write & mModulo];
-                size_t read_cycle = elem.readCycle.load(std::memory_order_acquire);
-                size_t write_cycle = elem.writeCycle.load(std::memory_order_acquire);
-                if (write_cycle > read_cycle) [[unlikely]] // Still not consumed
-                    return false; // full
                 size_t cycle = write >> mShift;
-                if (write_cycle == cycle) // Ready to write
+                size_t read_cycle = elem.readCycle.load(std::memory_order_acquire);
+                // Waits for consumer to pop, if any
+                if (read_cycle == cycle) [[likely]] // Ready to write
                 {
                     // Bump the write index if we can, claiming the old index. Try later otherwise.
                     if (mWrite.compare_exchange_weak(write, write + 1, std::memory_order_relaxed))
@@ -118,7 +119,16 @@ namespace Foundation::Core
                         elem.writeCycle.store(cycle + 1, std::memory_order_release);
                         return true;
                     }
-                } // Not our turn yet? So we must be an old write. Update and try again. CAS does this already.
+                }
+                else if (read_cycle >= cycle) // Not our turn yet? So we must be an old write. Update and try again. CAS
+                                              // does this already.
+                {
+                    write = mWrite.load(std::memory_order_relaxed);
+                }
+                else // Counter is behind write cycle! We're full
+                {
+                    return false;
+                }
             }
         }
         bool Pop(T& out)
@@ -126,14 +136,11 @@ namespace Foundation::Core
             size_t read = mRead.load(std::memory_order_relaxed);
             while (true)
             {
-                // Same as above
+                // Same as above, but wait for producer
                 auto& elem = mBuffer[read & mModulo];
-                size_t read_cycle = elem.readCycle.load(std::memory_order_acquire);
-                size_t write_cycle = elem.writeCycle.load(std::memory_order_relaxed);
-                if (read_cycle >= write_cycle) [[unlikely]] // Still not written
-                    return false; // empty
                 size_t cycle = read >> mShift;
-                if (read_cycle == cycle) // Ready to read
+                size_t write_cycle = elem.writeCycle.load(std::memory_order_acquire);
+                if (write_cycle == cycle + 1)
                 {
                     // Same as above for reading
                     if (mRead.compare_exchange_weak(read, read + 1, std::memory_order_relaxed))
@@ -142,8 +149,16 @@ namespace Foundation::Core
                         elem.readCycle.store(cycle + 1, std::memory_order_release);
                         return true;
                     }
-                } // Old write otherwise
+                }
+                else if (write_cycle > cycle) // Old read, not synced so try again.
+                {
+                    read = mRead.load(std::memory_order_relaxed);
+                }
+                else // Read cycle is behind write cycle! We're empty
+                {
+                    return false;
+                }
             }
         }
     };
-}
+} // namespace Foundation::Core
