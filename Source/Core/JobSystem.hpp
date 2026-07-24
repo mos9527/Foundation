@@ -259,7 +259,7 @@ namespace Foundation::Core
         void Wait(JobBarrier& barrier);
         void Wait(JobBarrier&& barrier) { Wait(barrier); }
         void Cancel(JobHandle const& job);
-        void Drain();
+        void Join();
         void Shutdown();
 
         template <typename Fn>

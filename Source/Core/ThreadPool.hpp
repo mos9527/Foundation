@@ -238,7 +238,7 @@ namespace Foundation::Core
          * @note Concurrent submission must be externally synchronized with this call.
          */
         void Join();
-        /** @brief Drain accepted jobs and stop all workers. */
+        /** @brief Join accepted jobs and stop all workers. */
         ~ThreadPool();
 
         [[nodiscard]] size_t GetPendingJobCount() const noexcept

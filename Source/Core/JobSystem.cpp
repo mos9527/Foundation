@@ -729,7 +729,7 @@ namespace Foundation::Core
         CancelInternal(job);
     }
 
-    void JobSystem::Drain()
+    void JobSystem::Join()
     {
         CHECK_MSG(gExecutingJobSystem != this, "Jobs cannot drain their JobSystem");
         std::unique_lock callerLock(mCallerMutex);

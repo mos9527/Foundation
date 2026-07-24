@@ -259,7 +259,7 @@ void DestroyContext(FContext* context)
     }
     if (context->jobs)
     {
-        context->jobs->Drain();
+        context->jobs->Join();
         context->jobs.reset();
     }
     context->psoCache.Reset();

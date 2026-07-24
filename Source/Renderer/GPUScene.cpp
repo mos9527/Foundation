@@ -300,7 +300,7 @@ struct GPUSceneImpl
         JobHandle prepareJob;
         JobHandle decodeJob;
         JobHandle submitJob;
-        JobHandle publishJob;
+        JobHandle commitJob;
         JobDependency prepareGate;
         JobDependency publishGate;
         RHIDeviceSemaphore* finalTimeline{};
@@ -331,7 +331,7 @@ struct GPUSceneImpl
     void PrepareUploads(UploadBatchState& state);
     void DecodeUploads(UploadBatchState& state, size_t begin, size_t end, JobContext& context);
     void SubmitUploads(UploadBatchState& state);
-    void PublishUploads(UploadBatchState& state);
+    void CommitUploads(UploadBatchState& state); // mark as ready
     void SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const& submitDesc);
     void SubmitBLASCompaction(UploadBatchState& state);
     Result ReserveMesh(FSerializedMesh const& src, GSMesh& outHeader, uint32_t& outOffset);
@@ -1571,9 +1571,9 @@ bool GPUSceneImpl::StartUploadBatch()
     state->submitJob = mJobs->CreateJobAfter(
         "GPUSceneSubmit", Span<const JobHandle>(&state->decodeJob, 1),
         [this, batchState] { SubmitUploads(*batchState); });
-    state->publishJob =
-        mJobs->CreateJob("GPUScenePublish", [this, batchState] { PublishUploads(*batchState); }, 1);
-    state->publishGate = state->publishJob.AdoptDependencyGuard();
+    state->commitJob =
+        mJobs->CreateJob("GPUSceneCommit", [this, batchState] { CommitUploads(*batchState); }, 1);
+    state->publishGate = state->commitJob.AdoptDependencyGuard();
     mActiveUpload = std::move(state);
     mActiveUpload->prepareGate.Release();
     return true;
@@ -1620,7 +1620,7 @@ bool GPUSceneImpl::DriveUploadBatch(size_t timeout)
             return false;
         if (!state.publicationReleased)
         {
-            mJobs->Cancel(state.publishJob);
+            mJobs->Cancel(state.commitJob);
             state.publishGate.Release();
             state.publicationReleased = true;
         }
@@ -1636,9 +1636,9 @@ bool GPUSceneImpl::DriveUploadBatch(size_t timeout)
         return true;
     }
 
-    if (state.publicationReleased && state.publishJob.IsDone())
+    if (state.publicationReleased && state.commitJob.IsDone())
     {
-        if (state.publishJob.Status() != JobStatus::Completed)
+        if (state.commitJob.Status() != JobStatus::Completed)
             mUploadFailed.store(true, std::memory_order_release);
         mActiveUpload.reset();
         return true;
@@ -1673,8 +1673,8 @@ void GPUSceneImpl::Join()
             UploadBatchState& state = *mActiveUpload;
             if (!state.submitted.load(std::memory_order_acquire))
                 barrier.Add(state.submitJob);
-            else if (state.publicationReleased && !state.publishJob.IsDone())
-                barrier.Add(state.publishJob);
+            else if (state.publicationReleased && !state.commitJob.IsDone())
+                barrier.Add(state.commitJob);
         }
         if (!barrier.IsEmpty())
             mJobs->Wait(barrier);
@@ -1857,7 +1857,7 @@ void GPUSceneImpl::SubmitUploads(UploadBatchState& state)
     state.submitted.store(true, std::memory_order_release);
 }
 
-void GPUSceneImpl::PublishUploads(UploadBatchState& state)
+void GPUSceneImpl::CommitUploads(UploadBatchState& state)
 {
     std::lock_guard<Mutex> lock(mUploadStateMutex);
     CHECK(state.geometryHandles.size() == state.geometryBLAS.size());

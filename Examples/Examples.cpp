@@ -810,7 +810,7 @@ void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx)
     if (ctx.device)
         ctx.device->WaitIdle();
     if (ctx.jobs)
-        ctx.jobs->Drain();
+        ctx.jobs->Join();
 
     auto psoCache = ctx.psoCache.Get();
     auto cachePath = PipelineCachePathForDevice(*ctx.device.Get());
