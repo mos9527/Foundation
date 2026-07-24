@@ -10,7 +10,7 @@ namespace Foundation::RHI {
         Allocator* mAllocator;
         VulkanAllocationCallbacks mVkAllocationCallbacks;
         vk::raii::Instance mInstance{ nullptr };
-        vk::raii::PhysicalDevices mPhysicalDevices{ nullptr };
+        Vector<vk::raii::PhysicalDevice> mPhysicalDevices;
 
         Vector<RHIDevice::DeviceDesc> mDevices;
         vk::raii::DebugUtilsMessengerEXT mDebugHandler{ nullptr };

@@ -103,12 +103,12 @@ VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& devic
     if (desc.updateAfterBind)
         flags |= vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind;
     mPool =
-        vk::raii::DescriptorPool(mDevice.GetVkDevice(),
+        VkExpect(mDevice.GetVkDevice().createDescriptorPool(
                                  vk::DescriptorPoolCreateInfo{.flags = flags,
                                                               .maxSets = static_cast<uint32_t>(max_sets),
                                                               .poolSizeCount = static_cast<uint32_t>(pool_sizes.size()),
                                                               .pPoolSizes = pool_sizes.data()},
-                                 mDevice.GetVkAllocationCallbacks());
+                                 mDevice.GetVkAllocationCallbacks()), "createDescriptorPool");
     CHECK(*mPool && "failed to create Vulkan descriptor pool");
 }
 RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>
@@ -124,7 +124,7 @@ VulkanDeviceDescriptorPool::CreateDescriptorSet(RHIDeviceHandle<RHIDeviceDescrip
         .descriptorSetCount = 1,
         .pSetLayouts = &*vk_layout,
     };
-    auto set = mDevice.GetVkDevice().allocateDescriptorSets(alloc_info);
+    auto set = VkExpect(mDevice.GetVkDevice().allocateDescriptorSets(alloc_info), "allocateDescriptorSets");
     CHECK(!set.empty() && "descriptor set allocation failure");
     auto handle = mStorage.CreateObject<VulkanDeviceDescriptorSet>(*this, std::move(set.front()));
     return {this, handle};

@@ -159,7 +159,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     DeviceFeatureChain supportedChain{};
 
     // --- Extension Querying ---
-    auto availableExtensions = mPhysicalDevice.enumerateDeviceExtensionProperties();
+    auto availableExtensions = VkExpect(mPhysicalDevice.enumerateDeviceExtensionProperties(), "enumerateDeviceExtensionProperties");
     auto isExtensionAvailable = [&](const char* extName) -> bool {
         for (auto const& ext : availableExtensions) {
             if (StringView(ext.extensionName.data()) == extName) return true;
@@ -295,7 +295,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                                      .pQueueCreateInfos = queueInfos.data(),
                                      .enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
                                      .ppEnabledExtensionNames = enabledExtensions.data()};
-    mDevice = vk::raii::Device(mPhysicalDevice, device_info, GetVkAllocationCallbacks());
+    mDevice = VkExpect(mPhysicalDevice.createDevice(device_info, GetVkAllocationCallbacks()), "createDevice");
     CHECK(*mDevice && "failed to create Vulkan device");
     // Allocate the queues
     mQueues = ConstructUnique<VulkanDeviceQueues>(GetAllocator(), GetAllocator());
@@ -564,7 +564,7 @@ VulkanDeviceSemaphore::VulkanDeviceSemaphore(const VulkanDevice& device, bool is
     vk::SemaphoreTypeCreateInfo tinfo{.semaphoreType = vk::SemaphoreType::eTimeline, .initialValue = 0};
     if (is_timeline)
         info.setPNext(&tinfo);
-    mSemaphore = vk::raii::Semaphore(mDevice.GetVkDevice(), info, mDevice.GetVkAllocationCallbacks());
+    mSemaphore = VkExpect(mDevice.GetVkDevice().createSemaphore(info, mDevice.GetVkAllocationCallbacks()), "createSemaphore");
 }
 
 void VulkanDeviceSemaphore::DebugSetObjectName(const char* name)
@@ -577,10 +577,9 @@ void VulkanDeviceSemaphore::DebugSetObjectName(const char* name)
 
 VulkanDeviceFence::VulkanDeviceFence(const VulkanDevice& device, bool signaled) :
     RHIDeviceFence(device), mDevice(device),
-    mFence(vk::raii::Fence(
-        device.GetVkDevice(),
+    mFence(VkExpect(device.GetVkDevice().createFence(
         vk::FenceCreateInfo{.flags = signaled ? vk::FenceCreateFlagBits::eSignaled : vk::FenceCreateFlags{}},
-        device.GetVkAllocationCallbacks()))
+        device.GetVkAllocationCallbacks()), "createFence"))
 {
 }
 
@@ -620,7 +619,7 @@ void VulkanDevice::ResetFences(Span<RHIDeviceFence* const> fences)
     vk_fences.reserve(fences.size());
     for (auto* fence : fences)
         vk_fences.emplace_back(static_cast<VulkanDeviceFence*>(fence)->GetVkFence());
-    mDevice.resetFences(vk_fences);
+    VkExpect(mDevice.resetFences(vk_fences), "resetFences");
 }
 
 bool VulkanDevice::WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_all, size_t timeout)
@@ -646,7 +645,7 @@ void VulkanDevice::SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*,
         CHECK(signal->mIsTimeline);
         vk::SemaphoreSignalInfo info{.semaphore = static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore(),
                                      .value = val};
-        mDevice.signalSemaphore(info);
+        VkExpect(mDevice.signalSemaphore(info), "signalSemaphore");
     }
 }
 
@@ -768,8 +767,8 @@ void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* com
         submits.push_back(info);
     }
     std::lock_guard<Mutex> submitLock(mDevice.GetQueueSubmitMutex());
-    mQueue.submit(
-        submits, completionFence ? static_cast<VulkanDeviceFence*>(completionFence)->GetVkFence() : vk::Fence(nullptr));
+    VkExpect(mQueue.submit(
+        submits, completionFence ? static_cast<VulkanDeviceFence*>(completionFence)->GetVkFence() : vk::Fence(nullptr)), "submit");
 }
 
 RHISwapchainResult VulkanDeviceQueue::Present(PresentDesc const& desc) const
@@ -791,32 +790,19 @@ RHISwapchainResult VulkanDeviceQueue::Present(PresentDesc const& desc) const
         .pSwapchains = &swapchain,
         .pImageIndices = &desc.imageIndex,
     };
-    try
-    {
-        std::lock_guard<Mutex> submitLock(mDevice.GetQueueSubmitMutex());
-        auto result = mQueue.presentKHR(present_info);
-        if (result == vk::Result::eSuccess)
-            return RHISwapchainResult::Success;
-        if (result == vk::Result::eSuboptimalKHR)
-            return RHISwapchainResult::Suboptimal;
-        if (result == vk::Result::eErrorOutOfDateKHR)
-            return RHISwapchainResult::OutOfDate;
-        if (result == vk::Result::eErrorSurfaceLostKHR)
-            return RHISwapchainResult::SurfaceLost;
-        if (result == vk::Result::eErrorDeviceLost)
-            return RHISwapchainResult::DeviceLost;
-        return RHISwapchainResult::Error;
-    }
-    catch (vk::SystemError const& error)
-    {
-        if (error.code().value() == static_cast<int>(vk::Result::eErrorOutOfDateKHR))
-            return RHISwapchainResult::OutOfDate;
-        if (error.code().value() == static_cast<int>(vk::Result::eErrorSurfaceLostKHR))
-            return RHISwapchainResult::SurfaceLost;
-        if (error.code().value() == static_cast<int>(vk::Result::eErrorDeviceLost))
-            return RHISwapchainResult::DeviceLost;
-        return RHISwapchainResult::Error;
-    }
+    std::lock_guard<Mutex> submitLock(mDevice.GetQueueSubmitMutex());
+    auto result = mQueue.presentKHR(present_info);
+    if (result == vk::Result::eSuccess)
+        return RHISwapchainResult::Success;
+    if (result == vk::Result::eSuboptimalKHR)
+        return RHISwapchainResult::Suboptimal;
+    if (result == vk::Result::eErrorOutOfDateKHR)
+        return RHISwapchainResult::OutOfDate;
+    if (result == vk::Result::eErrorSurfaceLostKHR)
+        return RHISwapchainResult::SurfaceLost;
+    if (result == vk::Result::eErrorDeviceLost)
+        return RHISwapchainResult::DeviceLost;
+    return RHISwapchainResult::Error;
 }
 
 void VulkanDeviceQueue::DebugSetObjectName(const char* name)
@@ -926,15 +912,14 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
             .stageFlags = vkShaderStageFlagsFromRHIShaderStage(b.stage),
         };
     }
-    mLayout = vk::raii::DescriptorSetLayout(
-        mDevice.GetVkDevice(),
+    mLayout = VkExpect(mDevice.GetVkDevice().createDescriptorSetLayout(
         vk::DescriptorSetLayoutCreateInfo{.pNext = &bindInfo,
                                           .flags = desc.updateAfterBind
                                           ? vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool
                                           : vk::DescriptorSetLayoutCreateFlagBits{},
                                           .bindingCount = static_cast<uint32_t>(bindings.size()),
                                           .pBindings = bindings.data()},
-        mDevice.GetVkAllocationCallbacks());
+        mDevice.GetVkAllocationCallbacks()), "createDescriptorSetLayout");
     CHECK_MSG(*mLayout, "failed to create Vulkan descriptor set layout");
 }
 
@@ -991,7 +976,7 @@ VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPo
         break;
     }
     mResults.resize(desc.count);
-    mQueryPool = vk::raii::QueryPool(mDevice.GetVkDevice(), createInfo, mDevice.GetVkAllocationCallbacks());
+    mQueryPool = VkExpect(mDevice.GetVkDevice().createQueryPool(createInfo, mDevice.GetVkAllocationCallbacks()), "createQueryPool");
     CHECK_MSG(*mQueryPool, "failed to create Vulkan query pool");
 }
 
@@ -1114,7 +1099,7 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
                                   .minLod = desc.lod.min,
                                   .maxLod = desc.lod.max};
     sampler.setPNext(&reduction);
-    mSampler = vk::raii::Sampler(mDevice.GetVkDevice(), sampler, mDevice.GetVkAllocationCallbacks());
+    mSampler = VkExpect(mDevice.GetVkDevice().createSampler(sampler, mDevice.GetVkAllocationCallbacks()), "createSampler");
     CHECK_MSG(*mSampler, "failed to create Vulkan sampler");
 }
 

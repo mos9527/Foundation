@@ -10,8 +10,8 @@ using namespace Foundation::RHI;
 vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc desc)
 {
     auto const& surface = static_cast<VulkanSurface*>(desc.surface.Get())->GetVkSurface();
-    auto surface_caps = mDevice.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface);
-    auto present_modes = mDevice.GetVkPhysicalDevice().getSurfacePresentModesKHR(surface);
+    auto surface_caps = VkExpect(mDevice.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface), "getSurfaceCapabilitiesKHR");
+    auto present_modes = VkExpect(mDevice.GetVkPhysicalDevice().getSurfacePresentModesKHR(surface), "getSurfacePresentModesKHR");
     // Validate requested parameters
     desc.extents.x = std::clamp(desc.extents.x, surface_caps.minImageExtent.width, surface_caps.maxImageExtent.width);
     desc.extents.y = std::clamp(desc.extents.y, surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height);
@@ -31,7 +31,7 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDe
     vk::Format vk_format = vkFormatFromRHIFormat(desc.format);
     vk::ColorSpaceKHR vk_color_space = vkColorSpaceFromRHIColorSpace(desc.colorSpace);
     bool format_supported = false;
-    auto formats = mDevice.GetVkPhysicalDevice().getSurfaceFormatsKHR(surface);
+    auto formats = VkExpect(mDevice.GetVkPhysicalDevice().getSurfaceFormatsKHR(surface), "getSurfaceFormatsKHR");
     for (auto const& fmt : formats) {
         if (fmt.format == vk_format && fmt.colorSpace == vk_color_space) {
             format_supported = true;
@@ -63,8 +63,8 @@ void VulkanSwapchain::Instantiate() {
     mImages.reset();
     mImages = ConstructUnique<RHIObjectPool<VulkanTexture>>(mDevice.GetAllocator(), mDevice.GetAllocator());
     mImagesPtrs.clear();
-    mSwapchain = vk::raii::SwapchainKHR(device, create_info, mDevice.GetVkAllocationCallbacks());
-    auto images = mSwapchain.getImages();
+    mSwapchain = VkExpect(device.createSwapchainKHR(create_info, mDevice.GetVkAllocationCallbacks()), "createSwapchainKHR");
+    auto images = VkExpect(mSwapchain.getImages(), "getImages");
     for (auto& image : images) {
         const Handle handle = mImages->CreateObject<VulkanTexture>(mDevice, RHITextureDesc{}, vk::raii::Image(device, image, mDevice.GetVkAllocationCallbacks()), true /*shared=true*/);
         mImagesPtrs.push_back(mImages->GetObjectPtr(handle));
@@ -89,25 +89,13 @@ RHISwapchainResult VulkanSwapchain::GetNextImage(uint64_t timeout_ns,
                                                 RHIDeviceHandle<RHIDeviceSemaphore> semaphore,
                                                 RHIDeviceHandle<RHIDeviceFence> fence, uint32_t& imageIndex)
 {
-    vk::Result result{};
-    try
-    {
-        std::tie(result, imageIndex) = mSwapchain.acquireNextImage(
-            timeout_ns,
-            semaphore ? semaphore.Get<VulkanDeviceSemaphore>()->GetVkSemaphore() : vk::Semaphore(),
-            fence ? fence.Get<VulkanDeviceFence>()->GetVkFence() : vk::Fence()
-        );
-    }
-    catch (vk::SystemError const& error)
-    {
-        if (error.code().value() == static_cast<int>(vk::Result::eErrorOutOfDateKHR))
-            return RHISwapchainResult::OutOfDate;
-        if (error.code().value() == static_cast<int>(vk::Result::eErrorSurfaceLostKHR))
-            return RHISwapchainResult::SurfaceLost;
-        if (error.code().value() == static_cast<int>(vk::Result::eErrorDeviceLost))
-            return RHISwapchainResult::DeviceLost;
-        return RHISwapchainResult::Error;
-    }
+    auto rv = mSwapchain.acquireNextImage(
+        timeout_ns,
+        semaphore ? semaphore.Get<VulkanDeviceSemaphore>()->GetVkSemaphore() : vk::Semaphore(),
+        fence ? fence.Get<VulkanDeviceFence>()->GetVkFence() : vk::Fence()
+    );
+    vk::Result result = rv.result;
+    imageIndex = rv.value;
     switch (result)
     {
     case vk::Result::eSuccess:

@@ -99,16 +99,18 @@ VulkanPipelineStateCache::VulkanPipelineStateCache(const VulkanDevice& device, P
         .initialDataSize = initialPayload.size_bytes(),
         .pInitialData = initialPayload.data()
     };
-    try
-    {
-        mCache = vk::raii::PipelineCache(device.GetVkDevice(), createInfo, device.GetVkAllocationCallbacks());
-    }
-    catch (...)
+    auto cacheRV = device.GetVkDevice().createPipelineCache(createInfo, device.GetVkAllocationCallbacks());
+    if (cacheRV.result != vk::Result::eSuccess)
     {
         mImportStatus = RHIPipelineStateCacheImportStatus::BackendRejected;
         createInfo.initialDataSize = 0;
         createInfo.pInitialData = nullptr;
-        mCache = vk::raii::PipelineCache(device.GetVkDevice(), createInfo, device.GetVkAllocationCallbacks());
+        mCache = VkExpect(device.GetVkDevice().createPipelineCache(createInfo, device.GetVkAllocationCallbacks()),
+                          "createPipelineCache");
+    }
+    else
+    {
+        mCache = std::move(cacheRV.value);
     }
 }
 
@@ -168,13 +170,12 @@ void VulkanPipelineState::InitializePipelineLayout()
         CHECK_MSG(size <= 128, "Push constant size exceeds min spec limit");
         push_constants[i].setStageFlags(vkShaderStageFlagsFromRHIShaderStage(stage)).setOffset(offset).setSize(size);
     }
-    mPipelineLayout = vk::raii::PipelineLayout(
-        mDevice.GetVkDevice(),
+    mPipelineLayout = VkExpect(mDevice.GetVkDevice().createPipelineLayout(
         vk::PipelineLayoutCreateInfo{.setLayoutCount = static_cast<uint32_t>(p_set_layouts.size()),
                                      .pSetLayouts = p_set_layouts.data(),
                                      .pushConstantRangeCount = static_cast<uint32_t>(push_constants.size()),
                                      .pPushConstantRanges = push_constants.data()},
-        mDevice.GetVkAllocationCallbacks());
+        mDevice.GetVkAllocationCallbacks()), "createPipelineLayout");
 }
 
 void VulkanPipelineState::InitializeGraphics()
@@ -323,15 +324,12 @@ void VulkanPipelineState::InitializeGraphics()
                                                 .pDynamicState = &dynamic_state,
                                                 .layout = mPipelineLayout,
                                                 .renderPass = nullptr};
-    const vk::raii::PipelineCache noCache{nullptr};
-    vk::raii::PipelineCache const* pPSOCache{&noCache};
+    vk::Optional<const vk::raii::PipelineCache> cacheHandle(nullptr);
     if (mDesc.psoCache)
-    {
-        auto* vkCache = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache);
-        pPSOCache = &vkCache->GetVkPipelineCache();
-    }
-    mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), *pPSOCache, pipelineInfo,
-                                   mDevice.GetVkAllocationCallbacks());
+        cacheHandle = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache)->GetVkPipelineCache();
+    auto pipelines = VkExpect(mDevice.GetVkDevice().createGraphicsPipelines(cacheHandle, pipelineInfo,
+                                   mDevice.GetVkAllocationCallbacks()), "createGraphicsPipelines");
+    mPipeline = std::move(pipelines.front());
 }
 
 void VulkanPipelineState::InitializeCompute()
@@ -360,15 +358,12 @@ void VulkanPipelineState::InitializeCompute()
         .pSpecializationInfo = pSpecializationInfo
     };
     vk::ComputePipelineCreateInfo pipelineInfo{.stage = stage_info, .layout = mPipelineLayout};
-    const vk::raii::PipelineCache noCache{nullptr};
-    vk::raii::PipelineCache const* pPSOCache{&noCache};
+    vk::Optional<const vk::raii::PipelineCache> cacheHandle(nullptr);
     if (mDesc.psoCache)
-    {
-        auto* vkCache = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache);
-        pPSOCache = &vkCache->GetVkPipelineCache();
-    }
-    mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), *pPSOCache, pipelineInfo,
-                                   mDevice.GetVkAllocationCallbacks());
+        cacheHandle = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache)->GetVkPipelineCache();
+    auto pipelines = VkExpect(mDevice.GetVkDevice().createComputePipelines(cacheHandle, pipelineInfo,
+                                   mDevice.GetVkAllocationCallbacks()), "createComputePipelines");
+    mPipeline = std::move(pipelines.front());
 }
 
 void VulkanPipelineState::InitializeRayTracing()
@@ -510,16 +505,12 @@ void VulkanPipelineState::InitializeRayTracing()
         .maxPipelineRayRecursionDepth = std::min(rtProps.maxRayRecursionDepth, 3u),
         .layout = mPipelineLayout,
     };
-    const vk::raii::PipelineCache noCache{nullptr};
-    vk::raii::PipelineCache const* pPSOCache{&noCache};
+    vk::Optional<const vk::raii::PipelineCache> cacheHandle(nullptr);
     if (mDesc.psoCache)
-    {
-        auto* vkCache = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache);
-        pPSOCache = &vkCache->GetVkPipelineCache();
-    }
-    mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), nullptr, *pPSOCache,
-                                   pipelineInfo,
-                                   mDevice.GetVkAllocationCallbacks());
+        cacheHandle = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache)->GetVkPipelineCache();
+    auto pipelines = VkExpect(mDevice.GetVkDevice().createRayTracingPipelinesKHR(nullptr, cacheHandle, pipelineInfo,
+                                   mDevice.GetVkAllocationCallbacks()), "createRayTracingPipelinesKHR");
+    mPipeline = std::move(pipelines.front());
     const uint32_t handleSize = rtProps.shaderGroupHandleSize;
     const uint32_t handleAlignment = rtProps.shaderGroupHandleAlignment;
     const uint32_t baseAlignment = rtProps.shaderGroupBaseAlignment;
@@ -540,8 +531,8 @@ void VulkanPipelineState::InitializeRayTracing()
         .usage = RHIBufferUsageBits::ShaderBindingTable | RHIBufferUsageBits::DeviceAddress,
         .size = sbtSize,
     });
-    auto handles = mPipeline.getRayTracingShaderGroupHandlesKHR<uint8_t>(
-        0, static_cast<uint32_t>(groups.size()), handleSize * groups.size());
+    auto handles = VkExpect(mPipeline.getRayTracingShaderGroupHandlesKHR<uint8_t>(
+        0, static_cast<uint32_t>(groups.size()), handleSize * groups.size()), "getRayTracingShaderGroupHandlesKHR");
     auto pData = mSBTBuffer->Map<uint8_t>();
     vk::DeviceAddress sbtAddr = static_cast<VulkanBuffer*>(mSBTBuffer.Get())->GetBufferAddress();
     auto CopyHandlesToSBT = [&](uint32_t startGroupIdx, uint32_t count, uint32_t bufferOffset)

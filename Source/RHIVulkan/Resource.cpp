@@ -237,7 +237,7 @@ RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextu
     case ECubeArray:
         type = vk::ImageViewType::eCubeArray;
     }
-    auto image_view = device.createImageView(
+    auto image_view = VkExpect(device.createImageView(
         vk::ImageViewCreateInfo{
             .image = *mImage,
             .viewType = type,
@@ -248,7 +248,7 @@ RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextu
                                           .levelCount = desc.range.mipCount,
                                           .baseArrayLayer = desc.range.layer.baseArrayLayer,
                                           .layerCount = desc.range.layer.layerCount}},
-        mDevice.GetVkAllocationCallbacks());
+        mDevice.GetVkAllocationCallbacks()), "createImageView");
     return {this, mViews.CreateObject<VulkanTextureView>(*this, desc, std::move(image_view))};
 }
 RHITextureView* VulkanTexture::GetImageView(Handle handle) const { return mViews.GetObjectPtr<RHITextureView>(handle); }
@@ -315,7 +315,7 @@ VulkanAccelerationStructure::VulkanAccelerationStructure(VulkanDevice const& dev
     RHIAccelerationStructure(device, desc), mDevice(device)
 {
     mBuffer = static_cast<VulkanBuffer*>(desc.buffer);
-    mAS = device.GetVkDevice().createAccelerationStructureKHR(
+    mAS = VkExpect(device.GetVkDevice().createAccelerationStructureKHR(
         vk::AccelerationStructureCreateInfoKHR{
             .buffer = mBuffer->GetVkBuffer(),
             .offset = desc.offset,
@@ -323,7 +323,7 @@ VulkanAccelerationStructure::VulkanAccelerationStructure(VulkanDevice const& dev
             .type = desc.type == RHIAccelerationStructureType::TopLevel
                 ? vk::AccelerationStructureTypeKHR::eTopLevel
                 : vk::AccelerationStructureTypeKHR::eBottomLevel},
-        device.GetVkAllocationCallbacks());
+        device.GetVkAllocationCallbacks()), "createAccelerationStructureKHR");
     mASAddress = mDevice.GetVkDevice().getAccelerationStructureAddressKHR({.accelerationStructure = mAS});
 }
 vk::DeviceAddress VulkanAccelerationStructure::GetVkAccelerationStructureAddress() const

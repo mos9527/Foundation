@@ -1,10 +1,31 @@
 #pragma once
-#define VULKAN_HPP_NO_CONSTRUCTORS 
+#define VULKAN_HPP_NO_CONSTRUCTORS
+// We build fully no-except. Vulkan-Hpp must not throw; instead of asserting on any
+// non-success Result (which would fire on legitimately-handled codes such as
+// eErrorOutOfDateKHR), we neutralize the assert and check Result at each call site.
+#define VULKAN_HPP_NO_EXCEPTIONS
+#ifndef VULKAN_HPP_ASSERT_ON_RESULT
+#define VULKAN_HPP_ASSERT_ON_RESULT(expr) ((void)0)
+#endif
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include <vulkan/vulkan_to_string.hpp>
 
 #include <RHICore/Common.hpp>
 namespace Foundation::RHI {
+    // Unwrap a fallible Vulkan-Hpp call. In no-exceptions mode fallible factories return
+    // vk::ResultValue<T>; on failure this fatally checks (matching the previous throwing
+    // behaviour) and otherwise moves the value out.
+    template <typename T>
+    [[nodiscard]] T VkExpect(vk::ResultValue<T>&& rv, const char* what = "vk call") {
+        CHECK_MSG(rv.result == vk::Result::eSuccess, "Vulkan call failed ({}): {}", what, vk::to_string(rv.result));
+        return std::move(rv.value);
+    }
+
+    // Overload for plain Result-returning calls (no payload).
+    inline void VkExpect(vk::Result result, const char* what = "vk call") {
+        CHECK_MSG(result == vk::Result::eSuccess, "Vulkan call failed ({}): {}", what, vk::to_string(result));
+    }
     struct VulkanAllocationCallbacks
     {
         Allocator* allocator{nullptr};

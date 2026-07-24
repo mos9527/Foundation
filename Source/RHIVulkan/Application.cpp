@@ -16,7 +16,7 @@ VkDebugLayerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUti
 VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const char* appName, const char* engineName,
                                      const uint32_t apiVersion) :
     mAllocator(allocator), mVkAllocationCallbacks(nullptr /* NOTE: Many drivers do not like this roundtrip to our own code. Disabled for sanity. */),
-    mDevices(allocator), mStorage(allocator), mName(appName), mVulkanApiVersion(apiVersion), mHeadless(headless)
+    mPhysicalDevices(allocator), mDevices(allocator), mStorage(allocator), mName(appName), mVulkanApiVersion(apiVersion), mHeadless(headless)
 {
     auto vkAppInfo = vk::ApplicationInfo{
         .pApplicationName = appName,
@@ -41,7 +41,7 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     desiredLayers.erase(Ranges::unique(desiredLayers).begin(), desiredLayers.end());
 
     // --- Extension Querying ---
-    auto availableExtensions = mContext.enumerateInstanceExtensionProperties();
+    auto availableExtensions = VkExpect(mContext.enumerateInstanceExtensionProperties(), "enumerateInstanceExtensionProperties");
     auto isExtensionAvailable = [&](const char* extName) -> bool {
         for (auto const& ext : availableExtensions) {
             if (StringView(ext.extensionName.data()) == extName)
@@ -81,7 +81,7 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     };
 
     // --- Layer Querying ---
-    auto availableLayers = mContext.enumerateInstanceLayerProperties();
+    auto availableLayers = VkExpect(mContext.enumerateInstanceLayerProperties(), "enumerateInstanceLayerProperties");
     auto isLayerAvailable = [&](const char* layerName) -> bool {
         for (auto const& layer : availableLayers) {
             if (StringView(layer.layerName.data()) == layerName)
@@ -114,14 +114,16 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     validation_features.pEnabledValidationFeatures = &validation_feature_enables;
     instanceInfo.setPNext(&validation_features);
 #endif
-    mInstance = vk::raii::Instance(mContext, instanceInfo, GetVkAllocationCallbacks());
-    mPhysicalDevices = vk::raii::PhysicalDevices(mInstance);
+    mInstance = VkExpect(mContext.createInstance(instanceInfo, GetVkAllocationCallbacks()), "createInstance");    
     mDevices.clear();
-    for (uint32_t id = 0; id < mPhysicalDevices.size(); ++id)
+    mPhysicalDevices.clear();
+    auto physicalDevices = VkExpect(mInstance.enumeratePhysicalDevices(), "enumeratePhysicalDevices");
+    for (uint32_t id = 0; id < physicalDevices.size(); ++id)
     {
-        auto const& device = mPhysicalDevices[id];
+        auto const& device = physicalDevices[id];
         auto props = device.getProperties();
         mDevices.emplace_back(RHIDevice::DeviceDesc{.id = id, .name = props.deviceName});
+        mPhysicalDevices.emplace_back(device);
     }
     if (isExtensionEnabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
         VkDebugUtilsMessengerCreateInfoEXT debugInfo{
@@ -136,9 +138,9 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
             .pfnUserCallback = &VkDebugLayerCallback,
             .pUserData = nullptr
         };
-        mDebugHandler = mInstance.createDebugUtilsMessengerEXT(
+        mDebugHandler = VkExpect(mInstance.createDebugUtilsMessengerEXT(
             reinterpret_cast<const vk::DebugUtilsMessengerCreateInfoEXT&>(debugInfo),
-            GetVkAllocationCallbacks());
+            GetVkAllocationCallbacks()), "createDebugUtilsMessengerEXT");
     }
 }
 
