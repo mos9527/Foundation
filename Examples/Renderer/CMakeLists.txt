@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.26)
 
 add_library(Example_Renderer STATIC Examples.cpp)
-target_link_libraries(Example_Renderer PUBLIC Example_Common Foundation_GPUScene Foundation_Rasterizer Foundation_ProgressivePathtracer)
+target_link_libraries(Example_Renderer PUBLIC Example_Common Foundation_GPUScene Foundation_Rasterizer Foundation_ProgressivePathtracer Foundation_RealtimePathtracer)
 target_include_directories(Example_Renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_example(ExampleRenderer_GLTF "GLTF.cpp")
@@ -32,5 +32,5 @@ if (FOUNDATION_WITH_JOLT_EXAMPLES)
 
     add_example(ExampleRenderer_JoltPhysics "JoltPhysics.cpp")
     target_link_libraries(ExampleRenderer_JoltPhysics PUBLIC Example_Jolt)
-    add_dependencies(ExampleRenderer_JoltPhysics Foundation_Shaders Editor_Data Shader_PostprocessBasic Shader_DynamicGerstner)
+    add_dependencies(ExampleRenderer_JoltPhysics Foundation_Shaders Editor_Data Shader_PostprocessBasic)
 endif()

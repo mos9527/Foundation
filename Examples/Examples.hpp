@@ -38,12 +38,6 @@ using namespace Core;
 using namespace Math;
 using namespace RenderCore;
 
-enum class ExampleRenderer
-{
-    Raster,
-    ProgressivePT,
-};
-
 // ExampleVulkanContext members, in structured-binding order: [renderer, app, device, surface, swapchain, presenter]
 constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 // Common command-line options shared by all examples (mirrors Editor::SDLMain):

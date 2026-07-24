@@ -80,10 +80,7 @@ ResourceHandle RebuildGraph(ExampleVulkanContext& ctx, RendererUBO& ubo, GPUScen
         cfg.renderExtent = RHIExtent2D{float2(swapExtent.x, swapExtent.y) * scaling};
     }
     auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
-    if (renderer == ExampleRenderer::ProgressivePT)
-        Example_BuildExampleProgressivePathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
-    else
-        Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
+    Example_BuildExampleRenderer(renderer, ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
     ResourceHandle output = Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, !headless);
     if (!headless)
         RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));

@@ -3,16 +3,16 @@
 #include "Examples.hpp"
 #include <Renderer/Rasterizer.hpp>
 #include <Renderer/ProgressivePathtracer.hpp>
+#include <Renderer/RealtimePathtracer.hpp>
 #include <Renderer/Postprocess.hpp>
 
 bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& currentRenderer)
 {
-    bool changed = false;
-    StringView text = currentRenderer == ExampleRenderer::Raster ? "[ RASTERIZER ]" : "[ PATH TRACER ]";
-    if (Examples_Button(input, text))
+    bool changed = false;    
+    if (Examples_Button(input, fmt::format("[{}]", currentRenderer)))
     {
-        currentRenderer =
-            currentRenderer == ExampleRenderer::Raster ? ExampleRenderer::ProgressivePT : ExampleRenderer::Raster;
+        currentRenderer = static_cast<ExampleRenderer>((static_cast<uint32_t>(currentRenderer) + 1) %
+                                                       static_cast<uint32_t>(ExampleRenderer::Count));
         changed = true;
     }
     return changed;
@@ -235,4 +235,29 @@ void Example_BuildExampleProgressivePathTracerRenderGraph(Renderer* renderer, Re
                                                RendererConfig& cfg, RendererOutputs& out)
 {
     BuildProgressivePathTracerRenderGraph(renderer, globals, gpu, cfg, out);
+}
+
+void Example_BuildExampleRealtimePathtracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
+                                                     RendererConfig& cfg, RendererOutputs& out)
+{
+    BuildRealtimePathTracerRenderGraph(renderer, globals, gpu, cfg, out);
+}
+
+void Example_BuildExampleRenderer(ExampleRenderer renderer, Renderer* r, RendererUBO* globals, RendererResources& gpu,
+    RendererConfig& cfg, RendererOutputs& out)
+{
+    switch (renderer)
+    {
+    case ExampleRenderer::Raster:
+        Example_BuildExampleRasterRenderGraph(r, globals, gpu, cfg, out);
+        break;
+    case ExampleRenderer::RealtimePT:
+        Example_BuildExampleRealtimePathtracerRenderGraph(r, globals, gpu, cfg, out);
+        break;
+    case ExampleRenderer::ProgressivePT:
+        Example_BuildExampleProgressivePathTracerRenderGraph(r, globals, gpu, cfg, out);
+        break;
+    default:
+        break;
+    }
 }

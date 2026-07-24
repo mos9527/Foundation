@@ -56,3 +56,12 @@ target_link_libraries(Foundation_ProgressivePathtracer PUBLIC
 )
 target_include_directories(Foundation_ProgressivePathtracer PUBLIC ..)
 
+add_library(Foundation_RealtimePathtracer STATIC
+    RealtimePathtracer.cpp
+)
+target_link_libraries(Foundation_RealtimePathtracer PUBLIC
+    Foundation_GPUScene
+    Foundation_RenderUtils
+)
+target_include_directories(Foundation_RealtimePathtracer PUBLIC ..)
+

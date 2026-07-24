@@ -33,7 +33,7 @@ foreach(SlangFile IN LISTS SLANG_FILES)
     # Variants (Yes, in CMake.)
     # SER is a special case since it's always there in the IR - and some drivers (Lavapipe) doesn't understand it.
     # Avoid emitting them in the first place with a macro guard.
-    if (ShaderName STREQUAL "EPathTracingProgressive")
+    if (ShaderName STREQUAL "EPathTracingProgressive" OR ShaderName STREQUAL "EPathTracingRealtime")
         slangc_compile(
                 "Shader_${ShaderName}_SER"
                 SOURCE          "${SlangFile}"

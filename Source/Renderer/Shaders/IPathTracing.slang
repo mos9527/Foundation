@@ -38,7 +38,6 @@ StructuredBuffer<GSMaterial> gMaterials;
 StructuredBuffer<GSLight> gLights;
 #include "ILightBVH.slang"
 SamplerState gTexSampler;
-StructuredBuffer<uint> gSobolMatrices;
 
 // Path radiance accumulation buffers
 RWTexture2D<float4> diffuse;            // Diffuse lobe radiance

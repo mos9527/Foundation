@@ -40,10 +40,7 @@ namespace
         ubo.ptMaxBounces = 1u;
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
-        if (renderer == ExampleRenderer::ProgressivePT)
-            Example_BuildExampleProgressivePathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
-        else
-            Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
+        Example_BuildExampleRenderer(renderer, ctx.renderer.get(), &ubo, resources, cfg, outputs);
         Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
         RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
         ctx.renderer->EndSetup();
@@ -173,7 +170,7 @@ int main(int argc, char** argv)
         ExampleInputState input{};
         ExampleFpsCounter fps;
         float paused = 0.0f;
-        ExampleRenderer renderer = ExampleRenderer::ProgressivePT;
+        ExampleRenderer renderer = ExampleRenderer::RealtimePT;
         uint64_t t0 = SDL_GetTicksNS();
         PhysicsBodyHandle heldBody{};
         PhysicsBodyPose heldPose{};

@@ -1,8 +1,8 @@
 // Progressive Path Tracer
 // Reference tracer implementing all material models.
-import IBindless;
 #include "IPathTracing.slang"
-
+// Sobol sampler
+StructuredBuffer<uint> gSobolMatrices;
 // Adaptive sampling & accumalation
 RWTexture2D<float4> adaptiveAux;
 // "A Hierarchical Automatic Stopping Condition for Monte Carlo Global Illumination" Hanika 08

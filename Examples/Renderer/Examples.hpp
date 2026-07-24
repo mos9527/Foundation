@@ -1,11 +1,32 @@
 #pragma once
 #include "../Examples.hpp"
 
+enum class ExampleRenderer
+{
+    Raster,
+    RealtimePT,
+    ProgressivePT,
+    Count
+};
+
+ENUM_NAME_CONV_BEGIN(ExampleRenderer)
+ENUM_NAME(Raster)
+ENUM_NAME(RealtimePT)
+ENUM_NAME(ProgressivePT)
+ENUM_NAME_CONV_END()
+
 bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& currentRenderer);
 void Example_BuildExampleRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
                                            RendererConfig& cfg, RendererOutputs& out);
-void Example_BuildExampleProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
-												RendererConfig& cfg, RendererOutputs& out);
+void Example_BuildExampleProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals,
+                                                          RendererResources& gpu, RendererConfig& cfg,
+                                                          RendererOutputs& out);
+void Example_BuildExampleRealtimePathtracerRenderGraph(Renderer* renderer, RendererUBO* globals,
+                                                          RendererResources& gpu, RendererConfig& cfg,
+                                                          RendererOutputs& out);
+void Example_BuildExampleRenderer(ExampleRenderer renderer, Renderer* r, RendererUBO* globals, RendererResources& gpu,
+                                  RendererConfig& cfg, RendererOutputs& out);
+
 ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs const& outputs, bool isPresent);
 
 FImportedMesh Examples_MakePlaneMesh(float extent, float y = 0.0f, Allocator* alloc = GLOBAL_ALLOC);
