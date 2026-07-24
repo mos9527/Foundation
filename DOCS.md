@@ -115,7 +115,7 @@ The following CMake options are available:
 | FOUNDATION_WITH_PROFILING | Build with profiler (Tracy) enabled | ON |
 | FOUNDATION_RHIVULKAN_VALIDATION_LAYER | Build with Vulkan Validation Layer enabled | ON |
 | FOUNDATION_WITH_EXAMPLES | Build examples | ON |
-| FOUNDATION_WITH_TESTS | Build tests | ON |
+
 
 Toggle these options with `-D<OPTION>=ON/OFF` when running `cmake ..`, e.g. `cmake -DFOUNDATION_WITH_SANITIZERS=ON ..`
 

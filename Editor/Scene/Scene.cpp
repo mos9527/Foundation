@@ -1264,12 +1264,13 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
     textureBlobJobs.reserve(sceneTextureCount);
     for (size_t i = 0; i < sceneTextureCount; i++)
         textureBlobJobs.emplace_back(scratchAlloc);
+    JobBarrier textureJobs{};
     if (data->textures_count != 0)
     {
         for (size_t i = 0; i < data->textures_count; i++)
             scene.mTables.textures[i].name = internString(data->textures[i].name);
 
-        jobs->Wait(jobs->ParallelFor(
+        textureJobs = jobs->ParallelFor(
             ExecutionPolicy::Par, "SceneTexture", data->textures_count,
             GetSceneJobGrain(*jobs, data->textures_count),
             [&](size_t begin, size_t end, JobContext&)
@@ -1304,9 +1305,7 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
                     }
                     BuildTextureBlobJobs(scene.mTables.textures[i], textureBlobJobs[i].jobs, std::move(texture));
                 }
-            }));
-        for (size_t i = 0; i < data->textures_count; ++i)
-            AppendResourceBlobJobs(blobJobs, textureBlobJobs[i]);
+            });
     }
     if (environmentTextureSource.HasValue())
     {
@@ -1414,19 +1413,20 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
     uint32_t nextSubmesh = 0;
     uint32_t nextCurve = 0;
     size_t totalPrimitives = numTrianglePrimitives + numCurvePrimitives;
+    JobBarrier geometryJobs{};
+    struct PrimitiveTask
+    {
+        cgltf_primitive* source{};
+        Vector<uint16_t> const* remap{};
+        FUUID skeleton{};
+        FUUID curve{};
+        uint32_t index{};
+        bool mesh{};
+    };
+    Vector<PrimitiveTask> geometryTasks(scratchAlloc);
+    geometryTasks.reserve(totalPrimitives);
     if (totalPrimitives != 0)
     {
-        struct PrimitiveTask
-        {
-            cgltf_primitive* source{};
-            Vector<uint16_t> const* remap{};
-            FUUID skeleton{};
-            FUUID curve{};
-            uint32_t index{};
-            bool mesh{};
-        };
-        Vector<PrimitiveTask> tasks(scratchAlloc);
-        tasks.reserve(totalPrimitives);
         for (size_t i = 0; i < data->meshes_count; i++)
         {
             auto& mesh = data->meshes[i];
@@ -1442,7 +1442,7 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
                     uint32_t meshIndex = nextSubmesh++;
                     meshPrimitiveResources[i].push_back(
                         MeshPrimitiveResource{.type = FInstanceType::Mesh, .index = meshIndex});
-                    tasks.push_back({.source = sub, .remap = remap, .skeleton = skeletonId,
+                    geometryTasks.push_back({.source = sub, .remap = remap, .skeleton = skeletonId,
                                      .index = meshIndex, .mesh = true});
                 }
                 else
@@ -1451,17 +1451,17 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
                     FUUID curveId = scene.mTables.curves[curveIndex].id;
                     meshPrimitiveResources[i].push_back(
                         MeshPrimitiveResource{.type = FInstanceType::Curve, .index = curveIndex});
-                    tasks.push_back({.source = sub, .curve = curveId, .index = curveIndex, .mesh = false});
+                    geometryTasks.push_back({.source = sub, .curve = curveId, .index = curveIndex, .mesh = false});
                 }
             }
         }
-        jobs->Wait(jobs->ParallelFor(
-            ExecutionPolicy::Par, "SceneGeometry", tasks.size(), GetSceneJobGrain(*jobs, tasks.size()),
+        geometryJobs = jobs->ParallelFor(
+            ExecutionPolicy::Par, "SceneGeometry", geometryTasks.size(), GetSceneJobGrain(*jobs, geometryTasks.size()),
             [&](size_t begin, size_t end, JobContext&)
             {
                 for (size_t i = begin; i < end; ++i)
                 {
-                    PrimitiveTask const& task = tasks[i];
+                    PrimitiveTask const& task = geometryTasks[i];
                     if (task.mesh)
                     {
                         FImportedMesh submesh = LoadGLTFSubmesh(task.source, scratchAlloc, task.remap);
@@ -1489,11 +1489,7 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
                         scene.mTables.curves[task.index].id = task.curve;
                     }
                 }
-            }));
-        for (FResourceBlobJobs& jobs : meshBlobJobs)
-            AppendResourceBlobJobs(blobJobs, jobs);
-        for (FResourceBlobJobs& jobs : curveBlobJobs)
-            AppendResourceBlobJobs(blobJobs, jobs);
+            });
     }
     CHECK_MSG(nextSubmesh == numTrianglePrimitives, "Serialized mesh count mismatch");
     CHECK_MSG(nextCurve == numCurvePrimitives, "Serialized curve count mismatch");
@@ -1548,6 +1544,16 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
     }
 
     /* Blob compression and commit */
+    if (!textureJobs.IsEmpty())
+        jobs->Wait(textureJobs);
+    if (!geometryJobs.IsEmpty())
+        jobs->Wait(geometryJobs);
+    for (FResourceBlobJobs& jobs : meshBlobJobs)
+        AppendResourceBlobJobs(blobJobs, jobs);
+    for (FResourceBlobJobs& jobs : curveBlobJobs)
+        AppendResourceBlobJobs(blobJobs, jobs);
+    for (size_t i = 0; i < data->textures_count; ++i)
+        AppendResourceBlobJobs(blobJobs, textureBlobJobs[i]);
     Vector<FPreparedBlob> preparedBlobs(scratchAlloc);
     preparedBlobs.reserve(blobJobs.size());
     for (size_t i = 0; i < blobJobs.size(); i++)
