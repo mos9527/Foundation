@@ -1906,7 +1906,7 @@ void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const
         {
             GSCurveSet const& source = geometry->curve;
             info.triangleData = {
-                .vertexFormat = RHIResourceFormat::R16G16B16SignedFloat,
+                .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
                 .vertexBuffer = owner.mPrimitiveBuffer.Get(),
                 .vertexOffset = source.vertices.offset,
                 .vertexCount = source.vertices.count,
@@ -1922,7 +1922,7 @@ void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const
         {
             GSMesh const& source = geometry->mesh;
             info.triangleData = {
-                .vertexFormat = RHIResourceFormat::R16G16B16SignedFloat,
+                .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
                 .vertexBuffer = owner.mPrimitiveBuffer.Get(),
                 .vertexOffset = source.vertices.offset,
                 .vertexCount = source.vertices.count,
