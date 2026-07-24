@@ -119,12 +119,12 @@ public struct GSCurveSet
     public GSOffsetCount indices;
     public GSOffsetCount leaves;
 };
-public struct GSCurveDOTSVertex
+public struct FCurveDOTSVertex
 {
-    public float3 position;
-    public float pad;
+    public half3 position;
+    public half pad;
 };
-public struct GSCurveLeaf
+public struct FCurveLeaf
 {
     public float3 p0;
     public float r0;

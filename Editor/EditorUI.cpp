@@ -2996,7 +2996,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             };
             int limit = GEditor.renderTask.autoPauseSampleLimit;
-            if (ImGui::SliderInt("Samples", &limit, 0, 4096, limit > 0 ? "%d" : "Off"))
+            if (ImGui::SliderInt("Samples", &limit, 0, 4096, limit > 0 ? "%d" : "Off", ImGuiSliderFlags_Logarithmic))
             {
                 GEditor.renderTask.autoPauseSampleLimit = std::max(0, limit);
                 if (GEditor.renderTask.renderAutoPaused &&
@@ -3038,7 +3038,8 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::SeparatorText(PSI_RANDOM " Ray Bounce");
-            if (ImGui::SliderInt("Max Bounces", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBounces), 0, 100))
+            if (ImGui::SliderInt("Max Bounces", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBounces), 0, 100,
+                                 "%d", ImGuiSliderFlags_Logarithmic))
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }

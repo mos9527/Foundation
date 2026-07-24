@@ -8,9 +8,9 @@ uniform UBO globalParams;
 [[vk_binding(2, 0)]] ByteAddressBuffer primitive;
 [[vk_binding(6, 0)]] StructuredBuffer<uint> drawInstanceIDs;
 
-GSCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint leafIndex)
+FCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint leafIndex)
 {
-    return primitive.Load<GSCurveLeaf>(curve.leaves.offset + leafIndex * sizeof(GSCurveLeaf));
+    return primitive.Load<FCurveLeaf>(curve.leaves.offset + leafIndex * sizeof(FCurveLeaf));
 }
 
 [shader("vertex")]
@@ -19,11 +19,11 @@ V2F main(uint vertexID: SV_VertexID, uint drawID: SV_DrawIndex)
     uint instanceID = drawInstanceIDs[drawID];
     GSInstance inst = instances[instanceID];
     GSCurveSet curve = primitive.Load<GSCurveSet>(inst.resourceOffset);
-    GSCurveDOTSVertex vtx =
-        primitive.Load<GSCurveDOTSVertex>(curve.vertices.offset + vertexID * sizeof(GSCurveDOTSVertex));
+    FCurveDOTSVertex vtx =
+        primitive.Load<FCurveDOTSVertex>(curve.vertices.offset + vertexID * sizeof(FCurveDOTSVertex));
 
     uint leafIndex = vertexID / 8u;
-    GSCurveLeaf leaf = LoadCurveLeaf(curve, leafIndex);
+    FCurveLeaf leaf = LoadCurveLeaf(curve, leafIndex);
     float3 axis = leaf.p1 - leaf.p0;
     float axisLen2 = dot(axis, axis);
     float3 tangent = axisLen2 > 1e-12f ? normalize(axis) : float3(0.0f, 1.0f, 0.0f);

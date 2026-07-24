@@ -335,10 +335,10 @@ float4 IntersectInfiniteCone(float3 ro, float3 rd, float3 pa, float3 pb, float r
     return float4(t + tOffset, normal);
 }
 
-GSCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint primitive)
+FCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint primitive)
 {
     uint leafIndex = primitive / 4u;
-    return gPrimBuffer.Load<GSCurveLeaf>(curve.leaves.offset + leafIndex * sizeof(GSCurveLeaf));
+    return gPrimBuffer.Load<FCurveLeaf>(curve.leaves.offset + leafIndex * sizeof(FCurveLeaf));
 }
 
 HitState GetCurveHitState(uint curveOffset, uint primitive, float2 /*triangleBary*/, GSInstance inst,
@@ -349,7 +349,7 @@ HitState GetCurveHitState(uint curveOffset, uint primitive, float2 /*triangleBar
     hit.uvDY = float2(0.0f);
 
     GSCurveSet curve = gPrimBuffer.Load<GSCurveSet>(curveOffset);
-    GSCurveLeaf leaf = LoadCurveLeaf(curve, primitive);
+    FCurveLeaf leaf = LoadCurveLeaf(curve, primitive);
 
     float3 objRo = inst.rotation.conjugate().rotate(rayOrigin - inst.transform) / inst.scale;
     float3 objRd = inst.rotation.conjugate().rotate(rayDirection) / inst.scale;
