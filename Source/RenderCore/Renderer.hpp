@@ -576,7 +576,11 @@ namespace Foundation::RenderCore
          * @brief Executes all barriers for a pass
          */
         void ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierList cmd);
-        void WaitAndResetCurrentSync();
+        /**
+         * @brief Acquires the synchronization primitives for the current frame.
+         *        Internal. Called by @ref BeginExecute.
+         */
+        void AcquireSync();
         /**
          * @brief Core implementation of @ref BeginExecute.
          *
@@ -1258,6 +1262,7 @@ namespace Foundation::RenderCore
          *  - Safely accessing GPU resources written by the previous frame from the CPU.
          *  - Forcing serialization between frames for debugging / profiling.
          *
+         * @note Usage should be generally avoided in hot paths.         
          * @note This is a no-op if no frame has been submitted yet, or if the previous frame
          *       had no graphics / compute work scheduled.
          * @note This MUST NOT be called between @ref BeginExecute() and @ref EndExecute().

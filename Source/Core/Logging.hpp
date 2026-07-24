@@ -67,7 +67,7 @@ void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...>
 #endif
 
 #define CHECK(expr) do { \
-    if (!(expr)) { \
+    if (!(expr)) [[unlikely]] { \
         LOG(Core, LogError, "Check failed: {}", #expr); \
         FOUNDATION_DEBUG_BREAK(); \
         std::abort(); \
@@ -75,7 +75,7 @@ void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...>
 } while (false);
 
 #define CHECK_MSG(expr, format_str, ...) do { \
-    if (!(expr)) { \
+    if (!(expr)) [[unlikely]] { \
         LOG(Core, LogError, format_str __VA_OPT__(,) __VA_ARGS__); \
         FOUNDATION_DEBUG_BREAK(); \
         std::abort(); \

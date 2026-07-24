@@ -1503,10 +1503,11 @@ void Renderer::WaitForFrame()
     mDevice->WaitForFences(wait, true, -1);
 }
 
-void Renderer::WaitAndResetCurrentSync()
+void Renderer::AcquireSync()
 {
+    CHECK(mExecuteAlloc);
     ZoneScopedN("Wait for GPU");
-    Vector<RHIDeviceFence*> wait(mAllocator);
+    Vector<RHIDeviceFence*> wait(mExecuteAlloc.Ptr());
     wait.reserve(2);
     if (mSetup && mSetup->executionAnyGraphics)
         wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
@@ -1568,13 +1569,13 @@ void Renderer::BeginExecute(uint32_t swapImageIndex, RHIDeviceSemaphore* imageAc
 
 void Renderer::BeginExecute()
 {
-    WaitAndResetCurrentSync();
+    AcquireSync();
     BeginExecute(0, nullptr);
 }
 
 RHISwapchainResult Renderer::BeginExecute(Presenter* presenter)
 {
-    WaitAndResetCurrentSync();
+    AcquireSync();
     uint32_t image{};
     const RHISwapchainResult result = presenter->AcquireNextImage(image);
     if (RHISwapchainResultMayPresent(result))

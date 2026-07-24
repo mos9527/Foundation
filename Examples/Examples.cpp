@@ -212,6 +212,8 @@ namespace
 
     void RegisterControl(ExampleInputState& input, uint32_t id, RenderUtils::CSDebugTextData const& line)
     {
+        CHECK_MSG(input.nextClickableRegions.size() < ExampleInputState::kMaxClickableRegions,
+                  "Exceeded ExampleInputState::kMaxClickableRegions");
         input.nextClickableRegions.push_back({
             .id = id,
             .x = line.x,
@@ -664,7 +666,7 @@ void Examples_BeginFrameInput(ExampleInputState& input)
     input.clickedControl = 0u;
     input.nextControlId = 1u;
     input.pressedKeyCount = 0u;
-    input.clickableRegions = std::move(input.nextClickableRegions);
+    input.clickableRegions.swap(input.nextClickableRegions);
     input.nextClickableRegions.clear();
     Examples_BeginControls(input);
 }

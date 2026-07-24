@@ -9,8 +9,7 @@ namespace Foundation::Core {
             auto aligned = AlignUp(current, alignment);
             auto next = aligned + size;
 
-            if (next > mEnd) [[unlikely]]
-                return nullptr;            
+            CHECK(next <= mEnd);
             
             if (mCurrent.compare_exchange_weak(current, next, std::memory_order_release,
                                                 std::memory_order_relaxed))
