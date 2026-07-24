@@ -108,6 +108,19 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
                 {
                     q.CommitNonOpaqueTriangleHit();
                 }
+            } else if (IsLightInstance(q.CandidateInstanceID()))
+            {
+                uint instance = q.CandidateInstanceID();
+                GSLight gl = LoadSceneLight(GetLightIndex(instance));
+                float3 ro = q.CandidateObjectRayOrigin();
+                float3 rd = q.CandidateObjectRayDirection();
+                float t;
+                float2 localPos;
+                if (EvaluateLightIntersection(GSLightType(gl), ro, rd, q.RayTMin(), q.CommittedRayT(), t, localPos))
+                {
+                    bestProceduralBary = localPos;
+                    q.CommitProceduralPrimitiveHit(t);
+                }
             }
         }
         if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
