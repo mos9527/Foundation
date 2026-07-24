@@ -3232,7 +3232,11 @@ void FRunningImGui()
 void FRendering(RendererOutputs const& outputs)
 {
     auto* renderer = GContext->renderer;
-    EditorBeginFrame(renderer, GContext->presenter);
+    if (!RHISwapchainOk(EditorBeginFrame(renderer, GContext->presenter)))
+    {
+        RecreateEditorSwapchain();
+        return;
+    }
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
 
@@ -3314,7 +3318,8 @@ void FRendering(RendererOutputs const& outputs)
     GEditor.postprocessGlobals.viewLutIndex =
         Postprocess::ResolvePostprocessViewLutIndex(GEditor.viewLUTSdrHandle, GEditor.viewLUTHdrHandle, GContext->enableHDR);
     renderer->ExecuteFrame();
-    EditorEndFrame(renderer, GContext->presenter);
+    if (!RHISwapchainOk(EditorEndFrame(renderer, GContext->presenter)))
+        RecreateEditorSwapchain();
     GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
 
     bool timeLimitReached = GEditor.renderTask.targetTimeSeconds > 0 && elapsed >= GEditor.renderTask.targetTimeSeconds;

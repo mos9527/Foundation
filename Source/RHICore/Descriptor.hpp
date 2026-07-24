@@ -39,7 +39,7 @@ namespace Foundation::RHI {
         // NOTE: `desc.type` is used to determine which of the next spans is used                
         // to update the descriptors.
         // Implementations should guarantee that descriptor type updates within
-        // a single call is homogenous, and throw if type mismatches the spans given,
+        // a single call is homogenous, and CHECK if type mismatches the spans given,
         // or some spans are unused.
         virtual void Update(UpdateDesc const& desc) = 0;
 

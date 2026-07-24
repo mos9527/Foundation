@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/AtomicPool.hpp>
+#include <Core/Logging.hpp>
 /**
  * @brief Low-level Rendering Hardware Interface (RHI) abstractions.
  */
@@ -52,11 +53,9 @@ namespace Foundation::RHI
         template <typename U = T>
         [[nodiscard]] U* Get() const
         {
-            if (!IsValid())
-                throw std::runtime_error("RHIHandle::Get called on an invalid handle");
+            CHECK_MSG(IsValid(), "RHIHandle::Get called on an invalid handle");
             T* ptr = RHIObjectTraits<Factory, T>::Get(mFactory, mHandle);
-            if (!ptr)
-                throw std::runtime_error("RHIHandle::Get got nullptr");
+            CHECK_MSG(ptr, "RHIHandle::Get got nullptr");
             return static_cast<U*>(ptr);
         }
         T* operator->() const { return Get(); }

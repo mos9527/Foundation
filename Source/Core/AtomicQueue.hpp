@@ -3,6 +3,7 @@
 #include "Allocator.hpp"
 #include "Atomic.hpp"
 #include "Container.hpp"
+#include "Logging.hpp"
 namespace Foundation::Core
 {
     /**
@@ -28,8 +29,7 @@ namespace Foundation::Core
          */
         SPSCQueue(size_t size, Allocator* alloc) : mModulo(size - 1), mBuffer(size, alloc)
         {
-            if ((size & mModulo) != 0)
-                throw std::runtime_error("Size must be a power of two");
+            CHECK_MSG((size & mModulo) == 0, "Size must be a power of two");
         }
         /**
          * @brief _Try_ to push data into the queue.
@@ -97,8 +97,7 @@ namespace Foundation::Core
         MPMCQueue(size_t size, Allocator* alloc) :
             mModulo(size - 1), mShift(std::countr_zero(size)), mBuffer(size, alloc)
         {
-            if ((size & mModulo) != 0)
-                throw std::runtime_error("Size must be a power of two");
+            CHECK_MSG((size & mModulo) == 0, "Size must be a power of two");
         }
         template <typename U>
         bool Push(U&& data)

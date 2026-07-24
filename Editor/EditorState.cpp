@@ -17,12 +17,24 @@ static int2 sPickingPixel;
 static bool sPickingDoubleClick = false;
 static RasterFeature sEditorRasterEffects[2];
 
-uint32_t EditorBeginFrame(Renderer* renderer, Presenter* presenter) { return renderer->BeginExecute(presenter); }
+RHISwapchainResult EditorBeginFrame(Renderer* renderer, Presenter* presenter)
+{
+    return renderer->BeginExecute(presenter);
+}
 
-void EditorEndFrame(Renderer* renderer, Presenter* presenter)
+RHISwapchainResult EditorEndFrame(Renderer* renderer, Presenter* presenter)
 {
     renderer->EndExecute();
-    presenter->Present(renderer->GetRenderCompleteSemaphore().Get());
+    return presenter->Present(renderer->GetRenderCompleteSemaphore().Get());
+}
+
+void RecreateEditorSwapchain()
+{
+    UpdateSwapchain(GContext);
+    if (GContext->renderer)
+        GContext->renderer->SetSwapchain(GContext->swapchain);
+    if (GContext->presenter)
+        GContext->presenter->SetSwapchain(GContext->swapchain);
 }
 
 int SceneInstanceIndexFromId(FUUID id) { return GEditor.HasScene() ? GEditor.Scene().InstanceIndex(id) : -1; }
@@ -395,7 +407,11 @@ static void FNoScene()
         SetupIdleRenderer(GContext);
         renderer = GContext->renderer;
     }
-    EditorBeginFrame(renderer, GContext->presenter);
+    if (!RHISwapchainResultMayPresent(EditorBeginFrame(renderer, GContext->presenter)))
+    {
+        RecreateEditorSwapchain();
+        return;
+    }
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
     {
@@ -421,7 +437,8 @@ static void FNoScene()
     GEditor.camera.UpdateMovement(dt);
     GEditor.camera.Update({});
     renderer->ExecuteFrame();
-    EditorEndFrame(renderer, GContext->presenter);
+    if (!RHISwapchainResultMayPresent(EditorEndFrame(renderer, GContext->presenter)))
+        RecreateEditorSwapchain();
 }
 
 static void FRunningEnter()
@@ -442,7 +459,11 @@ static void FRunning()
 {
     auto* renderer = GContext->renderer;
     // New frame
-    EditorBeginFrame(renderer, GContext->presenter);
+    if (!RHISwapchainResultMayPresent(EditorBeginFrame(renderer, GContext->presenter)))
+    {
+        RecreateEditorSwapchain();
+        return;
+    }
     GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
@@ -493,7 +514,8 @@ static void FRunning()
     RefreshPostprocessState(renderExtent);
     EditorGizmos::BuildLightGizmos();
     renderer->ExecuteFrame();
-    EditorEndFrame(renderer, GContext->presenter);
+    if (!RHISwapchainResultMayPresent(EditorEndFrame(renderer, GContext->presenter)))
+        RecreateEditorSwapchain();
     // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
     if (sPickingPixel.x >= 0)
     {

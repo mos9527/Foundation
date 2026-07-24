@@ -772,7 +772,7 @@ void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* com
         submits, completionFence ? static_cast<VulkanDeviceFence*>(completionFence)->GetVkFence() : vk::Fence(nullptr));
 }
 
-void VulkanDeviceQueue::Present(PresentDesc const& desc) const
+RHISwapchainResult VulkanDeviceQueue::Present(PresentDesc const& desc) const
 {
     StackArena<4096> arena{};
     AllocatorStack alloc(arena);
@@ -794,13 +794,28 @@ void VulkanDeviceQueue::Present(PresentDesc const& desc) const
     try
     {
         std::lock_guard<Mutex> submitLock(mDevice.GetQueueSubmitMutex());
-        auto res = mQueue.presentKHR(present_info);
-        CHECK(res == vk::Result::eSuccess && "failed to present");
+        auto result = mQueue.presentKHR(present_info);
+        if (result == vk::Result::eSuccess)
+            return RHISwapchainResult::Success;
+        if (result == vk::Result::eSuboptimalKHR)
+            return RHISwapchainResult::Suboptimal;
+        if (result == vk::Result::eErrorOutOfDateKHR)
+            return RHISwapchainResult::OutOfDate;
+        if (result == vk::Result::eErrorSurfaceLostKHR)
+            return RHISwapchainResult::SurfaceLost;
+        if (result == vk::Result::eErrorDeviceLost)
+            return RHISwapchainResult::DeviceLost;
+        return RHISwapchainResult::Error;
     }
-    catch (std::exception&)
+    catch (vk::SystemError const& error)
     {
-        // XXX: Not always the case e.g. device lost
-        throw RHISwapchainResizeException{};
+        if (error.code().value() == static_cast<int>(vk::Result::eErrorOutOfDateKHR))
+            return RHISwapchainResult::OutOfDate;
+        if (error.code().value() == static_cast<int>(vk::Result::eErrorSurfaceLostKHR))
+            return RHISwapchainResult::SurfaceLost;
+        if (error.code().value() == static_cast<int>(vk::Result::eErrorDeviceLost))
+            return RHISwapchainResult::DeviceLost;
+        return RHISwapchainResult::Error;
     }
 }
 
@@ -1044,7 +1059,8 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
         case Cubic:
             return vk::Filter::eCubicEXT; // TODO: check if supported
         default:
-            throw std::runtime_error("unsupported sampler filter");
+            CHECK_MSG(false, "unsupported sampler filter");
+            return vk::Filter::eNearest;
         }
     };
     auto vkSamplerAddressModeFromRHIAddressMode = [](SamplerDesc::AddressMode::Mode mode) -> vk::SamplerAddressMode
@@ -1062,7 +1078,8 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
         case SamplerDesc::AddressMode::MirrorClampToEdge:
             return vk::SamplerAddressMode::eMirrorClampToEdge;
         default:
-            throw std::runtime_error("unsupported sampler address mode");
+            CHECK_MSG(false, "unsupported sampler address mode");
+            return vk::SamplerAddressMode::eRepeat;
         }
     };
     auto vkSamplerReductionModeFromRHIReductionMode = [](SamplerDesc::Reduction mode) -> vk::SamplerReductionMode
@@ -1077,7 +1094,8 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
         case Max:
             return vk::SamplerReductionMode::eMax;
         default:
-            throw std::runtime_error("unsupported sampler reduction mode");
+            CHECK_MSG(false, "unsupported sampler reduction mode");
+            return vk::SamplerReductionMode::eWeightedAverage;
         }
     };
     vk::SamplerReductionModeCreateInfo reduction{.reductionMode =

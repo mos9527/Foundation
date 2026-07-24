@@ -503,7 +503,9 @@ RHICommandList& VulkanCommandList::BindIndexBuffer(RHIBuffer* buffer, size_t off
         type = vk::IndexType::eUint16;
         break;
     default:
-        throw std::runtime_error("unsupported index format");
+        CHECK_MSG(false, "unsupported index format");
+        type = vk::IndexType::eUint32;
+        break;
     }
     auto* vulkan_buffer = static_cast<VulkanBuffer*>(buffer);
     mCommandBuffer.bindIndexBuffer(*vulkan_buffer->GetVkBuffer(), offset, type);

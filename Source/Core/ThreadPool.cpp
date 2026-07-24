@@ -8,10 +8,8 @@ namespace Foundation::Core
 
         Allocator* ValidateThreadPoolDesc(Allocator* allocator, size_t maxTasks)
         {
-            if (!allocator)
-                throw std::runtime_error("ThreadPool requires an allocator");
-            if (!std::has_single_bit(maxTasks))
-                throw std::runtime_error("ThreadPool maxTasks must be a non-zero power of two");
+            CHECK_MSG(allocator, "ThreadPool requires an allocator");
+            CHECK_MSG(std::has_single_bit(maxTasks), "ThreadPool maxTasks must be a non-zero power of two");
             return allocator;
         }
     }
@@ -21,27 +19,13 @@ namespace Foundation::Core
         mJobs{JobQueue(maxTasks, mAllocator), JobQueue(maxTasks, mAllocator), JobQueue(maxTasks, mAllocator)},
         mThreads(mAllocator)
     {
-        try
-        {
-            mThreads.reserve(numThreads);
-            for (size_t i = 0; i < numThreads; ++i)
-                mThreads.emplace_back(&ThreadPool::ThreadPoolWorker, this, i);
-        }
-        catch (...)
-        {
-            mShutdown.store(true, std::memory_order_release);
-            mWakeEpoch.fetch_add(1, std::memory_order_release);
-            mWakeEpoch.notify_all();
-            for (Thread& thread : mThreads)
-                if (thread.joinable())
-                    thread.join();
-            throw;
-        }
+        mThreads.reserve(numThreads);
+        for (size_t i = 0; i < numThreads; ++i)
+            mThreads.emplace_back(&ThreadPool::ThreadPoolWorker, this, i);
     }
     void ThreadPool::Shutdown()
     {
-        if (gWorkerThreadPool == this)
-            throw std::runtime_error("ThreadPool cannot be shut down from one of its jobs");
+        CHECK_MSG(gWorkerThreadPool != this, "ThreadPool cannot be shut down from one of its jobs");
         {
             std::unique_lock submitLock(mSubmitMutex);
             if (!mAccepting.load(std::memory_order_relaxed))

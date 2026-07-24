@@ -319,7 +319,7 @@ int main(int argc, char** argv)
 
         if (paused < 0.5f || clicked)
         {
-            physics_system.Update(dt, 1, &temp_allocator, &job_system);
+            physics_system.Update(std::min(dt, 1/60.0f), 1, &temp_allocator, &job_system);
             ubo.ptAccumulatedFrames = 0u;
         }
         else

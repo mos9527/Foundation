@@ -11,11 +11,15 @@
 #include "Runtime/GPUScene.hpp"
 #include "Runtime/Animation.hpp"
 #include "Scene/Scene.hpp"
+#include <RHICore/Swapchain.hpp>
 
 namespace Foundation::RenderCore
 {
 class Presenter;
 }
+
+using Foundation::RHI::RHISwapchainResult;
+using Foundation::RHI::RHISwapchainResultMayPresent;
 
 enum class ERendererMode
 {
@@ -223,7 +227,8 @@ void FRendering(RendererOutputs const& outputs);
 
 void CheckDeferredSceneLoad();
 
-// Acquire swapchain image + BeginExecute. Returns image index for EditorEndFrame.
-uint32_t EditorBeginFrame(Renderer* renderer, Presenter* presenter);
-// EndExecute + Present + present timing mark.
-void EditorEndFrame(Renderer* renderer, Presenter* presenter);
+// Acquire swapchain image + BeginExecute. Returns acquire result.
+RHISwapchainResult EditorBeginFrame(Renderer* renderer, Presenter* presenter);
+// EndExecute + Present. Returns present result; !RHISwapchainResultMayPresent means recreate swapchain.
+RHISwapchainResult EditorEndFrame(Renderer* renderer, Presenter* presenter);
+void RecreateEditorSwapchain();

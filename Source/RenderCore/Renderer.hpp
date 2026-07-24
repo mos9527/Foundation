@@ -546,7 +546,8 @@ namespace Foundation::RenderCore
             case RHIDeviceQueueType::Compute:
                 return mComputeQueue->GetVkQueueFamily();
             default:
-                throw std::runtime_error("Unhandled queue type");
+                CHECK_MSG(false, "Unhandled queue type");
+                return kCommandQueueTransferIgnored;
             }
         }
         using ExecuteBarrierList =
@@ -751,7 +752,7 @@ namespace Foundation::RenderCore
          *
          * This is only available at Setup time.
          *
-         * This only applies to passes on Graphics queues. And will throw
+         * This only applies to passes on Graphics queues. And will CHECK
          * otherwise.
          *
          * You MUST bind a valid VertexInput at creation time if cmd->Draw[Indexed]
@@ -1221,7 +1222,7 @@ namespace Foundation::RenderCore
          *
          * If this returns false, the Renderer is headless: no backbuffer waits/signals are
          * scheduled, and any passes that attempt to bind the backbuffer (@ref BindBackbufferRTV /
-         * @ref BindBackbufferUAV) will throw at setup time.
+         * @ref BindBackbufferUAV) will CHECK at setup time.
          *
          * Acquire/Present are always the caller's responsibility when a swapchain is bound.
          */
@@ -1281,9 +1282,9 @@ namespace Foundation::RenderCore
         /**
          * @brief Convenience overload for the common present loop.
          * Waits for the synchronization slot being reused, then acquires the next swapchain image.
-         * @return The acquired swapchain image index.
+         * @return Acquire result; only enters Execute on RHISwapchainResultMayPresent.
          */
-        uint32_t BeginExecute(Presenter* presenter);
+        RHISwapchainResult BeginExecute(Presenter* presenter);
         /**
          * @brief Executes all passes in the render graph for one frame.
          *
@@ -1296,20 +1297,7 @@ namespace Foundation::RenderCore
          *       @ref EndExecute() is the synchronization point for the frame.
          *       Meaning - if work is required during the frame, you can do it *after*
          *       @ref ExecuteFrame() and *before* @ref EndExecute() to overlap recording work.
-         * @note This MUST be called after BeginExecute(), and before EndExecute().
-         *
-         * @code{.cpp}
-         *  // Headless:
-         *  BeginExecute();
-         *  // Present loop:
-         *  uint32_t image = renderer.BeginExecute(presenter);
-         *  // ...Additional pre-frame logic...
-         *  ExecuteFrame();
-         *  // ...Additional post-frame logic...
-         *  EndExecute();
-         *  queue->Present({.imageIndex = image, .swapchain = swapchain,
-         *                  .waits = {{renderer->GetRenderCompleteSemaphore().Get()}}});
-         *  @endcode
+         * @note This MUST be called after BeginExecute(), and before EndExecute().      
          */
         void ExecuteFrame();
         /**

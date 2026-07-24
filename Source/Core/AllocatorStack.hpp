@@ -1,6 +1,7 @@
 #pragma once
 #include "Allocator.hpp"
 #include "Atomic.hpp"
+#include "Logging.hpp"
 namespace Foundation::Core
 {
     /**
@@ -35,12 +36,11 @@ namespace Foundation::Core
          * @note No-op. No memory is modified with this operation.
          */
         void Deallocate(pointer ptr) override { /* nop */ }
-        /**
-         * @note Unsupported. Throws std::runtime_error when invoked.
-         */
+        /** @note Unsupported. */
         pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) override
         {
-            throw std::runtime_error("Allocator does not support reallocation");
+            CHECK_MSG(false, "Allocator does not support reallocation");
+            return nullptr;
         }
         constexpr operator bool() const noexcept { return mMemory != nullptr; }
 

@@ -1603,16 +1603,9 @@ bool GPUSceneImpl::DriveUploadBatch(size_t timeout)
         }
         if (state.gpuComplete && state.needsCompaction && !state.failed.load(std::memory_order_acquire))
         {
-            try
-            {
-                SubmitBLASCompaction(state);
-                state.gpuComplete = false;
-                return false;
-            }
-            catch (...)
-            {
-                state.failed.store(true, std::memory_order_release);
-            }
+            SubmitBLASCompaction(state);
+            state.gpuComplete = false;
+            return false;
         }
         if (state.gpuComplete && !state.failed.load(std::memory_order_acquire))
         {
@@ -1684,20 +1677,7 @@ void GPUSceneImpl::Join()
                 barrier.Add(state.publishJob);
         }
         if (!barrier.IsEmpty())
-        {
-            try
-            {
-                mJobs->Wait(barrier);
-            }
-            catch (std::exception const& e)
-            {
-                LOG(GPUScene, LogError, "Upload job failed: {}", e.what());
-            }
-            catch (...)
-            {
-                LOG(GPUScene, LogError, "Upload job failed");
-            }
-        }
+            mJobs->Wait(barrier);
         else
             std::this_thread::yield();
     }
@@ -1865,23 +1845,14 @@ void GPUSceneImpl::DecodeUploads(UploadBatchState& state, size_t begin, size_t e
 
 void GPUSceneImpl::SubmitUploads(UploadBatchState& state)
 {
-    try
+    state.batch.End();
+    state.finalTimeline = mImmediateUpload->CompletionTimeline();
+    state.finalTimelineValue = state.batch.CompletionValue();
+    if (!state.geometryHandles.empty())
     {
-        state.batch.End();
-        state.finalTimeline = mImmediateUpload->CompletionTimeline();
-        state.finalTimelineValue = state.batch.CompletionValue();
-        if (!state.geometryHandles.empty())
-        {
-            RHIDeviceQueue::TimelinePair wait{state.finalTimeline, state.finalTimelineValue};
-            RHIPipelineStage waitStage = RHIPipelineStageBits::AccelerationBuild;
-            SubmitBLAS(state, {.timelineWaits = {&wait, 1}, .waitStages = {&waitStage, 1}});
-        }
-    }
-    catch (...)
-    {
-        if (state.batch.IsValid())
-            state.batch.Abort();
-        state.failed.store(true, std::memory_order_release);
+        RHIDeviceQueue::TimelinePair wait{state.finalTimeline, state.finalTimelineValue};
+        RHIPipelineStage waitStage = RHIPipelineStageBits::AccelerationBuild;
+        SubmitBLAS(state, {.timelineWaits = {&wait, 1}, .waitStages = {&waitStage, 1}});
     }
     state.submitted.store(true, std::memory_order_release);
 }

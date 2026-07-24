@@ -100,21 +100,6 @@ int main()
     if (!Require(std::accumulate(values.begin(), values.end(), 0) == expected, "parallel-for"))
         return 1;
 
-    JobBarrier failureBarrier = jobs.CreateBarrier();
-    JobHandle failure = jobs.CreateJob("Expected failure", [] { throw std::runtime_error("expected"); });
-    failureBarrier.Add(failure);
-    bool caught = false;
-    try
-    {
-        jobs.Wait(failureBarrier);
-    }
-    catch (std::runtime_error const&)
-    {
-        caught = true;
-    }
-    if (!Require(caught, "exception propagation"))
-        return 1;
-
     jobs.Drain();
     std::cout << "JobSystem smoke test passed\n";
     return 0;

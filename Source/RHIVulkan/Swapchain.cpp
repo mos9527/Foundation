@@ -85,35 +85,52 @@ RHIExtent2D VulkanSwapchain::GetExtents() const
 {
     return mDesc.extents;
 }
-uint32_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceHandle<RHIDeviceSemaphore> semaphore, RHIDeviceHandle<RHIDeviceFence> fence)
+RHISwapchainResult VulkanSwapchain::GetNextImage(uint64_t timeout_ns,
+                                                RHIDeviceHandle<RHIDeviceSemaphore> semaphore,
+                                                RHIDeviceHandle<RHIDeviceFence> fence, uint32_t& imageIndex)
 {
     vk::Result result{};
-    uint32_t index{};
     try
     {
-        std::tie(result, index) = mSwapchain.acquireNextImage(
+        std::tie(result, imageIndex) = mSwapchain.acquireNextImage(
             timeout_ns,
             semaphore ? semaphore.Get<VulkanDeviceSemaphore>()->GetVkSemaphore() : vk::Semaphore(),
             fence ? fence.Get<VulkanDeviceFence>()->GetVkFence() : vk::Fence()
         );
     }
-    catch (vk::SystemError&)
+    catch (vk::SystemError const& error)
     {
-        throw RHISwapchainResizeException();
+        if (error.code().value() == static_cast<int>(vk::Result::eErrorOutOfDateKHR))
+            return RHISwapchainResult::OutOfDate;
+        if (error.code().value() == static_cast<int>(vk::Result::eErrorSurfaceLostKHR))
+            return RHISwapchainResult::SurfaceLost;
+        if (error.code().value() == static_cast<int>(vk::Result::eErrorDeviceLost))
+            return RHISwapchainResult::DeviceLost;
+        return RHISwapchainResult::Error;
     }
     switch (result)
     {
-    case vk::Result::eErrorSurfaceLostKHR:
-    case vk::Result::eErrorOutOfDateKHR:
+    case vk::Result::eSuccess:
+        CHECK_MSG(imageIndex < mImagesPtrs.size(), "Swapchain image index {} out of range ({})", imageIndex,
+                  mImagesPtrs.size());
+        return RHISwapchainResult::Success;
     case vk::Result::eSuboptimalKHR:
-        // Swapchain resize        
-        throw RHISwapchainResizeException();
+        CHECK_MSG(imageIndex < mImagesPtrs.size(), "Swapchain image index {} out of range ({})", imageIndex,
+                  mImagesPtrs.size());
+        return RHISwapchainResult::Suboptimal;
+    case vk::Result::eNotReady:
+        return RHISwapchainResult::NotReady;
+    case vk::Result::eTimeout:
+        return RHISwapchainResult::Timeout;
+    case vk::Result::eErrorOutOfDateKHR:
+        return RHISwapchainResult::OutOfDate;
+    case vk::Result::eErrorSurfaceLostKHR:
+        return RHISwapchainResult::SurfaceLost;
+    case vk::Result::eErrorDeviceLost:
+        return RHISwapchainResult::DeviceLost;
     default:
-        // TODO: Handle other errors?
-        break;
+        return RHISwapchainResult::Error;
     }
-    CHECK_MSG(index < mImagesPtrs.size(), "Swapchain image index {} out of range ({}). Result={}", index, mImagesPtrs.size(), static_cast<int>(result))
-    return index;
 }
 
 void VulkanSwapchain::DebugSetObjectName(const char* name) {

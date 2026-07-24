@@ -1,7 +1,10 @@
 #pragma once
+#include <cstdlib>
 #include <fmt/base.h>
 #include <fmt/format.h>
-#include <stdexcept>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 enum LogLevel
 {
     LogDebug,
@@ -55,14 +58,26 @@ void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...>
 
 #define LOG(TAG, LEVEL, FORMAT, ...) Foundation_Log(#TAG, LEVEL, FORMAT __VA_OPT__(,) __VA_ARGS__);
 
-#define CHECK(expr) if(!(expr)) { \
-    constexpr const char* msg = "Check failed: " #expr; \
-    LOG(Core, LogError, "{}", msg); \
-    throw std::runtime_error(msg); \
-}
+#if defined(_MSC_VER)
+#define FOUNDATION_DEBUG_BREAK() __debugbreak()
+#elif defined(__clang__) && __has_builtin(__builtin_debugtrap)
+#define FOUNDATION_DEBUG_BREAK() __builtin_debugtrap()
+#else
+#define FOUNDATION_DEBUG_BREAK() __builtin_trap()
+#endif
 
-#define CHECK_MSG(expr, format_str, ...) if(!(expr)) { \
-    auto msg = fmt::format(format_str __VA_OPT__(,) __VA_ARGS__); \
-    LOG(Core, LogError, "{}", msg); \
-    throw std::runtime_error(msg); \
-}
+#define CHECK(expr) do { \
+    if (!(expr)) { \
+        LOG(Core, LogError, "Check failed: {}", #expr); \
+        FOUNDATION_DEBUG_BREAK(); \
+        std::abort(); \
+    } \
+} while (false);
+
+#define CHECK_MSG(expr, format_str, ...) do { \
+    if (!(expr)) { \
+        LOG(Core, LogError, format_str __VA_OPT__(,) __VA_ARGS__); \
+        FOUNDATION_DEBUG_BREAK(); \
+        std::abort(); \
+    } \
+} while (false);

@@ -12,24 +12,26 @@ Presenter::Presenter(RHIDevice* device, RHIDeviceHandle<RHISwapchain> swapchain,
     SetSwapchain(swapchain);
 }
 
-uint32_t Presenter::AcquireNextImage()
+RHISwapchainResult Presenter::AcquireNextImage(uint32_t& imageIndex)
 {
     ZoneScopedN("Acquire Next Image");
-    mCurrentSwap = mSwapchain->GetNextImage(-1, mSyncs[mCurrentSync], {});
-    CHECK_MSG(mCurrentSwap < mFrameSwaps, "Invalid swapchain image index {}", mCurrentSwap);
-    return mCurrentSwap;
+    const RHISwapchainResult result = mSwapchain->GetNextImage(-1, mSyncs[mCurrentSync], {}, mCurrentSwap);
+    imageIndex = mCurrentSwap;
+    if (RHISwapchainResultMayPresent(result))
+        CHECK_MSG(mCurrentSwap < mFrameSwaps, "Invalid swapchain image index {}", mCurrentSwap);
+    return result;
 }
 
-void Presenter::Present(RHIDeviceSemaphore* waitSemaphore)
+RHISwapchainResult Presenter::Present(RHIDeviceSemaphore* waitSemaphore)
 {
     ZoneScopedN("Present");
-    mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics)->Present({
+    const RHISwapchainResult result = mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics)->Present({
         .imageIndex = mCurrentSwap,
         .swapchain = mSwapchain.Get(),
         .waits = {{waitSemaphore}}
     });
-
     mCurrentSync = (mCurrentSync + 1) % mFrameSwaps;
+    return result;
 }
 
 RHIDeviceHandle<RHIDeviceSemaphore> Presenter::GetImageAcquireSemaphore() const { return mSyncs[mCurrentSync]; }
@@ -43,5 +45,6 @@ void Presenter::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain) {
         mSyncs[i] = mDevice->CreateSemaphore(false);
         mSyncs[i]->DebugSetObjectName(fmt::format("Acquire Semaphore of Swap {}", i).c_str());
     }
+    mCurrentSync = mCurrentSwap = 0;
 }
 } // namespace Foundation::RenderCore

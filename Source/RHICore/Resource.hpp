@@ -181,7 +181,7 @@ namespace Foundation::RHI
         }
         /**
          * @brief Helper function to create a Subresource Range with default parameters
-         * @note The created range is validated, and will throw if invalid.
+         * @note The created range is validated, and will CHECK if invalid.
          * @param aspect Defaults to @ref RHITextureAspectFlagBits::Color
          * @param base_mip_level Defaults to 0
          * @param mip_count Defaults to 1

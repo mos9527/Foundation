@@ -6,9 +6,21 @@ namespace Foundation::RHI {
     class RHIDeviceSemaphore;
     class RHIDeviceFence;
     class RHISurface;
-    struct RHISwapchainResizeException : std::exception {
-        using std::exception::exception;
+    enum class RHISwapchainResult {
+        Success,
+        NotReady,
+        Timeout,
+        Suboptimal,
+        OutOfDate,
+        SurfaceLost,
+        DeviceLost,
+        Error
     };
+    // Presentable image was acquired/presented; Suboptimal still warrants recreate when convenient.
+    [[nodiscard]] inline bool RHISwapchainResultMayPresent(RHISwapchainResult result)
+    {
+        return result == RHISwapchainResult::Success || result == RHISwapchainResult::Suboptimal;
+    }
     enum class RHISwapchainPresentMode {
         // V-Sync
         Fifo,
@@ -37,14 +49,11 @@ namespace Foundation::RHI {
         } mDesc;
         [[nodiscard]] virtual Span<RHITexture* const> GetImages() const = 0;
         RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : mDevice(device), mDesc(desc) {}
-        /**
-         * @brief Gets the next image in the swapchain.
-         * Raises RHISwapchainResizeException if the swapchain needs to be resized.
-         */
-        virtual uint32_t GetNextImage(
+        virtual RHISwapchainResult GetNextImage(
             uint64_t timeout_ns,
             RHIDeviceHandle<RHIDeviceSemaphore> semaphore,
-            RHIDeviceHandle<RHIDeviceFence> fence
+            RHIDeviceHandle<RHIDeviceFence> fence,
+            uint32_t& imageIndex
         ) = 0;            
         [[nodiscard]] virtual RHIExtent2D GetExtents() const = 0;
         [[nodiscard]] float GetAspectRatio() const {

@@ -1,5 +1,6 @@
 #pragma once
 #include "AtomicQueue.hpp"
+#include "Logging.hpp"
 #include "Thread.hpp"
 #include <algorithm>
 #include <array>
@@ -54,20 +55,13 @@ namespace Foundation::Core
         LambdaJob(Lambda&& func) : mFunc(std::forward<Lambda>(func)) {}
         void Execute(size_t) noexcept override
         {
-            try
+            if constexpr (std::is_same_v<ReturnType, void>)
             {
-                if constexpr (std::is_same_v<ReturnType, void>)
-                {
-                    mFunc();
-                    mPromise.set_value();
-                }
-                else
-                    mPromise.set_value(mFunc());
+                mFunc();
+                mPromise.set_value();
             }
-            catch (...)
-            {
-                mPromise.set_exception(std::current_exception());
-            }
+            else
+                mPromise.set_value(mFunc());
         }
     };
 
@@ -116,34 +110,31 @@ namespace Foundation::Core
             requires std::is_base_of_v<Job, T>
         void PushImplInternal(JobPriority priority, Allocator* jobAllocator, Args&&... args)
         {
-            if (!BeginSubmit())
-                throw std::runtime_error("ThreadPool shutting down");
-            try
+            bool const submitting = BeginSubmit();
+            CHECK_MSG(submitting, "ThreadPool shutting down");
+            if (!submitting)
+                return;
+            CHECK_MSG(!mThreads.empty(), "ThreadPool has no worker threads");
+            CHECK_MSG(PriorityIndex(priority) < kJobPriorityCount, "Invalid job priority");
+            if (mThreads.empty() || PriorityIndex(priority) >= kJobPriorityCount)
             {
-                if (mThreads.empty())
-                    throw std::runtime_error("ThreadPool has no worker threads");
-                if (PriorityIndex(priority) >= kJobPriorityCount)
-                    throw std::runtime_error("Invalid job priority");
-                Allocator* allocator = jobAllocator ? jobAllocator : mAllocator;
-                auto task = ConstructUniqueBase<Job, T>(allocator, std::forward<Args>(args)...);
-                mTotal.fetch_add(1, std::memory_order_release);
-                if (!mJobs[PriorityIndex(priority)].Push(std::move(task)))
-                {
-                    mTotal.fetch_sub(1, std::memory_order_release);
-                    mProgressEpoch.fetch_add(1, std::memory_order_release);
-                    mProgressEpoch.notify_all();
-                    throw std::runtime_error("Jobs full");
-                }
-                mWakeEpoch.fetch_add(1, std::memory_order_release);
-                mWakeEpoch.notify_one();
                 EndSubmit();
                 return;
             }
-            catch (...)
+            Allocator* allocator = jobAllocator ? jobAllocator : mAllocator;
+            auto task = ConstructUniqueBase<Job, T>(allocator, std::forward<Args>(args)...);
+            mTotal.fetch_add(1, std::memory_order_release);
+            bool const queued = mJobs[PriorityIndex(priority)].Push(std::move(task));
+            CHECK_MSG(queued, "ThreadPool job queue full");
+            if (!queued)
             {
+                mTotal.fetch_sub(1, std::memory_order_release);
                 EndSubmit();
-                throw;
+                return;
             }
+            mWakeEpoch.fetch_add(1, std::memory_order_release);
+            mWakeEpoch.notify_one();
+            EndSubmit();
         }
         template <typename Lambda, typename... Args>
         auto PushLambdaInternal(JobPriority priority, Allocator* jobAllocator, Lambda&& func, Args const&... args)

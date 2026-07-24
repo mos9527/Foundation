@@ -1,5 +1,4 @@
 #include "JobSystem.hpp"
-#include <cassert>
 #include <tracy/Tracy.hpp>
 #include <tracy/TracyC.h>
 
@@ -16,12 +15,10 @@ namespace Foundation::Core
 
         Allocator* ValidateDesc(JobSystemDesc const& desc)
         {
-            if (!desc.allocator)
-                throw std::runtime_error("JobSystem requires an allocator");
-            if (desc.maxJobs == 0 || desc.maxBarriers == 0)
-                throw std::runtime_error("JobSystem capacities must be non-zero");
-            if (!std::has_single_bit(desc.readyQueueSize) || desc.readyQueueSize < desc.maxJobs)
-                throw std::runtime_error("JobSystem ready queue must be a power of two and hold maxJobs entries");
+            CHECK_MSG(desc.allocator, "JobSystem requires an allocator");
+            CHECK_MSG(desc.maxJobs != 0 && desc.maxBarriers != 0, "JobSystem capacities must be non-zero");
+            CHECK_MSG(std::has_single_bit(desc.readyQueueSize) && desc.readyQueueSize >= desc.maxJobs,
+                      "JobSystem ready queue must be a power of two and hold maxJobs entries");
             return desc.allocator;
         }
     }
@@ -38,7 +35,7 @@ namespace Foundation::Core
         void Complete() noexcept
         {
             size_t const previous = pending.fetch_sub(1, std::memory_order_release);
-            assert(previous > 0);
+            CHECK(previous > 0);
             pending.notify_all();
         }
     };
@@ -59,7 +56,6 @@ namespace Foundation::Core
         bool prerequisiteFailed{};
         Vector<JobHandle> successors;
         Vector<WeakPtr<JobBarrierState>> barriers;
-        std::exception_ptr exception;
 
         explicit JobNode(Allocator* alloc) :
             allocator(alloc), callable(nullptr, StlDeleter<JobCallable>{nullptr}), successors(alloc), barriers(alloc)
@@ -75,7 +71,6 @@ namespace Foundation::Core
             dependencies = dependencyCount;
             prerequisiteFailed = false;
             cancellation.store(false, std::memory_order_relaxed);
-            exception = {};
             successors.clear();
             barriers.clear();
             status.store(JobStatus::Waiting, std::memory_order_release);
@@ -87,7 +82,6 @@ namespace Foundation::Core
             name.clear();
             successors.clear();
             barriers.clear();
-            exception = {};
             dependencies = 0;
             prerequisiteFailed = false;
             cancellation.store(false, std::memory_order_relaxed);
@@ -117,14 +111,14 @@ namespace Foundation::Core
 
         ~JobPool()
         {
-            assert(freelist.size() == nodes.size());
+            CHECK(freelist.size() == nodes.size());
             DestructSpan(allocator, nodes);
         }
 
         void Attach(JobSystem* system)
         {
             std::lock_guard lock(ownerMutex);
-            assert(owner == nullptr);
+            CHECK(owner == nullptr);
             owner = system;
         }
 
@@ -140,7 +134,7 @@ namespace Foundation::Core
         void ReleaseOwner()
         {
             std::lock_guard lock(ownerMutex);
-            assert(ownerUsers > 0);
+            CHECK(ownerUsers > 0);
             if (--ownerUsers == 0)
                 ownerCV.notify_all();
         }
@@ -156,21 +150,12 @@ namespace Foundation::Core
                                           uint32_t dependencies)
         {
             std::lock_guard lock(mutex);
-            if (freelist.empty())
-                throw std::runtime_error("JobSystem job capacity exhausted");
+            CHECK_MSG(!freelist.empty(), "JobSystem job capacity exhausted");
             uint32_t const index = freelist.back();
             freelist.pop_back();
             JobNode& node = nodes[index];
             uint32_t const generation = node.generation.fetch_add(1, std::memory_order_relaxed) + 1;
-            try
-            {
-                node.Initialize(name, priority, std::move(callable), dependencies);
-            }
-            catch (...)
-            {
-                freelist.push_back(index);
-                throw;
-            }
+            node.Initialize(name, priority, std::move(callable), dependencies);
             node.references.store(2, std::memory_order_release); // system registry + returned handle
             node.active.store(true, std::memory_order_release);
             return {index, generation};
@@ -189,7 +174,7 @@ namespace Foundation::Core
 
         void AddRef(uint32_t index, uint32_t generation) noexcept
         {
-            assert(Validate(index, generation));
+            CHECK(Validate(index, generation));
             nodes[index].references.fetch_add(1, std::memory_order_relaxed);
         }
 
@@ -202,8 +187,8 @@ namespace Foundation::Core
                 return;
 
             std::lock_guard lock(mutex);
-            assert(node.generation.load(std::memory_order_relaxed) == generation);
-            assert(IsTerminal(node.status.load(std::memory_order_acquire)));
+            CHECK(node.generation.load(std::memory_order_relaxed) == generation);
+            CHECK(IsTerminal(node.status.load(std::memory_order_acquire)));
             node.Reset();
             node.active.store(false, std::memory_order_release);
             freelist.push_back(index);
@@ -297,46 +282,30 @@ namespace Foundation::Core
 
     void JobHandle::AddDependency(uint32_t count) const
     {
-        if (!IsValid() || count == 0)
-            throw std::runtime_error("Invalid job dependency");
+        CHECK_MSG(IsValid() && count != 0, "Invalid job dependency");
         JobSystem* system = mPool->AcquireOwner();
+        CHECK_MSG(system, "JobSystem no longer exists");
         if (!system)
-            throw std::runtime_error("JobSystem no longer exists");
+            return;
         (void)system;
-        try
-        {
-            JobNode& node = mPool->nodes[mIndex];
-            std::lock_guard lock(node.completionMutex);
-            if (node.status.load(std::memory_order_relaxed) != JobStatus::Waiting)
-                throw std::runtime_error("Cannot add a dependency to a queued or completed job");
-            if (node.dependencies > std::numeric_limits<uint32_t>::max() - count)
-                throw std::runtime_error("Job dependency counter overflow");
-            node.dependencies += count;
-        }
-        catch (...)
-        {
-            mPool->ReleaseOwner();
-            throw;
-        }
+        JobNode& node = mPool->nodes[mIndex];
+        std::lock_guard lock(node.completionMutex);
+        CHECK_MSG(node.status.load(std::memory_order_relaxed) == JobStatus::Waiting,
+                  "Cannot add a dependency to a queued or completed job");
+        CHECK_MSG(node.dependencies <= std::numeric_limits<uint32_t>::max() - count,
+                  "Job dependency counter overflow");
+        node.dependencies += count;
         mPool->ReleaseOwner();
     }
 
     void JobHandle::RemoveDependency(uint32_t count) const
     {
-        if (!IsValid() || count == 0)
-            throw std::runtime_error("Invalid job dependency");
+        CHECK_MSG(IsValid() && count != 0, "Invalid job dependency");
         JobSystem* system = mPool->AcquireOwner();
+        CHECK_MSG(system, "JobSystem no longer exists");
         if (!system)
-            throw std::runtime_error("JobSystem no longer exists");
-        try
-        {
-            system->ReleaseDependency(*this, count, false);
-        }
-        catch (...)
-        {
-            mPool->ReleaseOwner();
-            throw;
-        }
+            return;
+        system->ReleaseDependency(*this, count, false);
         mPool->ReleaseOwner();
     }
 
@@ -362,24 +331,16 @@ namespace Foundation::Core
             mJob.AddDependency(count);
         else
         {
-            if (!mJob.IsValid() || count == 0)
-                throw std::runtime_error("Invalid adopted job dependency");
+            CHECK_MSG(mJob.IsValid() && count != 0, "Invalid adopted job dependency");
             JobSystem* system = mJob.mPool->AcquireOwner();
+            CHECK_MSG(system, "JobSystem no longer exists");
             if (!system)
-                throw std::runtime_error("JobSystem no longer exists");
+                return;
             (void)system;
-            try
-            {
-                JobNode& node = mJob.mPool->nodes[mJob.mIndex];
-                std::lock_guard lock(node.completionMutex);
-                if (node.status.load(std::memory_order_relaxed) != JobStatus::Waiting || node.dependencies < count)
-                    throw std::runtime_error("Cannot adopt unavailable job dependencies");
-            }
-            catch (...)
-            {
-                mJob.mPool->ReleaseOwner();
-                throw;
-            }
+            JobNode& node = mJob.mPool->nodes[mJob.mIndex];
+            std::lock_guard lock(node.completionMutex);
+            CHECK_MSG(node.status.load(std::memory_order_relaxed) == JobStatus::Waiting && node.dependencies >= count,
+                      "Cannot adopt unavailable job dependencies");
             mJob.mPool->ReleaseOwner();
         }
     }
@@ -394,16 +355,7 @@ namespace Foundation::Core
         if (this == &other)
             return *this;
         if (mCount)
-        {
-            try
-            {
-                Release();
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
-        }
+            Release();
         mJob = std::move(other.mJob);
         mCount = std::exchange(other.mCount, 0);
         return *this;
@@ -411,16 +363,8 @@ namespace Foundation::Core
 
     JobDependency::~JobDependency()
     {
-        if (!mCount)
-            return;
-        try
-        {
+        if (mCount)
             Release();
-        }
-        catch (...)
-        {
-            std::terminate();
-        }
     }
 
     void JobDependency::Release()
@@ -436,15 +380,7 @@ namespace Foundation::Core
             return;
         }
         uint32_t const count = std::exchange(mCount, 0);
-        try
-        {
-            system->ReleaseDependency(mJob, count, false);
-        }
-        catch (...)
-        {
-            mJob.mPool->ReleaseOwner();
-            throw;
-        }
+        system->ReleaseDependency(mJob, count, false);
         mJob.mPool->ReleaseOwner();
     }
 
@@ -469,7 +405,7 @@ namespace Foundation::Core
     {
         if (!mState)
             return;
-        assert(IsEmpty());
+        CHECK(IsEmpty());
         mPool->liveBarriers.fetch_sub(1, std::memory_order_release);
         mPool->liveBarriers.notify_all();
         mState.reset();
@@ -478,53 +414,39 @@ namespace Foundation::Core
 
     void JobBarrier::Add(JobHandle const& handle)
     {
+        CHECK_MSG(mState && handle.IsValid() && handle.mPool.get() == mPool.get(),
+                  "Invalid or foreign job barrier add");
         if (!mState || !handle.IsValid() || handle.mPool.get() != mPool.get())
-            throw std::runtime_error("Invalid or foreign job barrier add");
+            return;
         JobSystem* owner = mPool->AcquireOwner();
-        if (!owner || !owner->BeginSubmit())
+        CHECK_MSG(owner, "JobSystem no longer exists");
+        if (!owner)
+            return;
+        bool const submitting = owner->BeginSubmit();
+        CHECK_MSG(submitting, "JobSystem shutting down");
+        if (!submitting)
         {
-            if (owner)
-                mPool->ReleaseOwner();
-            throw std::runtime_error("JobSystem shutting down");
+            mPool->ReleaseOwner();
+            return;
         }
 
-        try
+        bool complete = false;
         {
-            bool complete = false;
-            try
-            {
-                std::lock_guard barrierLock(mState->mutex);
-                if (mState->waiting && mState->pending.load(std::memory_order_acquire) == 0)
-                    throw std::runtime_error("Cannot add work while a barrier is completing");
-                mState->jobs.push_back(handle);
-                mState->pending.fetch_add(1, std::memory_order_acq_rel);
-                mState->pending.notify_all();
-                try
-                {
-                    JobNode& node = mPool->nodes[handle.mIndex];
-                    std::lock_guard jobLock(node.completionMutex);
-                    if (IsTerminal(node.status.load(std::memory_order_acquire)))
-                        complete = true;
-                    else
-                        node.barriers.push_back(mState);
-                }
-                catch (...)
-                {
-                    mState->jobs.pop_back();
-                    mState->Complete();
-                    throw;
-                }
-            }
-            catch (...) { throw; }
-            if (complete)
-                mState->Complete();
+            std::lock_guard barrierLock(mState->mutex);
+            CHECK_MSG(!mState->waiting || mState->pending.load(std::memory_order_acquire) != 0,
+                      "Cannot add work while a barrier is completing");
+            mState->jobs.push_back(handle);
+            mState->pending.fetch_add(1, std::memory_order_acq_rel);
+            mState->pending.notify_all();
+            JobNode& node = mPool->nodes[handle.mIndex];
+            std::lock_guard jobLock(node.completionMutex);
+            if (IsTerminal(node.status.load(std::memory_order_acquire)))
+                complete = true;
+            else
+                node.barriers.push_back(mState);
         }
-        catch (...)
-        {
-            owner->EndSubmit();
-            mPool->ReleaseOwner();
-            throw;
-        }
+        if (complete)
+            mState->Complete();
         owner->EndSubmit();
         mPool->ReleaseOwner();
     }
@@ -549,23 +471,9 @@ namespace Foundation::Core
         mThreads(mAllocator)
     {
         mPool->Attach(this);
-        try
-        {
-            mThreads.reserve(desc.workerCount);
-            for (size_t i = 0; i < desc.workerCount; ++i)
-                mThreads.emplace_back(&JobSystem::WorkerMain, this, i);
-        }
-        catch (...)
-        {
-            mStopping.store(true, std::memory_order_release);
-            mWakeEpoch.fetch_add(1, std::memory_order_release);
-            mWakeEpoch.notify_all();
-            for (Thread& thread : mThreads)
-                if (thread.joinable())
-                    thread.join();
-            mPool->Detach();
-            throw;
-        }
+        mThreads.reserve(desc.workerCount);
+        for (size_t i = 0; i < desc.workerCount; ++i)
+            mThreads.emplace_back(&JobSystem::WorkerMain, this, i);
     }
 
     JobSystem::~JobSystem() { Shutdown(); }
@@ -582,7 +490,7 @@ namespace Foundation::Core
     void JobSystem::EndSubmit() noexcept
     {
         std::lock_guard lock(mSubmitMutex);
-        assert(mSubmitting > 0);
+        CHECK(mSubmitting > 0);
         if (--mSubmitting == 0)
             mSubmitCV.notify_all();
     }
@@ -590,8 +498,7 @@ namespace Foundation::Core
     JobHandle JobSystem::CreateJobInternal(StringView name, JobPriority priority, UniquePtr<JobCallable> callable,
                                            uint32_t dependencyCount)
     {
-        if (PriorityIndex(priority) >= kJobPriorityCount)
-            throw std::runtime_error("Invalid job priority");
+        CHECK_MSG(PriorityIndex(priority) < kJobPriorityCount, "Invalid job priority");
         auto [index, generation] = mPool->Allocate(name, priority, std::move(callable), dependencyCount);
         JobHandle job(mPool, index, generation, JobHandle::AdoptRef{});
         mOutstanding.fetch_add(1, std::memory_order_release);
@@ -624,8 +531,8 @@ namespace Foundation::Core
 
         if (!mReady[PriorityIndex(node->priority)].Push(job))
         {
-            Finish(job, JobStatus::Failed,
-                   std::make_exception_ptr(std::runtime_error("JobSystem ready queue exhausted")));
+            CHECK_MSG(false, "JobSystem ready queue exhausted");
+            Finish(job, JobStatus::Failed);
             return;
         }
         mWakeEpoch.fetch_add(1, std::memory_order_release);
@@ -634,8 +541,9 @@ namespace Foundation::Core
 
     void JobSystem::ReleaseDependency(JobHandle const& job, uint32_t count, bool failed)
     {
+        CHECK_MSG(job.IsValid() && job.mPool.get() == mPool.get(), "Invalid or foreign job dependency");
         if (!job.IsValid() || job.mPool.get() != mPool.get())
-            throw std::runtime_error("Invalid or foreign job dependency");
+            return;
         JobNode& node = mPool->nodes[job.mIndex];
         bool ready = false;
         bool prerequisiteFailure = false;
@@ -643,8 +551,8 @@ namespace Foundation::Core
             std::lock_guard lock(node.completionMutex);
             if (IsTerminal(node.status.load(std::memory_order_acquire)))
                 return;
-            if (node.status.load(std::memory_order_relaxed) != JobStatus::Waiting || node.dependencies < count)
-                throw std::runtime_error("Job dependency counter underflow");
+            CHECK_MSG(node.status.load(std::memory_order_relaxed) == JobStatus::Waiting && node.dependencies >= count,
+                      "Job dependency counter underflow");
             node.prerequisiteFailed |= failed;
             node.dependencies -= count;
             ready = node.dependencies == 0;
@@ -653,17 +561,16 @@ namespace Foundation::Core
         if (!ready)
             return;
         if (prerequisiteFailure)
-            Finish(job, JobStatus::Failed,
-                   std::make_exception_ptr(std::runtime_error("Job prerequisite failed")));
+            Finish(job, JobStatus::Failed);
         else
             Queue(job);
     }
 
     void JobSystem::RegisterSuccessor(JobHandle const& prerequisite, JobHandle const& dependent)
     {
-        if (!prerequisite.IsValid() || !dependent.IsValid() || prerequisite.mPool.get() != mPool.get() ||
-            dependent.mPool.get() != mPool.get())
-            throw std::runtime_error("Invalid or foreign job dependency edge");
+        CHECK_MSG(prerequisite.IsValid() && dependent.IsValid() && prerequisite.mPool.get() == mPool.get() &&
+                      dependent.mPool.get() == mPool.get(),
+                  "Invalid or foreign job dependency edge");
 
         JobNode& node = mPool->nodes[prerequisite.mIndex];
         JobStatus status;
@@ -679,7 +586,7 @@ namespace Foundation::Core
         ReleaseDependency(dependent, 1, status != JobStatus::Completed);
     }
 
-    void JobSystem::Finish(JobHandle const& job, JobStatus terminalStatus, std::exception_ptr exception) noexcept
+    void JobSystem::Finish(JobHandle const& job, JobStatus terminalStatus) noexcept
     {
         JobNode* node = mPool->Get(job.mIndex, job.mGeneration);
         if (!node)
@@ -696,7 +603,6 @@ namespace Foundation::Core
                 node->cancellation.store(true, std::memory_order_release);
                 return;
             }
-            node->exception = std::move(exception);
             successors.swap(node->successors);
             barriers.swap(node->barriers);
             node->status.store(terminalStatus, std::memory_order_release);
@@ -705,16 +611,7 @@ namespace Foundation::Core
 
         bool const failed = terminalStatus != JobStatus::Completed;
         for (JobHandle const& successor : successors)
-        {
-            try
-            {
-                ReleaseDependency(successor, 1, failed);
-            }
-            catch (...)
-            {
-                Finish(successor, JobStatus::Failed, std::current_exception());
-            }
-        }
+            ReleaseDependency(successor, 1, failed);
         for (WeakPtr<JobBarrierState> const& weakBarrier : barriers)
             if (SharedPtr<JobBarrierState> barrier = weakBarrier.lock())
                 barrier->Complete();
@@ -742,19 +639,11 @@ namespace Foundation::Core
         }
 
         JobSystem* previousSystem = std::exchange(gExecutingJobSystem, this);
-        try
-        {
-            ZoneScoped;
-            ZoneName(node.name.data(), node.name.size());
-            JobContext context(workerId, &node.cancellation);
-            node.callable->Execute(context);
-            Finish(job, node.cancellation.load(std::memory_order_acquire) ? JobStatus::Cancelled
-                                                                         : JobStatus::Completed);
-        }
-        catch (...)
-        {
-            Finish(job, JobStatus::Failed, std::current_exception());
-        }
+        ZoneScoped;
+        ZoneName(node.name.data(), node.name.size());
+        JobContext context(workerId, &node.cancellation);
+        node.callable->Execute(context);
+        Finish(job, node.cancellation.load(std::memory_order_acquire) ? JobStatus::Cancelled : JobStatus::Completed);
         gExecutingJobSystem = previousSystem;
         return true;
     }
@@ -774,27 +663,21 @@ namespace Foundation::Core
 
     JobBarrier JobSystem::CreateBarrier()
     {
-        if (!BeginSubmit())
-            throw std::runtime_error("JobSystem shutting down");
+        bool const submitting = BeginSubmit();
+        CHECK_MSG(submitting, "JobSystem shutting down");
+        if (!submitting)
+            return {};
         size_t const previous = mPool->liveBarriers.fetch_add(1, std::memory_order_acq_rel);
         if (previous >= mMaxBarriers)
         {
+            CHECK_MSG(false, "JobSystem barrier capacity exhausted");
             mPool->liveBarriers.fetch_sub(1, std::memory_order_release);
             EndSubmit();
-            throw std::runtime_error("JobSystem barrier capacity exhausted");
+            return {};
         }
-        try
-        {
-            JobBarrier barrier(mPool, ConstructShared<JobBarrierState>(mAllocator, mAllocator));
-            EndSubmit();
-            return barrier;
-        }
-        catch (...)
-        {
-            mPool->liveBarriers.fetch_sub(1, std::memory_order_release);
-            EndSubmit();
-            throw;
-        }
+        JobBarrier barrier(mPool, ConstructShared<JobBarrierState>(mAllocator, mAllocator));
+        EndSubmit();
+        return barrier;
     }
 
     void JobSystem::ReleaseBarrier() noexcept
@@ -805,15 +688,13 @@ namespace Foundation::Core
 
     void JobSystem::Wait(JobBarrier& barrier)
     {
-        if (barrier.mPool.get() != mPool.get() || !barrier.mState)
-            throw std::runtime_error("Job barrier belongs to another JobSystem");
-        if (gExecutingJobSystem == this)
-            throw std::runtime_error("Jobs cannot wait on their JobSystem");
+        CHECK_MSG(barrier.mPool.get() == mPool.get() && barrier.mState,
+                  "Job barrier belongs to another JobSystem");
+        CHECK_MSG(gExecutingJobSystem != this, "Jobs cannot wait on their JobSystem");
         std::unique_lock callerLock(mCallerMutex);
         {
             std::lock_guard barrierLock(barrier.mState->mutex);
-            if (barrier.mState->waiting)
-                throw std::runtime_error("Job barrier already has a waiter");
+            CHECK_MSG(!barrier.mState->waiting, "Job barrier already has a waiter");
             barrier.mState->waiting = true;
         }
 
@@ -826,26 +707,11 @@ namespace Foundation::Core
                 barrier.mState->pending.wait(pending, std::memory_order_relaxed);
         }
 
-        std::exception_ptr failure;
         {
             std::lock_guard lock(barrier.mState->mutex);
             barrier.mState->waiting = false;
-            for (JobHandle const& job : barrier.mState->jobs)
-            {
-                if (job.Status() == JobStatus::Failed)
-                {
-                    JobNode* node = mPool->Get(job.mIndex, job.mGeneration);
-                    if (node && node->exception)
-                    {
-                        failure = node->exception;
-                        break;
-                    }
-                }
-            }
             barrier.mState->jobs.clear();
         }
-        if (failure)
-            std::rethrow_exception(failure);
     }
 
     void JobSystem::CancelInternal(JobHandle const& job)
@@ -859,15 +725,13 @@ namespace Foundation::Core
 
     void JobSystem::Cancel(JobHandle const& job)
     {
-        if (!job.IsValid() || job.mPool.get() != mPool.get())
-            throw std::runtime_error("Invalid or foreign job cancellation");
+        CHECK_MSG(job.IsValid() && job.mPool.get() == mPool.get(), "Invalid or foreign job cancellation");
         CancelInternal(job);
     }
 
     void JobSystem::Drain()
     {
-        if (gExecutingJobSystem == this)
-            throw std::runtime_error("Jobs cannot drain their JobSystem");
+        CHECK_MSG(gExecutingJobSystem != this, "Jobs cannot drain their JobSystem");
         std::unique_lock callerLock(mCallerMutex);
         while (mOutstanding.load(std::memory_order_acquire) != 0)
         {
@@ -881,8 +745,7 @@ namespace Foundation::Core
 
     void JobSystem::Shutdown()
     {
-        if (gExecutingJobSystem == this)
-            throw std::runtime_error("JobSystem cannot be shut down from one of its jobs");
+        CHECK_MSG(gExecutingJobSystem != this, "JobSystem cannot be shut down from one of its jobs");
 
         {
             std::unique_lock submitLock(mSubmitMutex);

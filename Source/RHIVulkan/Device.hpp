@@ -267,7 +267,7 @@ namespace Foundation::RHI
     public:
         VulkanDeviceQueue(const VulkanDevice& device, uint32_t family_index, uint32_t queue_index) :
             RHIDeviceQueue(device), mDevice(device), mQueueIndex(queue_index), mFamilyIndex(family_index),
-            mQueue(device.GetVkDevice(), family_index, queue_index)
+            mQueue(device.GetVkDevice().getQueue(family_index, queue_index))
         {
         }
 
@@ -278,7 +278,7 @@ namespace Foundation::RHI
 
         void WaitIdle() const override;
         void Submit(Span<const SubmitDesc>, RHIDeviceFence* completionFence) const override;
-        void Present(PresentDesc const& desc) const override;
+        RHISwapchainResult Present(PresentDesc const& desc) const override;
 
 
         void DebugSetObjectName(const char* name) override;

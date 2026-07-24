@@ -28,6 +28,8 @@ bool /* should close */ mainLoop()
             UpdateSwapchain(GContext);
             if (GContext->renderer)
                 GContext->renderer->SetSwapchain(GContext->swapchain);
+            if (GContext->presenter)
+                GContext->presenter->SetSwapchain(GContext->swapchain);
         }
         if (EditorProcessEvent(&event))
             return true;

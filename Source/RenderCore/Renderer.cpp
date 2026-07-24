@@ -1283,7 +1283,7 @@ void Renderer::FinalizeResources()
             [&](RHIBuffer* const ptr) { mResources->resources[handle] = ptr; },
             [&](RHITexture* const ptr) { mResources->resources[handle] = ptr; },
             [&](RHIAccelerationStructure* const ptr) { mResources->resources[handle] = ptr; },
-            [&](auto const&) { throw std::runtime_error("Unhandled resource type at creation time"); });
+            [&](auto const&) { CHECK_MSG(false, "Unhandled resource type at creation time"); });
     }
     // Add back buffers (if a swapchain is bound)
     if (mSwapchain.IsValid())
@@ -1581,12 +1581,14 @@ void Renderer::BeginExecute()
     BeginExecute(0, nullptr);
 }
 
-uint32_t Renderer::BeginExecute(Presenter* presenter)
+RHISwapchainResult Renderer::BeginExecute(Presenter* presenter)
 {
     WaitAndResetCurrentSync();
-    const uint32_t image = presenter->AcquireNextImage();
-    BeginExecute(image, presenter->GetImageAcquireSemaphore().Get());
-    return image;
+    uint32_t image{};
+    const RHISwapchainResult result = presenter->AcquireNextImage(image);
+    if (RHISwapchainResultMayPresent(result))
+        BeginExecute(image, presenter->GetImageAcquireSemaphore().Get());
+    return result;
 }
 
 void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
@@ -1799,7 +1801,8 @@ RHICommandList* Renderer::ExecuteAllocateCommandList(RHIDeviceQueueType queue, i
     case RHIDeviceQueueType::Graphics:
         return thread->AllocateGraphics();
     default:
-        throw std::runtime_error("Unsupported queue type for command list allocation");
+        CHECK_MSG(false, "Unsupported queue type for command list allocation");
+        return nullptr;
     }
 }
 

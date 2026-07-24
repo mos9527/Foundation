@@ -73,18 +73,7 @@ namespace Foundation::Examples
                 mFreelist.pop_back();
             }
 
-            JoltJob* job;
-            try
-            {                
-                job = std::construct_at(JobAt(index), name, color, this, function, dependencyCount);
-            }
-            catch (...)
-            {
-                std::lock_guard lock(mFreelistMutex);
-                mFreelist.push_back(index);
-                throw;
-            }
-
+            JoltJob* job = std::construct_at(JobAt(index), name, color, this, function, dependencyCount);
             JPH::JobHandle handle(job);
             if (dependencyCount == 0)
                 QueueJob(job);

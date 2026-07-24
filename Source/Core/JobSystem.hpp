@@ -185,7 +185,7 @@ namespace Foundation::Core
                                     uint32_t dependencyCount);
         void Queue(JobHandle const& job) noexcept;
         void ReleaseDependency(JobHandle const& job, uint32_t count, bool prerequisiteFailed);
-        void Finish(JobHandle const& job, JobStatus status, std::exception_ptr exception = {}) noexcept;
+        void Finish(JobHandle const& job, JobStatus status) noexcept;
         void RegisterSuccessor(JobHandle const& prerequisite, JobHandle const& dependent);
         bool TryExecuteOne(size_t workerId);
         void WorkerMain(size_t workerId);
@@ -207,22 +207,16 @@ namespace Foundation::Core
         template <typename Fn>
         JobHandle CreateJob(StringView name, JobPriority priority, Fn&& function, uint32_t dependencyCount = 0)
         {
-            if (!BeginSubmit())
-                throw std::runtime_error("JobSystem shutting down");
-            try
-            {
-                using Function = std::decay_t<Fn>;
-                auto callable = ConstructUniqueBase<JobCallable, LambdaJobCallable<Function>>(
-                    mAllocator, Function(std::forward<Fn>(function)));
-                JobHandle job = CreateJobInternal(name, priority, std::move(callable), dependencyCount);
-                EndSubmit();
-                return job;
-            }
-            catch (...)
-            {
-                EndSubmit();
-                throw;
-            }
+            bool const submitting = BeginSubmit();
+            CHECK_MSG(submitting, "JobSystem shutting down");
+            if (!submitting)
+                return {};
+            using Function = std::decay_t<Fn>;
+            auto callable = ConstructUniqueBase<JobCallable, LambdaJobCallable<Function>>(
+                mAllocator, Function(std::forward<Fn>(function)));
+            JobHandle job = CreateJobInternal(name, priority, std::move(callable), dependencyCount);
+            EndSubmit();
+            return job;
         }
 
         template <typename Fn>
@@ -235,38 +229,24 @@ namespace Foundation::Core
         JobHandle CreateJobAfter(StringView name, JobPriority priority, Span<const JobHandle> prerequisites,
                                  Fn&& function)
         {
-            if (!BeginSubmit())
-                throw std::runtime_error("JobSystem shutting down");
-            try
-            {
-                for (JobHandle const& prerequisite : prerequisites)
-                    if (!prerequisite.IsValid() || prerequisite.mPool.get() != mPool.get())
-                        throw std::runtime_error("Invalid or foreign job prerequisite");
+            bool const submitting = BeginSubmit();
+            CHECK_MSG(submitting, "JobSystem shutting down");
+            if (!submitting)
+                return {};
+            for (JobHandle const& prerequisite : prerequisites)
+                CHECK_MSG(prerequisite.IsValid() && prerequisite.mPool.get() == mPool.get(),
+                          "Invalid or foreign job prerequisite");
 
-                using Function = std::decay_t<Fn>;
-                auto callable = ConstructUniqueBase<JobCallable, LambdaJobCallable<Function>>(
-                    mAllocator, Function(std::forward<Fn>(function)));
-                JobHandle dependent = CreateJobInternal(
-                    name, priority, std::move(callable), static_cast<uint32_t>(prerequisites.size() + 1));
-                try
-                {
-                    for (JobHandle const& prerequisite : prerequisites)
-                        RegisterSuccessor(prerequisite, dependent);
-                    dependent.RemoveDependency();
-                }
-                catch (...)
-                {
-                    CancelInternal(dependent);
-                    throw;
-                }
-                EndSubmit();
-                return dependent;
-            }
-            catch (...)
-            {
-                EndSubmit();
-                throw;
-            }
+            using Function = std::decay_t<Fn>;
+            auto callable = ConstructUniqueBase<JobCallable, LambdaJobCallable<Function>>(
+                mAllocator, Function(std::forward<Fn>(function)));
+            JobHandle dependent = CreateJobInternal(
+                name, priority, std::move(callable), static_cast<uint32_t>(prerequisites.size() + 1));
+            for (JobHandle const& prerequisite : prerequisites)
+                RegisterSuccessor(prerequisite, dependent);
+            dependent.RemoveDependency();
+            EndSubmit();
+            return dependent;
         }
 
         template <typename Fn>
@@ -285,8 +265,9 @@ namespace Foundation::Core
         template <typename Fn>
         JobHandle Dispatch(StringView name, size_t count, size_t step, JobPriority priority, Fn&& function)
         {
+            CHECK_MSG(step != 0, "Job dispatch step size must be non-zero");
             if (step == 0)
-                throw std::runtime_error("Job dispatch step size must be non-zero");
+                return {};
             if (count == 0)
                 return CreateJob(name, priority, [] {});
 
@@ -295,33 +276,25 @@ namespace Foundation::Core
             size_t const chunkCount = 1 + (count - 1) / step;
             Vector<JobHandle> chunks(mAllocator);
             chunks.reserve(chunkCount);
-            try
+            for (size_t begin = 0; begin < count; begin += step)
             {
-                for (size_t begin = 0; begin < count; begin += step)
-                {
-                    size_t const end = std::min(begin + step, count);
-                    chunks.push_back(CreateJob(
-                        name, priority,
-                        [sharedFunction, begin, end](JobContext& context)
-                        {
-                            std::invoke(*sharedFunction, begin, end, context);
-                        }));
-                }
-                return CreateJobAfter(name, priority, Span<const JobHandle>{chunks.data(), chunks.size()}, [] {});
+                size_t const end = std::min(begin + step, count);
+                chunks.push_back(CreateJob(
+                    name, priority,
+                    [sharedFunction, begin, end](JobContext& context)
+                    {
+                        std::invoke(*sharedFunction, begin, end, context);
+                    }));
             }
-            catch (...)
-            {
-                for (JobHandle const& chunk : chunks)
-                    Cancel(chunk);
-                throw;
-            }
+            return CreateJobAfter(name, priority, Span<const JobHandle>{chunks.data(), chunks.size()}, [] {});
         }
 
         template <typename Fn>
         JobBarrier ParallelFor(ExecutionPolicy policy, StringView name, size_t count, size_t step, Fn&& function)
         {
+            CHECK_MSG(step != 0, "ParallelFor grain size must be non-zero");
             if (step == 0)
-                throw std::runtime_error("ParallelFor grain size must be non-zero");
+                return CreateBarrier();
             if (count == 0)
                 return CreateBarrier();
             if (policy == ExecutionPolicy::Seq || count <= step || mThreads.empty())

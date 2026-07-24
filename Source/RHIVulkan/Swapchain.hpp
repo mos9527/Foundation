@@ -31,10 +31,11 @@ namespace Foundation::RHI {
 
         [[nodiscard]] auto const& GetVkSwapchain() const { return mSwapchain; }
         [[nodiscard]] RHIExtent2D GetExtents() const override;
-        uint32_t GetNextImage(
+        RHISwapchainResult GetNextImage(
             uint64_t timeout_ns,
             RHIDeviceHandle<RHIDeviceSemaphore> semaphore,
-            RHIDeviceHandle<RHIDeviceFence> fence
+            RHIDeviceHandle<RHIDeviceFence> fence,
+            uint32_t& imageIndex
         ) override;
 
         void DebugSetObjectName(const char* name) override;

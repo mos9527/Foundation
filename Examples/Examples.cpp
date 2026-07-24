@@ -817,10 +817,19 @@ void Examples_NewFrame(Renderer* renderer)
 
 void Examples_NewFrame(SDL_Window* window, ExampleVulkanContext& ctx)
 {
-    ctx.renderer->BeginExecute(ctx.presenter.get());
+    auto recreateSwapchain = [&] {
+        if (Examples_CreateSwapchain(window, ctx.swapchain.mFactory, ctx.surface, ctx.swapchain))
+            ctx.renderer->SetSwapchain(ctx.swapchain), ctx.presenter->SetSwapchain(ctx.swapchain);
+    };
+    if (!RHISwapchainResultMayPresent(ctx.renderer->BeginExecute(ctx.presenter.get())))
+    {
+        recreateSwapchain();
+        return;
+    }
     ctx.renderer->ExecuteFrame();
     ctx.renderer->EndExecute();
-    ctx.presenter->Present(ctx.renderer->GetRenderCompleteSemaphore().Get());
+    if (!RHISwapchainResultMayPresent(ctx.presenter->Present(ctx.renderer->GetRenderCompleteSemaphore().Get())))
+        recreateSwapchain();
 }
 
 void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx)

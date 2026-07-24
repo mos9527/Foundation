@@ -47,7 +47,7 @@ namespace Foundation::RHI
             // Binary semaphore(s) to wait
             Span<RHIDeviceSemaphore* const> waits;
         };
-        virtual void Present(PresentDesc const& desc) const = 0;
+        virtual RHISwapchainResult Present(PresentDesc const& desc) const = 0;
         [[nodiscard]] virtual uint32_t GetVkQueueFamily() const = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };

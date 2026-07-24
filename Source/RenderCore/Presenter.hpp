@@ -15,16 +15,17 @@ public:
     ~Presenter() = default;
 
     /**
-     * @brief Acquires the next swapchain image, returning the image index.
-     * @note Must be called before submitting any command lists that render to the swapchain.
+     * @brief Acquires the next swapchain image.
+     * @return Swapchain result; !RHISwapchainResultMayPresent means the owner should recreate before retrying.
      */
-    uint32_t AcquireNextImage();
+    RHISwapchainResult AcquireNextImage(uint32_t& imageIndex);
 
     /**
      * @brief Presents the most recently acquired image to the graphics queue.
-     * @note Automatically advances the internal frame-in-flight sync slot.
+     * @return Swapchain result; !RHISwapchainResultMayPresent means the owner should recreate.
+     * @note Advances the internal frame-in-flight sync slot even on failure.
      */
-    void Present(RHIDeviceSemaphore* waitSemaphore);
+    RHISwapchainResult Present(RHIDeviceSemaphore* waitSemaphore);
 
     /**
      * @brief Binary semaphore to signal from @ref RHISwapchain::GetNextImage for the next frame.
