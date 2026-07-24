@@ -1,1 +1,0 @@
-public [[vk_binding(0,1)]] Texture3D<float4> textures3D[];

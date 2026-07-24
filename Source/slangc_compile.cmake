@@ -34,6 +34,12 @@ function(slangc_compile TARGET)
             -fvk-use-scalar-layout # Dense packing
             -depfile "${OUTPUT_DEPNAME}"
             -g # Debug info
+            -Wno-30081 # Ignore "implicit conversion not recommended"
+            -Wno-39001 # Ignore "explicit binding overlap"
+            -Wno-41000 # Ignore "unreachable code detected"
+            -Wno-41012 # Ignore "profile implicitly upgraded"
+            -Wno-41018 # Ignore "returning without initializing out parameter"
+            -Wno-41024 # Ignore "comma operator used in expression"
     )
     foreach(DEFINE ${ARG_DEFINES})
         list(APPEND SLANGC_ARGS -D${DEFINE})

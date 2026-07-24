@@ -1,3 +1,4 @@
+import IBindless;
 import ICommon;
 import IFlags;
 import IMath;
@@ -9,7 +10,6 @@ uniform UBO globalParams;
 [[vk_binding(3,0)]] StructuredBuffer<GSMaterial> materials;
 [[vk_binding(4,0)]] SamplerState textureSampler;
 [[vk_binding(5,0)]] RWTexture2D<uint32_t> overdraw;
-[[vk_binding(0,1)]] Texture2D<float4> textures[];
 struct Fragment
 {
     float4 RT0 : SV_Target0;
@@ -37,7 +37,7 @@ Fragment drawTextureLOD(V2F input)
     if (material.baseColorTexture != ~0u)
     {
         uint width, height;
-        textures[NonUniformResourceIndex(material.baseColorTexture)].GetDimensions(width, height);
+        gTextures2D[NonUniformResourceIndex(material.baseColorTexture)].GetDimensions(width, height);
         float mipLevel = (flags & uint32_t(ViewFlagsBits.ForceTextureLOD0)) != 0
             ? 0.0f
             : ApproximateMipLevelFromUVGradient(ddx(input.uv), ddy(input.uv), width, height);
@@ -53,8 +53,8 @@ Fragment drawTextureLOD(V2F input)
 float4 SampleMaterialTexture(uint textureIndex, float2 uv)
 {
     if ((flags & uint32_t(ViewFlagsBits.ForceTextureLOD0)) != 0)
-        return textures[NonUniformResourceIndex(textureIndex)].SampleLevel(textureSampler, uv, 0);
-    return textures[NonUniformResourceIndex(textureIndex)].Sample(textureSampler, uv);
+        return gTextures2D[NonUniformResourceIndex(textureIndex)].SampleLevel(textureSampler, uv, 0);
+    return gTextures2D[NonUniformResourceIndex(textureIndex)].Sample(textureSampler, uv);
 }
 
 Fragment drawGBuffer(V2F input){

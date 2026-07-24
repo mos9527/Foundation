@@ -60,11 +60,11 @@ int main(int argc, char** argv)
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/BindlessSimple.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(PushConstant));
                 r->BindTextureSampler(self, linSampler, "sampler");
-                r->BindDescriptorSet(self, "textures",  bindings.GetDescriptorSetLayout());
+                r->BindDescriptorSet(self, "gTextures2D",  bindings.GetDescriptorSetLayout());
             },
             [&](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
-                r->CmdBindDescriptorSet(self, cmd, "textures", bindings.GetDescriptorSet());
+                r->CmdBindDescriptorSet(self, cmd, "gTextures2D", bindings.GetDescriptorSet());
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0,
                                       PushConstant{.time = Examples_GetTime(), .total = kNumTextures, .first = 0});
             });

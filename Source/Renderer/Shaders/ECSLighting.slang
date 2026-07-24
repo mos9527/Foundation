@@ -1,6 +1,7 @@
-#include "ICommon.slang"
-#include "IBSDF.slang"
-import IBindless2D;
+import IBindless;
+import ICommon;
+import IBxDF;
+import IBSDF;
 import IFlags;
 import IMath;
 [[SpecializationConstant]] int flags;
@@ -77,8 +78,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
             float4 wsFar = mul(globalParams.inverseViewProj, ndcFar);
             float3 dir = normalize(wsFar.xyz / wsFar.w - globalParams.camPosition.xyz);
             float azimuth = EnvLightAzimuth();
-            float3 Le = textures[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
-                           .SampleLevel(lutSampler, EnvMapDirToUV(dir, azimuth), 0).xyz;
+            float3 Le = gTextures2D[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
+                           .SampleLevel(gLutSampler, EnvMapDirToUV(dir, azimuth), 0).xyz;
             envLight = Le * EnvLightTint();
         }
         specularOutput[tid] = float4(envLight, 1.0f);
@@ -116,7 +117,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         uv.y = 1.0 - uv.y; // Vulkan UV coords
         float3 matcap = float3(1.0f, 1.0f, 1.0f);
         if (globalParams.matcapTextureIndex != ~0u)
-            matcap = textures[NonUniformResourceIndex(globalParams.matcapTextureIndex)].SampleLevel(lutSampler, uv, 0.0f).xyz;
+            matcap = gTextures2D[NonUniformResourceIndex(globalParams.matcapTextureIndex)].SampleLevel(gLutSampler, uv, 0.0f).xyz;
         diffuseOutput[tid] = float4(matcap * baseColor, 1.0f);
         specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
@@ -204,8 +205,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
             float3 R = 2.0f * NoV * normalWS - v;
             float mip = ReflectionMipFromRoughness(roughness, globalParams.envMapPrefilteredMips);
             float azimuth = EnvLightAzimuth();
-            float3 prefiltered = textures[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
-                                     .SampleLevel(lutSampler, EnvMapDirToUV(R, azimuth), mip).xyz;
+            float3 prefiltered = gTextures2D[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
+                                     .SampleLevel(gLutSampler, EnvMapDirToUV(R, azimuth), mip).xyz;
             Ls += prefiltered * envTint * F;
         } else
             Ls += envTint * F;

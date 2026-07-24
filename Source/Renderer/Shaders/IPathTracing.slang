@@ -1,4 +1,4 @@
-import IBindless2D;
+import IBindless;
 import IFlags;
 import ICommon;
 import ILight;
@@ -202,8 +202,8 @@ void ApplyRayConeAnisotropy(inout HitState hit, GSInstance inst,
 float4 SampleMaterialTexture(uint textureIndex, float2 uv, float2 uvDX, float2 uvDY)
 {
     if ((kCompileOptions & uint32_t(PTCompileOptionsBits.ForceTextureLOD0)) != 0)
-        return textures[NonUniformResourceIndex(textureIndex)].SampleLevel(gTexSampler, uv, 0);
-    return textures[NonUniformResourceIndex(textureIndex)].SampleGrad(gTexSampler, uv, uvDX, uvDY);
+        return gTextures2D[NonUniformResourceIndex(textureIndex)].SampleLevel(gTexSampler, uv, 0);
+    return gTextures2D[NonUniformResourceIndex(textureIndex)].SampleGrad(gTexSampler, uv, uvDX, uvDY);
 }
 
 HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, float2 bary, GSInstance inst,
@@ -745,7 +745,7 @@ bool TraceShadowRay<S : ISampler>(float3 origin, float3 direction, float tMax, i
             float opacity = 1.0f;
             if (material.baseColorTexture != ~0u) {
                 float2 uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
-                float4 baseColor = material.baseColorFactor * textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(gTexSampler, uv, 0);
+                float4 baseColor = material.baseColorFactor * gTextures2D[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(gTexSampler, uv, 0);
                 opacity = baseColor.a;
             } else {
                 opacity = material.baseColorFactor.a;
@@ -1187,7 +1187,7 @@ bool EvaluateOpacityAlphaTest<S : ISampler>(uint instance, uint primitive, float
         uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
     if (sampleBaseColor)
     {
-        opacity *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(gTexSampler, uv, 0).a;
+        opacity *= gTextures2D[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(gTexSampler, uv, 0).a;
     }
 
     if (opacity == 1.0f) return false;    // opaque, don't ignore

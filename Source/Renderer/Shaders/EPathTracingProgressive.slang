@@ -1,5 +1,6 @@
 // Progressive Path Tracer
 // Reference tracer implementing all material models.
+import IBindless;
 #include "IPathTracing.slang"
 
 // Adaptive sampling & accumalation
@@ -132,7 +133,7 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
                 float opacity = 1.0f;
                 if (material.baseColorTexture != ~0u) {
                     float2 uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
-                    float4 baseColor = material.baseColorFactor * textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(gTexSampler, uv, 0);
+                    float4 baseColor = material.baseColorFactor * gTextures2D[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(gTexSampler, uv, 0);
                     opacity = baseColor.a;
                 } else {
                     opacity = material.baseColorFactor.a;
@@ -168,6 +169,7 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
     return true;
 }
 
+// Raygen
 void RayGenerationImpl(uint2 pix)
 {
     if (pix.x >= uint(globalParams.fbWidth) || pix.y >= uint(globalParams.fbHeight))
@@ -344,7 +346,7 @@ float3 VisualizeTextureLOD(HitPayload payload, float2 uvDX, float2 uvDY)
         return VisualizeApproximateMipLevel(0.0f);
 
     uint width, height;
-    textures[NonUniformResourceIndex(material.baseColorTexture)].GetDimensions(width, height);
+    gTextures2D[NonUniformResourceIndex(material.baseColorTexture)].GetDimensions(width, height);
     float mipLevel = ApproximateMipLevelFromUVGradient(uvDX, uvDY, width, height);
     return VisualizeApproximateMipLevel(mipLevel);
 }

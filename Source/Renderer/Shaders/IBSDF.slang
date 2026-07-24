@@ -1,29 +1,28 @@
+import IBindless;
 import IBxDF;
-import IBindless2D;
-import IBindless3D;
 import IMath;
 
-SamplerState lutSampler;
+public SamplerState gLutSampler;
 
-public float2 SampleGGXLutE(uint32_t ggxLutEIndex, float mu, float roughness) {
-    return textures[NonUniformResourceIndex(ggxLutEIndex)].SampleLevel(lutSampler, float2(mu, roughness), 0).xy;
-}
-public float SampleGGXLutEavg(uint32_t ggxLutEavgIndex, float roughness) {
-    return textures[NonUniformResourceIndex(ggxLutEavgIndex)].SampleLevel(lutSampler, float2(roughness, 0.5f), 0).x;
-}
 public float SampleGGXLutEIOR(uint32_t ggxLutEIORIndex, uint32_t ggxLutEIORInvIndex, float mu, float roughness, float ior) {
     uint32_t lut = ior > 1.0f ? ggxLutEIORIndex : ggxLutEIORInvIndex;
     float z = ZFromIor(ior > 1.0f ? ior : 1.0f / ior);
-    return textures3D[NonUniformResourceIndex(lut)].SampleLevel(lutSampler, float3(mu, roughness, z), 0).x;
+    return gTextures3D[NonUniformResourceIndex(lut)].SampleLevel(gLutSampler, float3(mu, roughness, z), 0).x;
+}
+public float2 SampleGGXLutE(uint32_t ggxLutEIndex, float mu, float roughness) {
+    return gTextures2D[NonUniformResourceIndex(ggxLutEIndex)].SampleLevel(gLutSampler, float2(mu, roughness), 0).xy;
+}
+public float SampleGGXLutEavg(uint32_t ggxLutEavgIndex, float roughness) {
+    return gTextures2D[NonUniformResourceIndex(ggxLutEavgIndex)].SampleLevel(gLutSampler, float2(roughness, 0.5f), 0).x;
 }
 public float SampleGGXLutEIORavg(uint32_t ggxLutEIORavgIndex, uint32_t ggxLutEIORInvavgIndex, float roughness, float ior) {
     uint32_t lut = ior > 1.0f ? ggxLutEIORavgIndex : ggxLutEIORInvavgIndex;
     float z = ZFromIor(ior > 1.0f ? ior : 1.0f / ior);
-    return textures[NonUniformResourceIndex(lut)].SampleLevel(lutSampler, float2(roughness, z), 0).x;
+    return gTextures2D[NonUniformResourceIndex(lut)].SampleLevel(gLutSampler, float2(roughness, z), 0).x;
 }
 public float4 SampleSheenLTC(uint32_t sheenLtcIndex, float mu, float roughness) {
     if (sheenLtcIndex == ~0u) return float4(0.0f);
-    return textures[NonUniformResourceIndex(sheenLtcIndex)].SampleLevel(lutSampler, float2(mu, roughness), 0);
+    return gTextures2D[NonUniformResourceIndex(sheenLtcIndex)].SampleLevel(gLutSampler, float2(mu, roughness), 0);
 }
 // -- OSL stdlib routines
 import glsl;

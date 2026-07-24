@@ -1,12 +1,13 @@
 import IFlags;
 import ICommon;
 import IPostprocess;
-import IBindless3D;
 
 Texture2D<float4> diffuseTex;
 Texture2D<float4> specularTex;
-SamplerState lutSampler;
+SamplerState gLutSampler;
 uniform PostprocessUBO globalParams;
+
+public[[vk_binding(0, 1)]] Texture3D<float4> gTextures3D[];
 
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
@@ -24,5 +25,5 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     if ((globalParams.dbgViewFlags & debugViews) != 0)
         pp.Exposure = 0.0f;
 
-    return float4(Postprocess(src.xyz, pp, textures3D[NonUniformResourceIndex(globalParams.viewLutIndex)], lutSampler), 1.0f);
+    return float4( Postprocess(src.xyz, pp, gTextures3D[NonUniformResourceIndex(globalParams.viewLutIndex)], gLutSampler), 1.0f);
 }

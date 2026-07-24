@@ -1,14 +1,13 @@
 import IFlags;
-import IBindless3D;
 import ICommon;
 import IPostprocess;
 
-// Buffers (Welford online mean - already averaged)
 Texture2D<float4> diffuseTex;
 Texture2D<float4> specularTex;
-SamplerState lutSampler;
+SamplerState gLutSampler;
 uniform PostprocessUBO globalParams;
 
+public[[vk_binding(0, 1)]] Texture3D<float4> gTextures3D[];
 
 float3 LoadPTPostprocessRadiance(int3 coord)
 {
@@ -45,5 +44,5 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     if ((globalParams.dbgViewFlags & debugViews) != 0)
         pp.Exposure = 0.0f;
 
-    return float4(Postprocess(src, pp, textures3D[NonUniformResourceIndex(globalParams.viewLutIndex)], lutSampler), 1.0f);
+    return float4(Postprocess(src, pp, gTextures3D[NonUniformResourceIndex(globalParams.viewLutIndex)], gLutSampler), 1.0f);
 }

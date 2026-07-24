@@ -6,10 +6,9 @@ struct PushConstant {
     uint32_t num_textures;
     uint32_t first_texture;
 }
+import IBindless;
 [[vk::push_constant]] PushConstant pc;
 SamplerState sampler;
-[[vk::binding(0, 1)]] // [binding, set]
-texture2D textures[];
 
 [shader("fragment")]
 float4 fragMain(float2 pix: TEXCOORD0) : SV_Target
@@ -33,5 +32,5 @@ float4 fragMain(float2 pix: TEXCOORD0) : SV_Target
     id = id % pc.num_textures;
     float2 uv = p * sq;
     uint32_t sample_id = id + pc.first_texture;
-    return textures[NonUniformResourceIndex(sample_id)].Sample(sampler, uv);
+    return gTextures2D[NonUniformResourceIndex(sample_id)].Sample(sampler, uv);
 }

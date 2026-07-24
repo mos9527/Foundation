@@ -57,12 +57,12 @@ VertexOutput vertMain(float3 center : POSITION, float2 corner : TEXCOORD0, float
     return output;
 }
 
-public[[vk_binding(0, 1)]] Texture2D<float4> textures[];
+public[[vk_binding(0, 1)]] Texture2D<float4> gTextures2D[];
 [shader("fragment")]
 float4 fragMain(VertexOutput input) : SV_TARGET
 {
     float2 uv = float2(input.uv.x, 1.0f - input.uv.y); // Vulkan UV coords
-    float4 sample = input.color * textures[NonUniformResourceIndex(input.textureId)].Sample(linSampler, uv);
+    float4 sample = input.color * gTextures2D[NonUniformResourceIndex(input.textureId)].Sample(linSampler, uv);
 
     float closeFade = smoothstep(globalParams.iconWorldHalfExtent * 3.0f,
                                  globalParams.iconWorldHalfExtent * 8.0f,

@@ -43,4 +43,5 @@ int main(int argc, char** argv)
         Examples_NewFrame(window, ctx);
     }
     Examples_DestroyVulkan(window, ctx);
+    return 0;
 }

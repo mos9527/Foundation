@@ -1,9 +1,9 @@
 /**
 * PBRTv4-style interface for physically modeled light sources
 */
+import IBindless;
 import IMath;
 import IBxDF;
-import IBindless2D;
 public enum class LightType {
     DeltaPosition,  // Point light
     DeltaDirection, // Directional light
@@ -62,13 +62,13 @@ public interface ILight {
 // -- Lights
 
 // Module-level env map resources. GPUScene binds tiny default resources when no HDRI is loaded.
-public SamplerState envMapSampler;
+public SamplerState gEnvMapSampler;
 
 // See also Render/Precompute.cpp
 // Helper: Binary search on a 1D CDF texture
 float LoadCDF(uint32_t cdfIndex, uint x, uint y)
 {
-    return textures[NonUniformResourceIndex(cdfIndex)].Load(int3(x, y, 0)).x;
+    return gTextures2D[NonUniformResourceIndex(cdfIndex)].Load(int3(x, y, 0)).x;
 }
 
 uint FindInterval(uint32_t cdfIndex, uint baseIdx, uint numBins, float u) 
@@ -186,8 +186,8 @@ public struct InfiniteLight : ILight {
     }
 
     float3 SampleEnvMapTexture(float3 dir) {
-        return textures[NonUniformResourceIndex(envMapTextureIndex)]
-            .SampleLevel(envMapSampler, EnvMapDirToUV(dir, azimuthOffset), 0).xyz;
+        return gTextures2D[NonUniformResourceIndex(envMapTextureIndex)]
+            .SampleLevel(gEnvMapSampler, EnvMapDirToUV(dir, azimuthOffset), 0).xyz;
     }
 
     public LightType Type() {
@@ -213,7 +213,7 @@ public struct InfiniteLight : ILight {
         }
 
         uint width, height;
-        textures[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
+        gTextures2D[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
         float pdf;
         uint2 offset;
         float2 uv = Sample2D(envMapMarginalCDFIndex, height, envMapConditionalCDFIndex, width, u, pdf, offset);
@@ -249,7 +249,7 @@ public struct InfiniteLight : ILight {
             return UniformSpherePDF();
 
         uint width, height;
-        textures[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
+        gTextures2D[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
         float2 uv = EnvMapDirToUV(w, azimuthOffset);
         float pdf = PDF2D(envMapMarginalCDFIndex, height, envMapConditionalCDFIndex, width, uv);
             

@@ -242,13 +242,13 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                     self, specular, "specularTex", RHIPipelineStageBits::FragmentShader,
                     RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
                 r->BindBufferUniform(self, PostprocessGlobals, RHIPipelineStageBits::FragmentShader, "globalParams");
-                r->BindDescriptorSet(self, "textures3D",
+                r->BindDescriptorSet(self, "gTextures3D",
                                      context->gpuScene->GetTexture3DPool()->GetDescriptorSetLayout());
-                r->BindTextureSampler(self, LUTSampler, "lutSampler");
+                r->BindTextureSampler(self, LUTSampler, "gLutSampler");
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
-                r->CmdBindDescriptorSet(self, cmd, "textures3D",
+                r->CmdBindDescriptorSet(self, cmd, "gTextures3D",
                                         context->gpuScene->GetTexture3DPool()->GetDescriptorSet());
             });
     }
@@ -292,13 +292,13 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                                                              RHITextureAspectFlagBits::Color, 0, 1)});
                     r->BindBufferUniform(self, PostprocessGlobals, RHIPipelineStageBits::FragmentShader,
                                          "globalParams");
-                    r->BindDescriptorSet(self, "textures3D",
+                    r->BindDescriptorSet(self, "gTextures3D",
                                          context->gpuScene->GetTexture3DPool()->GetDescriptorSetLayout());
-                    r->BindTextureSampler(self, LUTSampler, "lutSampler");
+                    r->BindTextureSampler(self, LUTSampler, "gLutSampler");
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
-                    r->CmdBindDescriptorSet(self, cmd, "textures3D",
+                    r->CmdBindDescriptorSet(self, cmd, "gTextures3D",
                                             context->gpuScene->GetTexture3DPool()->GetDescriptorSet());
                 });
         }

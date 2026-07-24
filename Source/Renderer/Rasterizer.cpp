@@ -1,11 +1,11 @@
+#include "Rasterizer.hpp"
+#include <Core/Paths.hpp>
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
-#include <Core/Paths.hpp>
 #include <algorithm>
 #include <limits>
 #include "GPUScene.hpp"
-#include "Rasterizer.hpp"
 using namespace Foundation;
 using namespace RenderUtils;
 #pragma pack(push, 1)
@@ -41,10 +41,11 @@ constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSiz
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
 constexpr size_t kMaxCurveDraws = 4096; // curve (DOTS) instances drawn per frame (raster)
 const ViewFlags kDisableRTBuildFlags = ViewFlagsBits::Overdraw | ViewFlagsBits::Meshlet | ViewFlagsBits::BaseColor |
-                                           ViewFlagsBits::Normal | ViewFlagsBits::Position | ViewFlagsBits::Matcap;
+    ViewFlagsBits::Normal | ViewFlagsBits::Position | ViewFlagsBits::Matcap;
 const RHIResourceFormat kGBufferNormalFormat = RHIResourceFormat::A2B10G10R10Unorm;
 
-static void BuildRasterFeature(RasterFeatureContext& ctx, RasterInjectionPoint point, Span<const RasterFeature> features)
+static void BuildRasterFeature(RasterFeatureContext& ctx, RasterInjectionPoint point,
+                               Span<const RasterFeature> features)
 {
     int lastOrder = std::numeric_limits<int>::min();
     for (;;)
@@ -62,8 +63,8 @@ static void BuildRasterFeature(RasterFeatureContext& ctx, RasterInjectionPoint p
     }
 }
 
-void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
-                            RendererConfig const& cfg, RendererOutputs& out, Span<const RasterFeature> features)
+void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu, RendererConfig const& cfg,
+                            RendererOutputs& out, Span<const RasterFeature> features)
 {
     CHECK(renderer);
     CHECK(globals);
@@ -119,7 +120,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         renderer->CreateResource("Visibility Buffer",
                                  RHIBufferDesc{.usage = StorageBuffer | TransferDestination,
                                                .size = AlignUp(kMaxMeshletCount, 32) / 32 * sizeof(uint32_t)});
-    
+
     // NOTE: Lambda captures
     // NONE of the handle values outlive the renderer. Therefore, ALWAYS capture by value.
     renderer->CreatePass(
@@ -141,18 +142,14 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
     // Shadows require AS updates
     if (useRTShadows)
         BuildGPUSceneAccelerationStructureUpdatePass(renderer, gpu);
-    uint32_t lightingViewFlags =
-        useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~ViewFlagsBits::EnableRasterRTShadows);
+    uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~ViewFlagsBits::EnableRasterRTShadows);
     ViewFlags gbufferViewFlags = cfg.viewFlags;
     if (cfg.forceTextureLOD0)
         gbufferViewFlags |= ViewFlagsBits::ForceTextureLOD0;
     uint32_t gbufferFlags = gbufferViewFlags;
     renderer->CreatePass(
         "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindBufferCopyDst(self, IndirectTaskDispatch);
-        },
+        [=](PassHandle self, Renderer* r) { r->BindBufferCopyDst(self, IndirectTaskDispatch); },
         [=](PassHandle, Renderer* r, RHICommandList* cmd)
         {
             auto* taskDispatch = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
@@ -196,7 +193,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
     while (HIZWidth > HIZMaxDimension)
         HIZWidth >>= 1;
     while (HIZHeight > HIZMaxDimension)
-		HIZHeight >>= 1;
+        HIZHeight >>= 1;
     globals->hizWidth = HIZWidth, globals->hizHeight = HIZHeight, globals->hizLevels = HIZMips;
     RHIDeviceSampler::SamplerDesc HIZSamplerDesc{
         .addressMode = {.u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -238,17 +235,17 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                                               .format = RHIResourceFormat::B10G11R11Ufloat});
     // Instance ID map: R32_UINT, one uint per pixel storing the absolute instance index.
     // ~0u means "no object" (cleared each frame).
-    auto InstanceIDBuffer = renderer->CreateResource("Instance ID Buffer",
-                                                    RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                                                       RHITextureUsageBits::SampledImage,
-                                                                   .extent = {w, h, 1},
-                                                                   .format = RHIResourceFormat::R32Uint});
-    auto MotionVectorRT = renderer->CreateResource(
-        "Motion Vectors",
-        RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::SampledImage |
-                             RHITextureUsageBits::StorageImage,
+    auto InstanceIDBuffer = renderer->CreateResource(
+        "Instance ID Buffer",
+        RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
-                       .format = RHIResourceFormat::R16G16SignedFloat});
+                       .format = RHIResourceFormat::R32Uint});
+    auto MotionVectorRT = renderer->CreateResource("Motion Vectors",
+                                                   RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                                                      RHITextureUsageBits::SampledImage |
+                                                                      RHITextureUsageBits::StorageImage,
+                                                                  .extent = {w, h, 1},
+                                                                  .format = RHIResourceFormat::R16G16SignedFloat});
     auto ReduceBuffer = renderer->CreateResource(
         "Reduced Values", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 256});
     if (cfg.viewFlags & ViewFlagsBits::Overdraw)
@@ -260,7 +257,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 r->BindTextureUAV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
                                   {.format = RHIResourceFormat::R32Uint,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSOverdrawClear.spv"));
+                r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                              PathsResolve("Data/Shaders/ECSOverdrawClear.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
                 r->BindBufferCopyDst(self, ReduceBuffer);
             },
@@ -305,18 +303,22 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                         flags |= to_integer(CullFlagsBits::StageEarly);
                     else
                         flags |= to_integer(CullFlagsBits::StageLate);
-                    r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSCullMeshlets.spv"),
-                                  AsBytes(AsSpan(flags)));
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                                  PathsResolve("Data/Shaders/ECSCullMeshlets.spv"), AsBytes(AsSpan(flags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferIndirectRead(self, IndirectTaskDispatch);
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
                     r->BindBufferUnordered(self, Visibility, RHIPipelineStageBits::ComputeShader, "visibility");
-                    r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "inTasksCounter");
+                    r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader,
+                                           "inTasksCounter");
                     r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "inTasks");
-                    r->BindBufferUnordered(self, IndirectMeshletCounter, RHIPipelineStageBits::ComputeShader, "outMeshletCounter");
-                    r->BindBufferUnordered(self, IndirectMeshlets, RHIPipelineStageBits::ComputeShader, "outMeshletIndices");
-                    r->BindBufferUnordered(self, IndirectMeshletDispatch, RHIPipelineStageBits::ComputeShader, "outMeshletDispatches");
+                    r->BindBufferUnordered(self, IndirectMeshletCounter, RHIPipelineStageBits::ComputeShader,
+                                           "outMeshletCounter");
+                    r->BindBufferUnordered(self, IndirectMeshlets, RHIPipelineStageBits::ComputeShader,
+                                           "outMeshletIndices");
+                    r->BindBufferUnordered(self, IndirectMeshletDispatch, RHIPipelineStageBits::ComputeShader,
+                                           "outMeshletDispatches");
                     r->BindTextureSampler(self, HIZSampler, "hizSampler");
                     r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
@@ -338,17 +340,19 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 {
                     // This is what we could've had. Instead of AddCullPass if it actually works on all platforms.
                     // It should. But it doesn't.
-                    // r->BindShader(self, RHIShaderStageBits::Task, "main", PathsResolve("Data/Shaders/ETSMeshletCull.spv"),
-                    // AsBytes(AsSpan(TSFlags)));
+                    // r->BindShader(self, RHIShaderStageBits::Task, "main",
+                    // PathsResolve("Data/Shaders/ETSMeshletCull.spv"), AsBytes(AsSpan(TSFlags)));
                     r->BindShader(self, RHIShaderStageBits::Mesh, "main", PathsResolve("Data/Shaders/EMSBasic.spv"));
-                    r->BindShader(self, RHIShaderStageBits::Fragment, "main", PathsResolve("Data/Shaders/EPSGBuffer.spv"),
-                                  AsBytes(AsSpan(gbufferFlags)));
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "main",
+                                  PathsResolve("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
                     r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
-                    r->BindBufferStorageRead(self, IndirectMeshletCounter, RHIPipelineStageBits::AllGraphics, "inMeshletCounter");
-                    r->BindBufferStorageRead(self, IndirectMeshlets, RHIPipelineStageBits::AllGraphics, "inMeshletIndices");
+                    r->BindBufferStorageRead(self, IndirectMeshletCounter, RHIPipelineStageBits::AllGraphics,
+                                             "inMeshletCounter");
+                    r->BindBufferStorageRead(self, IndirectMeshlets, RHIPipelineStageBits::AllGraphics,
+                                             "inMeshletIndices");
                     r->BindTextureRTV(self, GBufferRT0,
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
@@ -369,8 +373,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                     r->BindBufferIndirectRead(self, IndirectMeshletDispatch);
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
-                    r->BindDescriptorSet(self, "textures",
-                                         gpu.textures2D->GetDescriptorSetLayout());
+                    r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -391,8 +394,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                             {RHIAttachmentLoadOp::Load});
                     r->CmdSetPipeline(self, cmd);
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-                    r->CmdBindDescriptorSet(self, cmd, "textures",
-                                            gpu.textures2D->GetDescriptorSet());
+                    r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
                     auto* dispatchBuffer = r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>();
                     cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
                     cmd->EndGraphics();
@@ -400,7 +402,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             if (early && cfg.cullFlags & CullFlagsBits::Occlusion)
             {
                 // TODO: Single pass currently present higher register pressure than expected (72 VGPRs?)
-                //       Figure out where I messed up.                
+                //       Figure out where I messed up.
                 if (true)
                     createCSMipGenerationSinglePass(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, Depth,
                                                     HIZ, RHIResourceFormat::D32SignedFloat,
@@ -417,432 +419,427 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         AddCullPass(true), AddMainPass(true);
         if (cfg.cullFlags & CullFlagsBits::Occlusion)
             AddCullPass(false), AddMainPass(false);
-    }
-    /* Dynamic (CPU-updateable) geometry: drawn outside the meshlet pipeline (no DAG/meshlets)
-       via a GPU-driven indexed multi-draw into the same gbuffer, depth-tested against it. */
-    ResourceHandle DynamicMotionDrawCmds = kInvalidHandle;
-    ResourceHandle DynamicMotionDrawCount = kInvalidHandle;
-    ResourceHandle DynamicMotionDrawInstanceIDs = kInvalidHandle;
-    if (gpu.hasDynamicGeometry)
-    {
-        auto DynamicDrawCmds = renderer->CreateResource(
-            "Dynamic Draw Commands",
-            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                          .size = sizeof(DrawIndexedIndirectCommand) * kMaxDynamicDraws});
-        auto DynamicDrawCount = renderer->CreateResource(
-            "Dynamic Draw Count",
-            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
-        auto DynamicDrawInstanceIDs = renderer->CreateResource(
-            "Dynamic Draw Instance IDs",
-            RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * kMaxDynamicDraws});
-        DynamicMotionDrawCmds = renderer->CreateResource(
-            "Dynamic Motion Draw Commands",
-            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                          .size = sizeof(DrawIndexedIndirectCommand) * kMaxDynamicDraws});
-        DynamicMotionDrawCount = renderer->CreateResource(
-            "Dynamic Motion Draw Count",
-            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
-        DynamicMotionDrawInstanceIDs = renderer->CreateResource(
-            "Dynamic Motion Draw Instance IDs",
-            RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * kMaxDynamicDraws});
-        renderer->CreatePass(
-            "Dynamic Draw Gen", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindBufferCopyDst(self, DynamicDrawCount);
-                r->BindBufferCopyDst(self, DynamicMotionDrawCount);
-                r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                              PathsResolve("Data/Shaders/ECSIndirectDraw.spv"));
-                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-                r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
-                r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::ComputeShader,
-                                         "dynamicPrimitives");
-                r->BindBufferUnordered(self, DynamicDrawCmds, RHIPipelineStageBits::ComputeShader, "outDrawCmds");
-                r->BindBufferUnordered(self, DynamicDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
-                                       "outDrawInstanceIDs");
-                r->BindBufferUnordered(self, DynamicDrawCount, RHIPipelineStageBits::ComputeShader, "outDrawCount");
-                r->BindBufferUnordered(self, DynamicMotionDrawCmds, RHIPipelineStageBits::ComputeShader,
-                                       "outMotionDrawCmds");
-                r->BindBufferUnordered(self, DynamicMotionDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
-                                       "outMotionDrawInstanceIDs");
-                r->BindBufferUnordered(self, DynamicMotionDrawCount, RHIPipelineStageBits::ComputeShader,
-                                       "outMotionDrawCount");
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                cmd->FillBuffer(r->DerefResource(DynamicDrawCount).Get<RHIBuffer*>(), 0u);
-                cmd->FillBuffer(r->DerefResource(DynamicMotionDrawCount).Get<RHIBuffer*>(), 0u);
-                r->CmdSetPipeline(self, cmd);
-                r->CmdDispatch(self, cmd, {globals->instances.count, 1, 1});
-            });
-        renderer->CreatePass(
-            "Dynamic GBuffer", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindShader(self, RHIShaderStageBits::Vertex, "main",
-                              PathsResolve("Data/Shaders/EVSIndirectDraw.spv"));
-                // Reuses the meshlet path's gbuffer fragment (bindings 3..5 sit right after this
-                // VS's 0..2, keeping set 0 contiguous).
-                r->BindShader(self, RHIShaderStageBits::Fragment, "main", PathsResolve("Data/Shaders/EPSGBuffer.spv"),
-                              AsBytes(AsSpan(gbufferFlags)));
-                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
-                r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
-                r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::AllGraphics,
-                                         "dynamicPrimitives");
-                r->BindBufferStorageRead(self, DynamicDrawInstanceIDs, RHIPipelineStageBits::AllGraphics,
-                                         "drawInstanceIDs");
-                r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
-                r->BindTextureRTV(self, GBufferRT0,
-                                  {.format = RHIResourceFormat::R8G8B8A8Unorm,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureRTV(self, GBufferRT1,
-                                  {.format = kGBufferNormalFormat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureRTV(self, GBufferRT2,
-                                  {.format = RHIResourceFormat::B10G11R11Ufloat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureRTV(self, InstanceIDBuffer,
-                                  {.format = RHIResourceFormat::R32Uint,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
-                                  {.format = RHIResourceFormat::R32Uint,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureDSV(self, Depth,
-                                  {.format = RHIResourceFormat::D32SignedFloat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-                r->BindBufferIndirectRead(self, DynamicDrawCmds);
-                r->BindBufferIndirectRead(self, DynamicDrawCount);
-                r->BindTextureSampler(self, TexSampler, "textureSampler");
-                r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                RHIExtent2D wh{w, h};
-                // LOAD the meshlet-produced gbuffer + depth; dynamic geo depth-tests against it.
-                r->CmdBeginGraphics(self, cmd, wh,
-                                    {{{RHIAttachmentLoadOp::Load},
-                                      {RHIAttachmentLoadOp::Load},
-                                      {RHIAttachmentLoadOp::Load},
-                                      {RHIAttachmentLoadOp::Load}}},
-                                    {RHIAttachmentLoadOp::Load});
-                r->CmdSetPipeline(self, cmd);
-                cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-                r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
-                // The dynamic ring is bound as a UINT32 index buffer; the VS pulls vertices from
-                // it by SV_VertexID and reads the instance via SV_InstanceID (firstInstance).
-                cmd->BindIndexBuffer(gpu.dynamicPrimitiveBufferRHI, 0, RHIResourceFormat::R32Uint);
-                auto* cmds = r->DerefResource(DynamicDrawCmds).Get<RHIBuffer*>();
-                auto* count = r->DerefResource(DynamicDrawCount).Get<RHIBuffer*>();
-                cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxDynamicDraws, sizeof(DrawIndexedIndirectCommand));
-                cmd->EndGraphics();
-            });
-    }
-    /* Curves (DOTS triangles): static Primitive-buffer MDI path, cull-disabled like the TLAS. */
-    ResourceHandle CurveMotionDrawCmds = kInvalidHandle;
-    ResourceHandle CurveMotionDrawCount = kInvalidHandle;
-    ResourceHandle CurveMotionDrawInstanceIDs = kInvalidHandle;
-    if (gpu.hasCurveGeometry)
-    {
-        auto CurveDrawCmds = renderer->CreateResource(
-            "Curve Draw Commands",
-            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                          .size = sizeof(DrawIndexedIndirectCommand) * kMaxCurveDraws});
-        auto CurveDrawCount = renderer->CreateResource(
-            "Curve Draw Count",
-            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
-        auto CurveDrawInstanceIDs = renderer->CreateResource(
-            "Curve Draw Instance IDs",
-            RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * kMaxCurveDraws});
-        CurveMotionDrawCmds = renderer->CreateResource(
-            "Curve Motion Draw Commands",
-            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                          .size = sizeof(DrawIndexedIndirectCommand) * kMaxCurveDraws});
-        CurveMotionDrawCount = renderer->CreateResource(
-            "Curve Motion Draw Count",
-            RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
-        CurveMotionDrawInstanceIDs = renderer->CreateResource(
-            "Curve Motion Draw Instance IDs",
-            RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * kMaxCurveDraws});
-        renderer->CreatePass(
-            "Curve Draw Gen", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindBufferCopyDst(self, CurveDrawCount);
-                r->BindBufferCopyDst(self, CurveMotionDrawCount);
-                r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                              PathsResolve("Data/Shaders/ECSCurveIndirectDraw.spv"));
-                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-                r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
-                r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
-                r->BindBufferUnordered(self, CurveDrawCmds, RHIPipelineStageBits::ComputeShader, "outDrawCmds");
-                r->BindBufferUnordered(self, CurveDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
-                                       "outDrawInstanceIDs");
-                r->BindBufferUnordered(self, CurveDrawCount, RHIPipelineStageBits::ComputeShader, "outDrawCount");
-                r->BindBufferUnordered(self, CurveMotionDrawCmds, RHIPipelineStageBits::ComputeShader,
-                                       "outMotionDrawCmds");
-                r->BindBufferUnordered(self, CurveMotionDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
-                                       "outMotionDrawInstanceIDs");
-                r->BindBufferUnordered(self, CurveMotionDrawCount, RHIPipelineStageBits::ComputeShader,
-                                       "outMotionDrawCount");
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                cmd->FillBuffer(r->DerefResource(CurveDrawCount).Get<RHIBuffer*>(), 0u);
-                cmd->FillBuffer(r->DerefResource(CurveMotionDrawCount).Get<RHIBuffer*>(), 0u);
-                r->CmdSetPipeline(self, cmd);
-                r->CmdDispatch(self, cmd, {globals->instances.count, 1, 1});
-            });
-        using RasterizerState = RHIPipelineState::PipelineStateDesc::Rasterizer;
-        RasterizerState const curveRaster{.cullMode = RasterizerState::CullNone};
-        renderer->CreatePass(
-            "Curve GBuffer", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindShader(self, RHIShaderStageBits::Vertex, "main", PathsResolve("Data/Shaders/EVSCurveDraw.spv"));
-                r->BindShader(self, RHIShaderStageBits::Fragment, "main", PathsResolve("Data/Shaders/EPSGBuffer.spv"),
-                              AsBytes(AsSpan(gbufferFlags)));
-                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
-                r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
-                r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
-                r->BindBufferStorageRead(self, CurveDrawInstanceIDs, RHIPipelineStageBits::AllGraphics,
-                                         "drawInstanceIDs");
-                r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
-                r->BindTextureRTV(self, GBufferRT0,
-                                  {.format = RHIResourceFormat::R8G8B8A8Unorm,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureRTV(self, GBufferRT1,
-                                  {.format = kGBufferNormalFormat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureRTV(self, GBufferRT2,
-                                  {.format = RHIResourceFormat::B10G11R11Ufloat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureRTV(self, InstanceIDBuffer,
-                                  {.format = RHIResourceFormat::R32Uint,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
-                                  {.format = RHIResourceFormat::R32Uint,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindTextureDSV(self, Depth,
-                                  {.format = RHIResourceFormat::D32SignedFloat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-                r->BindBufferIndirectRead(self, CurveDrawCmds);
-                r->BindBufferIndirectRead(self, CurveDrawCount);
-                r->BindTextureSampler(self, TexSampler, "textureSampler");
-                r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());
-                r->PassSetRasterizerFlags(self, curveRaster);
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                RHIExtent2D wh{w, h};
-                r->CmdBeginGraphics(self, cmd, wh,
-                                    {{{RHIAttachmentLoadOp::Load},
-                                      {RHIAttachmentLoadOp::Load},
-                                      {RHIAttachmentLoadOp::Load},
-                                      {RHIAttachmentLoadOp::Load}}},
-                                    {RHIAttachmentLoadOp::Load});
-                r->CmdSetPipeline(self, cmd);
-                cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-                r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
-                cmd->BindIndexBuffer(gpu.primitiveBufferRHI, 0, RHIResourceFormat::R32Uint);
-                auto* cmds = r->DerefResource(CurveDrawCmds).Get<RHIBuffer*>();
-                auto* count = r->DerefResource(CurveDrawCount).Get<RHIBuffer*>();
-                cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxCurveDraws, sizeof(DrawIndexedIndirectCommand));
-                cmd->EndGraphics();
-            });
-    }
-    renderer->CreatePass(
-        "Camera Motion Vectors", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
+        ResourceHandle DynamicMotionDrawCmds = kInvalidHandle;
+        ResourceHandle DynamicMotionDrawCount = kInvalidHandle;
+        ResourceHandle DynamicMotionDrawInstanceIDs = kInvalidHandle;
+        if (gpu.hasDynamicGeometry)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                          PathsResolve("Data/Shaders/ECSCameraMotionVectors.spv"));
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindTextureSRV(
-                self, Depth, "depth", RHIPipelineStageBits::ComputeShader,
-                RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
-                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-            r->BindTextureUAV(self, MotionVectorRT, "motionVectors", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R16G16SignedFloat,
-                                                 .range = RHITextureSubresourceRange::Create()});
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            r->CmdSetPipeline(self, cmd);
-            r->CmdDispatch(self, cmd, {w, h, 1});
-        });
-    if (cfg.viewFlags & ViewFlagsBits::Overdraw)
-    {
-        renderer->CreatePass(
-            "Overdraw CS Reduce", RHIDeviceQueueType::Compute, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSOverdrawReduce.spv"));
-                r->BindTextureSRV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
-                                                     .range = RHITextureSubresourceRange::Create()});
-                r->BindBufferUnordered(self, ReduceBuffer, RHIPipelineStageBits::ComputeShader, "globalMax");
-                r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(RHIExtent2D));
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                RHIExtent2D wh{w, h};
-                r->CmdSetPipeline(self, cmd);
-                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, wh);
-                r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
-            });
-    }
-    ResourceHandle DebugOutput = kInvalidHandle;
-    // Debug views
-    if (cfg.viewFlags & ViewFlagsBits::Overdraw)
-    {
-        DebugOutput = renderer->CreateResource(
-            "Overdraw Debug Output",
-            RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                      RHITextureUsageBits::SampledImage |
-                                      RHITextureUsageBits::TransferSource,
-                           .extent = {w, h, 1},
-                           .format = RHIResourceFormat::R8G8B8A8Unorm});
-        createPSFullscreenPassRTV(
-            renderer, "Overdraw Debug", DebugOutput,
-            RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
-                               .range = RHITextureSubresourceRange::Create()},
-            {w, h},
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                              PathsResolve("Data/Shaders/EPSOverdrawDebug.spv"));
-                r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
-                                                     .range = RHITextureSubresourceRange::Create()});
-                r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
-            },
-            [](PassHandle, Renderer*, RHICommandList*) {});
-    } else
-    {
-        auto DiffuseBuffer = renderer->CreateResource(
-            "Diffuse",
-            RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
-                                      RHITextureUsageBits::SampledImage |
-                                      RHITextureUsageBits::TransferSource,
-                           .extent = {w, h, 1},
-                           .format = RHIResourceFormat::R16G16B16A16SignedFloat});
-        auto SpecularBuffer = renderer->CreateResource(
-            "Specular",
-            RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
-                                      RHITextureUsageBits::SampledImage |
-                                      RHITextureUsageBits::TransferSource,
-                           .extent = {w, h, 1},
-                           .format = RHIResourceFormat::R16G16B16A16SignedFloat});
-        auto LUTSampler = renderer->CreateSampler({
-            .addressMode = {
-                .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
-                .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
-                .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
-            }
-        });
-        RasterFeatureContext effectCtx{
-            .renderer = renderer,
-            .globals = globals,
-            .gpu = gpu.scene,
-            .cfg = &cfg,
-            .extent = {w, h},
-            .globalUBO = GlobalUBO,
-            .primitiveBuffer = PrimitiveBuffer,
-            .dynamicPrimitiveBuffer = DynamicPrimitiveBuffer,
-            .instanceBuffer = InstanceBuffer,
-            .materialBuffer = MaterialBuffer,
-            .lightBuffer = LightBuffer,
-            .tlas = TLAS,
-            .gbuffer0 = GBufferRT0,
-            .gbuffer1 = GBufferRT1,
-            .gbuffer2 = GBufferRT2,
-            .depth = Depth,
-            .instanceID = InstanceIDBuffer,
-            .motionVectors = MotionVectorRT,
-            .hiz = HIZ,
-            .hizSampler = HIZSampler,
-            .diffuse = DiffuseBuffer,
-            .specular = SpecularBuffer,
-        };
-        BuildRasterFeature(effectCtx, RasterInjectionPoint::AfterGBuffer, features);
-        BuildRasterFeature(effectCtx, RasterInjectionPoint::BeforeLighting, features);
-        bool hasAmbientOcclusion = effectCtx.ambientOcclusion != kInvalidHandle;
-        if (!hasAmbientOcclusion)
-        {
-            effectCtx.ambientOcclusion = renderer->CreateResource(
-                "Ambient Occlusion Neutral",
-                RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
-                               .extent = {w, h, 1},
-                               .format = RHIResourceFormat::R16Unorm});
-            auto NeutralAO = effectCtx.ambientOcclusion;
+            auto DynamicDrawCmds =
+                renderer->CreateResource("Dynamic Draw Commands",
+                                         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                                                       .size = sizeof(DrawIndexedIndirectCommand) * kMaxDynamicDraws});
+            auto DynamicDrawCount = renderer->CreateResource(
+                "Dynamic Draw Count",
+                RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
+            auto DynamicDrawInstanceIDs =
+                renderer->CreateResource("Dynamic Draw Instance IDs",
+                                         RHIBufferDesc{.usage = StorageBuffer | TransferDestination,
+                                                       .size = sizeof(uint32_t) * kMaxDynamicDraws});
+            DynamicMotionDrawCmds =
+                renderer->CreateResource("Dynamic Motion Draw Commands",
+                                         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                                                       .size = sizeof(DrawIndexedIndirectCommand) * kMaxDynamicDraws});
+            DynamicMotionDrawCount = renderer->CreateResource(
+                "Dynamic Motion Draw Count",
+                RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
+            DynamicMotionDrawInstanceIDs =
+                renderer->CreateResource("Dynamic Motion Draw Instance IDs",
+                                         RHIBufferDesc{.usage = StorageBuffer | TransferDestination,
+                                                       .size = sizeof(uint32_t) * kMaxDynamicDraws});
             renderer->CreatePass(
-                "Ambient Occlusion Neutral Clear", RHIDeviceQueueType::Graphics, 0u,
+                "Dynamic Draw Gen", RHIDeviceQueueType::Graphics, 0u,
                 [=](PassHandle self, Renderer* r)
                 {
-                    r->BindTextureUAV(self, NeutralAO, "texture", RHIPipelineStageBits::ComputeShader,
-                                      RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
-                                                         .range = RHITextureSubresourceRange::Create()});
+                    r->BindBufferCopyDst(self, DynamicDrawCount);
+                    r->BindBufferCopyDst(self, DynamicMotionDrawCount);
                     r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                                  PathsResolve("Data/Shaders/CSClearBuffer.spv"));
-                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
+                                  PathsResolve("Data/Shaders/ECSIndirectDraw.spv"));
+                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
+                    r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::ComputeShader,
+                                             "dynamicPrimitives");
+                    r->BindBufferUnordered(self, DynamicDrawCmds, RHIPipelineStageBits::ComputeShader, "outDrawCmds");
+                    r->BindBufferUnordered(self, DynamicDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
+                                           "outDrawInstanceIDs");
+                    r->BindBufferUnordered(self, DynamicDrawCount, RHIPipelineStageBits::ComputeShader, "outDrawCount");
+                    r->BindBufferUnordered(self, DynamicMotionDrawCmds, RHIPipelineStageBits::ComputeShader,
+                                           "outMotionDrawCmds");
+                    r->BindBufferUnordered(self, DynamicMotionDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
+                                           "outMotionDrawInstanceIDs");
+                    r->BindBufferUnordered(self, DynamicMotionDrawCount, RHIPipelineStageBits::ComputeShader,
+                                           "outMotionDrawCount");
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
-                    CSClearBufferData cdata{float4(1.0f), w, h};
+                    cmd->FillBuffer(r->DerefResource(DynamicDrawCount).Get<RHIBuffer*>(), 0u);
+                    cmd->FillBuffer(r->DerefResource(DynamicMotionDrawCount).Get<RHIBuffer*>(), 0u);
                     r->CmdSetPipeline(self, cmd);
-                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
-                    r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
+                    r->CmdDispatch(self, cmd, {globals->instances.count, 1, 1});
+                });
+            renderer->CreatePass(
+                "Dynamic GBuffer", RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindShader(self, RHIShaderStageBits::Vertex, "main",
+                                  PathsResolve("Data/Shaders/EVSIndirectDraw.spv"));
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "main",
+                                  PathsResolve("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
+                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
+                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
+                    r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::AllGraphics,
+                                             "dynamicPrimitives");
+                    r->BindBufferStorageRead(self, DynamicDrawInstanceIDs, RHIPipelineStageBits::AllGraphics,
+                                             "drawInstanceIDs");
+                    r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
+                    r->BindTextureRTV(self, GBufferRT0,
+                                      {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureRTV(self, GBufferRT1,
+                                      {.format = kGBufferNormalFormat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureRTV(self, GBufferRT2,
+                                      {.format = RHIResourceFormat::B10G11R11Ufloat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureRTV(self, InstanceIDBuffer,
+                                      {.format = RHIResourceFormat::R32Uint,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
+                                      {.format = RHIResourceFormat::R32Uint,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureDSV(self, Depth,
+                                      {.format = RHIResourceFormat::D32SignedFloat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                    r->BindBufferIndirectRead(self, DynamicDrawCmds);
+                    r->BindBufferIndirectRead(self, DynamicDrawCount);
+                    r->BindTextureSampler(self, TexSampler, "textureSampler");
+                    r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    RHIExtent2D wh{w, h};
+                    r->CmdBeginGraphics(self, cmd, wh,
+                                        {{{RHIAttachmentLoadOp::Load},
+                                          {RHIAttachmentLoadOp::Load},
+                                          {RHIAttachmentLoadOp::Load},
+                                          {RHIAttachmentLoadOp::Load}}},
+                                        {RHIAttachmentLoadOp::Load});
+                    r->CmdSetPipeline(self, cmd);
+                    cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
+                    r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
+                    cmd->BindIndexBuffer(gpu.dynamicPrimitiveBufferRHI, 0, RHIResourceFormat::R32Uint);
+                    auto* cmds = r->DerefResource(DynamicDrawCmds).Get<RHIBuffer*>();
+                    auto* count = r->DerefResource(DynamicDrawCount).Get<RHIBuffer*>();
+                    cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxDynamicDraws,
+                                                  sizeof(DrawIndexedIndirectCommand));
+                    cmd->EndGraphics();
+                });
+        }
+        /* Curves (DOTS triangles): static Primitive-buffer MDI path, cull-disabled like the TLAS. */
+        ResourceHandle CurveMotionDrawCmds = kInvalidHandle;
+        ResourceHandle CurveMotionDrawCount = kInvalidHandle;
+        ResourceHandle CurveMotionDrawInstanceIDs = kInvalidHandle;
+        if (gpu.hasCurveGeometry)
+        {
+            auto CurveDrawCmds =
+                renderer->CreateResource("Curve Draw Commands",
+                                         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                                                       .size = sizeof(DrawIndexedIndirectCommand) * kMaxCurveDraws});
+            auto CurveDrawCount = renderer->CreateResource(
+                "Curve Draw Count",
+                RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
+            auto CurveDrawInstanceIDs = renderer->CreateResource(
+                "Curve Draw Instance IDs",
+                RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * kMaxCurveDraws});
+            CurveMotionDrawCmds =
+                renderer->CreateResource("Curve Motion Draw Commands",
+                                         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                                                       .size = sizeof(DrawIndexedIndirectCommand) * kMaxCurveDraws});
+            CurveMotionDrawCount = renderer->CreateResource(
+                "Curve Motion Draw Count",
+                RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
+            CurveMotionDrawInstanceIDs = renderer->CreateResource(
+                "Curve Motion Draw Instance IDs",
+                RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * kMaxCurveDraws});
+            renderer->CreatePass(
+                "Curve Draw Gen", RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindBufferCopyDst(self, CurveDrawCount);
+                    r->BindBufferCopyDst(self, CurveMotionDrawCount);
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                                  PathsResolve("Data/Shaders/ECSCurveIndirectDraw.spv"));
+                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
+                    r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
+                    r->BindBufferUnordered(self, CurveDrawCmds, RHIPipelineStageBits::ComputeShader, "outDrawCmds");
+                    r->BindBufferUnordered(self, CurveDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
+                                           "outDrawInstanceIDs");
+                    r->BindBufferUnordered(self, CurveDrawCount, RHIPipelineStageBits::ComputeShader, "outDrawCount");
+                    r->BindBufferUnordered(self, CurveMotionDrawCmds, RHIPipelineStageBits::ComputeShader,
+                                           "outMotionDrawCmds");
+                    r->BindBufferUnordered(self, CurveMotionDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
+                                           "outMotionDrawInstanceIDs");
+                    r->BindBufferUnordered(self, CurveMotionDrawCount, RHIPipelineStageBits::ComputeShader,
+                                           "outMotionDrawCount");
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    cmd->FillBuffer(r->DerefResource(CurveDrawCount).Get<RHIBuffer*>(), 0u);
+                    cmd->FillBuffer(r->DerefResource(CurveMotionDrawCount).Get<RHIBuffer*>(), 0u);
+                    r->CmdSetPipeline(self, cmd);
+                    r->CmdDispatch(self, cmd, {globals->instances.count, 1, 1});
+                });
+            using RasterizerState = RHIPipelineState::PipelineStateDesc::Rasterizer;
+            RasterizerState const curveRaster{.cullMode = RasterizerState::CullNone};
+            renderer->CreatePass(
+                "Curve GBuffer", RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindShader(self, RHIShaderStageBits::Vertex, "main",
+                                  PathsResolve("Data/Shaders/EVSCurveDraw.spv"));
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "main",
+                                  PathsResolve("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
+                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
+                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
+                    r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
+                    r->BindBufferStorageRead(self, CurveDrawInstanceIDs, RHIPipelineStageBits::AllGraphics,
+                                             "drawInstanceIDs");
+                    r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
+                    r->BindTextureRTV(self, GBufferRT0,
+                                      {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureRTV(self, GBufferRT1,
+                                      {.format = kGBufferNormalFormat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureRTV(self, GBufferRT2,
+                                      {.format = RHIResourceFormat::B10G11R11Ufloat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureRTV(self, InstanceIDBuffer,
+                                      {.format = RHIResourceFormat::R32Uint,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
+                                      {.format = RHIResourceFormat::R32Uint,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureDSV(self, Depth,
+                                      {.format = RHIResourceFormat::D32SignedFloat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                    r->BindBufferIndirectRead(self, CurveDrawCmds);
+                    r->BindBufferIndirectRead(self, CurveDrawCount);
+                    r->BindTextureSampler(self, TexSampler, "textureSampler");
+                    r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+                    r->PassSetRasterizerFlags(self, curveRaster);
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    RHIExtent2D wh{w, h};
+                    r->CmdBeginGraphics(self, cmd, wh,
+                                        {{{RHIAttachmentLoadOp::Load},
+                                          {RHIAttachmentLoadOp::Load},
+                                          {RHIAttachmentLoadOp::Load},
+                                          {RHIAttachmentLoadOp::Load}}},
+                                        {RHIAttachmentLoadOp::Load});
+                    r->CmdSetPipeline(self, cmd);
+                    cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
+                    r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
+                    cmd->BindIndexBuffer(gpu.primitiveBufferRHI, 0, RHIResourceFormat::R32Uint);
+                    auto* cmds = r->DerefResource(CurveDrawCmds).Get<RHIBuffer*>();
+                    auto* count = r->DerefResource(CurveDrawCount).Get<RHIBuffer*>();
+                    cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxCurveDraws,
+                                                  sizeof(DrawIndexedIndirectCommand));
+                    cmd->EndGraphics();
                 });
         }
         renderer->CreatePass(
-            "Lighting", RHIDeviceQueueType::Graphics, 0u,
+            "Camera Motion Vectors", RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r)
             {
-                uint32_t lightingFlags = lightingViewFlags | (hasAmbientOcclusion ? to_integer(ViewFlagsBits::EnableRasterAmbientOcclusion) : 0u);
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSLighting.spv"),
-                              AsBytes(AsSpan(lightingFlags)));
+                r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                              PathsResolve("Data/Shaders/ECSCameraMotionVectors.spv"));
                 r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-                r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
-                                                     .range = RHITextureSubresourceRange::Create()});
-                r->BindTextureSRV(self, GBufferRT1, "RT1", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = kGBufferNormalFormat,
-                                                     .range = RHITextureSubresourceRange::Create()});
-                r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
-                                                     .range = RHITextureSubresourceRange::Create()});
                 r->BindTextureSRV(
                     self, Depth, "depth", RHIPipelineStageBits::ComputeShader,
                     RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-                r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
-                r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
-                r->BindTextureSampler(self, LUTSampler, "lutSampler");
-                r->BindTextureSRV(self, effectCtx.ambientOcclusion, "ambientOcclusion",
-                                  RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
+                r->BindTextureUAV(self, MotionVectorRT, "motionVectors", RHIPipelineStageBits::ComputeShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R16G16SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create()});
-                r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());                
-                r->BindTextureUAV(self, DiffuseBuffer, "diffuseOutput", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
-                                                     .range = RHITextureSubresourceRange::Create()});
-                r->BindTextureUAV(self, SpecularBuffer, "specularOutput", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
-                                                     .range = RHITextureSubresourceRange::Create()});
-
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
                 r->CmdSetPipeline(self, cmd);
-                r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
                 r->CmdDispatch(self, cmd, {w, h, 1});
             });
-        BuildRasterFeature(effectCtx, RasterInjectionPoint::AfterLighting, features);
-        out.diffuse = effectCtx.diffuse;
-        out.specular = effectCtx.specular;
+        if (cfg.viewFlags & ViewFlagsBits::Overdraw)
+        {
+            renderer->CreatePass(
+                "Overdraw CS Reduce", RHIDeviceQueueType::Compute, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                                  PathsResolve("Data/Shaders/ECSOverdrawReduce.spv"));
+                    r->BindTextureSRV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
+                                                         .range = RHITextureSubresourceRange::Create()});
+                    r->BindBufferUnordered(self, ReduceBuffer, RHIPipelineStageBits::ComputeShader, "globalMax");
+                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(RHIExtent2D));
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    RHIExtent2D wh{w, h};
+                    r->CmdSetPipeline(self, cmd);
+                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, wh);
+                    r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
+                });
+        }
+        ResourceHandle DebugOutput = kInvalidHandle;
+        // Debug views
+        if (cfg.viewFlags & ViewFlagsBits::Overdraw)
+        {
+            DebugOutput = renderer->CreateResource("Overdraw Debug Output",
+                                                   RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                                                      RHITextureUsageBits::SampledImage |
+                                                                      RHITextureUsageBits::TransferSource,
+                                                                  .extent = {w, h, 1},
+                                                                  .format = RHIResourceFormat::R8G8B8A8Unorm});
+            createPSFullscreenPassRTV(
+                renderer, "Overdraw Debug", DebugOutput,
+                RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                   .range = RHITextureSubresourceRange::Create()},
+                {w, h},
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                                  PathsResolve("Data/Shaders/EPSOverdrawDebug.spv"));
+                    r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
+                                                         .range = RHITextureSubresourceRange::Create()});
+                    r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
+                },
+                [](PassHandle, Renderer*, RHICommandList*) {});
+        }
+        else
+        {
+            auto DiffuseBuffer = renderer->CreateResource(
+                "Diffuse",
+                RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage |
+                                   RHITextureUsageBits::TransferSource,
+                               .extent = {w, h, 1},
+                               .format = RHIResourceFormat::R16G16B16A16SignedFloat});
+            auto SpecularBuffer = renderer->CreateResource(
+                "Specular",
+                RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage |
+                                   RHITextureUsageBits::TransferSource,
+                               .extent = {w, h, 1},
+                               .format = RHIResourceFormat::R16G16B16A16SignedFloat});
+            auto LUTSampler = renderer->CreateSampler({.addressMode = {
+                                                           .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                                                           .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                                                           .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                                                       }});
+            RasterFeatureContext effectCtx{
+                .renderer = renderer,
+                .globals = globals,
+                .gpu = gpu.scene,
+                .cfg = &cfg,
+                .extent = {w, h},
+                .globalUBO = GlobalUBO,
+                .primitiveBuffer = PrimitiveBuffer,
+                .dynamicPrimitiveBuffer = DynamicPrimitiveBuffer,
+                .instanceBuffer = InstanceBuffer,
+                .materialBuffer = MaterialBuffer,
+                .lightBuffer = LightBuffer,
+                .tlas = TLAS,
+                .gbuffer0 = GBufferRT0,
+                .gbuffer1 = GBufferRT1,
+                .gbuffer2 = GBufferRT2,
+                .depth = Depth,
+                .instanceID = InstanceIDBuffer,
+                .motionVectors = MotionVectorRT,
+                .hiz = HIZ,
+                .hizSampler = HIZSampler,
+                .diffuse = DiffuseBuffer,
+                .specular = SpecularBuffer,
+            };
+            BuildRasterFeature(effectCtx, RasterInjectionPoint::AfterGBuffer, features);
+            BuildRasterFeature(effectCtx, RasterInjectionPoint::BeforeLighting, features);
+            bool hasAmbientOcclusion = effectCtx.ambientOcclusion != kInvalidHandle;
+            if (!hasAmbientOcclusion)
+            {
+                effectCtx.ambientOcclusion = renderer->CreateResource(
+                    "Ambient Occlusion Neutral",
+                    RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+                                   .extent = {w, h, 1},
+                                   .format = RHIResourceFormat::R16Unorm});
+                auto NeutralAO = effectCtx.ambientOcclusion;
+                renderer->CreatePass(
+                    "Ambient Occlusion Neutral Clear", RHIDeviceQueueType::Graphics, 0u,
+                    [=](PassHandle self, Renderer* r)
+                    {
+                        r->BindTextureUAV(self, NeutralAO, "texture", RHIPipelineStageBits::ComputeShader,
+                                          RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
+                                                             .range = RHITextureSubresourceRange::Create()});
+                        r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                                      PathsResolve("Data/Shaders/CSClearBuffer.spv"));
+                        r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
+                    },
+                    [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                    {
+                        CSClearBufferData cdata{float4(1.0f), w, h};
+                        r->CmdSetPipeline(self, cmd);
+                        r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
+                        r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
+                    });
+            }
+            renderer->CreatePass(
+                "Lighting", RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    uint32_t lightingFlags = lightingViewFlags |
+                        (hasAmbientOcclusion ? to_integer(ViewFlagsBits::EnableRasterAmbientOcclusion) : 0u);
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                                  PathsResolve("Data/Shaders/ECSLighting.spv"), AsBytes(AsSpan(lightingFlags)));
+                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                    r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                                         .range = RHITextureSubresourceRange::Create()});
+                    r->BindTextureSRV(self, GBufferRT1, "RT1", RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = kGBufferNormalFormat,
+                                                         .range = RHITextureSubresourceRange::Create()});
+                    r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
+                                                         .range = RHITextureSubresourceRange::Create()});
+                    r->BindTextureSRV(self, Depth, "depth", RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
+                                                         .range = RHITextureSubresourceRange::Create(
+                                                             RHITextureAspectFlagBits::Depth)});
+                    r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
+                    r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
+                    r->BindTextureSampler(self, LUTSampler, "gLutSampler");
+                    r->BindTextureSRV(self, effectCtx.ambientOcclusion, "ambientOcclusion",
+                                      RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
+                                                         .range = RHITextureSubresourceRange::Create()});
+                    r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+                    r->BindTextureUAV(self, DiffuseBuffer, "diffuseOutput", RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                                         .range = RHITextureSubresourceRange::Create()});
+                    r->BindTextureUAV(self, SpecularBuffer, "specularOutput", RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                                         .range = RHITextureSubresourceRange::Create()});
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    r->CmdSetPipeline(self, cmd);
+                    r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
+                    r->CmdDispatch(self, cmd, {w, h, 1});
+                });
+            BuildRasterFeature(effectCtx, RasterInjectionPoint::AfterLighting, features);
+            out.diffuse = effectCtx.diffuse;
+            out.specular = effectCtx.specular;
+        }
+        out.extent = {w, h};
+        out.depth = Depth;
+        out.debugOutput = DebugOutput;
+        out.instanceID = InstanceIDBuffer;
     }
-    out.extent = {w, h};
-    out.depth = Depth;
-    out.debugOutput = DebugOutput;
-    out.instanceID = InstanceIDBuffer;
 }

@@ -141,7 +141,7 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
             r->BindBufferStorageRead(self, LightBVHNodeBuffer, pipelineStage, "lightBVHNodes");
             r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, pipelineStage, "lightBVHLightIndices");
             r->BindBufferStorageRead(self, LightBVHBitmaskBuffer, pipelineStage, "lightBVHBitmasks");
-            r->BindTextureSampler(self, LUTSampler, "lutSampler");
+            r->BindTextureSampler(self, LUTSampler, "gLutSampler");
             // Accumulation UAVs
             r->BindTextureUAV(
                 self, Diffuse, "diffuse", pipelineStage,
@@ -158,15 +158,15 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
             r->BindTextureUAV(
                 self, AdaptiveAux, "adaptiveAux", pipelineStage,
                 RHITextureViewDesc{.format = kPathTracerAOVFormat, .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
-            r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());
-            r->BindDescriptorSet(self, "textures3D", gpu.textures3D->GetDescriptorSetLayout());
+            r->BindTextureSampler(self, EnvMapSampler, "gEnvMapSampler");
+            r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+            r->BindDescriptorSet(self, "gTextures3D", gpu.textures3D->GetDescriptorSetLayout());
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             r->CmdSetPipeline(self, cmd);
-            r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
-            r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu.textures3D->GetDescriptorSet());
+            r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
+            r->CmdBindDescriptorSet(self, cmd, "gTextures3D", gpu.textures3D->GetDescriptorSet());
             bool canTrace = (!cfg.ptRenderPaused || !*cfg.ptRenderPaused);
             if (canTrace)
             {

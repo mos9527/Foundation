@@ -1819,7 +1819,7 @@ void EditorDockSpaceAndMenuBar()
             const char* labelPTPause[]   = {"Prog.PT", "", "PAUSED", ""};
             const char* labelPTAuto[]    = {"Prog.PT", "", " AUTO ", ""};
             int blink = (SDL_GetTicks() >> 9) & 3;
-            const char* ptLabel = nullptr;
+            const char* ptLabel = labelPTAuto[0];
             if (GEditor.renderTask.renderAutoPaused)
                 ptLabel = labelPTAuto[blink];
             else if (GEditor.renderTask.renderPaused)
@@ -3044,7 +3044,6 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
-            ImGui::EndDisabled();
             if (ImGui::Checkbox("Primary Light Visibility", &GEditor.rendererConfig.ptPrimaryLightVisibility))
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;

@@ -126,4 +126,5 @@ int main(int argc, char** argv)
         dstTexture.Release();
     }
     Examples_DestroyVulkan(window, ctx);
+    return 0;
 }

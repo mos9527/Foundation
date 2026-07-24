@@ -610,7 +610,7 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
                           PathsResolve("Data/Shaders/Editor/EditorGizmoSprite.spv"), AsBytes(AsSpan(flags)));
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
                           PathsResolve("Data/Shaders/Editor/EditorGizmoSprite.spv"), AsBytes(AsSpan(flags)));
-            r->BindDescriptorSet(self, "textures", sGizmo.iconPool->GetDescriptorSetLayout());
+            r->BindDescriptorSet(self, "gTextures2D", sGizmo.iconPool->GetDescriptorSetLayout());
             r->BindTextureSampler(self, sGizmo.linearSampler, "linSampler");
             if (depthTexture != kInvalidHandle)
             {
@@ -634,7 +634,7 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
             cmd->UpdateBuffer(vb, 0, AsBytes(vertexData)).UpdateBuffer(ib, 0, AsBytes(indexData));
 
             r->CmdSetPipeline(self, cmd);
-            r->CmdBindDescriptorSet(self, cmd, "textures", sGizmo.iconPool->GetDescriptorSet());
+            r->CmdBindDescriptorSet(self, cmd, "gTextures", sGizmo.iconPool->GetDescriptorSet());
             r->CmdBeginGraphics(self, cmd, extent, {{{RHIAttachmentLoadOp::Load}}});
             cmd->SetViewport(0, 0, extent.x, extent.y, 0.0f, 1.0f, true)
                 .SetScissor(0, 0, extent.x, extent.y)
