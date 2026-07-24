@@ -225,7 +225,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                                                    .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                }});
 
-    if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+    if (IsPathTracer(GEditor.rendererMode))
     {
         createPSFullscreenPassRTV(
             renderer, "Editor Postprocess PT", PostprocessBuffer,
@@ -370,11 +370,19 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
     BuildGPUSceneHostUpdatePass(renderer, gpuResources);
     if (GEditor.animation && GEditor.animation->HasSkinning())
         GEditor.animation->BuildGraph(renderer, gpuResources);
-    if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+    switch (GEditor.rendererMode)
+    {
+    case ERendererMode::ProgressivePT:
         BuildProgressivePathTracerRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs);
-    if (GEditor.rendererMode == ERendererMode::Raster)
+        break;
+    case ERendererMode::RealtimePT:
+        BuildRealtimePathTracerRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs);
+        break;
+    case ERendererMode::Raster:
         BuildRasterRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs,
                                sEditorRasterEffects);
+        break;
+    }
     InsertEditorPostprocessPasses(context, renderer, outOutputs, GEditor.rendererConfig.isRendering);
     EndEditorRendererSetup(renderer);
 }
@@ -587,7 +595,7 @@ static void FRunning()
         GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
 
     // If the sample limit is reached, auto-pause the render.
-    if (GEditor.rendererMode == ERendererMode::ProgressivePT && !GEditor.renderTask.renderPaused &&
+    if (IsProgressive(GEditor.rendererMode) && !GEditor.renderTask.renderPaused &&
         GEditor.renderTask.autoPauseSampleLimit > 0)
     {
         uint32_t completed = GEditor.shaderGlobals.ptAccumulatedFrames;

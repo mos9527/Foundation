@@ -3,8 +3,6 @@
 //  [] SHARC
 //  [] ReSTIR DI
 //  [] Denoiser
-// NOTE:
-// - Curves not supported
 #include "IPathTracing.slang"
 
 // Raygen
@@ -156,8 +154,17 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         currentRayCone.width += currentRayCone.spreadAngle * hit.raw.hitT;
 
         HitState hitState;
-        GSInstance inst = LoadSceneInstance(hit.raw.instance);
-        hitState = GetHitState(inst.resourceOffset, hit.raw.primitive, hit.raw.bary, inst, ray.Origin, ray.Direction, hit.raw.hitT, currentRayCone.width);
+        if (hit.kind == HitKind::Curve)
+        {
+            GSInstance inst = LoadSceneInstance(hit.raw.instance);
+            hitState = GetCurveHitState(inst.resourceOffset, hit.raw.primitive, hit.raw.bary, inst,
+                               ray.Origin, ray.Direction, hit.raw.hitT);
+        }
+        else
+        {
+            GSInstance inst = LoadSceneInstance(hit.raw.instance);
+            hitState = GetHitState(inst.resourceOffset, hit.raw.primitive, hit.raw.bary, inst, ray.Origin, ray.Direction, hit.raw.hitT, currentRayCone.width);
+        }
 
         float3 wo = WorldToShadingLocal(hitState, view);
         IMaterial material = MakeMaterial(hit.raw, hitState, wo);

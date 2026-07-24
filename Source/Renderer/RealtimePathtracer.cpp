@@ -58,7 +58,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
     auto TexSampler = renderer->CreateSampler(MakeTextureSamplerDesc(cfg));
     uint32_t w = std::max(renderExtent.x, 1u);
     uint32_t h = std::max(renderExtent.y, 1u);
-    constexpr RHIResourceFormat kPathTracerAOVFormat = RHIResourceFormat::R32G32B32A32SignedFloat;
+    constexpr RHIResourceFormat kPathTracerAOVFormat = RHIResourceFormat::R16G16B16A16SignedFloat;
     // AOV buffers
     auto Diffuse = renderer->CreateResource("Diffuse",
                                             RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |

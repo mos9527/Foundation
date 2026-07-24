@@ -329,7 +329,7 @@ void DoRenderReadback(RendererOutputs const& outputs)
         const char* hdrPath = GEditor.renderTask.outputPath.c_str();
         SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
         LOG(Editor, LogInfo, "{} HDR image saved to {} ({}x{}, {} frames)",
-            GEditor.rendererMode == ERendererMode::ProgressivePT ? "Progressive Path Tracer" : "Raster", hdrPath, w, h,
+            RendererModeDisplayName(GEditor.rendererMode), hdrPath, w, h,
             GEditor.shaderGlobals.ptAccumulatedFrames);
     } else
     {
@@ -342,7 +342,7 @@ void DoRenderReadback(RendererOutputs const& outputs)
         w = sdr.GetWidth(), h = sdr.GetHeight();
         SavePNG(sdr.bytes.data(), static_cast<int>(w), static_cast<int>(h), sdrPath);
         LOG(Editor, LogInfo, "{} SDR image saved to {} ({}x{}, {} frames)",
-            GEditor.rendererMode == ERendererMode::ProgressivePT ? "Progressive Path Tracer" : "Raster", sdrPath, w, h,
+            RendererModeDisplayName(GEditor.rendererMode), sdrPath, w, h,
             GEditor.shaderGlobals.ptAccumulatedFrames);
     }
 }

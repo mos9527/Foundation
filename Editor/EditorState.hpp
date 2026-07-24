@@ -6,6 +6,7 @@
 #include <Renderer/Postprocess.hpp>
 #include <Renderer/Rasterizer.hpp>
 #include <Renderer/ProgressivePathtracer.hpp>
+#include <Renderer/RealtimePathtracer.hpp>
 #include <Renderer/Rasterizer/GTAO.hpp>
 #include "Camera.hpp"
 #include "Editor.hpp"
@@ -22,11 +23,40 @@ class Presenter;
 using Foundation::RHI::RHISwapchainResult;
 using Foundation::RHI::RHISwapchainResultMayPresent;
 
+// Renderer back-ends selectable from the editor. Values are persisted (see
+// RendererSettings::defaultRenderer) so only ever append new modes at the end.
 enum class ERendererMode
 {
-    ProgressivePT = 0u,
-    Raster = 1u
+    ProgressivePT = 0u, // Offline-style progressive path tracer (accumulates samples).
+    Raster        = 1u, // Rasterizer.
+    RealtimePT    = 2u, // Realtime path tracer (RTPT).
 };
+
+// Classification helpers. Prefer these over comparing the enum directly so that behaviour
+// shared by a whole family of renderers (accumulation resets, AOVs, PT postprocess, ...)
+// is expressed in one place and keeps working as new modes are added.
+inline constexpr bool IsPathTracer(ERendererMode mode)
+{
+    return mode == ERendererMode::ProgressivePT || mode == ERendererMode::RealtimePT;
+}
+inline constexpr bool IsProgressive(ERendererMode mode)
+{
+    return mode == ERendererMode::ProgressivePT;
+}
+inline constexpr bool IsRaster(ERendererMode mode)
+{
+    return mode == ERendererMode::Raster;
+}
+inline const char* RendererModeDisplayName(ERendererMode mode)
+{
+    switch (mode)
+    {
+    case ERendererMode::ProgressivePT: return "Progressive Path Tracer";
+    case ERendererMode::RealtimePT:    return "Realtime Path Tracer";
+    case ERendererMode::Raster:        return "Raster";
+    }
+    return "Unknown";
+}
 
 enum class ERenderFormat { HDR, SDR };
 

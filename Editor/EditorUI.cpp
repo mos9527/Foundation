@@ -1727,12 +1727,14 @@ void EditorDockSpaceAndMenuBar()
         }
         if (ImGui::BeginPopupModal("Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            const bool pathTracerRender = GEditor.rendererMode == ERendererMode::ProgressivePT;
+            // Only the progressive path tracer accumulates offline samples; every other mode
+            // (realtime PT, raster) exports the next rendered frame.
+            const bool progressiveRender = IsProgressive(GEditor.rendererMode);
             const char* formatLabel = GEditor.renderTask.format == ERenderFormat::HDR ? "HDR" : "SDR";
-            ImGui::Text("Configure %s %s render:", pathTracerRender ? "Progressive Path Tracer" : "Raster", formatLabel);
+            ImGui::Text("Configure %s %s render:", RendererModeDisplayName(GEditor.rendererMode), formatLabel);
             ImGui::Text("Output: %s", GEditor.renderTask.outputPath.c_str());
             ImGui::Separator();
-            if (pathTracerRender)
+            if (progressiveRender)
             {
                 ImGui::InputInt("Samples / pixel", &GEditor.renderTask.samplePopupInput);
                 if (GEditor.renderTask.samplePopupInput < 0)
@@ -1744,12 +1746,12 @@ void EditorDockSpaceAndMenuBar()
             }
             else
             {
-                ImGui::TextUnformatted("Raster export captures the next rendered frame.");
+                ImGui::TextUnformatted("This mode captures the next rendered frame.");
             }
             if (ImGui::Button(PSI_PLAY " Start Render"))
             {
-                GEditor.renderTask.targetSamples = pathTracerRender ? GEditor.renderTask.samplePopupInput : 1;
-                GEditor.renderTask.targetTimeSeconds = pathTracerRender ? GEditor.renderTask.timePopupInput : 0;
+                GEditor.renderTask.targetSamples = progressiveRender ? GEditor.renderTask.samplePopupInput : 1;
+                GEditor.renderTask.targetTimeSeconds = progressiveRender ? GEditor.renderTask.timePopupInput : 0;
                 GEditor.renderTask.startTime = ImGui::GetTime();
                 GEditor.renderTask.renderPaused = false;
                 GEditor.renderTask.renderAutoPaused = false;
@@ -1796,35 +1798,55 @@ void EditorDockSpaceAndMenuBar()
             ImGui::EndPopup();
         }
 
-        // Right-aligned PT / Raster toggle
+        // Right-aligned renderer-mode toggle: PPT | RTPT | RASTER
         if (GContext->gpuScene && GContext->gpuScene->GetInstanceCount() != 0)
         {
-            float btnW_PT = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-            float btnW_R = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-            float totalW = btnW_PT + btnW_R;
-            float avail = ImGui::GetContentRegionAvail().x;
+            const float btnW = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+
+            // Renders one mode button (with a full-name tooltip); returns true when it is clicked.
+            auto modeButton = [btnW](ERendererMode mode, const char* label, const char* tooltip) -> bool
+            {
+                const bool active = GEditor.rendererMode == mode;
+                ImGui::PushStyleColor(
+                    ImGuiCol_Button, ImGui::GetStyle().Colors[active ? ImGuiCol_ButtonActive : ImGuiCol_Button]);
+                const bool clicked = ImGui::Button(label, ImVec2(btnW, 0));
+                ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", tooltip);
+                return clicked;
+            };
+
+            // Switches renderer without touching pause state (used by the non-progressive modes).
+            auto selectMode = [](ERendererMode mode)
+            {
+                if (GEditor.rendererMode != mode)
+                {
+                    GEditor.rendererMode = mode;
+                    GEditor.state = FERunningEnter;
+                }
+            };
+
+            const float totalW = btnW * 3.0f;
+            const float avail = ImGui::GetContentRegionAvail().x;
             if (avail > totalW)
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - totalW);
 
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
-            if (GEditor.rendererMode == ERendererMode::ProgressivePT)
-                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
-            else
-                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
-            // Three pause states drive the PT button label:
-            //   Running       -> "Prog.PT"
+
+            // Three pause states drive the progressive-PT button label:
+            //   Running       -> "PPT"
             //   ManualPaused  -> blinking "PAUSED" (sticky; only PT click clears)
             //   AutoPaused    -> blinking "AUTO"   (cleared by any user operation)
-            const char* labelPTPause[]   = {"Prog.PT", "", "PAUSED", ""};
-            const char* labelPTAuto[]    = {"Prog.PT", "", " AUTO ", ""};
+            const char* labelPTPause[] = {"PPT", "", "PAUSED", ""};
+            const char* labelPTAuto[]  = {"PPT", "", " AUTO ", ""};
             int blink = (SDL_GetTicks() >> 9) & 3;
             const char* ptLabel = labelPTAuto[0];
             if (GEditor.renderTask.renderAutoPaused)
                 ptLabel = labelPTAuto[blink];
             else if (GEditor.renderTask.renderPaused)
                 ptLabel = labelPTPause[blink];
-            if (ImGui::Button(ptLabel, ImVec2(btnW_PT, 0)))
+            if (modeButton(ERendererMode::ProgressivePT, ptLabel, "Progressive Path Tracer"))
             {
                 if (GEditor.rendererMode != ERendererMode::ProgressivePT)
                 {
@@ -1846,23 +1868,15 @@ void EditorDockSpaceAndMenuBar()
                     GEditor.renderTask.renderAutoPaused = false;
                 }
             }
-            ImGui::PopStyleColor();
 
             ImGui::SameLine();
+            if (modeButton(ERendererMode::RealtimePT, "RTPT", "Realtime Path Tracer"))
+                selectMode(ERendererMode::RealtimePT);
 
-            if (GEditor.rendererMode == ERendererMode::Raster)
-                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
-            else
-                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
-            if (ImGui::Button(" RASTER "))
-            {
-                if (GEditor.rendererMode != ERendererMode::Raster)
-                {
-                    GEditor.rendererMode = ERendererMode::Raster;
-                    GEditor.state = FERunningEnter;
-                }
-            }
-            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            if (modeButton(ERendererMode::Raster, "RASTER", "Rasterizer"))
+                selectMode(ERendererMode::Raster);
+
             ImGui::PopStyleVar(2);
         }
 
@@ -2819,7 +2833,7 @@ void FRunningImGui()
             {
                 GEditor.renderResolutionScale = sPendingScale;
                 GEditor.state = FERunningEnter;
-                if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+                if (IsPathTracer(GEditor.rendererMode))
                     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
         }
@@ -2903,7 +2917,7 @@ void FRunningImGui()
         if (ImGui::Checkbox("Anisotropic Filtering", &GEditor.rendererConfig.textureAnisoEnable))
         {
             changed = true;
-            if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+            if (IsPathTracer(GEditor.rendererMode))
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
         }
         {
@@ -2913,7 +2927,7 @@ void FRunningImGui()
             {
                 GEditor.rendererConfig.textureAnisoLevel = anisoLevel;
                 changed = true;
-                if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+                if (IsPathTracer(GEditor.rendererMode))
                     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::EndDisabled();
@@ -2925,11 +2939,12 @@ void FRunningImGui()
             {
                 GEditor.rendererConfig.textureTrilinear = filterMode == 1;
                 changed = true;
-                if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+                if (IsPathTracer(GEditor.rendererMode))
                     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
         }
-        if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+        // Progressive-only telemetry & sample auto-pause.
+        if (IsProgressive(GEditor.rendererMode))
         {
             ImGui::SeparatorText(PSI_SIGNAL " Stats");
             // Throughput: measure delta on the *frame* (dispatch) counter every ~250ms,
@@ -2992,6 +3007,12 @@ void FRunningImGui()
                 }
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
+        }
+        // Controls shared by every path tracer (progressive + realtime).
+        if (IsPathTracer(GEditor.rendererMode))
+        {
+            if (!IsProgressive(GEditor.rendererMode))
+                ImGui::SeparatorText(PSI_BOLT " Path Tracer");
             if (ImModalButton(PSI_CODE " Direct", 0, 4))
             {
                 GEditor.shaderGlobals.ptMaxBounces = 0;
@@ -3080,7 +3101,7 @@ void FRunningImGui()
                 GEditor.state = FERunningEnter;
             }
         }
-        if (GEditor.rendererMode == ERendererMode::Raster)
+        if (IsRaster(GEditor.rendererMode))
         {
             ImGui::SeparatorText(PSI_EYE_OPEN " Rasterizer");
             static float lodLogThreshold = 3;
@@ -3181,7 +3202,7 @@ void FRunningImGui()
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.cullFlags, items, values);
             }
         }
-        if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+        if (IsPathTracer(GEditor.rendererMode))
         {
             {
                 const char* items[] = {"Diffuse Buffer", "Specular Buffer", "Sample Count (Heatmap)"};
@@ -3201,9 +3222,9 @@ void FRunningImGui()
             ImGui::SeparatorText(PSI_BUG " Debug View");
             if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
             {
-                if (GEditor.rendererMode == ERendererMode::Raster)
+                if (IsRaster(GEditor.rendererMode))
                     changed = true;
-                else if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+                else if (IsPathTracer(GEditor.rendererMode))
                     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
         }
@@ -3213,7 +3234,7 @@ void FRunningImGui()
             ImGui::SeparatorText(PSI_ADJUST " Material Debug");
             if (ImBitmaskOptionPicker(GEditor.rendererConfig.materialFlags, items, values, true /* solo */))
             {
-                if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+                if (IsPathTracer(GEditor.rendererMode))
                     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
         }
@@ -3259,7 +3280,7 @@ void FRendering(RendererOutputs const& outputs)
         uint32_t completedSamples = GEditor.shaderGlobals.ptAccumulatedFrames;
         float fraction = 0.0f;
         char overlay[128];
-        const char* unitStr = GEditor.rendererMode == ERendererMode::ProgressivePT ? "samples" : "frames";
+        const char* unitStr = IsProgressive(GEditor.rendererMode) ? "samples" : "frames";
 
         if (GEditor.renderTask.targetTimeSeconds > 0 && GEditor.renderTask.targetSamples > 0)
         {

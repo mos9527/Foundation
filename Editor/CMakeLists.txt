@@ -78,6 +78,7 @@ if (NOT ANDROID)
             Editor PRIVATE
             Editor_Context
             Foundation_ProgressivePathtracer
+            Foundation_RealtimePathtracer
             Foundation_Rasterizer
             Foundation_RHIVulkan
             ThirdParty_ImGui argh
