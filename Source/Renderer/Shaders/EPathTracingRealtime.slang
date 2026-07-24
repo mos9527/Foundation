@@ -29,7 +29,7 @@ void ComputeMain(uint3 tid : SV_DispatchThreadID)
 
 void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
                           out float4 baseColor, out float4 normalTBN,
-                          out float4 pbrMetalRough, out float4 emissive)
+                          out float4 pbrMetalRough, out float4 emissive, out float transmission)
 {
     baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
@@ -52,17 +52,22 @@ void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
     emissive = float4(material.emissiveFactor, 0.0f);
     if (material.emissiveTexture != ~0u)
         emissive *= SampleMaterialTexture(material.emissiveTexture, uv, uvDX, uvDY);
+
+    transmission = material.transmissionFactor;
+    if (material.transmissionTexture != ~0u)
+        transmission *= SampleMaterialTexture(material.transmissionTexture, uv, uvDX, uvDY).r;
 }
 
 IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo)
 {
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
+    float transmission;
     GSInstance inst = LoadSceneInstance(payload.instance);
     GSMaterial material = LoadMaterial(inst.materialIndex);
     SampleMaterials(material, hit.uv, hit.uvDX, hit.uvDY,
-                             baseColor4, normalTBN, pbrMetalRough, emissive4);
+                             baseColor4, normalTBN, pbrMetalRough, emissive4, transmission);
     SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
-    return BasicPBRMaterial(baseColor4.xyz, pbrMetalRough.z, pbrMetalRough.y, emissive4.xyz);
+    return BasicPBRMaterial(baseColor4.xyz, pbrMetalRough.z, pbrMetalRough.y, emissive4.xyz, transmission);
 }
 
 void PathTrace<S : ISampler>(uint2 pix, inout S rng)
