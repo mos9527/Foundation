@@ -3,7 +3,7 @@
 #include <algorithm>
 #include "Examples.hpp"
 #include <Renderer/Rasterizer.hpp>
-#include <Renderer/Pathtracer.hpp>
+#include <Renderer/ProgressivePathtracer.hpp>
 namespace
 {
     constexpr uint32_t kWaterQuads = 64u;
@@ -122,8 +122,8 @@ namespace
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
         BuildGerstnerPass(ctx.renderer.get(), resources, &gerstner);
-        if (renderer == ExampleRenderer::PathTracer)
-            Example_BuildExamplePathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
+        if (renderer == ExampleRenderer::ProgressivePT)
+            Example_BuildExampleProgressivePathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         else
             Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
@@ -176,7 +176,7 @@ int main(int argc, char** argv)
     float amplitude = 1.0f;
     float paused = 0.0f;
     float time = 0.0f;
-    ExampleRenderer renderer = ExampleRenderer::PathTracer;
+    ExampleRenderer renderer = ExampleRenderer::ProgressivePT;
     uint64_t t0 = SDL_GetTicksNS();
 
     // CPU side data

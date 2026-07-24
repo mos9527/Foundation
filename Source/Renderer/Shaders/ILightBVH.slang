@@ -1,4 +1,3 @@
-// Included after `uniform UBO globalParams` and `StructuredBuffer<GSLight> lights`.
 import ICommon;
 import ILight;
 
@@ -6,6 +5,17 @@ public static const float kLightBVHInvalidCosConeAngle = -1.0f;
 public static const uint kLightBVHLeafBit = 1u << 31;
 public static const uint kLightBVHLightCountBits = 4u;
 public static const uint kLightBVHLightOffsetBits = 31u - kLightBVHLightCountBits;
+
+// Included after `uniform UBO globalParams` and `StructuredBuffer<GSLight> gLights` are declared.
+UBO GetUBO()
+{
+    return globalParams;
+}
+
+GSLight GetLight(uint lightIndex)
+{
+    return gLights[GetUBO().lights.offset + lightIndex];
+}
 
 public struct GSLightBVHNode
 {
@@ -111,9 +121,9 @@ float ComputeNodeImportance(float3 posW, float3 normalW, bool upperHemisphere, G
 
 float ComputeFiniteRootImportance(float3 posW, float3 normalW, bool upperHemisphere)
 {
-    if (globalParams.lightBVHValid == 0u || globalParams.lightBVHNodes.count == 0u)
+    if (GetUBO().lightBVHValid == 0u || GetUBO().lightBVHNodes.count == 0u)
         return 0.0f;
-    GSLightBVHNode root = lightBVHNodes[globalParams.lightBVHNodes.offset];
+    GSLightBVHNode root = lightBVHNodes[GetUBO().lightBVHNodes.offset];
     return ComputeNodeImportance(posW, normalW, upperHemisphere, root);
 }
 
@@ -139,10 +149,10 @@ float ComputeDistantNodeImportance(float3 posW, float3 normalW, bool upperHemisp
 
 float ComputeDistantRootImportance(float3 posW, float3 normalW, bool upperHemisphere)
 {
-    if (globalParams.lightBVHDistantNodes.count == 0u)
+    if (GetUBO().lightBVHDistantNodes.count == 0u)
         return 0.0f;
     return ComputeDistantNodeImportance(posW, normalW, upperHemisphere,
-                                        lightBVHNodes[globalParams.lightBVHDistantNodes.offset]);
+                                        lightBVHNodes[GetUBO().lightBVHDistantNodes.offset]);
 }
 
 float EvalMixtureTotal(float3 posW, float3 normalW, bool upperHemisphere, out float finiteWeight,
@@ -157,12 +167,12 @@ bool TraverseLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout f
                       out uint leafNodeIndex)
 {
     pdf = 1.0f;
-    leafNodeIndex = globalParams.lightBVHNodes.offset;
+    leafNodeIndex = GetUBO().lightBVHNodes.offset;
     GSLightBVHNode node = lightBVHNodes[leafNodeIndex];
     while (!LightBVHNodeIsLeaf(node))
     {
         uint leftIndex = leafNodeIndex + 1u;
-        uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
+        uint rightIndex = GetUBO().lightBVHNodes.offset + LightBVHNodeRightChild(node);
         float leftImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
         float rightImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
         float sum = leftImp + rightImp;
@@ -190,12 +200,12 @@ bool TraverseLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout f
 bool TraverseDistantLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout float u, out float pdf, out uint leafNodeIndex)
 {
     pdf = 1.0f;
-    leafNodeIndex = globalParams.lightBVHDistantNodes.offset;
+    leafNodeIndex = GetUBO().lightBVHDistantNodes.offset;
     GSLightBVHNode node = lightBVHNodes[leafNodeIndex];
     while (!LightBVHNodeIsLeaf(node))
     {
         uint leftIndex = leafNodeIndex + 1u;
-        uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
+        uint rightIndex = GetUBO().lightBVHNodes.offset + LightBVHNodeRightChild(node);
         float leftImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
         float rightImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
         float sum = leftImp + rightImp;
@@ -231,8 +241,8 @@ bool PickLeafLight(uint leafNodeIndex, float u, out float pdf, out uint lightInd
     float total = 0.0f;
     for (uint i = 0; i < count; ++i)
     {
-        uint idx = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
-        total += ComputeLightProposalWeight(lights[globalParams.lights.offset + idx]);
+        uint idx = lightBVHLightIndices[GetUBO().lightBVHLightIndices.offset + offset + i];
+        total += ComputeLightProposalWeight(GetLight(idx));
     }
     if (total <= 0.0f)
         return false;
@@ -241,8 +251,8 @@ bool PickLeafLight(uint leafNodeIndex, float u, out float pdf, out uint lightInd
     float cdf = 0.0f;
     for (uint i = 0; i < count; ++i)
     {
-        uint idx = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
-        float weight = ComputeLightProposalWeight(lights[globalParams.lights.offset + idx]);
+        uint idx = lightBVHLightIndices[GetUBO().lightBVHLightIndices.offset + offset + i];
+        float weight = ComputeLightProposalWeight(GetLight(idx));
         cdf += weight;
         if (uScaled < cdf || i + 1u == count)
         {
@@ -263,8 +273,8 @@ float EvalLeafLightPdf(uint leafNodeIndex, uint lightIndex)
     float selected = 0.0f;
     for (uint i = 0; i < count; ++i)
     {
-        uint idx = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
-        float weight = ComputeLightProposalWeight(lights[globalParams.lights.offset + idx]);
+        uint idx = lightBVHLightIndices[GetUBO().lightBVHLightIndices.offset + offset + i];
+        float weight = ComputeLightProposalWeight(GetLight(idx));
         total += weight;
         if (idx == lightIndex)
             selected = weight;
@@ -274,15 +284,15 @@ float EvalLeafLightPdf(uint leafNodeIndex, uint lightIndex)
 
 float EvalFiniteTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere, uint lightIndex, out uint leafNodeIndex)
 {
-    uint2 bits2 = lightBVHBitmasks[globalParams.firstLightBVHBitmask + lightIndex];
+    uint2 bits2 = lightBVHBitmasks[GetUBO().firstLightBVHBitmask + lightIndex];
     uint64_t bitmask = ((uint64_t)bits2.y << 32) | bits2.x;
     float pdf = 1.0f;
-    leafNodeIndex = globalParams.lightBVHNodes.offset;
+    leafNodeIndex = GetUBO().lightBVHNodes.offset;
     GSLightBVHNode node = lightBVHNodes[leafNodeIndex];
     while (!LightBVHNodeIsLeaf(node))
     {
         uint leftIndex = leafNodeIndex + 1u;
-        uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
+        uint rightIndex = GetUBO().lightBVHNodes.offset + LightBVHNodeRightChild(node);
         float leftImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
         float rightImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
         float sum = leftImp + rightImp;
@@ -308,15 +318,15 @@ float EvalFiniteTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere, 
 
 float EvalDistantTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere, uint lightIndex, out uint leafNodeIndex)
 {
-    uint2 bits2 = lightBVHBitmasks[globalParams.firstLightBVHBitmask + lightIndex];
+    uint2 bits2 = lightBVHBitmasks[GetUBO().firstLightBVHBitmask + lightIndex];
     uint64_t bitmask = ((uint64_t)bits2.y << 32) | bits2.x;
     float pdf = 1.0f;
-    leafNodeIndex = globalParams.lightBVHDistantNodes.offset;
+    leafNodeIndex = GetUBO().lightBVHDistantNodes.offset;
     GSLightBVHNode node = lightBVHNodes[leafNodeIndex];
     while (!LightBVHNodeIsLeaf(node))
     {
         uint leftIndex = leafNodeIndex + 1u;
-        uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
+        uint rightIndex = GetUBO().lightBVHNodes.offset + LightBVHNodeRightChild(node);
         float leftImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
         float rightImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
         float sum = leftImp + rightImp;
@@ -332,13 +342,13 @@ float EvalDistantTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere,
     return pdf;
 }
 
-public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
+public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex, bool useUniform)
 {
-    if (globalParams.lights.count == 0u || lightIndex >= globalParams.lights.count)
+    if (GetUBO().lights.count == 0u || lightIndex >= GetUBO().lights.count)
         return 0.0f;
 
-    if ((ptCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u)
-        return 1.0f / float(globalParams.lights.count);
+    if (useUniform)
+        return 1.0f / float(GetUBO().lights.count);
 
     float3 posW = ctx.p();
     float3 normalW = ctx.ns;
@@ -349,18 +359,18 @@ public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
     if (total <= 0.0f)
         return 0.0f;
 
-    GSLight gl = lights[globalParams.lights.offset + lightIndex];
+    GSLight gl = GetLight(lightIndex);
     uint type = GSLightType(gl);
     if (type == kGSLightTypeDirectional || type == kGSLightTypeEnvironment)
     {
-        if (distantWeight <= 0.0f || globalParams.lightBVHDistantNodes.count == 0u)
+        if (distantWeight <= 0.0f || GetUBO().lightBVHDistantNodes.count == 0u)
             return 0.0f;
         uint leafNodeIndex;
         float traversalPdf = EvalDistantTraversalPdf(posW, normalW, upperHemisphere, lightIndex, leafNodeIndex);
         return (distantWeight / total) * traversalPdf * EvalLeafLightPdf(leafNodeIndex, lightIndex);
     }
 
-    if (finiteWeight <= 0.0f || globalParams.lightBVHValid == 0u)
+    if (finiteWeight <= 0.0f || GetUBO().lightBVHValid == 0u)
         return 0.0f;
 
     uint leafNodeIndex;
@@ -371,16 +381,16 @@ public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex)
     return (finiteWeight / total) * traversalPdf * leafPdf;
 }
 
-public bool SampleLightSelection(LightSampleContext ctx, float u, out uint lightIndex, out float selectionPMF)
+public bool SampleLightSelection(LightSampleContext ctx, float u, out uint lightIndex, out float selectionPMF, bool useUniform)
 {
     lightIndex = ~0u;
     selectionPMF = 0.0f;
-    if (globalParams.lights.count == 0u)
+    if (GetUBO().lights.count == 0u)
         return false;
 
-    if ((ptCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u)
+    if (useUniform)
     {
-        uint n = globalParams.lights.count;
+        uint n = GetUBO().lights.count;
         lightIndex = min(uint(u * float(n)), n - 1u);
         selectionPMF = 1.0f / float(n);
         return true;
@@ -412,7 +422,7 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
     }
 
     // Finite light path
-    if (finiteWeight <= 0.0f || globalParams.lightBVHValid == 0u)
+    if (finiteWeight <= 0.0f || GetUBO().lightBVHValid == 0u)
         return false;
 
     float uFinite = (uScaled - distantWeight) / finiteWeight;

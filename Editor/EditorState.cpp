@@ -225,7 +225,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                                                    .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                }});
 
-    if (GEditor.rendererMode == ERendererMode::PathTracer)
+    if (GEditor.rendererMode == ERendererMode::ProgressivePT)
     {
         createPSFullscreenPassRTV(
             renderer, "Editor Postprocess PT", PostprocessBuffer,
@@ -370,8 +370,8 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
     BuildGPUSceneHostUpdatePass(renderer, gpuResources);
     if (GEditor.animation && GEditor.animation->HasSkinning())
         GEditor.animation->BuildGraph(renderer, gpuResources);
-    if (GEditor.rendererMode == ERendererMode::PathTracer)
-        BuildPathTracerRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs);
+    if (GEditor.rendererMode == ERendererMode::ProgressivePT)
+        BuildProgressivePathTracerRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs);
     if (GEditor.rendererMode == ERendererMode::Raster)
         BuildRasterRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs,
                                sEditorRasterEffects);
@@ -587,7 +587,7 @@ static void FRunning()
         GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
 
     // If the sample limit is reached, auto-pause the render.
-    if (GEditor.rendererMode == ERendererMode::PathTracer && !GEditor.renderTask.renderPaused &&
+    if (GEditor.rendererMode == ERendererMode::ProgressivePT && !GEditor.renderTask.renderPaused &&
         GEditor.renderTask.autoPauseSampleLimit > 0)
     {
         uint32_t completed = GEditor.shaderGlobals.ptAccumulatedFrames;

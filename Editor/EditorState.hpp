@@ -5,7 +5,7 @@
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Postprocess.hpp>
 #include <Renderer/Rasterizer.hpp>
-#include <Renderer/Pathtracer.hpp>
+#include <Renderer/ProgressivePathtracer.hpp>
 #include <Renderer/Rasterizer/GTAO.hpp>
 #include "Camera.hpp"
 #include "Editor.hpp"
@@ -24,7 +24,7 @@ using Foundation::RHI::RHISwapchainResultMayPresent;
 
 enum class ERendererMode
 {
-    PathTracer = 0u,
+    ProgressivePT = 0u,
     Raster = 1u
 };
 
@@ -145,7 +145,7 @@ struct EditorState
     CameraApertureState aperture;
     EditorViewportState viewport;
     RendererConfig  rendererConfig;
-    ERendererMode   rendererMode = ERendererMode::PathTracer;
+    ERendererMode   rendererMode = ERendererMode::ProgressivePT;
     int             viewLUTSdrIndex = Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::SDR);
     int             viewLUTHdrIndex = Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::HDR);
     String          viewLUTSdrExternalPath;

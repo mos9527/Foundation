@@ -4,7 +4,7 @@
 #include <RenderCore/ImmediateContext.hpp> // For ImmediateReadback
 #include <Renderer/Renderer.hpp>
 #include <Renderer/Rasterizer.hpp>
-#include <Renderer/Pathtracer.hpp>
+#include <Renderer/ProgressivePathtracer.hpp>
 #include <algorithm>
 #include <argh.h>
 #include <cctype>
@@ -80,8 +80,8 @@ ResourceHandle RebuildGraph(ExampleVulkanContext& ctx, RendererUBO& ubo, GPUScen
         cfg.renderExtent = RHIExtent2D{float2(swapExtent.x, swapExtent.y) * scaling};
     }
     auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
-    if (renderer == ExampleRenderer::PathTracer)
-        Example_BuildExamplePathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
+    if (renderer == ExampleRenderer::ProgressivePT)
+        Example_BuildExampleProgressivePathTracerRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
     else
         Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
     ResourceHandle output = Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, !headless);
@@ -158,7 +158,7 @@ int main(int argc, char** argv)
         ApplySceneCamera(scene, ubo, camera);
         CommitSceneToGPU(scene, gpu, resources, ubo);
         ExampleInputState input{};
-        ExampleRenderer renderer = ExampleRenderer::PathTracer;
+        ExampleRenderer renderer = ExampleRenderer::ProgressivePT;
         if (headless)
         {
             cfg.renderExtent = RHIExtent2D{renderWidth, renderHeight};

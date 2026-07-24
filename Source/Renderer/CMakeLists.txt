@@ -47,13 +47,12 @@ target_link_libraries(Foundation_Rasterizer PUBLIC
 )
 target_include_directories(Foundation_Rasterizer PUBLIC ..)
 
-add_library(Foundation_Pathtracer STATIC
-    Pathtracer.cpp
+add_library(Foundation_ProgressivePathtracer STATIC
+    ProgressivePathtracer.cpp
 )
-target_link_libraries(Foundation_Pathtracer PUBLIC
+target_link_libraries(Foundation_ProgressivePathtracer PUBLIC
     Foundation_GPUScene
     Foundation_RenderUtils
 )
-target_include_directories(Foundation_Pathtracer PUBLIC ..)
-
+target_include_directories(Foundation_ProgressivePathtracer PUBLIC ..)
 

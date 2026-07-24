@@ -77,7 +77,7 @@ if (NOT ANDROID)
     target_link_libraries(
             Editor PRIVATE
             Editor_Context
-            Foundation_Pathtracer
+            Foundation_ProgressivePathtracer
             Foundation_Rasterizer
             Foundation_RHIVulkan
             ThirdParty_ImGui argh

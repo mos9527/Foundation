@@ -3,7 +3,7 @@
 #include <algorithm>
 #include "Examples.hpp"
 #include <Renderer/Rasterizer.hpp>
-#include <Renderer/Pathtracer.hpp>
+#include <Renderer/ProgressivePathtracer.hpp>
 namespace
 {
     constexpr uint32_t kWaterQuads = 64u;
@@ -123,7 +123,7 @@ namespace
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
         BuildGerstnerPass(ctx.renderer.get(), resources, &gerstner);
         if (renderer == ExampleRenderer::PathTracer)
-            BuildPathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
+            BuildProgressivePathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         else
             Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);

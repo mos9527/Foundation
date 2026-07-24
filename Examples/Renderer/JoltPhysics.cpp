@@ -5,7 +5,7 @@
 
 #include <Renderer/Mesh.hpp>
 #include <Renderer/Rasterizer.hpp>
-#include <Renderer/Pathtracer.hpp>
+#include <Renderer/ProgressivePathtracer.hpp>
 #include <cmath>
 
 using namespace Foundation::Examples;
@@ -37,12 +37,11 @@ namespace
         Examples_ResetRenderer(ctx, RendererDesc{});
         ctx.renderer->BeginSetup();
         cfg.renderExtent = ctx.renderer->GetSwapchainExtent();
-        cfg.ptMaterialBasic = true;
         ubo.ptMaxBounces = 1u;
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
-        if (renderer == ExampleRenderer::PathTracer)
-            Example_BuildExamplePathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
+        if (renderer == ExampleRenderer::ProgressivePT)
+            Example_BuildExampleProgressivePathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         else
             Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
@@ -174,7 +173,7 @@ int main(int argc, char** argv)
         ExampleInputState input{};
         ExampleFpsCounter fps;
         float paused = 0.0f;
-        ExampleRenderer renderer = ExampleRenderer::PathTracer;
+        ExampleRenderer renderer = ExampleRenderer::ProgressivePT;
         uint64_t t0 = SDL_GetTicksNS();
         PhysicsBodyHandle heldBody{};
         PhysicsBodyPose heldPose{};

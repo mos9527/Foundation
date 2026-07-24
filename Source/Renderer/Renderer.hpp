@@ -121,7 +121,6 @@ struct RendererConfig
     bool ptShaderExecutionReordering{true};
     bool forceTextureLOD0{false};
     bool energyCompensation{true};
-    bool ptMaterialBasic{false};
     bool ptPrimaryLightVisibility{false};
     bool textureAnisoEnable{true};
     float textureAnisoLevel{16.0f};

@@ -4,7 +4,7 @@
 bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& currentRenderer);
 void Example_BuildExampleRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
                                            RendererConfig& cfg, RendererOutputs& out);
-void Example_BuildExamplePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
+void Example_BuildExampleProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
 												RendererConfig& cfg, RendererOutputs& out);
 ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs const& outputs, bool isPresent);
 

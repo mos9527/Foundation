@@ -2,7 +2,7 @@
 #define FOUNDATION_EXAMPLES_IMPLEMENTATION
 #include "Examples.hpp"
 #include <Renderer/Rasterizer.hpp>
-#include <Renderer/Pathtracer.hpp>
+#include <Renderer/ProgressivePathtracer.hpp>
 #include <Renderer/Postprocess.hpp>
 
 bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& currentRenderer)
@@ -12,7 +12,7 @@ bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& cu
     if (Examples_Button(input, text))
     {
         currentRenderer =
-            currentRenderer == ExampleRenderer::Raster ? ExampleRenderer::PathTracer : ExampleRenderer::Raster;
+            currentRenderer == ExampleRenderer::Raster ? ExampleRenderer::ProgressivePT : ExampleRenderer::Raster;
         changed = true;
     }
     return changed;
@@ -231,8 +231,8 @@ void Example_BuildExampleRasterRenderGraph(Renderer* renderer, RendererUBO* glob
     BuildRasterRenderGraph(renderer, globals, gpu, cfg, out, features);
 }
 
-void Example_BuildExamplePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
+void Example_BuildExampleProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
                                                RendererConfig& cfg, RendererOutputs& out)
 {
-    BuildPathTracerRenderGraph(renderer, globals, gpu, cfg, out);
+    BuildProgressivePathTracerRenderGraph(renderer, globals, gpu, cfg, out);
 }

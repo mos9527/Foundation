@@ -1,9 +1,9 @@
 #include "Renderer.hpp"
 
 /**
- * @brief Builds the RenderGraph for the Pathtracer.
+ * @brief Builds the RenderGraph for the Progressive PT.
  * @note AS updates through (@ref BuildGPUSceneAccelerationStructureUpdatePass) is already conditionally built by this
  * pass
  */
-extern void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
+extern void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
                                        RendererConfig const& cfg, RendererOutputs& out);

@@ -1727,9 +1727,9 @@ void EditorDockSpaceAndMenuBar()
         }
         if (ImGui::BeginPopupModal("Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            const bool pathTracerRender = GEditor.rendererMode == ERendererMode::PathTracer;
+            const bool pathTracerRender = GEditor.rendererMode == ERendererMode::ProgressivePT;
             const char* formatLabel = GEditor.renderTask.format == ERenderFormat::HDR ? "HDR" : "SDR";
-            ImGui::Text("Configure %s %s render:", pathTracerRender ? "path tracer" : "raster", formatLabel);
+            ImGui::Text("Configure %s %s render:", pathTracerRender ? "Progressive Path Tracer" : "Raster", formatLabel);
             ImGui::Text("Output: %s", GEditor.renderTask.outputPath.c_str());
             ImGui::Separator();
             if (pathTracerRender)
@@ -1808,27 +1808,27 @@ void EditorDockSpaceAndMenuBar()
 
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
-            if (GEditor.rendererMode == ERendererMode::PathTracer)
+            if (GEditor.rendererMode == ERendererMode::ProgressivePT)
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
             else
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
             // Three pause states drive the PT button label:
-            //   Running       -> "  PT  "
+            //   Running       -> "Prog.PT"
             //   ManualPaused  -> blinking "PAUSED" (sticky; only PT click clears)
             //   AutoPaused    -> blinking "AUTO"   (cleared by any user operation)
-            const char* labelPTPause[]   = {"  PT  ", "", "PAUSED", ""};
-            const char* labelPTAuto[]    = {"  PT  ", "", " AUTO ", ""};
+            const char* labelPTPause[]   = {"Prog.PT", "", "PAUSED", ""};
+            const char* labelPTAuto[]    = {"Prog.PT", "", " AUTO ", ""};
             int blink = (SDL_GetTicks() >> 9) & 3;
-            const char* ptLabel = "  PT  ";
+            const char* ptLabel = nullptr;
             if (GEditor.renderTask.renderAutoPaused)
                 ptLabel = labelPTAuto[blink];
             else if (GEditor.renderTask.renderPaused)
                 ptLabel = labelPTPause[blink];
             if (ImGui::Button(ptLabel, ImVec2(btnW_PT, 0)))
             {
-                if (GEditor.rendererMode != ERendererMode::PathTracer)
+                if (GEditor.rendererMode != ERendererMode::ProgressivePT)
                 {
-                    GEditor.rendererMode = ERendererMode::PathTracer;
+                    GEditor.rendererMode = ERendererMode::ProgressivePT;
                     GEditor.state = FERunningEnter;
                     GEditor.renderTask.renderPaused = false;
                     GEditor.renderTask.renderAutoPaused = false;
@@ -2819,7 +2819,7 @@ void FRunningImGui()
             {
                 GEditor.renderResolutionScale = sPendingScale;
                 GEditor.state = FERunningEnter;
-                if (GEditor.rendererMode == ERendererMode::PathTracer)
+                if (GEditor.rendererMode == ERendererMode::ProgressivePT)
                     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
         }
@@ -2903,7 +2903,7 @@ void FRunningImGui()
         if (ImGui::Checkbox("Anisotropic Filtering", &GEditor.rendererConfig.textureAnisoEnable))
         {
             changed = true;
-            if (GEditor.rendererMode == ERendererMode::PathTracer)
+            if (GEditor.rendererMode == ERendererMode::ProgressivePT)
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
         }
         {
@@ -2913,7 +2913,7 @@ void FRunningImGui()
             {
                 GEditor.rendererConfig.textureAnisoLevel = anisoLevel;
                 changed = true;
-                if (GEditor.rendererMode == ERendererMode::PathTracer)
+                if (GEditor.rendererMode == ERendererMode::ProgressivePT)
                     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::EndDisabled();
@@ -2925,11 +2925,11 @@ void FRunningImGui()
             {
                 GEditor.rendererConfig.textureTrilinear = filterMode == 1;
                 changed = true;
-                if (GEditor.rendererMode == ERendererMode::PathTracer)
+                if (GEditor.rendererMode == ERendererMode::ProgressivePT)
                     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
         }
-        if (GEditor.rendererMode == ERendererMode::PathTracer)
+        if (GEditor.rendererMode == ERendererMode::ProgressivePT)
         {
             ImGui::SeparatorText(PSI_SIGNAL " Stats");
             // Throughput: measure delta on the *frame* (dispatch) counter every ~250ms,
@@ -3039,12 +3039,6 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
-            if (ImGui::Checkbox("Basic Material Model", &GEditor.rendererConfig.ptMaterialBasic))
-            {
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-                GEditor.state = FERunningEnter;
-            }
-            ImGui::BeginDisabled(GEditor.rendererConfig.ptMaterialBasic);
             if (ImGui::Checkbox("Energy Compensation", &GEditor.rendererConfig.energyCompensation))
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
@@ -3188,7 +3182,7 @@ void FRunningImGui()
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.cullFlags, items, values);
             }
         }
-        if (GEditor.rendererMode == ERendererMode::PathTracer)
+        if (GEditor.rendererMode == ERendererMode::ProgressivePT)
         {
             {
                 const char* items[] = {"Diffuse Buffer", "Specular Buffer", "Sample Count (Heatmap)"};
@@ -3210,7 +3204,7 @@ void FRunningImGui()
             {
                 if (GEditor.rendererMode == ERendererMode::Raster)
                     changed = true;
-                else if (GEditor.rendererMode == ERendererMode::PathTracer)
+                else if (GEditor.rendererMode == ERendererMode::ProgressivePT)
                     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
         }
@@ -3220,7 +3214,7 @@ void FRunningImGui()
             ImGui::SeparatorText(PSI_ADJUST " Material Debug");
             if (ImBitmaskOptionPicker(GEditor.rendererConfig.materialFlags, items, values, true /* solo */))
             {
-                if (GEditor.rendererMode == ERendererMode::PathTracer)
+                if (GEditor.rendererMode == ERendererMode::ProgressivePT)
                     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
         }
@@ -3266,7 +3260,7 @@ void FRendering(RendererOutputs const& outputs)
         uint32_t completedSamples = GEditor.shaderGlobals.ptAccumulatedFrames;
         float fraction = 0.0f;
         char overlay[128];
-        const char* unitStr = GEditor.rendererMode == ERendererMode::PathTracer ? "samples" : "frames";
+        const char* unitStr = GEditor.rendererMode == ERendererMode::ProgressivePT ? "samples" : "frames";
 
         if (GEditor.renderTask.targetTimeSeconds > 0 && GEditor.renderTask.targetSamples > 0)
         {

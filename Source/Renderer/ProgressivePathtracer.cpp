@@ -3,10 +3,10 @@
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <algorithm>
 #include "GPUScene.hpp"
-#include "Pathtracer.hpp"
+#include "ProgressivePathtracer.hpp"
 
 uint32_t PackCompileOptions(PTSampler sampler, bool forceTextureLOD0, LightSampler lightSamplerMode,
-                            bool energyCompensation, bool MaterialBasic)
+                            bool energyCompensation)
 {
     uint32_t options = 0u;
     options |= sampler == PTSampler::PCG ? to_integer(PTCompileOptionsBits::SamplerPCG)
@@ -14,11 +14,10 @@ uint32_t PackCompileOptions(PTSampler sampler, bool forceTextureLOD0, LightSampl
     options |= forceTextureLOD0 ? to_integer(PTCompileOptionsBits::ForceTextureLOD0) : 0u;
     options |= lightSamplerMode == LightSampler::Uniform ? to_integer(PTCompileOptionsBits::LightSamplerUniform) : 0u;
     options |= energyCompensation ? to_integer(PTCompileOptionsBits::EnergyCompensation) : 0u;
-    options |= MaterialBasic ? to_integer(PTCompileOptionsBits::MaterialBasic) : 0u;
     return options;
 }
 
-void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
+void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
                                 RendererConfig const& cfg, RendererOutputs& out)
 {
     CHECK(renderer);
@@ -105,7 +104,7 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
                                                }});
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
-    String tracePassName = fmt::format("Trace {} {}", shaderExecutionReordering ? "SER" : "Compute", cfg.ptMaterialBasic ? "Basic" : "Full");
+    String tracePassName = fmt::format("Trace {}", shaderExecutionReordering ? "SER" : "Compute");
     renderer->CreatePass(
         tracePassName.c_str(), RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -113,33 +112,35 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
             const auto pipelineStage = shaderExecutionReordering ? RHIPipelineStageBits::RayTracingShader
                                                                  : RHIPipelineStageBits::ComputeShader;
             r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
-            r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "AS");
-            const uint ptCompileOptions =
+            r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "TLAS");
+            const uint kCompileOptions =
                 PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode,
-                                   cfg.energyCompensation, cfg.ptMaterialBasic);
-            const auto shader = PathsResolve(!shaderExecutionReordering ? "Data/Shaders/ERTPathTracer.spv"
-                                                                        : "Data/Shaders/ERTPathTracer_SER.spv");
+                                   cfg.energyCompensation);
+            const auto shader = PathsResolve(!shaderExecutionReordering ? "Data/Shaders/EPathTracingProgressive.spv"
+                                                                        : "Data/Shaders/EPathTracingProgressive_SER.spv");
             if (shaderExecutionReordering)
             {
                 r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,
-                              AsBytes(AsSpan(ptCompileOptions)));
+                              AsBytes(AsSpan(kCompileOptions)));
             }
             else
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", shader,
-                              AsBytes(AsSpan(ptCompileOptions)));
+                              AsBytes(AsSpan(kCompileOptions)));
             }
 
-            r->BindBufferStorageRead(self, PrimitiveBuffer, pipelineStage, "primitives");
-            r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, pipelineStage, "dynamicPrimitives");
-            r->BindBufferStorageRead(self, InstanceBuffer, pipelineStage, "instances");
-            r->BindBufferStorageRead(self, MaterialBuffer, pipelineStage, "materials");
-            r->BindBufferStorageRead(self, LightBuffer, pipelineStage, "lights");
+            r->BindBufferStorageRead(self, PrimitiveBuffer, pipelineStage, "gPrimBuffer");
+            r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, pipelineStage, "gDynamicPrimBuffer");
+            r->BindBufferStorageRead(self, InstanceBuffer, pipelineStage, "gInstances");
+            r->BindBufferStorageRead(self, MaterialBuffer, pipelineStage, "gMaterials");
+            r->BindBufferStorageRead(self, LightBuffer, pipelineStage, "gLights");
+            // Sampler
+            r->BindBufferStorageRead(self, SobolMatricesBuffer, pipelineStage, "gSobolMatrices");
+            r->BindTextureSampler(self, TexSampler, "gTexSampler");
+            // Light BVH
             r->BindBufferStorageRead(self, LightBVHNodeBuffer, pipelineStage, "lightBVHNodes");
             r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, pipelineStage, "lightBVHLightIndices");
             r->BindBufferStorageRead(self, LightBVHBitmaskBuffer, pipelineStage, "lightBVHBitmasks");
-            r->BindBufferStorageRead(self, SobolMatricesBuffer, pipelineStage, "sobolMatrices");
-            r->BindTextureSampler(self, TexSampler, "textureSampler");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
             // Accumulation UAVs
             r->BindTextureUAV(

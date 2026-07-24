@@ -822,8 +822,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                   RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
                                                      .range = RHITextureSubresourceRange::Create()});
-                r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());
-                r->BindDescriptorSet(self, "textures3D", gpu.textures3D->GetDescriptorSetLayout());
+                r->BindDescriptorSet(self, "textures", gpu.textures2D->GetDescriptorSetLayout());                
                 r->BindTextureUAV(self, DiffuseBuffer, "diffuseOutput", RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create()});
@@ -836,7 +835,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             {
                 r->CmdSetPipeline(self, cmd);
                 r->CmdBindDescriptorSet(self, cmd, "textures", gpu.textures2D->GetDescriptorSet());
-                r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu.textures3D->GetDescriptorSet());
                 r->CmdDispatch(self, cmd, {w, h, 1});
             });
         BuildRasterFeature(effectCtx, RasterInjectionPoint::AfterLighting, features);

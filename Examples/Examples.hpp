@@ -41,7 +41,7 @@ using namespace RenderCore;
 enum class ExampleRenderer
 {
     Raster,
-    PathTracer,
+    ProgressivePT,
 };
 
 // ExampleVulkanContext members, in structured-binding order: [renderer, app, device, surface, swapchain, presenter]
