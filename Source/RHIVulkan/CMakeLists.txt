@@ -18,7 +18,7 @@ if (ANDROID)
     FetchContent_Declare(
         VulkanHeaders
         GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers.git
-        GIT_TAG v1.3.280
+        GIT_TAG v1.4.350
         GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(VulkanHeaders)
