@@ -23,9 +23,14 @@ if (FOUNDATION_WITH_JOLT_EXAMPLES)
     set(CPP_RTTI_ENABLED OFF CACHE BOOL "" FORCE)
 
     FetchContent_MakeAvailable(JoltPhysics)
-    
+
+    add_library(Example_Jolt STATIC
+        Jolt/JoltPhysicsWorld.cpp
+        Jolt/JoltGPUScene.cpp)
+    target_include_directories(Example_Jolt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${JoltPhysics_SOURCE_DIR}/..)
+    target_link_libraries(Example_Jolt PUBLIC Example_Common Jolt Example_Renderer)
+
     add_example(ExampleRenderer_JoltPhysics "JoltPhysics.cpp")
-    target_include_directories(ExampleRenderer_JoltPhysics PUBLIC ${JoltPhysics_SOURCE_DIR}/..)
-    target_link_libraries(ExampleRenderer_JoltPhysics PUBLIC Example_Common Jolt Example_Renderer)
+    target_link_libraries(ExampleRenderer_JoltPhysics PUBLIC Example_Jolt)
     add_dependencies(ExampleRenderer_JoltPhysics Foundation_Shaders Editor_Data Shader_PostprocessBasic Shader_DynamicGerstner)
 endif()

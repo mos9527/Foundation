@@ -1,169 +1,34 @@
-#include <Jolt/Jolt.h>
-#include <Jolt/RegisterTypes.h>
-#include <Jolt/Core/Factory.h>
-#include <Jolt/Core/TempAllocator.h>
-#include <Jolt/Physics/PhysicsSettings.h>
-#include <Jolt/Physics/PhysicsSystem.h>
-#include <Jolt/Physics/Collision/Shape/BoxShape.h>
-#include <Jolt/Physics/Body/BodyCreationSettings.h>
-#include <Jolt/Physics/Body/BodyActivationListener.h>
-
-#include <algorithm>
-#include <iostream>
-#include <vector>
-#include <thread>
+// Box Galore(tm)
+// Example demonstrating integartion with Jolt Physics!
 #include "Examples.hpp"
-#include "Jolt/JoltCommon.hpp"
+#include "Jolt/JoltGPUScene.hpp"
 
 #include <Renderer/Mesh.hpp>
 #include <Renderer/Rasterizer.hpp>
 #include <Renderer/Pathtracer.hpp>
+#include <cmath>
 
-JPH_SUPPRESS_WARNINGS
-using namespace JPH;
-using namespace JPH::literals;
-using namespace std;
-
-namespace Layers
-{
-    static constexpr ObjectLayer NON_MOVING = 0;
-    static constexpr ObjectLayer MOVING = 1;
-    static constexpr ObjectLayer NUM_LAYERS = 2;
-}
-
-class ObjectLayerPairFilterImpl : public ObjectLayerPairFilter
-{
-public:
-    virtual bool ShouldCollide(ObjectLayer inObject1, ObjectLayer inObject2) const override
-    {
-        switch (inObject1)
-        {
-        case Layers::NON_MOVING:
-            return inObject2 == Layers::MOVING; 
-        case Layers::MOVING:
-            return true; 
-        default:
-            return false;
-        }
-    }
-};
-
-namespace BroadPhaseLayers
-{
-    static constexpr BroadPhaseLayer NON_MOVING(0);
-    static constexpr BroadPhaseLayer MOVING(1);
-    static constexpr uint NUM_LAYERS(2);
-}
-
-class BPLayerInterfaceImpl final : public BroadPhaseLayerInterface
-{
-public:
-    BPLayerInterfaceImpl()
-    {
-        mObjectToBroadPhase[Layers::NON_MOVING] = BroadPhaseLayers::NON_MOVING;
-        mObjectToBroadPhase[Layers::MOVING] = BroadPhaseLayers::MOVING;
-    }
-    virtual uint GetNumBroadPhaseLayers() const override { return BroadPhaseLayers::NUM_LAYERS; }
-    virtual BroadPhaseLayer GetBroadPhaseLayer(ObjectLayer inLayer) const override { return mObjectToBroadPhase[inLayer]; }
-#if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
-    virtual const char* GetBroadPhaseLayerName(BroadPhaseLayer inLayer) const override
-    {
-        switch ((BroadPhaseLayer::Type)inLayer)
-        {
-        case (BroadPhaseLayer::Type)BroadPhaseLayers::NON_MOVING: return "NON_MOVING";
-        case (BroadPhaseLayer::Type)BroadPhaseLayers::MOVING:     return "MOVING";
-        default:                                                  return "INVALID";
-        }
-    }
-#endif
-private:
-    BroadPhaseLayer mObjectToBroadPhase[Layers::NUM_LAYERS];
-};
-
-class ObjectVsBroadPhaseLayerFilterImpl : public ObjectVsBroadPhaseLayerFilter
-{
-public:
-    virtual bool ShouldCollide(ObjectLayer inLayer1, BroadPhaseLayer inLayer2) const override
-    {
-        switch (inLayer1)
-        {
-        case Layers::NON_MOVING:
-            return inLayer2 == BroadPhaseLayers::MOVING;
-        case Layers::MOVING:
-            return true;
-        default:
-            return false;
-        }
-    }
-};
+using namespace Foundation::Examples;
 
 namespace
 {
     constexpr float kGroundExtent = 100.0f;
     constexpr float kGroundY = 0.0f;
-    
+    constexpr uint32_t kMaxBodies = 1024;
 
-    struct SimulationState
+    PhysicsRayDesc PointerRay(float2 pointer, uint2 extent, FExampleOrbitCamera const& camera)
     {
-        GeometryHandle ground;
-        GeometryHandle box;
-        std::vector<BodyID> bodies;
-        BodyInterface* bodyInterface;
-    };
-
-    void CommitDemoScene(GPUScene& gpu, SimulationState const& state, RendererUBO& ubo)
-    {
-        uint32_t const numInstances = 1 + (uint32_t)state.bodies.size();
-        auto tables = gpu.BeginScene(numInstances, 2, 2);
-        
-        tables.instances[0] = GSInstance{
-            .transform = float3(0, 0, 0),
-            .rotation = quat(0, 0, 0, 1),
-            .scale = float3(1, 1, 1),
-            .materialIndex = 0,
-            .resourceIndex = state.ground.index,
-            .type = kGSInstanceTypeMesh,
+        float const ndcX = pointer.x / static_cast<float>(extent.x) * 2.0f - 1.0f;
+        float const ndcY = (1.0f - pointer.y / static_cast<float>(extent.y)) * 2.0f - 1.0f;
+        mat4 const invVP = inverse(camera.proj * camera.view);
+        vec4 target = invVP * vec4(ndcX, ndcY, 1e-5f, 1.0f);
+        target /= target.w;
+        return PhysicsRayDesc{
+            .origin = camera.position,
+            .direction = normalize(vec3(target) - camera.position),
+            .maxDistance = 1000.0f,
+            .layerMask = 1u << kPhysicsLayerMoving,
         };
-
-        for (size_t i = 0; i < state.bodies.size(); ++i)
-        {
-            RVec3 pos = state.bodyInterface->GetCenterOfMassPosition(state.bodies[i]);
-            Quat rot = state.bodyInterface->GetRotation(state.bodies[i]);
-
-            tables.instances[1 + i] = GSInstance{
-                .transform = float3(pos.GetX(), pos.GetY(), pos.GetZ()),
-                .rotation = quat(rot.GetX(), rot.GetY(), rot.GetZ(), rot.GetW()),
-                .scale = float3(1, 1, 1),
-                .materialIndex = 1,
-                .resourceIndex = state.box.index,
-                .type = kGSInstanceTypeMesh,
-            };
-        }
-
-        tables.materials[0] = GSMaterial{};
-        tables.materials[0].baseColorFactor = float4(0.8f, 0.8f, 0.8f, 1.0f);
-        tables.materials[0].metallicFactor = 0.0f;
-        tables.materials[0].roughnessFactor = 0.9f;
-        tables.materials[0].ior = 1.5f;
-
-        tables.materials[1] = GSMaterial{};
-        tables.materials[1].baseColorFactor = float4(0.2f, 0.6f, 0.9f, 1.0f);
-        tables.materials[1].metallicFactor = 0.0f;
-        tables.materials[1].roughnessFactor = 0.5f;
-        tables.materials[1].ior = 1.5f;
-
-        tables.lights[0] = GSLight{
-            .flags = kGSLightTypeEnvironment,
-            .color = float3(0.45f, 0.55f, 0.7f),
-            .power = 1.0f,
-        };
-        tables.lights[1] = GSLight{.flags = kGSLightTypeDirectional | to_integer(GSLightFlagsBits::UseShadow),
-                                   .color = float3(1.0f, 0.96f, 0.9f),
-                                   .power = 2.0f,            
-                                   .direction = float3(0.0f, -1.0f, 0.0f),
-                                   .params = float4(.05f, 0.0f, 0.0f, 0.0f)};
-        gpu.EndScene(tables);
-        gpu.UpdateUBO(ubo);
     }
 
     void RebuildGraph(ExampleVulkanContext& ctx, RendererUBO& ubo, GPUScene& gpu, RendererConfig& cfg,
@@ -183,178 +48,239 @@ namespace
         RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
         ctx.renderer->EndSetup();
     }
-}
+} // namespace
 
 int main(int argc, char** argv)
 {
-    RegisterDefaultAllocator();
-    Factory::sInstance = new Factory();
-    RegisterTypes();
-
-    TempAllocatorImpl temp_allocator(10 * 1024 * 1024);
-    
-    const uint cMaxBodies = 1024;
-    const uint cNumBodyMutexes = 0;
-    const uint cMaxBodyPairs = 1024;
-    const uint cMaxContactConstraints = 1024;
-
-    BPLayerInterfaceImpl broad_phase_layer_interface;
-    ObjectVsBroadPhaseLayerFilterImpl object_vs_broadphase_layer_filter;
-    ObjectLayerPairFilterImpl object_vs_object_layer_filter;
-
-    PhysicsSystem physics_system;
-    physics_system.Init(cMaxBodies, cNumBodyMutexes, cMaxBodyPairs, cMaxContactConstraints, 
-                        broad_phase_layer_interface, object_vs_broadphase_layer_filter, object_vs_object_layer_filter);
-
-    BodyInterface& body_interface = physics_system.GetBodyInterface();
-    
-    BoxShapeSettings floor_shape_settings(Vec3(50.0f, 1.0f, 50.0f));
-    floor_shape_settings.SetEmbedded();
-    ShapeRefC floor_shape = floor_shape_settings.Create().Get();
-    BodyCreationSettings floor_settings(floor_shape, RVec3(0.0_r, -1.0_r, 0.0_r), Quat::sIdentity(), EMotionType::Static, Layers::NON_MOVING);
-    Body* floor = body_interface.CreateBody(floor_settings);
-    body_interface.AddBody(floor->GetID(), EActivation::DontActivate);
-
-    std::vector<BodyID> box_bodies;
-    BoxShapeSettings box_shape_settings(Vec3(0.5f, 0.5f, 0.5f));
-    box_shape_settings.SetEmbedded();
-    ShapeRefC box_shape = box_shape_settings.Create().Get();
-
-    for (int x = 0; x < 5; ++x) {
-        for (int y = 0; y < 10; ++y) {
-            for (int z = 0; z < 5; ++z) {
-                BodyCreationSettings box_settings(box_shape, RVec3(x * 1.5f - 3.0f, y * 1.5f + 5.0f, z * 1.5f - 3.0f), Quat::sIdentity(), EMotionType::Dynamic, Layers::MOVING);
-                BodyID box_id = body_interface.CreateAndAddBody(box_settings, EActivation::Activate);
-                box_bodies.push_back(box_id);
-            }
-        }
-    }
-    physics_system.OptimizeBroadPhase();
-
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("GPUScene Physics Jolt"), 1280, 720,
                                           Examples_SDLWindowFlagsVulkan);
     auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});
-    Foundation::Examples::FoundationJoltJobSystem job_system(ctx.jobs.get(), cMaxPhysicsJobs, cMaxPhysicsBarriers);
-
-    GPUSceneDesc desc{};
-    desc.primitiveBudget = 64u * 1024u;
-    desc.dynamicGeometryBudget = 256u * 1024u;
-    desc.dynamicStagingBudget = 256u * 1024u;
-    desc.instanceBudget = cMaxBodies * 2;
-    desc.materialBudget = 8;
-    desc.lightBudget = 8;
-    desc.geometryBudget = 8;
-    desc.tlasInstanceBudget = cMaxBodies * 2;
-    GPUScene gpu(ctx.device.Get(), ctx.jobs.get(), GLOBAL_ALLOC, desc);
-    
-    SimulationState state;
-    state.bodies = box_bodies;
-    state.bodyInterface = &body_interface;
 
     {
-        FImportedMesh groundMesh = Examples_MakePlaneMesh(kGroundExtent, kGroundY, GLOBAL_ALLOC);
-        groundMesh.Optimize();
-        groundMesh.ClusterizeDAG();
-        gpu.Upload(groundMesh, state.ground);
+        JoltGPUSceneDesc desc{};
+        desc.physics.maxBodies = kMaxBodies;
+        desc.gpu.primitiveBudget = 64u * 1024u;
+        desc.gpu.dynamicGeometryBudget = 256u * 1024u;
+        desc.gpu.dynamicStagingBudget = 256u * 1024u;
+        desc.gpu.instanceBudget = kMaxBodies * 2;
+        desc.gpu.materialBudget = 8;
+        desc.gpu.lightBudget = 8;
+        desc.gpu.geometryBudget = 8;
+        desc.gpu.tlasInstanceBudget = kMaxBodies * 2;
+        JoltGPUScene scene(ctx.device.Get(), ctx.jobs.get(), desc);
 
-        FImportedMesh boxMesh = Examples_MakeBoxMesh(1.0f, GLOBAL_ALLOC);
-        boxMesh.Optimize();
-        boxMesh.ClusterizeDAG();
-        gpu.Upload(boxMesh, state.box);
-        gpu.Join();
-    }
+        PhysicsShapeHandle floorShape{};
+        PhysicsShapeHandle boxShape{};
+        CHECK(scene.CreateShape(
+                  PhysicsShapeDesc{.type = PhysicsShapeType::Box, .halfExtent = float3(50.0f, 1.0f, 50.0f)},
+                  floorShape) == PhysicsStatus::Ok);
+        CHECK(scene.CreateShape(
+                  PhysicsShapeDesc{.type = PhysicsShapeType::Box, .halfExtent = float3(0.5f, 0.5f, 0.5f)},
+                  boxShape) == PhysicsStatus::Ok);
 
-    RendererUBO ubo{};
-    RendererConfig cfg{.cullFlags{CullFlagsBits::Frustum | CullFlagsBits::Backface}};
-    if (!ctx.device->GetCapabilities().raytracingInline)
-        cfg.viewFlags &= ~ViewFlagsBits::EnableRasterRTShadows;
-
-    FExampleOrbitCamera camera{.center = {0.0f, 5.0f, 0.0f},
-                               .radius = 20.0f,
-                               .rot = normalize(angleAxis(radians(-20.0f), float3(1, 0, 0))),
-                               .zNear = 0.01f,
-                               .fovY = radians(45.0f)};
-    RendererOutputs outputs{};
-    ExampleInputState input{};
-    ExampleFpsCounter fps;
-    float paused = 0.0f;
-    ExampleRenderer renderer = ExampleRenderer::PathTracer;
-    uint64_t t0 = SDL_GetTicksNS();
-    float lastClickTime = -1.0f;
-    const float kShootIntervalMS = 250;
-    while (true)
-    {
-        uint64_t t1 = SDL_GetTicksNS();
-        float dt = static_cast<float>(t1 - t0) / 1e9f;
-        t0 = t1;
-        Examples_BeginFrameInput(input);
-        if (Examples_PollEvents(window, ctx, input))
-            break;
-            
-        bool clicked = input.pointerDown && !input.mouseCapturedByHud && (t1 - lastClickTime > kShootIntervalMS * 1e6f);
-
-        if (clicked && box_bodies.size() < cMaxBodies / 2 /* reserve.. */)
+        GeometryHandle groundGeometry{};
+        GeometryHandle boxGeometry{};
         {
-            lastClickTime = t1;
-            float ndcX = (input.clickPosition.x / (float)ctx.renderer->GetSwapchainExtent().x) * 2.0f - 1.0f;
-            float ndcY = (1.0f - input.clickPosition.y / (float)ctx.renderer->GetSwapchainExtent().y) * 2.0f - 1.0f;
-            mat4 invVP = inverse(camera.proj * camera.view);
-            vec4 target = invVP * vec4(ndcX,ndcY, 1e-5f, 1.0f);
-            target /= target.w;
-            vec3 dir = normalize(vec3(target) - camera.position);
-            
-            BodyCreationSettings proj_settings(box_shape, RVec3(camera.position.x, camera.position.y, camera.position.z), Quat::sIdentity(), EMotionType::Dynamic, Layers::MOVING);
-            BodyID proj_id = body_interface.CreateAndAddBody(proj_settings, EActivation::Activate);
-            body_interface.SetLinearVelocity(proj_id, Vec3(dir.x, dir.y, dir.z) * 25.0f);
-            
-            box_bodies.push_back(proj_id);
-            state.bodies.push_back(proj_id);
+            FImportedMesh groundMesh = Examples_MakePlaneMesh(kGroundExtent, kGroundY, GLOBAL_ALLOC);
+            groundMesh.Optimize();
+            groundMesh.ClusterizeDAG();
+            CHECK(scene.Upload(groundMesh, groundGeometry) == GPUScene::Result::Ready);
+
+            FImportedMesh boxMesh = Examples_MakeBoxMesh(1.0f, GLOBAL_ALLOC);
+            boxMesh.Optimize();
+            boxMesh.ClusterizeDAG();
+            CHECK(scene.Upload(boxMesh, boxGeometry) == GPUScene::Result::Ready);
+            scene.Join();
         }
 
-        if (input.wantResizeOrRebuild)
+        GSMaterial groundMaterial{};
+        groundMaterial.baseColorFactor = float4(0.8f, 0.8f, 0.8f, 1.0f);
+        groundMaterial.metallicFactor = 0.0f;
+        groundMaterial.roughnessFactor = 0.9f;
+        groundMaterial.ior = 1.5f;
+        GPUSceneMaterialHandle groundMaterialHandle{};
+        CHECK(scene.CreateMaterial(groundMaterial, groundMaterialHandle) == PhysicsStatus::Ok);
+
+        GSMaterial boxMaterial{};
+        boxMaterial.baseColorFactor = float4(0.2f, 0.6f, 0.9f, 1.0f);
+        boxMaterial.metallicFactor = 0.0f;
+        boxMaterial.roughnessFactor = 0.5f;
+        boxMaterial.ior = 1.5f;
+        GPUSceneMaterialHandle boxMaterialHandle{};
+        CHECK(scene.CreateMaterial(boxMaterial, boxMaterialHandle) == PhysicsStatus::Ok);
+
+        GSMaterial heldMaterial = boxMaterial;
+        heldMaterial.baseColorFactor = float4(1.0f, 0.25f, 0.08f, 1.0f);
+        heldMaterial.emissiveFactor = float3(0.2f, 0.02f, 0.0f);
+        GPUSceneMaterialHandle heldMaterialHandle{};
+        CHECK(scene.CreateMaterial(heldMaterial, heldMaterialHandle) == PhysicsStatus::Ok);
+
+        GPUSceneLightHandle environmentLight{};
+        CHECK(scene.CreateLight(GSLight{
+                                    .flags = kGSLightTypeEnvironment,
+                                    .color = float3(0.45f, 0.55f, 0.7f),
+                                    .power = 1.0f,
+                                },
+                                environmentLight) == PhysicsStatus::Ok);
+        GPUSceneLightHandle directionalLight{};
+        CHECK(scene.CreateLight(GSLight{.flags = kGSLightTypeDirectional | to_integer(GSLightFlagsBits::UseShadow),
+                                        .color = float3(1.0f, 0.96f, 0.9f),
+                                        .power = 2.0f,
+                                        .direction = float3(0.0f, -1.0f, 0.0f),
+                                        .params = float4(.05f, 0.0f, 0.0f, 0.0f)},
+                                directionalLight) == PhysicsStatus::Ok);
+
+        PhysicsBodyHandle floorBody{};
+        CHECK(scene.Spawn(PhysicsBodyDesc{.shape = floorShape,
+                                          .pose = {.position = float3(0.0f, -1.0f, 0.0f)},
+                                          .motion = PhysicsMotionType::Static,
+                                          .layer = kPhysicsLayerNonMoving,
+                                          .activation = PhysicsActivation::DontActivate},
+                          PhysicsVisualDesc{.geometry = groundGeometry,
+                                            .material = groundMaterialHandle,
+                                            .localPose = {.position = float3(0.0f, 1.0f, 0.0f)}},
+                          floorBody) == PhysicsStatus::Ok);
+
+        for (int x = 0; x < 5; ++x)
         {
-            input.wantResizeOrRebuild = false;
-            RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, renderer);
+            for (int y = 0; y < 10; ++y)
+            {
+                for (int z = 0; z < 5; ++z)
+                {
+                    PhysicsBodyHandle body{};
+                    CHECK(scene.Spawn(PhysicsBodyDesc{.shape = boxShape,
+                                                      .pose = {.position = float3(x * 1.5f - 3.0f, y * 1.5f + 5.0f,
+                                                                                  z * 1.5f - 3.0f)},
+                                                      .motion = PhysicsMotionType::Dynamic,
+                                                      .layer = kPhysicsLayerMoving},
+                                      PhysicsVisualDesc{.geometry = boxGeometry, .material = boxMaterialHandle},
+                                      body) == PhysicsStatus::Ok);
+                }
+            }
         }
 
-        if (paused < 0.5f || clicked)
+        RendererUBO ubo{};
+        RendererConfig cfg{.cullFlags{CullFlagsBits::Frustum | CullFlagsBits::Backface}};
+        if (!ctx.device->GetCapabilities().raytracingInline)
+            cfg.viewFlags &= ~ViewFlagsBits::EnableRasterRTShadows;
+
+        FExampleOrbitCamera camera{.center = {0.0f, 5.0f, 0.0f},
+                                   .radius = 20.0f,
+                                   .rot = normalize(angleAxis(radians(-20.0f), float3(1, 0, 0))),
+                                   .zNear = 0.01f,
+                                   .fovY = radians(45.0f)};
+        RendererOutputs outputs{};
+        ExampleInputState input{};
+        ExampleFpsCounter fps;
+        float paused = 0.0f;
+        ExampleRenderer renderer = ExampleRenderer::PathTracer;
+        uint64_t t0 = SDL_GetTicksNS();
+        PhysicsBodyHandle heldBody{};
+        PhysicsBodyPose heldPose{};
+        float3 grabOffset{};
+        float grabDistance = 0.0f;
+        float3 previousGrabTarget{};
+        float3 releaseVelocity{};
+        uint64_t lastDragMoveTime = 0;
+        bool wasPointerDown = false;
+        while (true)
         {
-            physics_system.Update(std::min(dt, 1/60.0f), 1, &temp_allocator, &job_system);
-            ubo.ptAccumulatedFrames = 0u;
+            uint64_t t1 = SDL_GetTicksNS();
+            float dt = static_cast<float>(t1 - t0) / 1e9f;
+            t0 = t1;
+            Examples_BeginFrameInput(input);
+            if (Examples_PollEvents(window, ctx, input))
+                break;
+
+            bool const pointerPressed = input.pointerDown && !wasPointerDown && !input.mouseCapturedByHud;
+            bool const pointerReleased = !input.pointerDown && wasPointerDown;
+            if (pointerReleased && heldBody.IsValid())
+            {
+                // Release with inertia based on velocity
+                float const idleSeconds = static_cast<float>(t1 - lastDragMoveTime) / 1e9f;
+                float const releaseScale = std::exp(-8.0f * idleSeconds);
+                CHECK(scene.SetLinearVelocity(heldBody, releaseVelocity * releaseScale) == PhysicsStatus::Ok);
+                CHECK(scene.SetObjectMaterial(heldBody, boxMaterialHandle) == PhysicsStatus::Ok);
+                heldBody = {};
+            }
+
+            if (pointerPressed)
+            {
+                PhysicsRayDesc const ray = PointerRay(input.clickPosition, ctx.renderer->GetSwapchainExtent(), camera);
+                PhysicsRayHit hit{};
+                if (scene.RayCast(ray, hit) == PhysicsStatus::Ok)
+                {
+                    heldBody = hit.body;
+                    CHECK(scene.GetBodyPose(heldBody, heldPose) == PhysicsStatus::Ok);
+                    grabDistance = hit.distance;
+                    grabOffset = heldPose.position - hit.position;
+                    previousGrabTarget = heldPose.position;
+                    releaseVelocity = {};
+                    lastDragMoveTime = t1;
+                    CHECK(scene.SetObjectMaterial(heldBody, heldMaterialHandle) == PhysicsStatus::Ok);
+                }
+            }
+            // No camera movements when held
+            if (heldBody.IsValid())
+                input.orbitDelta = {};
+            wasPointerDown = input.pointerDown;
+
+            if (input.wantResizeOrRebuild)
+            {
+                input.wantResizeOrRebuild = false;
+                RebuildGraph(ctx, ubo, scene.GetGPUScene(), cfg, outputs, input, renderer);
+            }
+
+            if (paused < 0.5f || heldBody.IsValid())
+            {
+                CHECK(scene.Step(std::min(dt, 1.0f / 60.0f)) == PhysicsStatus::Ok);
+                ubo.ptAccumulatedFrames = 0u;
+            }
+            else
+            {
+                ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
+            }
+
+            if (heldBody.IsValid() && input.pointerDown)
+            {
+                PhysicsRayDesc const ray = PointerRay(input.pointerPosition, ctx.renderer->GetSwapchainExtent(), camera);
+                float3 const target = ray.origin + ray.direction * grabDistance + grabOffset;
+                float3 const targetDelta = target - previousGrabTarget;
+                if (dot(targetDelta, targetDelta) > 1e-8f)
+                {
+                    float const elapsed = std::max(static_cast<float>(t1 - lastDragMoveTime) / 1e9f, 1.0f / 240.0f);
+                    float3 instantVelocity = targetDelta / elapsed;
+                    float const speed = length(instantVelocity);
+                    constexpr float kMaxThrowSpeed = 30.0f;
+                    if (speed > kMaxThrowSpeed)
+                        instantVelocity *= kMaxThrowSpeed / speed;
+                    releaseVelocity = mix(releaseVelocity, instantVelocity, 0.5f);
+                    previousGrabTarget = target;
+                    lastDragMoveTime = t1;
+                }
+                heldPose.position = target;
+                CHECK(scene.SetBodyPose(heldBody, heldPose) == PhysicsStatus::Ok);
+                CHECK(scene.SetLinearVelocity(heldBody, releaseVelocity) == PhysicsStatus::Ok);
+            }
+
+            if (camera.Update(input, dt))
+                ubo.ptAccumulatedFrames = 0u;
+
+            Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
+            CHECK(scene.Commit(ubo) == PhysicsStatus::Ok);
+
+            GPUScene& gpu = scene.GetGPUScene();
+            Examples_Text(input,
+                          fmt::format("Jolt Physics | {:.0f} FPS | refit {} rebuild {}", fps.Update(),
+                                      gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount()));
+            Examples_Text(input, "Drag boxes | right-drag pan | pinch/wheel zoom | WASD move");
+            Examples_Slider(input, "Paused", paused, 0.0f, 1.0f, 1.0f, "");
+            if (Examples_RendererSwitchButton(input, renderer))
+                input.wantResizeOrRebuild = true;
+            Examples_NewFrame(window, ctx);
         }
-        else
-        {
-            ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
-        }
-
-        if (camera.Update(input, dt))
-            ubo.ptAccumulatedFrames = 0u;
-
-        Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
-        CommitDemoScene(gpu, state, ubo);
-
-        Examples_Text(input,
-                      fmt::format("Jolt Physics | {:.0f} FPS | refit {} rebuild {}", fps.Update(),
-                                  gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount()));
-        Examples_Text(input, FExampleOrbitCamera::kControlsText);
-        Examples_Slider(input, "Paused", paused, 0.0f, 1.0f, 1.0f, "");
-        if (Examples_RendererSwitchButton(input, renderer))
-            input.wantResizeOrRebuild = true;
-        Examples_NewFrame(window, ctx);
     }
 
     Examples_DestroyVulkan(window, ctx);
-    
-    body_interface.RemoveBody(floor->GetID());
-    body_interface.DestroyBody(floor->GetID());
-    for (auto id : box_bodies)
-    {
-        body_interface.RemoveBody(id);
-        body_interface.DestroyBody(id);
-    }
-    UnregisterTypes();
-    delete Factory::sInstance;
-    Factory::sInstance = nullptr;
-
     return 0;
 }
