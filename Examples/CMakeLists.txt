@@ -56,12 +56,4 @@ add_example(Example_CIEChromacity "CIEChromacity.cpp")
 target_link_libraries(Example_CIEChromacity PUBLIC Example_Common)
 add_dependencies(Example_CIEChromacity Shader_CIEChromacity)
 
-if (NOT ANDROID)
-    add_executable(Example_JobSystem "JobSystem.cpp")
-    target_link_libraries(Example_JobSystem PRIVATE Foundation_Core)
-    if (FOUNDATION_WITH_TESTS)
-        add_test(NAME JobSystemSmoke COMMAND Example_JobSystem)
-    endif()
-endif()
-
 add_subdirectory(Renderer)

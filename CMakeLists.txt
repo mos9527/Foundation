@@ -32,6 +32,16 @@ else ()
     set(TRACY_ENABLE OFF CACHE BOOL "" FORCE)
 endif()
 
+# Disable C++ exceptions for all targets
+if (MSVC)
+    string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    
+    add_compile_options(/EHs-c-)
+    add_compile_definitions(_HAS_EXCEPTIONS=0)
+else()
+    add_compile_options(-fno-exceptions)
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
     add_compile_options("/Zc:preprocessor")

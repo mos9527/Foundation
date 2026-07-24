@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <RenderCore/Presenter.hpp>
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Postprocess.hpp>
 #include <Renderer/Rasterizer.hpp>

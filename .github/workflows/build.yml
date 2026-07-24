@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  BUILD_TYPE: RelWithDebInfo
+  BUILD_TYPE: MinSizeRel
   VULKAN_SDK_VERSION: "1.4.350.0"
 
 jobs:
