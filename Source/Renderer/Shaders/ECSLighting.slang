@@ -134,9 +134,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         quat toLocal = quatRotateToZ(normalWS);
         float3 wo = toLocal.rotate(v);
 
-        PrincipledBSDF bsdf = PrincipledBSDF(baseColor, metallic, roughness, 1.5f, 1.0f, 0.0f, globalParams.energyCompensation != 0u, wo,
-                                             1.0f, 0.0f, float3(1.0f), globalParams.ggxLutEIndex, globalParams.ggxLutEavgIndex, globalParams.ggxLutEIORIndex, globalParams.ggxLutEIORavgIndex, globalParams.ggxLutEIORInvIndex, globalParams.ggxLutEIORInvavgIndex,
-                                             0.0f, 0.0f, float3(1.0f), globalParams.sheenLtcIndex);
+        BasicPBRBSDF bsdf = BasicPBRBSDF(baseColor, metallic, roughness);
 
         // TODO: Area lights. That's probably going to be ReSTIR DI if we'd want soft shadows from those...
         for (uint li = 0; li < globalParams.lights.count; li++) {

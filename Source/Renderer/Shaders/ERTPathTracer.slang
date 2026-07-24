@@ -582,10 +582,25 @@ struct DirectLightingState
 // Material helpers
 // vvvvv TODO More materials? Custom ones?
 //       One uber shader here is surely insufficent. Need to compile ad-hoc shaders _here_.
+bool UseBasicPBRMaterial()
+{
+    return (ptCompileOptions & uint32_t(PTCompileOptionsBits.MaterialBasic)) != 0u;
+}
+
 IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out float3 outBaseColor, bool isCurve = false, bool foldSubsurfaceToDiffuse = false)
 {
     GSInstance inst = LoadSceneInstance(payload.instance);
     GSMaterial material = LoadMaterial(inst.materialIndex);
+
+    if (UseBasicPBRMaterial())
+    {
+        float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
+        SampleBasicMaterials(material, hit.uv, hit.uvDX, hit.uvDY,
+                             baseColor4, normalTBN, pbrMetalRough, emissive4);
+        outBaseColor = baseColor4.xyz;
+        SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
+        return BasicPBRMaterial(baseColor4.xyz, pbrMetalRough.z, pbrMetalRough.y, emissive4.xyz);
+    }
 
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
     float2 anisotropyDirection;
@@ -633,6 +648,33 @@ float4 SampleMaterialTexture(uint textureIndex, float2 uv, float2 uvDX, float2 u
     if ((ptCompileOptions & uint32_t(PTCompileOptionsBits.ForceTextureLOD0)) != 0)
         return textures[NonUniformResourceIndex(textureIndex)].SampleLevel(textureSampler, uv, 0);
     return textures[NonUniformResourceIndex(textureIndex)].SampleGrad(textureSampler, uv, uvDX, uvDY);
+}
+
+void SampleBasicMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
+                          out float4 baseColor, out float4 normalTBN,
+                          out float4 pbrMetalRough, out float4 emissive)
+{
+    baseColor = material.baseColorFactor;
+    if (material.baseColorTexture != ~0u)
+        baseColor *= SampleMaterialTexture(material.baseColorTexture, uv, uvDX, uvDY);
+    if ((globalParams.dbgMaterialFlags & uint32_t(MaterialFlagsBits.DbgWhiteBaseColor)) != 0u)
+        baseColor = float4(1.0f, 1.0f, 1.0f, baseColor.a);
+
+    normalTBN = float4(0.0f, 0.0f, 1.0f, 0.0f);
+    if (material.normalTexture != ~0u)
+    {
+        float2 xy = (SampleMaterialTexture(material.normalTexture, uv, uvDX, uvDY).xy * 2.0f - 1.0f)
+                  * material.normalScale;
+        normalTBN.xyz = float3(xy, sqrt(saturate(1.0f - dot(xy, xy))));
+    }
+
+    pbrMetalRough = float4(1.0f, material.roughnessFactor, material.metallicFactor, 1.0f);
+    if (material.metallicRoughnessTexture != ~0u)
+        pbrMetalRough *= SampleMaterialTexture(material.metallicRoughnessTexture, uv, uvDX, uvDY);
+
+    emissive = float4(material.emissiveFactor, 0.0f);
+    if (material.emissiveTexture != ~0u)
+        emissive *= SampleMaterialTexture(material.emissiveTexture, uv, uvDX, uvDY);
 }
 
 void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
@@ -1637,10 +1679,11 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         // Local frame setup
         // Subsurface events are non-local. The closure picks the event
         // the integrator performs the scene query.
-        float pSampleSubsurface = material.ProbSampleSubsurface();
-        float pSampleSurface = material.ProbSampleSurface();
+        bool basicPBR = UseBasicPBRMaterial();
+        float pSampleSubsurface = basicPBR ? 0.0f : material.ProbSampleSubsurface();
+        float pSampleSurface = basicPBR ? 1.0f : material.ProbSampleSurface();
         pSampleSurface = max(pSampleSurface, EPS);
-        bool sampleSubsurface = rng.sample() < pSampleSubsurface;
+        bool sampleSubsurface = !basicPBR && rng.sample() < pSampleSubsurface;
         PathSample nextSample = PathSample();
         // TODO Volumetrics
         if (sampleSubsurface)
@@ -1734,13 +1777,26 @@ bool EvaluateOpacityAlphaTest<S : ISampler>(uint instance, uint primitive, float
     if (IsLightInstance(instance)) return false;
     GSInstance inst = LoadSceneInstance(instance);
     GSMaterial material = LoadMaterial(inst.materialIndex);
-    
+
     float opacity = material.baseColorFactor.a;
-    if (material.baseColorTexture != ~0u) {
-        float2 uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
+    bool sampleBaseColor = material.baseColorTexture != ~0u;
+    bool sampleTransmission = UseBasicPBRMaterial() && material.transmissionTexture != ~0u;
+    float2 uv = float2(0.0f);
+    if (sampleBaseColor || sampleTransmission)
+        uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
+    if (sampleBaseColor)
+    {
         opacity *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0).a;
     }
-    
+
+    if (UseBasicPBRMaterial())
+    {
+        float transmission = material.transmissionFactor;
+        if (sampleTransmission)
+            transmission *= textures[NonUniformResourceIndex(material.transmissionTexture)].SampleLevel(textureSampler, uv, 0).r;
+        opacity *= 1.0f - saturate(transmission);
+    }
+
     if (opacity == 1.0f) return false; // opaque, don't ignore
     return rng.sample() < 1.0f - opacity; // true if we should ignore the hit
 }

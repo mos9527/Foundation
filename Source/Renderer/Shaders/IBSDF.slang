@@ -1156,6 +1156,171 @@ public struct HairBSDF : IBSDF
     }
 };
 
+public struct BasicPBRBSDF : IBSDF {
+    float3 diffuseColor;
+    float3 F0;
+    TrowbridgeReitzDistribution mfDistrib;
+    float pDiffuse;
+    float pSpecular;
+    bool hasDiffuse;
+    bool hasSpecular;
+
+    public __init(float3 baseColor, float metallic, float roughness) {
+        baseColor = max(baseColor, float3(0.0f));
+        metallic = saturate(metallic);
+        this.diffuseColor = baseColor * (1.0f - metallic);
+        this.F0 = lerp(float3(0.04f), baseColor, metallic);
+
+        roughness = max(8e-3f, roughness);
+        float alpha = roughness * roughness;
+        this.mfDistrib = TrowbridgeReitzDistribution(alpha, alpha);
+
+        float diffuseWeight = MaxComponent(this.diffuseColor);
+        float specularWeight = MaxComponent(this.F0);
+        this.hasDiffuse = diffuseWeight > EPS;
+        this.hasSpecular = specularWeight > EPS;
+        float weightSum = diffuseWeight + specularWeight;
+        this.pDiffuse = weightSum > EPS ? diffuseWeight / weightSum : 0.0f;
+        this.pSpecular = weightSum > EPS ? specularWeight / weightSum : 0.0f;
+    }
+
+    float3 Fresnel(float3 wo, float3 wi) {
+        float3 wm = wo + wi;
+        if (LengthSquared(wm) <= EPS)
+            return F0;
+        return SchlickFresnel(F0, float3(1.0f), AbsDot(wo, normalize(wm)));
+    }
+
+    bool IsSpecularDirection(float3 wo, float3 wi) {
+        float3 wr = float3(-wo.x, -wo.y, wo.z);
+        return LengthSquared(wi - wr) <= 1e-6f;
+    }
+
+    float3 EvalSpecular(float3 wo, float3 wi) {
+        if (!SameHemisphere(wo, wi) || !hasSpecular)
+            return float3(0.0f);
+
+        float cosWo = AbsCosTheta(wo);
+        float cosWi = AbsCosTheta(wi);
+        if (cosWo < EPS || cosWi < EPS)
+            return float3(0.0f);
+
+        if (mfDistrib.EffectivelySmooth())
+            return IsSpecularDirection(wo, wi)
+                ? SchlickFresnel(F0, float3(1.0f), cosWo) / cosWi
+                : float3(0.0f);
+
+        float3 wmUnnormalized = wo + wi;
+        if (LengthSquared(wmUnnormalized) <= EPS)
+            return float3(0.0f);
+        float3 wm = normalize(wmUnnormalized);
+        float3 F = SchlickFresnel(F0, float3(1.0f), AbsDot(wo, wm));
+        return F * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
+    }
+
+    float SpecularPDF(float3 wo, float3 wi) {
+        if (!SameHemisphere(wo, wi) || !hasSpecular)
+            return 0.0f;
+        if (mfDistrib.EffectivelySmooth())
+            return IsSpecularDirection(wo, wi) ? 1.0f : 0.0f;
+
+        float3 wmUnnormalized = wo + wi;
+        if (LengthSquared(wmUnnormalized) <= EPS)
+            return 0.0f;
+        float3 wm = normalize(wmUnnormalized);
+        float denom = 4.0f * AbsDot(wo, wm);
+        return denom > EPS ? mfDistrib.PDF(wo, wm) / denom : 0.0f;
+    }
+
+    BSDFSample SampleSpecular(float3 wo, float2 u) {
+        if (!hasSpecular)
+            return BSDFSample();
+        if (mfDistrib.EffectivelySmooth()) {
+            float3 wi = float3(-wo.x, -wo.y, wo.z);
+            float cosWi = AbsCosTheta(wi);
+            if (cosWi < EPS)
+                return BSDFSample();
+            float3 f = SchlickFresnel(F0, float3(1.0f), AbsCosTheta(wo)) / cosWi;
+            return BSDFSample(f, wi, 1.0f, BxDFFlags::SpecularReflection);
+        }
+
+        float3 wm = mfDistrib.Sample_wm(wo, u);
+        float3 wi = Reflect(wo, wm);
+        if (!SameHemisphere(wo, wi))
+            return BSDFSample();
+        float pdf = SpecularPDF(wo, wi);
+        if (pdf < 1e-7f)
+            return BSDFSample();
+        return BSDFSample(EvalSpecular(wo, wi), wi, pdf, BxDFFlags::GlossyReflection);
+    }
+
+    public bool IsDirac() {
+        return !hasDiffuse && hasSpecular && mfDistrib.EffectivelySmooth();
+    }
+
+    public bool HasTransmission() {
+        return false;
+    }
+
+    public void f(float3 wo, float3 wi, TransportMode mode,
+                  out float3 fDiffuse, out float3 fSpecular) {
+        fDiffuse = float3(0.0f);
+        fSpecular = float3(0.0f);
+        if (!SameHemisphere(wo, wi))
+            return;
+        if (hasDiffuse)
+            fDiffuse = diffuseColor * (1.0f - Fresnel(wo, wi)) * InvPi;
+        if (hasSpecular)
+            fSpecular = EvalSpecular(wo, wi);
+    }
+
+    public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
+        float3 fDiffuse, fSpecular;
+        f(wo, wi, mode, fDiffuse, fSpecular);
+        return fDiffuse + fSpecular;
+    }
+
+    public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
+        if (!(flags & BxDFReflTransFlags::Reflection) || !SameHemisphere(wo, wi))
+            return 0.0f;
+        float pdf = 0.0f;
+        if (hasDiffuse)
+            pdf += pDiffuse * CosineHemispherePDF(AbsCosTheta(wi));
+        if (hasSpecular)
+            pdf += pSpecular * SpecularPDF(wo, wi);
+        return pdf;
+    }
+
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode,
+                               BxDFReflTransFlags flags, out AOVCategory category) {
+        category = AOVCategory::Diffuse;
+        if (!(flags & BxDFReflTransFlags::Reflection))
+            return BSDFSample();
+
+        BSDFSample sample;
+        if (hasSpecular && (!hasDiffuse || uc < pSpecular)) {
+            sample = SampleSpecular(wo, u);
+            category = AOVCategory::Specular;
+        } else if (hasDiffuse) {
+            float3 wi = SampleCosineHemisphere(u);
+            if (wo.z < 0.0f)
+                wi.z *= -1.0f;
+            sample = BSDFSample(diffuseColor * InvPi, wi,
+                                CosineHemispherePDF(AbsCosTheta(wi)),
+                                BxDFFlags::DiffuseReflection);
+        } else {
+            return BSDFSample();
+        }
+
+        if (!sample.IsValid())
+            return BSDFSample();
+        float pdf = PDF(wo, sample.wi, mode, flags);
+        if (pdf < 1e-7f)
+            return BSDFSample();
+        return BSDFSample(f(wo, sample.wi, mode), sample.wi, pdf, sample.flags);
+    }
+};
+
 public struct PrincipledBSDF : IBSDF {
     public bool HasTransmission() { return hasTrans; }
     // Lobe instances

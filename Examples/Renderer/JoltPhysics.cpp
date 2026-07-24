@@ -37,6 +37,7 @@ namespace
         Examples_ResetRenderer(ctx, RendererDesc{});
         ctx.renderer->BeginSetup();
         cfg.renderExtent = ctx.renderer->GetSwapchainExtent();
+        cfg.ptMaterialBasic = true;
         ubo.ptMaxBounces = 1u;
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);

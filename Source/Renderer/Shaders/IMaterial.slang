@@ -11,6 +11,39 @@ public interface IMaterial {
     public float3 Le(float3 wo);
 };
 
+public struct BasicPBRMaterial : IMaterial {
+    BasicPBRBSDF surface;
+    StubBSSRDF subsurface;
+    float3 emission;
+
+    public __init(float3 baseColor, float metallic, float roughness,
+                  float3 emission = float3(0.0f)) {
+        this.surface = BasicPBRBSDF(baseColor, metallic, roughness);
+        this.subsurface = StubBSSRDF();
+        this.emission = max(float3(0.0f), emission);
+    }
+
+    public IBSDF GetSurface() {
+        return surface;
+    }
+
+    public IBSSRDF GetSubsurface() {
+        return subsurface;
+    }
+
+    public float ProbSampleSurface() {
+        return 1.0f;
+    }
+
+    public float ProbSampleSubsurface() {
+        return 0.0f;
+    }
+
+    public float3 Le(float3 wo) {
+        return emission;
+    }
+};
+
 public struct PrincipledMaterial : IMaterial {
     PrincipledBSDF surface;
     DisneyBurleyBSSRDF subsurface;

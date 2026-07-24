@@ -3039,11 +3039,18 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
+            if (ImGui::Checkbox("Basic Material Model", &GEditor.rendererConfig.ptMaterialBasic))
+            {
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.state = FERunningEnter;
+            }
+            ImGui::BeginDisabled(GEditor.rendererConfig.ptMaterialBasic);
             if (ImGui::Checkbox("Energy Compensation", &GEditor.rendererConfig.energyCompensation))
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
+            ImGui::EndDisabled();
             if (ImGui::Checkbox("Primary Light Visibility", &GEditor.rendererConfig.ptPrimaryLightVisibility))
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;

@@ -6,7 +6,7 @@
 #include "Pathtracer.hpp"
 
 uint32_t PackCompileOptions(PTSampler sampler, bool forceTextureLOD0, LightSampler lightSamplerMode,
-                              bool energyCompensation)
+                            bool energyCompensation, bool MaterialBasic)
 {
     uint32_t options = 0u;
     options |= sampler == PTSampler::PCG ? to_integer(PTCompileOptionsBits::SamplerPCG)
@@ -14,6 +14,7 @@ uint32_t PackCompileOptions(PTSampler sampler, bool forceTextureLOD0, LightSampl
     options |= forceTextureLOD0 ? to_integer(PTCompileOptionsBits::ForceTextureLOD0) : 0u;
     options |= lightSamplerMode == LightSampler::Uniform ? to_integer(PTCompileOptionsBits::LightSamplerUniform) : 0u;
     options |= energyCompensation ? to_integer(PTCompileOptionsBits::EnergyCompensation) : 0u;
+    options |= MaterialBasic ? to_integer(PTCompileOptionsBits::MaterialBasic) : 0u;
     return options;
 }
 
@@ -104,10 +105,9 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
                                                }});
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
-    const char* passName = shaderExecutionReordering ? "Trace (SER)" : "Trace (Compute)";
-    LOG(Pathtracer, LogInfo, "{} will be used for integration", passName);
+    String tracePassName = fmt::format("Trace {} {}", shaderExecutionReordering ? "SER" : "Compute", cfg.ptMaterialBasic ? "Basic" : "Full");
     renderer->CreatePass(
-        passName, RHIDeviceQueueType::Graphics, 0u,
+        tracePassName.c_str(), RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             const auto pipelineStage = shaderExecutionReordering ? RHIPipelineStageBits::RayTracingShader
@@ -115,7 +115,8 @@ void BuildPathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, Render
             r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
             r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "AS");
             const uint ptCompileOptions =
-                PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode, cfg.energyCompensation);
+                PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode,
+                                   cfg.energyCompensation, cfg.ptMaterialBasic);
             const auto shader = PathsResolve(!shaderExecutionReordering ? "Data/Shaders/ERTPathTracer.spv"
                                                                         : "Data/Shaders/ERTPathTracer_SER.spv");
             if (shaderExecutionReordering)
