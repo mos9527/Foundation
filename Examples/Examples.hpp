@@ -28,15 +28,7 @@ void Examples_ReportFatalException();
 int Foundation_ExampleMain(int argc, char** argv);
 extern "C" int SDL_main(int argc, char** argv)
 {
-    try
-    {
-        return Foundation_ExampleMain(argc, argv);
-    }
-    catch (...)
-    {
-        Examples_ReportFatalException();
-        return 1;
-    }
+    return Foundation_ExampleMain(argc, argv);
 }
 #define main Foundation_ExampleMain
 #endif

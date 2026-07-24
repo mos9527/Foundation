@@ -127,10 +127,10 @@ namespace
     void* Examples_SDLAssetLoader(const char* relPath, size_t* outSize) { return SDL_LoadFile(relPath, outSize); }
 #endif
 
-    // Surface uncaught exceptions instead of dying with a bare SIGABRT. The
-    // renderer/PSO layer throws std::runtime_error on failure (missing shader,
-    // unsupported feature, etc.); this turns that into a visible prompt plus a
-    // logcat line on Android (and a message box elsewhere).
+    // Surface a fatal failure with a visible prompt instead of dying with a bare trap/abort.
+    // In no-except builds there is no exception object to unwrap; the underlying CHECK/LOG already
+    // printed the failure, so Examples_ReportFatalException just shows a generic box (and a logcat
+    // line on Android).
     void Examples_TerminateHandler()
     {
         Examples_ReportFatalException();
@@ -369,29 +369,10 @@ namespace
         {
         case SDL_EVENT_WINDOW_RESIZED:
         case SDL_EVENT_WINDOW_MAXIMIZED:
-        case SDL_EVENT_WINDOW_RESTORED:
-            try
-            {
-                input.wantResizeOrRebuild = true;
-                if (Examples_CreateSwapchain(window, ctx.swapchain.mFactory, ctx.surface, ctx.swapchain))
-                    ctx.renderer->SetSwapchain(ctx.swapchain), ctx.presenter->SetSwapchain(ctx.swapchain);
-            }
-            catch (std::exception const& e)
-            {
-                LOG(Examples, LogWarn, "Swapchain event recreation failed: {}", e.what());
-                try
-                {
-                    RHIDevice* device = ctx.swapchain.mFactory;
-                    ctx.swapchain.Reset();
-                    ctx.surface.Reset();
-                    if (Examples_CreateSwapchain(window, device, ctx.surface, ctx.swapchain))
-                        ctx.renderer->SetSwapchain(ctx.swapchain), ctx.presenter->SetSwapchain(ctx.swapchain);
-                }
-                catch (std::exception const& refreshError)
-                {
-                    LOG(Examples, LogWarn, "Swapchain event recreation deferred: {}", refreshError.what());
-                }
-            }
+        case SDL_EVENT_WINDOW_RESTORED:    
+            input.wantResizeOrRebuild = true;
+            if (Examples_CreateSwapchain(window, ctx.swapchain.mFactory, ctx.surface, ctx.swapchain))
+                ctx.renderer->SetSwapchain(ctx.swapchain), ctx.presenter->SetSwapchain(ctx.swapchain);
             break;
         case SDL_EVENT_KEY_DOWN:
             if (!event.key.repeat)
@@ -528,21 +509,11 @@ bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceSc
 
 void Examples_ReportFatalException()
 {
-    try
-    {
-        if (auto ep = std::current_exception())
-            std::rethrow_exception(ep);
-    }
-    catch (std::exception const& e)
-    {
-        LOG(Examples, LogError, "Unhandled exception: {}", e.what());
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example", e.what(), nullptr);
-    }
-    catch (...)
-    {
-        LOG(Examples, LogError, "Unhandled exception: unknown");
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example", "Unhandled exception", nullptr);
-    }
+    // No-except builds have no exception object to unwrap; the underlying CHECK/LOG already printed
+    // the failure before std::terminate/abort. Surface a generic prompt so the crash is visible.
+    LOG(Examples, LogError, "Unhandled fatal error (see log above)");
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Foundation Example",
+                             "Unhandled fatal error. See log for details.", nullptr);
 }
 
 void Examples_UpdateCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera& camera,

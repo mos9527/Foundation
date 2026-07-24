@@ -161,24 +161,10 @@ bool ApplyViewLUTSelection()
         LOG(Editor, LogWarn, "Ignoring view LUT selection before a scene is loaded");
         return false;
     }
-    try
-    {
-        FTexture sdr(GLOBAL_ALLOC);
-        FTexture hdr(GLOBAL_ALLOC);
-        LoadSelectedViewLUTs(sdr, hdr);
-        UploadEditorViewLUTs(GContext->gpuScene, sdr, hdr);
-    }
-    catch (std::exception const& e)
-    {
-        LOG(Editor, LogError, "Failed to apply view LUT selection: {}", e.what());
-        return false;
-    }
-    catch (...)
-    {
-        LOG(Editor, LogError, "Failed to apply view LUT selection");
-        return false;
-    }
-
+    FTexture sdr(GLOBAL_ALLOC);
+    FTexture hdr(GLOBAL_ALLOC);
+    LoadSelectedViewLUTs(sdr, hdr);
+    UploadEditorViewLUTs(GContext->gpuScene, sdr, hdr);
     return true;
 }
 
@@ -189,22 +175,9 @@ bool ApplyMatcapSelection()
         LOG(Editor, LogWarn, "Ignoring matcap selection before a scene is loaded");
         return false;
     }
-    try
-    {
-        FTexture matcap(GLOBAL_ALLOC);
-        LoadSelectedMatcap(matcap);
-        UploadEditorMatcap(GContext->gpuScene, matcap);
-    }
-    catch (std::exception const& e)
-    {
-        LOG(Editor, LogError, "Failed to apply matcap selection: {}", e.what());
-        return false;
-    }
-    catch (...)
-    {
-        LOG(Editor, LogError, "Failed to apply matcap selection");
-        return false;
-    }
+    FTexture matcap(GLOBAL_ALLOC);
+    LoadSelectedMatcap(matcap);
+    UploadEditorMatcap(GContext->gpuScene, matcap);
     return true;
 }
 
@@ -685,45 +658,28 @@ void LoadScene(StringView path)
     auto const loadStart = std::chrono::steady_clock::now();
     GPUScene* gpu = nullptr;
     PendingSceneLoad* load = nullptr;
-    try
-    {
-        String scenePayloadPath = PrepareScenePayloadFile(path);
-        load = Construct<PendingSceneLoad>(GLOBAL_ALLOC);
-        load->scenePayloadPath = scenePayloadPath;
-        load->loadStart = loadStart;
-        load->arena.emplace(GLOBAL_ALLOC, kDefaultSceneLoadScratchBudget);
-        load->alloc.emplace(*load->arena);
-        load->file.emplace(scenePayloadPath, MemoryMappedAccess::ReadOnly);
-        load->scene.emplace(*load->file, load->alloc->Ptr());
-        LoadFSCN(*load->scene);
+    String scenePayloadPath = PrepareScenePayloadFile(path);
+    load = Construct<PendingSceneLoad>(GLOBAL_ALLOC);
+    load->scenePayloadPath = scenePayloadPath;
+    load->loadStart = loadStart;
+    load->arena.emplace(GLOBAL_ALLOC, kDefaultSceneLoadScratchBudget);
+    load->alloc.emplace(*load->arena);
+    load->file.emplace(scenePayloadPath, MemoryMappedAccess::ReadOnly);
+    load->scene.emplace(*load->file, load->alloc->Ptr());
+    LoadFSCN(*load->scene);
 
-        InitializeSceneLoad(*load->scene, load->stats, gpu);
-        // Globals/camera + env map + view LUTs first (small, synchronous); then queue the
-        // heavy geometry/textures for the background drain.
-        PrepareSceneGlobals(*load->scene, gpu, *load->alloc);
-        BeginSceneUpload(*load->scene, gpu, load->resources);
+    InitializeSceneLoad(*load->scene, load->stats, gpu);
+    // Globals/camera + env map + view LUTs first (small, synchronous); then queue the
+    // heavy geometry/textures for the background drain.
+    PrepareSceneGlobals(*load->scene, gpu, *load->alloc);
+    BeginSceneUpload(*load->scene, gpu, load->resources);
 
-        // Publish the handle maps and install the scene immediately so it renders while the
-        // queued uploads stream in (PollSceneLoad drives the drain + re-commits).
-        GEditor.resources = std::move(load->resources);
-        InstallLoadedScene(load->scenePayloadPath, gpu);
-        CommitSceneToGPU(true);
-        sPendingSceneLoad = load;
-    }
-    catch (std::exception const& e)
-    {
-        sPendingSceneLoad = nullptr;
-        DestroyGPUScene(gpu);
-        if (load) Destruct(GLOBAL_ALLOC, load);
-        LOG(Editor, LogError, "Failed to load scene: {} ({})", path, e.what());
-    }
-    catch (...)
-    {
-        sPendingSceneLoad = nullptr;
-        DestroyGPUScene(gpu);
-        if (load) Destruct(GLOBAL_ALLOC, load);
-        LOG(Editor, LogError, "Failed to load scene: {}", path);
-    }
+    // Publish the handle maps and install the scene immediately so it renders while the
+    // queued uploads stream in (PollSceneLoad drives the drain + re-commits).
+    GEditor.resources = std::move(load->resources);
+    InstallLoadedScene(load->scenePayloadPath, gpu);
+    CommitSceneToGPU(true);
+    sPendingSceneLoad = load;
 }
 
 void LoadEnvMap(StringView path)
@@ -735,22 +691,15 @@ void LoadEnvMap(StringView path)
         LOG(Editor, LogWarn, "Ignoring HDRI env map load before a scene is loaded");
         return;
     }
-    try
-    {
-        FTexture tex(GLOBAL_ALLOC);
-        LoadHDR(tex, path);
-        gpu->UploadEnvironmentMap(tex);
-        FLight& environment = GEditor.Scene().EnsureEnvironmentLight();
-        environment.environmentMap = true;
-        gpu->UpdateUBO(GEditor.shaderGlobals);
-        UpdateSceneLights();
-        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-        LOG(Editor, LogInfo, "HDRI env map loaded successfully");
-    }
-    catch (...)
-    {
-        LOG(Editor, LogError, "Failed to load HDRI env map: {}", path);
-    }
+    FTexture tex(GLOBAL_ALLOC);
+    LoadHDR(tex, path);
+    gpu->UploadEnvironmentMap(tex);
+    FLight& environment = GEditor.Scene().EnsureEnvironmentLight();
+    environment.environmentMap = true;
+    gpu->UpdateUBO(GEditor.shaderGlobals);
+    UpdateSceneLights();
+    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+    LOG(Editor, LogInfo, "HDRI env map loaded successfully");
 }
 
 void HandleFile(const char* filePath)

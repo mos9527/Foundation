@@ -85,16 +85,8 @@ void MmapOpen(MmapState& state, Core::StringView path, MmapAccess access)
     int fd = open(pathString.c_str(), flags);
     CHECK_MSG(fd >= 0, "open failed for {}: {}", pathString, LastSystemErrorString());
     state.file = fd;
-    try
-    {
-        state.size = GetFileSize64(fd);
-        MapView(state);
-    }
-    catch (...)
-    {
-        MmapClose(state);
-        throw;
-    }
+    state.size = GetFileSize64(fd);
+    MapView(state);
 }
 
 void MmapCreate(MmapState& state, Core::StringView path, uint64_t size)
@@ -107,16 +99,8 @@ void MmapCreate(MmapState& state, Core::StringView path, uint64_t size)
     int fd = open(pathString.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
     CHECK_MSG(fd >= 0, "open failed for {}: {}", pathString, LastSystemErrorString());
     state.file = fd;
-    try
-    {
-        SetFileSize64(fd, size);
-        MapView(state);
-    }
-    catch (...)
-    {
-        MmapClose(state);
-        throw;
-    }
+    SetFileSize64(fd, size);
+    MapView(state);
 }
 
 void MmapOpenOrCreate(MmapState& state, Core::StringView path, uint64_t size)
@@ -128,19 +112,11 @@ void MmapOpenOrCreate(MmapState& state, Core::StringView path, uint64_t size)
     int fd = open(pathString.c_str(), O_RDWR | O_CREAT, 0666);
     CHECK_MSG(fd >= 0, "open failed for {}: {}", pathString, LastSystemErrorString());
     state.file = fd;
-    try
-    {
-        uint64_t currentSize = GetFileSize64(fd);
-        if (currentSize != size)
-            SetFileSize64(fd, size);
-        state.size = size;
-        MapView(state);
-    }
-    catch (...)
-    {
-        MmapClose(state);
-        throw;
-    }
+    uint64_t currentSize = GetFileSize64(fd);
+    if (currentSize != size)
+        SetFileSize64(fd, size);
+    state.size = size;
+    MapView(state);
 }
 
 void MmapResize(MmapState& state, uint64_t size)

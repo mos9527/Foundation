@@ -63,14 +63,7 @@ namespace Foundation::RHI {
         {
             if (!userData || size == 0)
                 return nullptr;
-            try
-            {
-                return static_cast<Allocator*>(userData)->Allocate(size, alignment ? alignment : alignof(std::max_align_t));
-            }
-            catch (...)
-            {
-                return nullptr;
-            }
+            return static_cast<Allocator*>(userData)->Allocate(size, alignment ? alignment : alignof(std::max_align_t));
         }
 
         static void* VKAPI_PTR Reallocate(void* userData, void* original, size_t size, size_t alignment,
@@ -79,21 +72,14 @@ namespace Foundation::RHI {
             if (!userData)
                 return nullptr;
             auto* allocator = static_cast<Allocator*>(userData);
-            try
+            if (size == 0)
             {
-                if (size == 0)
-                {
-                    allocator->Deallocate(original);
-                    return nullptr;
-                }
-                if (!original)
-                    return allocator->Allocate(size, alignment ? alignment : alignof(std::max_align_t));
-                return allocator->Reallocate(original, size, alignment ? alignment : alignof(std::max_align_t));
-            }
-            catch (...)
-            {
+                allocator->Deallocate(original);
                 return nullptr;
             }
+            if (!original)
+                return allocator->Allocate(size, alignment ? alignment : alignof(std::max_align_t));
+            return allocator->Reallocate(original, size, alignment ? alignment : alignof(std::max_align_t));
         }
 
         static void VKAPI_PTR Free(void* userData, void* memory)

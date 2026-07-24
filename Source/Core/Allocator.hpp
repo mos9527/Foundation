@@ -133,14 +133,7 @@ namespace Foundation::Core {
     template <typename Base, typename Derived, typename ...Args>
     Base* ConstructBase(Allocator* resource, Args&& ...args) {
         auto raw = resource->Allocate(sizeof(Derived), alignof(Derived));
-        try {
-            Derived* obj = std::construct_at(static_cast<Derived*>(raw), std::forward<Args>(args)...);
-            return obj;
-        }
-        catch (...) {
-            resource->Deallocate(raw);
-            throw;
-        }
+        return std::construct_at(static_cast<Derived*>(raw), std::forward<Args>(args)...);
     }
     /**
      * @brief Convenience placement new with object of type T using a @ref Foundation::Core::Allocator.

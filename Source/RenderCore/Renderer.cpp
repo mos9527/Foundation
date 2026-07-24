@@ -1199,16 +1199,7 @@ Core::JobBarrier Renderer::BuildPipelineStateAll()
             "RendererPSO",
             [this, handle]
             {
-                try
-                {
-                    BuildPipelineState(handle);
-                }
-                catch (std::exception const& e)
-                {
-                    LOG(Renderer, LogError, "Failed to build PSO for pass {}: {}",
-                        mSetup->trackedPasses[handle].name, e.what());
-                    throw;
-                }
+                BuildPipelineState(handle);
             }));
     }
     Core::JobHandle epilogue = mJobs->CreateJobAfter(

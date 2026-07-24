@@ -116,16 +116,8 @@ void MmapOpen(MmapState& state, Core::StringView path, MmapAccess access)
                               FILE_ATTRIBUTE_NORMAL, nullptr);
     CHECK_MSG(file != INVALID_HANDLE_VALUE, "CreateFileA failed for {}: {}", pathString, LastSystemErrorString());
     state.file = FromHandle(file);
-    try
-    {
-        state.size = GetFileSize64(file);
-        MapView(state);
-    }
-    catch (...)
-    {
-        MmapClose(state);
-        throw;
-    }
+    state.size = GetFileSize64(file);
+    MapView(state);
 }
 
 void MmapCreate(MmapState& state, Core::StringView path, uint64_t size)
@@ -139,16 +131,8 @@ void MmapCreate(MmapState& state, Core::StringView path, uint64_t size)
                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     CHECK_MSG(file != INVALID_HANDLE_VALUE, "CreateFileA failed for {}: {}", pathString, LastSystemErrorString());
     state.file = FromHandle(file);
-    try
-    {
-        SetFileSize64(file, size);
-        MapView(state);
-    }
-    catch (...)
-    {
-        MmapClose(state);
-        throw;
-    }
+    SetFileSize64(file, size);
+    MapView(state);
 }
 
 void MmapOpenOrCreate(MmapState& state, Core::StringView path, uint64_t size)
@@ -161,19 +145,11 @@ void MmapOpenOrCreate(MmapState& state, Core::StringView path, uint64_t size)
                               OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     CHECK_MSG(file != INVALID_HANDLE_VALUE, "CreateFileA failed for {}: {}", pathString, LastSystemErrorString());
     state.file = FromHandle(file);
-    try
-    {
-        uint64_t currentSize = GetFileSize64(file);
-        if (currentSize != size)
-            SetFileSize64(file, size);
-        state.size = size;
-        MapView(state);
-    }
-    catch (...)
-    {
-        MmapClose(state);
-        throw;
-    }
+    uint64_t currentSize = GetFileSize64(file);
+    if (currentSize != size)
+        SetFileSize64(file, size);
+    state.size = size;
+    MapView(state);
 }
 
 void MmapResize(MmapState& state, uint64_t size)
