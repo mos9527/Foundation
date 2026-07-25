@@ -1,7 +1,9 @@
 #pragma once
-#include <cstdlib>
+// XXX: fmt gets transitively included this way.
+#define FMT_EXCEPTIONS 0
 #include <fmt/base.h>
 #include <fmt/format.h>
+#include <cstdlib>
 #if defined(_MSC_VER)
 #include <intrin.h>
 #endif

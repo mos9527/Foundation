@@ -116,9 +116,6 @@ namespace Foundation::Core {
     struct StlDeleter {
         Allocator* mResource;
         void operator()(T* ptr) noexcept {
-            // A null resource marks a non-owning view: neither destroy nor free. This lets a
-            // UniquePtr<T> reference an externally-owned object (e.g. a stack/arena-resident job
-            // co-invoked across worker threads) without taking ownership of its lifetime.
             if (ptr && mResource) {
                 std::destroy_at(ptr);
                 mResource->Deallocate(ptr);

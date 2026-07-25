@@ -13,6 +13,8 @@ option(FOUNDATION_WITH_ASAN "Build with ASAN (Address) enabled" OFF)
 option(FOUNDATION_WITH_TSAN "Build with TSAN (Thread) enabled" OFF)
 option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
 option(FOUNDATION_WITH_JOLT_EXAMPLES "Build Jolt Physics examples" OFF)
+option(FOUNDATION_NO_EXCEPTION "Build with C++ Exception Handling disabled" ON)
+
 # Android defaults: No Tracy, No VVL (you need to vendor the binary yourself..)
 if (ANDROID)
     option(FOUNDATION_WITH_PROFILING "Build with profiling (Tracy) enabled" OFF)
@@ -31,21 +33,50 @@ else ()
     set(TRACY_ENABLE OFF CACHE BOOL "" FORCE)
 endif()
 
-# Disable C++ exceptions for all targets
-if (MSVC)
-    string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-    
-    add_compile_options(/EHs-c-)
-    add_compile_definitions(_HAS_EXCEPTIONS=0)
-else()
-    add_compile_options(-fno-exceptions)
+if (FOUNDATION_NO_EXCEPTION)
+    # No exceptions!!!
+    # Needed since MSVC STL containers use this all the time.
+    # Running with scissors here... though quite actively maintained by STL
+    # - https://github.com/microsoft/STL/pull/5406
+    # - https://github.com/microsoft/STL/issues/2216
+    if (MSVC) # True for both MSVC and Clang-CL
+        # Begone. /EHsc is everywhere even with Clang-CL configurations.
+        set(target_vars
+                CMAKE_CXX_FLAGS
+                CMAKE_CXX_FLAGS_DEBUG
+                CMAKE_CXX_FLAGS_RELEASE
+                CMAKE_CXX_FLAGS_MINSIZEREL
+                CMAKE_CXX_FLAGS_RELWITHDEBINFO
+        )
+        foreach(var IN LISTS target_vars)
+            if(${var} MATCHES "/EHsc")
+                string(REPLACE "/EHsc" "" ${var} "${${var}}")
+            endif()
+        endforeach()
+    endif()
+
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        add_compile_options(/EHs-c-)
+        add_compile_definitions(_HAS_EXCEPTIONS=0)
+        # You might be surprised that even with enabling these flags, the final PE
+        # would *still* contain Exception Unwind tables. And no - there's no way to remove them
+        # from MSVC by itself.
+        # Of course, you can always...
+    else()
+        # ...Use Clang/LLVM instead. Or Cl-Clang if you must stick with MS toolchains.
+        add_compile_options(
+                -fno-exceptions
+                -fno-unwind-tables
+                -fno-asynchronous-unwind-tables
+        )
+    endif()
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
     add_compile_options("/Zc:preprocessor")
-    add_compile_options("/utf-8")    
-    add_compile_options("/GR-")    
+    add_compile_options("/utf-8")
+    add_compile_options("/GR-")
     add_compile_options(
         "$<$<CONFIG:Release>:/Gy>"
         "$<$<CONFIG:Release>:/Gw>"
