@@ -32,6 +32,15 @@ if (FOUNDATION_WITH_PROFILING)
 else ()
     set(TRACY_ENABLE OFF CACHE BOOL "" FORCE)
 endif()
+if (MSVC)
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
+        add_compile_options("/Zc:preprocessor")
+    endif ()
+    add_compile_options("/utf-8")
+else()
+    add_compile_options("-Wall" "-Wno-unused-function" "-Wno-unused-variable" "-Wno-unused-but-set-global")
+endif()
 
 if (FOUNDATION_NO_EXCEPTION)
     # No exceptions!!!
@@ -70,35 +79,30 @@ if (FOUNDATION_NO_EXCEPTION)
                 -fno-asynchronous-unwind-tables
         )
     endif()
+    add_compile_definitions(FMT_EXCEPTIONS=0)
 endif()
 
+# Dead-code strip and no RTTI
 if (MSVC)
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
-        add_compile_options("/Zc:preprocessor")
-    endif ()
-    add_compile_options("/utf-8")
-    add_compile_options("/GR-")
-    add_compile_options(
-        "$<$<CONFIG:Release>:/Gy>"
-        "$<$<CONFIG:Release>:/Gw>"
-    )
-    add_link_options(
-        "$<$<CONFIG:Release>:/INCREMENTAL:NO>"
-        "$<$<CONFIG:Release>:/OPT:REF>"
-        "$<$<CONFIG:Release>:/OPT:ICF>"
-    )
+    add_compile_options(/GR- /Gy /Gw)
+    add_link_options(/OPT:REF /OPT:ICF)
 else()
-    # Statically link all MinGW runtime libs (libgcc, libstdc++, winpthread, atomic, etc.)
-    if (WIN32)
-        add_link_options(-static)
+    add_compile_options(-fno-rtti -ffunction-sections -fdata-sections)
+    if (APPLE)
+        add_link_options(-Wl,-dead_strip)
+    else()
+        add_link_options(-Wl,--gc-sections -s)
     endif()
 endif()
 
+# LTO
 include(CheckIPOSupported)
-check_ipo_supported(RESULT FOUNDATION_IPO_SUPPORTED LANGUAGES C CXX)
-if (FOUNDATION_IPO_SUPPORTED)
+check_ipo_supported(RESULT ipo_ok OUTPUT ipo_msg)
+if (ipo_ok)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ON)
+else()
+    message(STATUS "LTO not supported: ${ipo_msg}")
 endif()
 
 set(MI_TRACK_ASAN ${FOUNDATION_WITH_ASAN} CACHE BOOL "" FORCE)
