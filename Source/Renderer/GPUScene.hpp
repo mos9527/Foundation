@@ -176,7 +176,6 @@ public:
         InvalidHandle,
         OutOfMemory,
         DecodeFailed,
-        SubmitFailed,
         Cancelled, 
     };
 
@@ -210,7 +209,7 @@ public:
     [[nodiscard]] Result Query(TextureHandle texture) const;
 
     void Join();
-    [[nodiscard]] Result Poll();
+    [[nodiscard]] Result Poll(size_t timeout);
 
 
     void UpdateUBO(RendererUBO& globals) const;
@@ -434,6 +433,5 @@ ENUM_NAME(InvalidInput)
 ENUM_NAME(InvalidHandle)
 ENUM_NAME(OutOfMemory)
 ENUM_NAME(DecodeFailed)
-ENUM_NAME(SubmitFailed)
 ENUM_NAME(Cancelled)
 ENUM_NAME_CONV_END()

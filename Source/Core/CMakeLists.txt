@@ -65,7 +65,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 if (FOUNDATION_WITH_ASAN)
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    if (MSVC)
         target_compile_options(Foundation_Core PUBLIC "/fsanitize=thread")
         target_link_options(Foundation_Core PUBLIC "/fsanitize=thread")
     else ()

@@ -285,9 +285,6 @@ namespace Foundation::Core
         CHECK_MSG(IsValid() && count != 0, "Invalid job dependency");
         JobSystem* system = mPool->AcquireOwner();
         CHECK_MSG(system, "JobSystem no longer exists");
-        if (!system)
-            return;
-        (void)system;
         JobNode& node = mPool->nodes[mIndex];
         std::lock_guard lock(node.completionMutex);
         CHECK_MSG(node.status.load(std::memory_order_relaxed) == JobStatus::Waiting,
@@ -303,85 +300,8 @@ namespace Foundation::Core
         CHECK_MSG(IsValid() && count != 0, "Invalid job dependency");
         JobSystem* system = mPool->AcquireOwner();
         CHECK_MSG(system, "JobSystem no longer exists");
-        if (!system)
-            return;
         system->ReleaseDependency(*this, count, false);
         mPool->ReleaseOwner();
-    }
-
-    JobDependency JobHandle::AddDependencyGuard(uint32_t count) const
-    {
-        return JobDependency(*this, count, true);
-    }
-
-    JobDependency JobHandle::AdoptDependencyGuard(uint32_t count) const
-    {
-        return JobDependency(*this, count, false);
-    }
-
-    void JobHandle::RemoveDependencies(Span<const JobHandle> jobs, uint32_t count)
-    {
-        for (JobHandle const& job : jobs)
-            job.RemoveDependency(count);
-    }
-
-    JobDependency::JobDependency(JobHandle job, uint32_t count, bool add) : mJob(std::move(job)), mCount(count)
-    {
-        if (add)
-            mJob.AddDependency(count);
-        else
-        {
-            CHECK_MSG(mJob.IsValid() && count != 0, "Invalid adopted job dependency");
-            JobSystem* system = mJob.mPool->AcquireOwner();
-            CHECK_MSG(system, "JobSystem no longer exists");
-            if (!system)
-                return;
-            (void)system;
-            JobNode& node = mJob.mPool->nodes[mJob.mIndex];
-            std::lock_guard lock(node.completionMutex);
-            CHECK_MSG(node.status.load(std::memory_order_relaxed) == JobStatus::Waiting && node.dependencies >= count,
-                      "Cannot adopt unavailable job dependencies");
-            mJob.mPool->ReleaseOwner();
-        }
-    }
-
-    JobDependency::JobDependency(JobDependency&& other) noexcept :
-        mJob(std::move(other.mJob)), mCount(std::exchange(other.mCount, 0))
-    {
-    }
-
-    JobDependency& JobDependency::operator=(JobDependency&& other) noexcept
-    {
-        if (this == &other)
-            return *this;
-        if (mCount)
-            Release();
-        mJob = std::move(other.mJob);
-        mCount = std::exchange(other.mCount, 0);
-        return *this;
-    }
-
-    JobDependency::~JobDependency()
-    {
-        if (mCount)
-            Release();
-    }
-
-    void JobDependency::Release()
-    {
-        if (!mCount)
-            return;
-        JobSystem* system = mJob.mPool->AcquireOwner();
-        if (!system || mJob.IsDone())
-        {
-            if (system)
-                mJob.mPool->ReleaseOwner();
-            mCount = 0;
-            return;
-        }
-        uint32_t const count = std::exchange(mCount, 0);
-        system->ReleaseDependency(mJob, count, false);
-        mJob.mPool->ReleaseOwner();
     }
 
     JobBarrier::JobBarrier(JobBarrier&& other) noexcept :

@@ -595,31 +595,15 @@ bool PollSceneLoad()
     if (!sPendingSceneLoad)
         return false;
     CHECK(GContext->gpuScene);
-    GPUScene::Result r = GContext->gpuScene->Poll();
-    if (r == GPUScene::Result::InProgress)
-    {
-        // Re-commit so newly resident textures replace their defaults; geometry streams into
-        // the TLAS automatically (the per-frame TLAS pass only writes Ready instances).
-        CommitSceneToGPU(true);
-        return true;
-    }
-
+    GContext->gpuScene->Join();
     String envMapPath = sPendingSceneLoad->envMapPath;
-    if (r == GPUScene::Result::Ready)
-    {
-        CommitSceneToGPU(true);
-        double const loadMs = MillisecondsSince(sPendingSceneLoad->loadStart);
-        LOG(Editor, LogInfo, "Scene streamed in {:.2f} ms, {} meshes, {} instances, {} curves, {} materials",
-            loadMs, sPendingSceneLoad->stats.sceneMeshCount, sPendingSceneLoad->stats.sceneInstanceCount,
-            sPendingSceneLoad->stats.sceneCurveCount, sPendingSceneLoad->stats.sceneMaterialCount);
-    }
-    else
-    {
-        LOG(Editor, LogError, "Scene stream failed ({}); the partially loaded scene stays installed",
-            static_cast<int>(r));
-    }
+    CommitSceneToGPU(true);
+    double const loadMs = MillisecondsSince(sPendingSceneLoad->loadStart);
+    LOG(Editor, LogInfo, "Scene streamed in {:.2f} ms, {} meshes, {} instances, {} curves, {} materials",
+        loadMs, sPendingSceneLoad->stats.sceneMeshCount, sPendingSceneLoad->stats.sceneInstanceCount,
+        sPendingSceneLoad->stats.sceneCurveCount, sPendingSceneLoad->stats.sceneMaterialCount);
     DestroyPendingSceneLoad(); // Poll() already joined the worker, so the backing memory is free to release
-    if (r == GPUScene::Result::Ready && !envMapPath.empty())
+    if (!envMapPath.empty())
         LoadEnvMap(envMapPath);
     return false;
 }

@@ -300,17 +300,12 @@ struct GPUSceneImpl
         JobHandle prepareJob;
         JobHandle decodeJob;
         JobHandle submitJob;
-        JobHandle commitJob;
-        JobDependency prepareGate;
-        JobDependency publishGate;
-        RHIDeviceSemaphore* finalTimeline{};
-        size_t finalTimelineValue{};
+        RHIDeviceSemaphore* nextSemaphoreTimeline{};
+        size_t nextSemaphoreTimelineValue{};
         size_t itemCount{};
         Atomic<bool> submitted{false};
-        Atomic<bool> failed{false};
         bool needsCompaction{false};
         bool gpuComplete{false};
-        bool publicationReleased{false};
     };
 
     // Async upload queues
@@ -318,7 +313,6 @@ struct GPUSceneImpl
     MPMCQueue<PendingTextureUpload> mUploadTextureQueue;
     MPMCQueue<PendingBufferUpload> mUploadBufferQueue;
     Atomic<size_t> mUploadPending{0};
-    Atomic<bool> mUploadFailed{false};
     UniquePtr<ImmediateUpload> mImmediateUpload;
     size_t mImmediateUploadCapacity{};
     UniquePtr<UploadBatchState> mActiveUpload;
@@ -326,12 +320,12 @@ struct GPUSceneImpl
     mutable Mutex mUploadStateMutex;
     template <typename T>
     void EnqueueUpload(MPMCQueue<T>& queue, T&& item);
-    bool StartUploadBatch();
-    bool DriveUploadBatch(size_t timeout);
+    bool UploadBatchBegin();
+    bool UploadBatchMoveNext(size_t timeout);
     void PrepareUploads(UploadBatchState& state);
     void DecodeUploads(UploadBatchState& state, size_t begin, size_t end, JobContext& context);
     void SubmitUploads(UploadBatchState& state);
-    void CommitUploads(UploadBatchState& state); // mark as ready
+    void UploadBatchEnd(UploadBatchState& state); // mark as ready
     void SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const& submitDesc);
     void SubmitBLASCompaction(UploadBatchState& state);
     Result ReserveMesh(FSerializedMesh const& src, GSMesh& outHeader, uint32_t& outOffset);
@@ -372,7 +366,7 @@ struct GPUSceneImpl
     [[nodiscard]] Result Query(GeometryHandle handle) const;
     [[nodiscard]] Result Query(TextureHandle texture) const;
     void Join();
-    [[nodiscard]] Result Poll();
+    [[nodiscard]] Result Poll(size_t timeout);
 
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
     UpdateResult EndScene(GPUSceneTables& tables);
@@ -486,7 +480,7 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
     if (mDirectGeometryUpload)
     {
         mPrimitiveMapped = owner.mPrimitiveBuffer->Map<char>();
-        LOG(GPUScene, LogInfo, "Direct GPU Memory Access available ({} MiB budget used). Uploading via direct copy.",
+        LOG(GPUScene, LogDebug, "Direct GPU Memory Access available ({} MiB budget used). Uploading via direct copy.",
             directGeometryBudget / (1u << 20));
     }
     if (desc.dynamicGeometryBudget != 0)
@@ -514,7 +508,7 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
             mDynamicStagingBuffer->DebugSetObjectName("Dynamic Primitive Staging");
             mDynamicStagingMapped = mDynamicStagingBuffer->Map<char>();
         }
-        LOG(GPUScene, LogInfo, "Dynamic geometry: {} MiB device + {} MiB staging per frame.",
+        LOG(GPUScene, LogDebug, "Dynamic geometry: {} MiB device + {} MiB staging per frame.",
             desc.dynamicGeometryBudget / (1u << 20), desc.dynamicStagingBudget / (1u << 20));
     }
     mTLASBuffer =
@@ -1487,21 +1481,20 @@ void GPUSceneImpl::EnqueueUpload(MPMCQueue<T>& queue, T&& item)
         std::this_thread::yield();
 }
 
-bool GPUSceneImpl::StartUploadBatch()
+bool GPUSceneImpl::UploadBatchBegin()
 {
-    if (mActiveUpload || mUploadFailed.load(std::memory_order_acquire))
-        return false;
-
+    CHECK(!mActiveUpload);
     auto state = ConstructUnique<UploadBatchState>(mAllocator, mAllocator);
+    // Acquire all pending uploads
     PendingGeometryUpload g;
     while (mUploadGeometryQueue.Pop(g))
-        state->geometry.push_back(std::move(g));
+        state->geometry.push_back(g);
     PendingTextureUpload t;
     while (mUploadTextureQueue.Pop(t))
-        state->textures.push_back(std::move(t));
+        state->textures.push_back(t);
     PendingBufferUpload b;
     while (mUploadBufferQueue.Pop(b))
-        state->buffers.push_back(std::move(b));
+        state->buffers.push_back(b);
 
     state->itemCount = state->geometry.size() + state->textures.size() + state->buffers.size();
     if (state->itemCount == 0)
@@ -1513,7 +1506,7 @@ bool GPUSceneImpl::StartUploadBatch()
             stagingBudget += pending.footprint;
     for (PendingTextureUpload const& pending : state->textures)
     {
-        FTextureHeader const& metadata = static_cast<FTextureHeader const&>(*pending.source);
+        auto const& metadata = static_cast<FTextureHeader const&>(*pending.source);
         for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
             for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
                 stagingBudget += GPUSceneTextureSubresourceFootprint(metadata, layer, mip) + kUploadBudgetSlack;
@@ -1527,6 +1520,7 @@ bool GPUSceneImpl::StartUploadBatch()
         if (mImmediateUpload)
             mImmediateUpload->WaitIdle();
         mImmediateUploadCapacity = std::bit_ceil(stagingBudget);
+        // NOTE: BLAS builds happen on their own cmdlists on Graphics queue.
         mImmediateUpload = ConstructUnique<ImmediateUpload>(
             mAllocator, mDevice, mImmediateUploadCapacity, RHIDeviceQueueType::Transfer, kUploadStagingBuffers);
     }
@@ -1540,15 +1534,13 @@ bool GPUSceneImpl::StartUploadBatch()
     }
     for (PendingTextureUpload const& pending : state->textures)
     {
-        FTextureHeader const& metadata = static_cast<FTextureHeader const&>(*pending.source);
+        auto const& metadata = static_cast<FTextureHeader const&>(*pending.source);
         taskCount += static_cast<size_t>(metadata.GetNumLayers()) * metadata.GetNumMips();
     }
 
     UploadBatchState* batchState = state.get();
     state->prepareJob = mJobs->CreateJob(
-        "GPUScenePrepare", [this, batchState] { PrepareUploads(*batchState); }, 1);
-    state->prepareGate = state->prepareJob.AdoptDependencyGuard();
-
+        "GPUScenePrepare", [this, batchState] { PrepareUploads(*batchState); });
     size_t const chunkCount =
         std::min(taskCount, std::max<size_t>(mJobs->GetMaxConcurrency() * 4u, 1u));
     Vector<JobHandle> decodeJobs(mAllocator);
@@ -1568,133 +1560,74 @@ bool GPUSceneImpl::StartUploadBatch()
     state->decodeJob = decodeJobs.empty()
         ? mJobs->CreateJobAfter("GPUSceneDecode", Span<const JobHandle>(&state->prepareJob, 1), [] {})
         : mJobs->CreateJobAfter("GPUSceneDecode", decodeJobs, [] {});
+    // NOTE: Submitting is not waited on by host, see @ref UploadBatchMoveNext
     state->submitJob = mJobs->CreateJobAfter(
         "GPUSceneSubmit", Span<const JobHandle>(&state->decodeJob, 1),
-        [this, batchState] { SubmitUploads(*batchState); });
-    state->commitJob =
-        mJobs->CreateJob("GPUSceneCommit", [this, batchState] { CommitUploads(*batchState); }, 1);
-    state->publishGate = state->commitJob.AdoptDependencyGuard();
+        [this, batchState]
+        {
+            LOG(GPUScene, LogDebug, "GPUScene Submitting Uploads")
+            SubmitUploads(*batchState);
+        });
     mActiveUpload = std::move(state);
-    mActiveUpload->prepareGate.Release();
     return true;
 }
-
-bool GPUSceneImpl::DriveUploadBatch(size_t timeout)
+// Since we're syncing with GPU semaphores now, Jobs aren't a nice fit.
+// Upload queue is synced by a timeline for the driver to do the wait for us.
+// What you see here is a small state machines that handles this...
+bool GPUSceneImpl::UploadBatchMoveNext(size_t timeout)
 {
     if (!mActiveUpload)
         return false;
-    UploadBatchState& state = *mActiveUpload;
-
-    if (state.submitJob.IsDone() && !state.submitted.load(std::memory_order_acquire))
+    // [@JobSystem, Submitted] -> A
+    if (UploadBatchState& state = *mActiveUpload; state.submitJob.IsDone())
     {
-        if (state.batch.IsValid())
-            state.batch.Abort();
-        state.failed.store(true, std::memory_order_release);
-    }
-
-    if (state.submitted.load(std::memory_order_acquire) && !state.publicationReleased)
-    {
-        state.gpuComplete = !state.finalTimeline || state.finalTimelineValue == 0;
+        CHECK(state.submitted.load(std::memory_order_acquire) != 0u);
+        state.gpuComplete = !state.nextSemaphoreTimeline || state.nextSemaphoreTimelineValue == 0;
+        /* A -> [@GPU, (Upload -> BLAS build completes, BLAS compact completes)] -> B,C */
+        // Wait before we move to the next state.
         if (!state.gpuComplete)
         {
-            RHIDeviceQueue::TimelinePair wait{state.finalTimeline, state.finalTimelineValue};
+            RHIDeviceQueue::TimelinePair wait{state.nextSemaphoreTimeline, state.nextSemaphoreTimelineValue};
             state.gpuComplete = mDevice->WaitForTimelineSemaphores(
                 Span<const RHIDeviceQueue::TimelinePair>(&wait, 1), timeout);
         }
-        if (state.gpuComplete && state.needsCompaction && !state.failed.load(std::memory_order_acquire))
+        /* B -> [@GPU BLAS compaction] -> A */
+        if (state.gpuComplete && state.needsCompaction)
         {
             SubmitBLASCompaction(state);
             state.gpuComplete = false;
             return false;
         }
-        if (state.gpuComplete && !state.failed.load(std::memory_order_acquire))
+        /* C -> [@Calling thread, commits uploads!] */
+        if (state.gpuComplete)
         {
-            state.publicationReleased = true;
-            state.publishGate.Release();
+            UploadBatchEnd(state);
+            return true;
         }
-    }
-
-    if (state.failed.load(std::memory_order_acquire))
-    {
-        if (state.submitted.load(std::memory_order_acquire) && !state.gpuComplete)
-            return false;
-        if (!state.publicationReleased)
-        {
-            mJobs->Cancel(state.commitJob);
-            state.publishGate.Release();
-            state.publicationReleased = true;
-        }
-        {
-            std::lock_guard<Mutex> lock(mUploadStateMutex);
-            for (GeometryHandle handle : state.geometryHandles)
-                if (Geometry* geometry = ResolveGeometry(handle))
-                    geometry->state = ResourceState::Failed;
-        }
-        mUploadPending.fetch_sub(state.itemCount, std::memory_order_release);
-        mUploadFailed.store(true, std::memory_order_release);
-        mActiveUpload.reset();
-        return true;
-    }
-
-    if (state.publicationReleased && state.commitJob.IsDone())
-    {
-        if (state.commitJob.Status() != JobStatus::Completed)
-            mUploadFailed.store(true, std::memory_order_release);
-        mActiveUpload.reset();
-        return true;
     }
     return false;
 }
 
-void GPUSceneImpl::Join()
+GPUScene::Result GPUSceneImpl::Poll(size_t timeout)
 {
-    while (true)
+    if (mUploadPending.load(std::memory_order_acquire) == 0)
     {
-        JobBarrier barrier;
-        {
-            std::lock_guard<Mutex> lock(mUploadDriveMutex);
-            if (mUploadFailed.load(std::memory_order_acquire))
-                return;
-            if (!mActiveUpload)
-                StartUploadBatch();
-            if (!mActiveUpload)
-            {
-                if (mUploadPending.load(std::memory_order_acquire) == 0)
-                    return;
-                std::this_thread::yield();
-                continue;
-            }
-
-            DriveUploadBatch(static_cast<size_t>(-1));
-            if (!mActiveUpload)
-                continue;
-
-            barrier = mJobs->CreateBarrier();
-            UploadBatchState& state = *mActiveUpload;
-            if (!state.submitted.load(std::memory_order_acquire))
-                barrier.Add(state.submitJob);
-            else if (state.publicationReleased && !state.commitJob.IsDone())
-                barrier.Add(state.commitJob);
-        }
-        if (!barrier.IsEmpty())
-            mJobs->Wait(barrier);
-        else
-            std::this_thread::yield();
+        if (mActiveUpload)
+            mActiveUpload.reset();
+        return Result::Ready;
     }
+    std::lock_guard<Mutex> lock(mUploadDriveMutex);
+    if (mActiveUpload)
+        UploadBatchMoveNext(timeout);
+    if (!mActiveUpload)
+        UploadBatchBegin();
+    return Result::InProgress;
 }
 
-GPUScene::Result GPUSceneImpl::Poll()
+void GPUSceneImpl::Join()
 {
-    std::lock_guard<Mutex> lock(mUploadDriveMutex);
-    if (mUploadFailed.load(std::memory_order_acquire))
-        return Result::SubmitFailed;
-    if (mActiveUpload)
-        DriveUploadBatch(0);
-    if (!mActiveUpload)
-        StartUploadBatch();
-    if (mUploadFailed.load(std::memory_order_acquire))
-        return Result::SubmitFailed;
-    return mUploadPending.load(std::memory_order_acquire) == 0 ? Result::Ready : Result::InProgress;
+    while (Poll(0u) == Result::InProgress)
+        std::this_thread::yield();
 }
 
 void GPUSceneImpl::PrepareUploads(UploadBatchState& state)
@@ -1846,18 +1779,18 @@ void GPUSceneImpl::DecodeUploads(UploadBatchState& state, size_t begin, size_t e
 void GPUSceneImpl::SubmitUploads(UploadBatchState& state)
 {
     state.batch.End();
-    state.finalTimeline = mImmediateUpload->CompletionTimeline();
-    state.finalTimelineValue = state.batch.CompletionValue();
+    state.nextSemaphoreTimeline = mImmediateUpload->CompletionTimeline();
+    state.nextSemaphoreTimelineValue = state.batch.CompletionValue();
     if (!state.geometryHandles.empty())
     {
-        RHIDeviceQueue::TimelinePair wait{state.finalTimeline, state.finalTimelineValue};
+        RHIDeviceQueue::TimelinePair wait{state.nextSemaphoreTimeline, state.nextSemaphoreTimelineValue};
         RHIPipelineStage waitStage = RHIPipelineStageBits::AccelerationBuild;
         SubmitBLAS(state, {.timelineWaits = {&wait, 1}, .waitStages = {&waitStage, 1}});
     }
     state.submitted.store(true, std::memory_order_release);
 }
 
-void GPUSceneImpl::CommitUploads(UploadBatchState& state)
+void GPUSceneImpl::UploadBatchEnd(UploadBatchState& state)
 {
     std::lock_guard<Mutex> lock(mUploadStateMutex);
     CHECK(state.geometryHandles.size() == state.geometryBLAS.size());
@@ -1893,7 +1826,7 @@ void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const
     uint32_t meshBytes = 0;
     uint32_t curveBytes = 0;
     uint32_t scratchBytes = 0;
-
+    LOG(GPUScene, LogDebug, "GPUScene constructing {} BLASes", count);
     for (size_t i = 0; i < count; ++i)
     {
         Geometry* geometry = ResolveGeometry(state.geometryHandles[i]);
@@ -2048,8 +1981,8 @@ void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const
     ImmediateSubmitDesc finalSubmit = submitDesc;
     finalSubmit.timelineSignals = {&signal, 1};
     state.blasContext->Submit(finalSubmit);
-    state.finalTimeline = state.completionTimeline.Get();
-    state.finalTimelineValue = 1u;
+    state.nextSemaphoreTimeline = state.completionTimeline.Get();
+    state.nextSemaphoreTimelineValue = 1u;
 }
 
 void GPUSceneImpl::SubmitBLASCompaction(UploadBatchState& state)
@@ -2064,6 +1997,7 @@ void GPUSceneImpl::SubmitBLASCompaction(UploadBatchState& state)
         offsets[i] = compactBytes = AlignUp(compactBytes, 256u);
         compactBytes += static_cast<uint32_t>(compactSizes[i]);
     }
+    LOG(GPUScene, LogDebug, "GPUScene compacting {} BLASes", compactSizes.size());
     auto compactBuffer = mDevice->CreateBuffer({
         .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
         .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
@@ -2096,7 +2030,7 @@ void GPUSceneImpl::SubmitBLASCompaction(UploadBatchState& state)
     cmd->End();
     RHIDeviceQueue::TimelinePair signal{state.completionTimeline.Get(), 2u};
     state.blasContext->Submit({.timelineSignals = {&signal, 1}});
-    state.finalTimelineValue = 2u;
+    state.nextSemaphoreTimelineValue = 2u;
     state.needsCompaction = false;
 }
 
@@ -2795,7 +2729,7 @@ GPUScene::Result GPUSceneImpl::UploadEnvironmentMap(FTexture const& source)
     if (Result r = Upload(prefiltered, owner.mEnvMapIndex, "Environment Map", true); r != Result::Ready)
         return r;
 
-    LOG(GPUScene, LogInfo, "Environment map uploaded: {}x{} ({} prefilter mips)", source.GetWidth(), source.GetHeight(),
+    LOG(GPUScene, LogDebug, "Environment map uploaded: {}x{} ({} prefilter mips)", source.GetWidth(), source.GetHeight(),
         owner.mEnvMapPrefilteredMips);
     return Result::Ready;
 }
@@ -2837,7 +2771,6 @@ void GPUSceneImpl::Reset()
     {
     }
     mUploadPending.store(0, std::memory_order_release);
-    mUploadFailed.store(false, std::memory_order_release);
     mDynamicStagingFrameIndex = 0;
     mDynamicStagingCursor = 0;
     mDynamicUploadRegions.clear();
@@ -2914,7 +2847,7 @@ GPUScene::Result GPUScene::Upload(RHIBuffer* dst, Span<const unsigned char> data
 GPUScene::Result GPUScene::Query(GeometryHandle handle) const { return mImpl->Query(handle); }
 GPUScene::Result GPUScene::Query(TextureHandle texture) const { return mImpl->Query(texture); }
 void GPUScene::Join() { mImpl->Join(); }
-GPUScene::Result GPUScene::Poll() { return mImpl->Poll(); }
+GPUScene::Result GPUScene::Poll(size_t timeout) { return mImpl->Poll(timeout); }
 GPUScene::Result GPUScene::UploadEnvironmentMap(FTexture const& source) { return mImpl->UploadEnvironmentMap(source); }
 
 GPUScene::GPUSceneTables GPUScene::BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount)

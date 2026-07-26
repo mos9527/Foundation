@@ -155,7 +155,7 @@ int main(int argc, char** argv)
         ApplySceneCamera(scene, ubo, camera);
         CommitSceneToGPU(scene, gpu, resources, ubo);
         ExampleInputState input{};
-        ExampleRenderer renderer = ExampleRenderer::ProgressivePT;
+        ExampleRenderer renderer = ExampleRenderer::Raster;
         if (headless)
         {
             cfg.renderExtent = RHIExtent2D{renderWidth, renderHeight};

@@ -2,7 +2,7 @@ import ICommon;
 import IMath;
 
 uniform UBO globalParams;
-Texture2D<float> halfAO;
+RWTexture2D<float> halfAO;
 Texture2D<float> depth;
 RWTexture2D<float> aoOutput;
 
@@ -40,7 +40,7 @@ void main(uint2 tid : SV_DispatchThreadID)
             uint2 fullSample = min(uint2(halfPixel) * 2u, fullExtent - 1u);
             float sampleDepth = depth.Load(uint3(fullSample, 0));
             float weight = WeightForDepth(centerDepth, sampleDepth);
-            sumAO += halfAO.Load(uint3(uint2(halfPixel), 0)) * weight;
+            sumAO += halfAO.Load(uint2(halfPixel)) * weight;
             sumWeight += weight;
         }
     }

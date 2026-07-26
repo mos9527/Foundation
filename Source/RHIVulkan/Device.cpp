@@ -252,6 +252,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     // Vulkan 1.3 Features
     REQUEST_FEATURE(vk::PhysicalDeviceVulkan13Features, synchronization2)
     REQUEST_FEATURE(vk::PhysicalDeviceVulkan13Features, dynamicRendering)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan13Features, shaderDemoteToHelperInvocation)
     REQUEST_FEATURE(vk::PhysicalDeviceVulkan13Features, shaderIntegerDotProduct)
 
     // Extended Dynamic State

@@ -79,29 +79,8 @@ namespace Foundation::Core
         [[nodiscard]] JobStatus Status() const noexcept;
         void AddDependency(uint32_t count = 1) const;
         void RemoveDependency(uint32_t count = 1) const;
-        [[nodiscard]] JobDependency AddDependencyGuard(uint32_t count = 1) const;
-        [[nodiscard]] JobDependency AdoptDependencyGuard(uint32_t count = 1) const;
-        static void RemoveDependencies(Span<const JobHandle> jobs, uint32_t count = 1);
     };
 
-    class JobDependency
-    {
-        JobHandle mJob;
-        uint32_t mCount{};
-
-        friend class JobHandle;
-        JobDependency(JobHandle job, uint32_t count, bool add);
-
-    public:
-        JobDependency() = default;
-        JobDependency(JobDependency const&) = delete;
-        JobDependency& operator=(JobDependency const&) = delete;
-        JobDependency(JobDependency&& other) noexcept;
-        JobDependency& operator=(JobDependency&& other) noexcept;
-        ~JobDependency();
-
-        void Release();
-    };
 
     class JobBarrier
     {

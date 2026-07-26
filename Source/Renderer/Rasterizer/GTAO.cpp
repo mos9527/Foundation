@@ -53,7 +53,7 @@ void GTAOFeatureCallback(RasterFeatureContext& ctx, void const* configPtr)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSGTAOUpsample.spv"));
             r->BindBufferUniform(self, ctx.globalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindTextureSRV(self, HalfAO, "halfAO", RHIPipelineStageBits::ComputeShader,
+            r->BindTextureUAV(self, HalfAO, "halfAO", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = kAOFormat, .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(
                 self, ctx.depth, "depth", RHIPipelineStageBits::ComputeShader,
