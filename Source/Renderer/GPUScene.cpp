@@ -2041,7 +2041,7 @@ void GPUSceneImpl::AllocateDynamicBLAS(Geometry& g)
     RHIAccelerationStructureGeometryInfo geo{
         .type = RHIAccelerationGeometryType::Triangles,
         .triangleData = {
-            .vertexFormat = RHIResourceFormat::R16G16B16SignedFloat,
+            .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
             .vertexBuffer = mDynamicPrimitiveBuffer.Get(),
             .vertexOffset = base + static_cast<uint32_t>(sizeof(GSMesh)),
             .vertexCount = g.mesh.vertices.count,
@@ -2277,7 +2277,7 @@ void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
         RHIAccelerationStructureGeometryInfo geo{
             .type = RHIAccelerationGeometryType::Triangles,
             .triangleData = {
-                .vertexFormat = RHIResourceFormat::R16G16B16SignedFloat,
+                .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
                 .vertexBuffer = mDynamicPrimitiveBuffer.Get(),
                 .vertexOffset = base + static_cast<uint32_t>(sizeof(GSMesh)),
                 .vertexCount = g.mesh.vertices.count,

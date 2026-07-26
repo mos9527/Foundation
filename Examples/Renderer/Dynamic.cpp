@@ -173,7 +173,7 @@ int main(int argc, char** argv)
     float amplitude = 1.0f;
     float paused = 0.0f;
     float time = 0.0f;
-    ExampleRenderer renderer = ExampleRenderer::ProgressivePT;
+    ExampleRenderer renderer = ExampleRenderer::Raster;
     uint64_t t0 = SDL_GetTicksNS();
 
     // CPU side data
