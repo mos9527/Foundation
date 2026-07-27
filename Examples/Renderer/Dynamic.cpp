@@ -215,7 +215,7 @@ int main(int argc, char** argv)
         CommitDemoScene(gpu, water, ground, ubo);
 
         Examples_Text(input,
-                      fmt::format("Gerstner Water | {:.0f} FPS | refit {} rebuild {}", fps.Update(),
+                      Format("Gerstner Water | {:.0f} FPS | refit {} rebuild {}", fps.Update(),
                                   gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount()));
         Examples_Text(input, FExampleOrbitCamera::kControlsText);
         if (Examples_RendererSwitchButton(input, renderer))

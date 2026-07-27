@@ -570,7 +570,7 @@ namespace Foundation::Core
 
     void JobSystem::WorkerMain(size_t workerId)
     {
-        TracyCSetThreadName(fmt::format("{}@{}", mName.c_str(), workerId).c_str());
+        TracyCSetThreadName(Format("{}@{}", mName.c_str(), workerId).c_str());
         while (!mStopping.load(std::memory_order_acquire))
         {
             size_t const epoch = mWakeEpoch.load(std::memory_order_acquire);

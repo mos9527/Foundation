@@ -236,7 +236,7 @@ int main(int argc, char** argv)
                 CommitSceneToGPU(scene, gpu, resources, ubo);
                 // Debug Text
                 Examples_Text(input,
-                              fmt::format("{} meshes, {} instances, {} textures   {:.0f} FPS {} Samples",
+                              Format("{} meshes, {} instances, {} textures   {:.0f} FPS {} Samples",
                                           scene.GetMeshes().size(), scene.GetInstances().size(),
                                           scene.GetTextures().size(), fps.Update(), ubo.ptAccumulatedFrames));
                 if (Examples_RendererSwitchButton(input, renderer))

@@ -110,11 +110,23 @@ namespace Foundation::Core
     /**
      * @brief Alias for `std::basic_string<char>`, without an explicit allocator constructor
      *
-     * Allocation of strings on heap is done with the default global allocator.
+     * Allocation of strings on heap is done with the default @ref GLOBAL_ALLOC, and construction without an allocator
+     * is allowed.
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    using String = std::basic_string<char>;
+    using String = std::basic_string<char, std::char_traits<char>, StlDefaultAllocator<char>>;
+    /**
+     * @brief @ref String wrapper for Format().
+     * @note  Use this, over @ref fmt::format at all times to avoid throwing std::string constructor.
+     */
+    template <typename... Args>
+    [[nodiscard]] constexpr String Format(fmt::format_string<Args...> format, Args&&... args)
+    {
+        fmt::basic_memory_buffer<char, fmt::inline_buffer_size, StlDefaultAllocator<char>> buffer;
+        fmt::format_to(std::back_inserter(buffer), format, std::forward<Args>(args)...);
+        return String(buffer.data(), buffer.size());
+    }
     /**
      * @brief `std::basic_string<char>` with explicit @ref Foundation::Core::StlAllocator constructor
      *

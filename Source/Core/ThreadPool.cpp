@@ -68,7 +68,7 @@ namespace Foundation::Core
     }
     void ThreadPool::ThreadPoolWorker(size_t id)
     {
-        TracyCSetThreadName(fmt::format("{}@{}", mName.c_str(), id).c_str());
+        TracyCSetThreadName(Format("{}@{}", mName.c_str(), id).c_str());
         gWorkerThreadPool = this;
         while (!mShutdown.load(std::memory_order_acquire))
         {

@@ -11,7 +11,7 @@ FContext* GContext = nullptr;
 static String PipelineCachePathForDevice(RHIDevice const& device)
 {
     auto key = device.GetPipelineCacheKey();
-    return Paths::Resolve(fmt::format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
+    return Paths::Resolve(Format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
 }
 
 static Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)

@@ -268,7 +268,7 @@ int main(int argc, char** argv)
 
             GPUScene& gpu = scene.GetGPUScene();
             Examples_Text(input,
-                          fmt::format("Jolt Physics | {:.0f} FPS | refit {} rebuild {}", fps.Update(),
+                          Format("Jolt Physics | {:.0f} FPS | refit {} rebuild {}", fps.Update(),
                                       gpu.GetDynamicRefitCount(), gpu.GetDynamicRebuildCount()));
             Examples_Text(input, "Drag boxes | right-drag pan | pinch/wheel zoom | WASD move");
             Examples_Slider(input, "Paused", paused, 0.0f, 1.0f, 1.0f, "");

@@ -48,7 +48,7 @@ Core::String LastSystemErrorString()
     if (length != 0 && message != nullptr)
         result.assign(message, length);
     else
-        result = fmt::format("Windows error {}", error);
+        result = Foundation::Core::Format("Windows error {}", error);
     if (message != nullptr)
         LocalFree(message);
     return result;

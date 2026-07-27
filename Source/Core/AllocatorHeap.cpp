@@ -36,7 +36,8 @@ namespace Foundation::Core {
 #endif
     }
 
-    pointer AllocatorHeap::Allocate(size_type size, size_t alignment) {
+    pointer AllocatorHeap::Allocate(size_type size, size_t alignment) noexcept
+    {
 #if FOUNDATION_CORE_USES_OS_ALLOC     
         auto* ptr = aligned_alloc(alignment, size);
 #else
@@ -49,7 +50,8 @@ namespace Foundation::Core {
         }
         return ptr;
     }
-    pointer AllocatorHeap::Reallocate(pointer ptr, size_type new_size, size_t alignment) {
+    pointer AllocatorHeap::Reallocate(pointer ptr, size_type new_size, size_t alignment) noexcept
+    {
         if (!ptr)
             return Allocate(new_size, alignment);
         if (new_size == 0)
@@ -94,7 +96,8 @@ namespace Foundation::Core {
     {
         return mHeapUsage.load(std::memory_order_relaxed);
     }
-    void AllocatorHeap::Deallocate(pointer ptr) {
+    void AllocatorHeap::Deallocate(pointer ptr) noexcept
+    {
         if (ptr)
         {
             mHeapUsage.fetch_sub(AllocationSize(ptr), std::memory_order_relaxed);
@@ -106,7 +109,7 @@ namespace Foundation::Core {
         mi_free(ptr);
 #endif
     }
-    Allocator* getGlobalAllocator()
+    Allocator* GetGlobalAllocator()
     {
         static AllocatorHeap GlobalAllocatorHeap;
         return &GlobalAllocatorHeap;

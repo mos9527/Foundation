@@ -75,7 +75,7 @@ int main(int argc, char** argv)
                 break;
 
             Examples_BeginControls(input);
-            Examples_Text(input, fmt::format("Mip Generation FPS: {}", fps.Update()));
+            Examples_Text(input, Format("Mip Generation FPS: {}", fps.Update()));
             Examples_Slider(input, "Preview LOD", previewLod, 0.0f, maxPreviewLod, 1.0f);
             previewLod = std::round(previewLod);
             Examples_NewFrame(window, ctx);

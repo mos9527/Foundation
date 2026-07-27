@@ -1,5 +1,5 @@
 namespace Foundation::Core {
-    pointer AllocatorStack::Allocate(size_type size, size_type alignment)
+    pointer AllocatorStack::Allocate(size_type size, size_type alignment) noexcept
     {
         if (size == 0)
             return nullptr;        

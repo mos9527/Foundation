@@ -26,7 +26,7 @@ int main(int argc, char** argv)
         Examples_BeginFrameInput(input);
         if (Examples_PollEvents(window, ctx, input, nullptr, ImGui_ImplFoundation_ProcessEvent))
             break;
-        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
+        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(Format("FPS: {}", fps.Update()));
         ImGui_ImplFoundation_NewFrame();
         ImGui::NewFrame();
         ImGui::ShowDemoWindow();

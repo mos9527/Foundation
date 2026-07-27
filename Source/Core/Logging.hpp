@@ -7,6 +7,8 @@
 #if defined(_MSC_VER)
 #include <intrin.h>
 #endif
+#include <iterator>
+#include "Allocator.hpp"
 enum LogLevel
 {
     LogDebug,
@@ -51,7 +53,9 @@ void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...>
     constexpr size_t kN = sizeof...(Args);
     if constexpr (kN > 0)
     {
-        Foundation_LogImpl(level, tag, fmt::format(format, std::forward<Args>(args)...).c_str());
+        fmt::basic_memory_buffer<char, fmt::inline_buffer_size, Foundation::Core::StlDefaultAllocator<char>> buffer;
+        fmt::format_to(std::back_inserter(buffer), format, std::forward<Args>(args)...);
+        Foundation_LogImpl(level, tag, buffer.data());
     } else
     {
         Foundation_LogImpl(level, tag, format.str.data());

@@ -2500,13 +2500,13 @@ static void FAnimationPanel()
             static int selectedSkeleton = 0;
             selectedSkeleton = std::clamp(selectedSkeleton, 0, static_cast<int>(playbacks.size()) - 1);
             char const* skeletonName = GEditor.Scene().GetName(skeletons[selectedSkeleton].id);
-            String skeletonFallback = fmt::format("Skeleton {}", selectedSkeleton);
+            String skeletonFallback = Format("Skeleton {}", selectedSkeleton);
             if (ImGui::BeginCombo("Skeleton", skeletonName ? skeletonName : skeletonFallback.c_str()))
             {
                 for (int i = 0; i < static_cast<int>(playbacks.size()); ++i)
                 {
                     char const* name = GEditor.Scene().GetName(skeletons[i].id);
-                    String fallback = fmt::format("Skeleton {}", i);
+                    String fallback = Format("Skeleton {}", i);
                     if (ImGui::Selectable(name ? name : fallback.c_str(), selectedSkeleton == i))
                         selectedSkeleton = i;
                 }
@@ -2524,7 +2524,7 @@ static void FAnimationPanel()
                 for (uint32_t clipIndex : skeletonClips)
                 {
                     char const* name = GEditor.Scene().GetName(clips[clipIndex].name);
-                    String fallback = fmt::format("Clip {}", clipIndex);
+                    String fallback = Format("Clip {}", clipIndex);
                     if (ImGui::Selectable(name ? name : fallback.c_str(), playback.clipIndex == clipIndex))
                     {
                         playback.clipIndex = clipIndex;

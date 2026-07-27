@@ -105,7 +105,7 @@ int main(int argc, char** argv)
                 break;
 
             Examples_BeginControls(input);
-            Examples_Text(input, fmt::format("Autodiff FPS: {}", fps.Update()));
+            Examples_Text(input, Format("Autodiff FPS: {}", fps.Update()));
             Examples_Slider(input, "SGD/Adam", useAdam, 0.0f, 1.0f, 1.0f);
             Examples_Slider(input, "Steps", numSteps, 1.0f, 200.0f, 1.0f);
             Examples_Slider(input, "Learning Rate", lr, 0.001f, 0.25f, 0.001f);

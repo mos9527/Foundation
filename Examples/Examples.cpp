@@ -35,7 +35,7 @@ namespace
     String PipelineCachePathForDevice(RHIDevice const& device)
     {
         auto key = device.GetPipelineCacheKey();
-        return PathsResolve(fmt::format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
+        return PathsResolve(Format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
     }
 
     Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)
@@ -705,7 +705,7 @@ bool Examples_Button(ExampleInputState& input, StringView text)
 {
     RenderUtils::CSDebugTextData& line = NextHudLine(input);
     PlaceControl(input, line);
-    line.SetText(fmt::format(" {} ", text));
+    line.SetText(Format(" {} ", text));
     const uint32_t id = input.nextControlId++;
     line.col32 = input.activeControl == id ? kExampleUiActiveColor : kExampleUiDefaultColor;
     RegisterControl(input, id, line);
@@ -737,7 +737,7 @@ bool Examples_Slider(ExampleInputState& input, StringView label, float& value, f
     for (int i = 0; i < kBarSegments; ++i)
         bar[i] = i < filled ? '=' : '-';
     RenderUtils::CSDebugTextData& barLine = NextHudLine(input);
-    auto text = fmt::format(" {} [{}] {:.4f}{}", label, bar, value, unit);
+    auto text = Format(" {} [{}] {:.4f}{}", label, bar, value, unit);
     if (drag)
     {
         PlaceControl(input, barLine);

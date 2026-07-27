@@ -74,7 +74,7 @@ int main(int argc, char** argv)
         ExampleFpsCounter fps;
         while (!Examples_ShouldClose(window, ctx))
         {
-            lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
+            lines[1].x = 16, lines[1].y = 40, lines[1].SetText(Format("FPS: {}", fps.Update()));
             Examples_NewFrame(window, ctx);
         }
     }

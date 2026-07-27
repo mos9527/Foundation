@@ -2,47 +2,54 @@
 #include <atomic>
 #include <memory>
 #include <stdexcept>
-namespace Foundation::Core {
-	using size_type = std::size_t;
-	using pointer = void*;
-	constexpr uintptr_t AlignUp(const uintptr_t value, const uintptr_t alignment) {
+namespace Foundation::Core
+{
+    using size_type = std::size_t;
+    using pointer = void*;
+    constexpr uintptr_t AlignUp(const uintptr_t value, const uintptr_t alignment)
+    {
         return value % alignment ? (value + alignment - value % alignment) : value;
-	}
-	constexpr uintptr_t AlignDown(const uintptr_t value, const uintptr_t alignment) {
-	    return value % alignment ? (value - value % alignment) : value;
-	}
+    }
+    constexpr uintptr_t AlignDown(const uintptr_t value, const uintptr_t alignment)
+    {
+        return value % alignment ? (value - value % alignment) : value;
+    }
     /**
      * @brief A memory arena allocated from an Allocator
      */
-    struct Arena {
+    struct Arena
+    {
         pointer memory;
         size_type size;
     };
     /**
-     * @brief General Purpose Allocator (GPA) interface
+     * @brief Allocator interface (noexcept)
      */
-    class Allocator {
-	public:
+    class Allocator
+    {
+    public:
         virtual ~Allocator() = default;
-		virtual pointer Allocate(size_type size, size_t alignment = alignof(std::max_align_t)) = 0;
-        virtual void Deallocate(pointer ptr) = 0;
-        virtual pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) = 0;
+        virtual pointer Allocate(size_type size, size_t alignment = alignof(std::max_align_t)) noexcept = 0;
+        virtual void Deallocate(pointer ptr) noexcept = 0;
+        virtual pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) noexcept = 0;
 
         virtual void QueryBudget(size_t& used, size_t& budget) const = 0;
         virtual size_t QueryHeapUsage() const = 0;
 
-        Arena AllocateArena(size_type size, size_t alignment) { return { Allocate(size, alignment), size }; }
-        Arena AllocateArena(size_type size) { return { Allocate(size), size }; }
-        void DeallocateArena(Arena arena) {
-            if (arena.memory) 
+        Arena AllocateArena(size_type size, size_t alignment) { return {Allocate(size, alignment), size}; }
+        Arena AllocateArena(size_type size) { return {Allocate(size), size}; }
+        void DeallocateArena(Arena arena)
+        {
+            if (arena.memory)
                 Deallocate(arena.memory);
         }
         Allocator* Ptr() { return this; }
-	};
+    };
     /**
      * @brief RAII wrapper for an arena allocated from an Allocator
      */
-    struct ScopedArena {
+    struct ScopedArena
+    {
         Allocator* resource;
         Arena arena;
         ScopedArena(Allocator* res, size_t size, size_t alignment = alignof(std::max_align_t)) :
@@ -55,17 +62,20 @@ namespace Foundation::Core {
     /**
      * @brief A fixed-size stack memory arena
      */
-    template<size_t Size = kDefaultStackArenaSize> struct StackArena {
+    template <size_t Size = kDefaultStackArenaSize>
+    struct StackArena
+    {
         alignas(std::max_align_t) std::byte data[Size];
-        constexpr operator Arena() { return { reinterpret_cast<void*>(data), Size }; }
-        constexpr operator Arena() const { return { reinterpret_cast<void*>(data), Size }; }
+        constexpr operator Arena() { return {reinterpret_cast<void*>(data), Size}; }
+        constexpr operator Arena() const { return {reinterpret_cast<void*>(data), Size}; }
     };
 
     /**
      * @brief `std::allocator` adaptor for @ref Foundation::Core::Allocator
      *
-     * Construction without a @ref Foundation::Core::Allocator pointer is disallowed, and will result in a compile-time error.
-     * For STL types that require default-constructible allocators, use `StlAllocator<void>` and pass the resource explicitly
+     * Construction without a @ref Foundation::Core::Allocator pointer is disallowed, and will result in a compile-time
+     * error. For STL types that require default-constructible allocators, use `StlAllocator<void>` and pass the
+     * resource explicitly
      *
      * Rebind construction is supported.
      *
@@ -76,7 +86,8 @@ namespace Foundation::Core {
      * @endcode
      */
     template <typename T = void>
-    struct StlAllocator {
+    struct StlAllocator
+    {
         using value_type = T;
         using size_type = std::size_t;
         using difference_type = std::ptrdiff_t;
@@ -87,48 +98,59 @@ namespace Foundation::Core {
 
         Allocator* mResource;
 
-        template<typename U> friend struct StlAllocator; // Rebind ctor
-        template<typename U> struct Rebind { using other = StlAllocator<U>; };
-        StlAllocator(Allocator* resource) noexcept : mResource(resource) {}            
-        template<typename U>
-        StlAllocator(const StlAllocator<U>& other) noexcept : mResource(other.mResource) {}
+        template <typename U>
+        friend struct StlAllocator; // Rebind ctor
+        template <typename U>
+        struct Rebind
+        {
+            using other = StlAllocator<U>;
+        };
+        StlAllocator(Allocator* resource) noexcept : mResource(resource) {}
+        template <typename U>
+        StlAllocator(const StlAllocator<U>& other) noexcept : mResource(other.mResource)
+        {
+        }
 
-        pointer allocate(size_type n) {
+        pointer allocate(size_type n) noexcept
+        {
             return static_cast<pointer>(mResource->Allocate(n * sizeof(T), alignof(T)));
         }
-        void deallocate(pointer p, size_type n) noexcept {
-            mResource->Deallocate(p);
-        }
+        void deallocate(pointer p, size_type n) noexcept { mResource->Deallocate(p); }
         void deallocate(pointer p) noexcept { mResource->Deallocate(p); }
-		// Allocators are deemed equal if they point to the same resource
-        friend bool operator==(const StlAllocator& lhs, const StlAllocator& rhs) noexcept {
+        // Allocators are deemed equal if they point to the same resource
+        friend bool operator==(const StlAllocator& lhs, const StlAllocator& rhs) noexcept
+        {
             return lhs.mResource == rhs.mResource;
         }
-        friend bool operator!=(const StlAllocator& lhs, const StlAllocator& rhs) noexcept {
-            return !(lhs == rhs);
-        }          
+        friend bool operator!=(const StlAllocator& lhs, const StlAllocator& rhs) noexcept { return !(lhs == rhs); }
     };
 
     /**
-     * @brief Custom deleter for @ref Foundation::Core::UniquePtr and @ref Foundation::Core::SharedPtr that uses a @ref Foundation::Core::Allocator to deallocate memory.
+     * @brief Custom deleter for @ref Foundation::Core::UniquePtr and @ref Foundation::Core::SharedPtr that uses a @ref
+     * Foundation::Core::Allocator to deallocate memory.
      */
     template <typename T>
-    struct StlDeleter {
+    struct StlDeleter
+    {
         Allocator* mResource;
-        void operator()(T* ptr) noexcept {
-            if (ptr && mResource) {
+        void operator()(T* ptr) noexcept
+        {
+            if (ptr && mResource)
+            {
                 std::destroy_at(ptr);
                 mResource->Deallocate(ptr);
             }
         }
     };
     /**
-     * @brief Placement new helper for constructing an object of type Derived (which can be a subclass of Base) using a @ref Foundation::Core::Allocator.
+     * @brief Placement new helper for constructing an object of type Derived (which can be a subclass of Base) using a
+     * @ref Foundation::Core::Allocator.
      * @note Using `delete`, `delete[]` on the returned pointer is undefined behaviour. @ref Destruct should ALWAYS
      *       be used for such purposes.
      */
-    template <typename Base, typename Derived, typename ...Args>
-    Base* ConstructBase(Allocator* resource, Args&& ...args) {
+    template <typename Base, typename Derived, typename... Args>
+    Base* ConstructBase(Allocator* resource, Args&&... args)
+    {
         auto raw = resource->Allocate(sizeof(Derived), alignof(Derived));
         return std::construct_at(static_cast<Derived*>(raw), std::forward<Args>(args)...);
     }
@@ -137,24 +159,27 @@ namespace Foundation::Core {
      * @note Using `delete`, `delete[]` on the returned pointer is undefined behaviour. @ref Destruct should ALWAYS
      *       be used for such purposes.
      */
-    template <typename T, typename ...Args>
-    T* Construct(Allocator* resource, Args&& ...args) {
+    template <typename T, typename... Args>
+    T* Construct(Allocator* resource, Args&&... args)
+    {
         return ConstructBase<T, T>(resource, std::forward<Args>(args)...);
     }
     /**
      * @brief Convenience destructor for objects allocated with @ref Construct or @ref ConstructBase.
      */
     template <typename T>
-    void Destruct(Allocator* resource, T* obj) {
+    void Destruct(Allocator* resource, T* obj)
+    {
         StlDeleter<T> deleter(resource);
         deleter(obj);
     }
     /**
      * @brief `std::unique_ptr` with custom deleter that uses a @ref Foundation::Core::Allocator to deallocate memory.
      *
-     * Construction without a @ref Foundation::Core::Allocator pointer is disallowed, and will result in a compile-time error.
+     * Construction without a @ref Foundation::Core::Allocator pointer is disallowed, and will result in a compile-time
+     * error.
      */
-    template<typename T, typename Deleter = StlDeleter<T>>
+    template <typename T, typename Deleter = StlDeleter<T>>
     using UniquePtr = std::unique_ptr<T, Deleter>;
 
     /**
@@ -163,27 +188,29 @@ namespace Foundation::Core {
      * @tparam Base is the base class type be templated on.
      * @tparam Derived can be a subclass of Base, with destruction handled correctly.
      */
-    template <typename Base, typename Derived, typename ...Args>
-    UniquePtr<Base> ConstructUniqueBase(Allocator* resource, Args&& ...args) {
+    template <typename Base, typename Derived, typename... Args>
+    UniquePtr<Base> ConstructUniqueBase(Allocator* resource, Args&&... args)
+    {
         Base* obj = ConstructBase<Base, Derived>(resource, std::forward<Args>(args)...);
-        return UniquePtr<Base>(obj, StlDeleter<Base>{ resource });
+        return UniquePtr<Base>(obj, StlDeleter<Base>{resource});
     }
     /**
      * @brief Convenience wrapper for calling @ref ConstructUniqueBase when Base and Derived are the same type.
      *
      * @tparam T is the class type to be templated on.
      */
-    template <typename T, typename ...Args>
-    UniquePtr<T> ConstructUnique(Allocator* resource, Args&& ...args) {
+    template <typename T, typename... Args>
+    UniquePtr<T> ConstructUnique(Allocator* resource, Args&&... args)
+    {
         return ConstructUniqueBase<T, T>(resource, std::forward<Args>(args)...);
     }
 
     /**
      * @brief `std::shared_ptr` with custom deleter that uses a @ref Foundation::Core::Allocator to deallocate memory.
      */
-    template<typename T>
+    template <typename T>
     using SharedPtr = std::shared_ptr<T>;
-    template<typename T>
+    template <typename T>
     using WeakPtr = std::weak_ptr<T>;
 
     /**
@@ -192,8 +219,9 @@ namespace Foundation::Core {
      * @tparam Base is the base class type be templated on.
      * @tparam Derived can be a subclass of Base, with destruction handled correctly.
      */
-    template<typename Base, typename Derived, typename ...Args>
-    SharedPtr<Base> ConstructSharedBase(Allocator* resource, Args&& ...args) {
+    template <typename Base, typename Derived, typename... Args>
+    SharedPtr<Base> ConstructSharedBase(Allocator* resource, Args&&... args)
+    {
         return std::allocate_shared<Derived>(StlAllocator<Derived>{resource}, std::forward<Args>(args)...);
     }
 
@@ -202,13 +230,48 @@ namespace Foundation::Core {
      *
      * @tparam T is the class type to be templated on.
      */
-    template <typename T, typename ...Args>
-    SharedPtr<T> ConstructShared(Allocator* resource, Args&& ...args) {
+    template <typename T, typename... Args>
+    SharedPtr<T> ConstructShared(Allocator* resource, Args&&... args)
+    {
         return ConstructSharedBase<T, T>(resource, std::forward<Args>(args)...);
     }
 
     /** Implemented by @ref AllocatorHeap **/
-    extern Allocator* getGlobalAllocator();
-}
+    extern Allocator* GetGlobalAllocator();
+} // namespace Foundation::Core
 
-#define GLOBAL_ALLOC Foundation::Core::getGlobalAllocator()
+#define GLOBAL_ALLOC Foundation::Core::GetGlobalAllocator()
+namespace Foundation::Core
+{
+    // Default allocator for STL containers to be constructed with @ref GLOBAL_ALLOC
+    template <typename T = void>
+    struct StlDefaultAllocator
+    {
+        using value_type = T;
+        using size_type = std::size_t;
+        using difference_type = std::ptrdiff_t;
+        using pointer = T*;
+        using const_pointer = const T*;
+        using reference = T&;
+        using const_reference = const T&;
+        StlDefaultAllocator() noexcept = default;
+        ~StlDefaultAllocator() = default;
+        template <typename U>
+        constexpr StlDefaultAllocator(const StlDefaultAllocator<U>&) noexcept
+        {
+        }
+
+        pointer allocate(size_type n) noexcept
+        {
+            return static_cast<pointer>(GLOBAL_ALLOC->Allocate(n * sizeof(T), alignof(T)));
+        }
+        void deallocate(pointer p, size_type n) noexcept { GLOBAL_ALLOC->Deallocate(p); }
+        void deallocate(pointer p) noexcept { GLOBAL_ALLOC->Deallocate(p); }
+        friend bool operator==(const StlDefaultAllocator& lhs, const StlDefaultAllocator& rhs) noexcept { return true; }
+        friend bool operator!=(const StlDefaultAllocator& lhs, const StlDefaultAllocator& rhs) noexcept
+        {
+            return false;
+        }
+    };
+
+} // namespace Foundation::Core

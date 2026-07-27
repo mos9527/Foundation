@@ -288,15 +288,15 @@ int main(int argc, char** argv)
         Examples_Text(input,
                       activeMode == CIERenderMode::ChromaticityXY ? "CIE xy chromaticity -> BT.709/sRGB"
                                                                   : "CIE 1931 XYZ matching curves");
-        Examples_Text(input, fmt::format("FPS: {}", fps.Update()));
+        Examples_Text(input, Format( {}", fps.Update()));
         Examples_Text(input,
                       activeMode == CIERenderMode::ChromaticityXY
                           ? activePrimariesOverlay == kReferencePrimariesOverlay
                               ? "Overlay: reference horseshoe"
-                              : fmt::format("Overlay: {}", kCIEPrimaries[activePrimariesOverlay].name)
+                              : FormaFormat({}", kCIEPrimaries[activePrimariesOverlay].name)
                           : "CPU line raster: X(red), Y(green), Z(blue), normalized");
         Examples_Text(input,
-                      fmt::format("center=({:.4f}, {:.4f}) range=({:.4f}, {:.4f})", activeView.centerX,
+                      Format("ceFormat(, {:.4f}) range=({:.4f}, {:.4f})", activeView.centerX,
                                   activeView.centerY, activeView.rangeX, activeView.rangeY));
         Examples_NewFrame(window, ctx);
     }

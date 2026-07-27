@@ -104,7 +104,7 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
                                                }});
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
-    String tracePassName = fmt::format("Trace {}", shaderExecutionReordering ? "SER" : "Compute");
+    String tracePassName = Format("Trace {}", shaderExecutionReordering ? "SER" : "Compute");
     renderer->CreatePass(
         tracePassName.c_str(), RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)

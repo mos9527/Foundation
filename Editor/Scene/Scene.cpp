@@ -1134,7 +1134,7 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
     {
         if (anim->name && *anim->name)
             return scene.InternString(anim->name);
-        return scene.InternString(fmt::format("Animation {}", index).c_str());
+        return scene.InternString(Format("Animation {}", index).c_str());
     };
     // glTF animation pointer -> interned name id, for resolving EXT_foundation_animation strips.
     HashMap<cgltf_animation const*, FUUID> animationName(scratchAlloc);
@@ -1278,7 +1278,7 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
                 for (size_t i = begin; i < end; ++i)
                 {
                     cgltf_texture* src = &data->textures[i];
-                    String name = src->name ? src->name : fmt::format("{}_{}", path, i);
+                    String name = src->name ? src->name : Format("{}_{}", path, i);
                     unsigned flags = textureFlags[i];
                     FTexture texture(scratchAlloc);
                     LOG(Scene, LogInfo, "Loading texture {}", name);

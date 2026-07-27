@@ -43,7 +43,7 @@ void Presenter::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain) {
     for (uint32_t i = 0; i < mFrameSwaps; ++i)
     {
         mSyncs[i] = mDevice->CreateSemaphore(false);
-        mSyncs[i]->DebugSetObjectName(fmt::format("Acquire Semaphore of Swap {}", i).c_str());
+        mSyncs[i]->DebugSetObjectName(Format("Acquire Semaphore of Swap {}", i).c_str());
     }
     mCurrentSync = mCurrentSwap = 0;
 }

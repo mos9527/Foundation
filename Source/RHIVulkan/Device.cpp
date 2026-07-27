@@ -461,7 +461,7 @@ void VulkanDevice::QueryMemoryStats(RHIDeviceMemoryStats& outStats) const
 String VulkanDevice::QueryDeviceString() const
 {
     auto properties = mPhysicalDevice.getProperties();
-    return fmt::format("{} ({}) on Vulkan {}.{}.{}", &properties.deviceName[0],
+    return Format("{} ({}) on Vulkan {}.{}.{}", &properties.deviceName[0],
                        kVulkanDeviceTypes[static_cast<size_t>(properties.deviceType)],
                        VK_VERSION_MAJOR(properties.apiVersion), VK_VERSION_MINOR(properties.apiVersion),
                        VK_VERSION_PATCH(properties.apiVersion));

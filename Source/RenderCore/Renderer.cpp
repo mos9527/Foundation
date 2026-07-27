@@ -750,7 +750,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
             auto size = std::filesystem::file_size(shader_path, ec);
             CHECK_MSG(!ec, "Failed to open shader file {}: {}", shader_path, ec.message());
             data.resize(size);
-            std::ifstream file(shader_path, std::ios::binary);
+            std::ifstream file(shader_path.c_str(), std::ios::binary);
             CHECK_MSG(file.is_open() && file.read(data.data(), size), "Failed to read shader {}", shader_path);
             reflections.emplace(shader_path, ConstructUnique<Shader>(mAllocator, data, mAllocator));
             shaders[shader_path] = mDevice->CreateShaderModule({.source = data});
@@ -1024,14 +1024,14 @@ void Renderer::BuildPipelineState(PassHandle pass)
         tracked.descriptorLayouts.push_back(
             mDevice->CreateDescriptorSetLayout({.bindings = {set_bindings.cbegin() + i, set_bindings.cbegin() + j}}));
         tracked.descriptorLayouts.back()->DebugSetObjectName(
-            fmt::format("Descriptor Set Layout {} of {} [{}]", set, tracked.name, pass).c_str());
+            Format("Descriptor Set Layout {} of {} [{}]", set, tracked.name, pass).c_str());
         tracked.pDescriptorLayouts.emplace_back(tracked.descriptorLayouts.back().Get());
         {
             std::unique_lock lock(mDescPoolMutex);
             tracked.descriptorSets.push_back(mDescPool->CreateDescriptorSet(tracked.descriptorLayouts.back()));
         }
         auto& ds = tracked.descriptorSets.back();
-        ds->DebugSetObjectName(fmt::format("Descriptor Set {} of {} [{}]", set, tracked.name, pass).c_str());
+        ds->DebugSetObjectName(Format("Descriptor Set {} of {} [{}]", set, tracked.name, pass).c_str());
         tracked.pDescriptorSets.push_back(ds.Get());
         // Update bindings
         for (size_t k = i; k < j; k++)
@@ -1174,7 +1174,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         auto const compileEnd = std::chrono::steady_clock::now();
         double const compileSec = std::chrono::duration<double>(compileEnd - compileStart).count();
         LOG(Renderer, LogDebug, "** {} [{}] Compiled in {:.3f}s", tracked.name, pass, compileSec);
-        tracked.pso->DebugSetObjectName(fmt::format("PSO of {} [{}]", tracked.name, pass).c_str());
+        tracked.pso->DebugSetObjectName(Format("PSO of {} [{}]", tracked.name, pass).c_str());
     }
     else
     {
@@ -1257,7 +1257,7 @@ void Renderer::FinalizeResources()
                         RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
                 mResources->resources[handle] = mDevice->CreateBuffer(maybeShared);
                 DerefResource(handle).Get<RHIBuffer*>()->DebugSetObjectName(
-                    fmt::format("{} [{}]", res.name, handle).c_str());
+                    Format("{} [{}]", res.name, handle).c_str());
             },
             [&](RHITextureDesc const& desc)
             {
@@ -1268,7 +1268,7 @@ void Renderer::FinalizeResources()
                         RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
                 mResources->resources[handle] = mDevice->CreateTexture(maybeShared);
                 DerefResource(handle).Get<RHITexture*>()->DebugSetObjectName(
-                    fmt::format("{} [{}]", res.name, handle).c_str());
+                    Format("{} [{}]", res.name, handle).c_str());
             },
             // Borrowed
             [&](RHIBuffer* const ptr) { mResources->resources[handle] = ptr; },
@@ -1362,7 +1362,7 @@ void Renderer::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
             },
             [](RHIAccelerationStructure*) -> size_t { return 0; });
         if (bytes != 0)
-            outStats.push_back({fmt::format("{} ({})", tracked.name, isTexture ? "Texture" : "Buffer"), bytes});
+            outStats.push_back({Format("{} ({})", tracked.name, isTexture ? "Texture" : "Buffer"), bytes});
     }
 }
 
@@ -1404,16 +1404,16 @@ void Renderer::SetFrameSyncObjects()
     for (size_t i = 0; i < mFrameSwaps; i++)
     {
         mSwaps[i].render = mDevice->CreateSemaphore(false);
-        mSwaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
+        mSwaps[i].render->DebugSetObjectName(Format("Render Semaphore of Swap {}", i).c_str());
         mSwaps[i].graphicsFence = mDevice->CreateFence(true);
-        mSwaps[i].graphicsFence->DebugSetObjectName(fmt::format("Graphics Fence of Swap {}", i).c_str());
+        mSwaps[i].graphicsFence->DebugSetObjectName(Format("Graphics Fence of Swap {}", i).c_str());
         mSwaps[i].computeFence = mDevice->CreateFence(true);
-        mSwaps[i].computeFence->DebugSetObjectName(fmt::format("Compute Fence of Swap {}", i).c_str());
+        mSwaps[i].computeFence->DebugSetObjectName(Format("Compute Fence of Swap {}", i).c_str());
     }
     mGraphicsTimeline = mDevice->CreateSemaphore(true);
-    mGraphicsTimeline->DebugSetObjectName(fmt::format("Graphics Timeline Semaphore").c_str());
+    mGraphicsTimeline->DebugSetObjectName(Format("Graphics Timeline Semaphore").c_str());
     mComputeTimeline = mDevice->CreateSemaphore(true);
-    mComputeTimeline->DebugSetObjectName(fmt::format("Async Compute Timeline Semaphore").c_str());
+    mComputeTimeline->DebugSetObjectName(Format("Async Compute Timeline Semaphore").c_str());
 }
 
 void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
@@ -1434,7 +1434,7 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
     for (size_t i = 0; i < mFrameSwaps; ++i)
     {
         auto* backbuffer = swapchain->GetImages()[i];
-        backbuffer->DebugSetObjectName(fmt::format("Backbuffer {}", i).c_str());
+        backbuffer->DebugSetObjectName(Format("Backbuffer {}", i).c_str());
         mSwaps[i].view = backbuffer->CreateTextureView(
             RHITextureViewDesc{.format = swapchain->mDesc.format, .range = RHITextureSubresourceRange::Create()});
         // Create one descriptor set per backbuffer
@@ -1451,7 +1451,7 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
         if (mSwaps[i].backbuffer == kInvalidHandle)
         {
             // First time setup
-            mSwaps[i].backbuffer = CreateResource(fmt::format("Backbuffer {}", i), backbuffer);
+            mSwaps[i].backbuffer = CreateResource(Format("Backbuffer {}", i), backbuffer);
         }
         else
         {
@@ -1765,7 +1765,7 @@ RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateGraphics()
     if (!graphicsCmds[index].IsValid())
     {
         graphicsCmds[index] = graphicsPool->CreateCommandList();
-        graphicsCmds[index]->DebugSetObjectName(fmt::format("Graphics List {}", index).c_str());
+        graphicsCmds[index]->DebugSetObjectName(Format("Graphics List {}", index).c_str());
     }
     return graphicsCmds[index].Get();
 }
@@ -1776,7 +1776,7 @@ RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateCompute()
     if (!computeCmds[index].IsValid())
     {
         computeCmds[index] = computePool->CreateCommandList();
-        computeCmds[index]->DebugSetObjectName(fmt::format("Compute List {}", index).c_str());
+        computeCmds[index]->DebugSetObjectName(Format("Compute List {}", index).c_str());
     }
     return computeCmds[index].Get();
 }

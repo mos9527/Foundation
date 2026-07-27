@@ -31,13 +31,13 @@ namespace Foundation::Core
          * @brief Allocates a block of memory of the specified size with alignment.
          * If the requested size exceeds the available memory within the arena, returns nullptr.
          */
-        pointer Allocate(size_type size, size_type alignment) override;
+        pointer Allocate(size_type size, size_type alignment) noexcept override;
         /**
          * @note No-op. No memory is modified with this operation.
          */
-        void Deallocate(pointer ptr) override { /* nop */ }
+        void Deallocate(pointer ptr) noexcept override { /* nop */ }
         /** @note Unsupported. */
-        pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) override
+        pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) noexcept override
         {
             CHECK_MSG(false, "Allocator does not support reallocation");
             return nullptr;

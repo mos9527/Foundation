@@ -20,7 +20,7 @@ namespace Foundation::RenderUtils
         for (uint32 i = 1; i < numMips; ++i)
         {
             renderer->CreatePass(
-                fmt::format("Mip Gen {} {}", i, name), queue, 0u,
+                Format("Mip Gen {} {}", i, name), queue, 0u,
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindTextureSampler(self, srcSampler, "sampler");
@@ -90,7 +90,7 @@ namespace Foundation::RenderUtils
             numWorkGroups = (dispatchThreadGroupCountXY[0]) * (dispatchThreadGroupCountXY[1]);
         };
         auto SpdCounter = renderer->CreateResource(
-            fmt::format("{} SPD Atomics", name),
+            Format("{} SPD Atomics", name),
             RHIBufferDesc{
                 .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
                 .size = sizeof(uint32_t) * 6,
