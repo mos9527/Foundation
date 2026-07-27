@@ -39,7 +39,7 @@ if (MSVC)
     endif ()
     add_compile_options("/utf-8")
 else()
-    add_compile_options("-Wall" "-Wno-unused-function" "-Wno-unused-variable" "-Wno-unused-but-set-global")
+    add_compile_options(-Wall -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable)
 endif()
 
 if (FOUNDATION_NO_EXCEPTION)
