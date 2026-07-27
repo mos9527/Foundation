@@ -117,7 +117,7 @@ target_include_directories(cgltf INTERFACE "${CMAKE_CURRENT_LIST_DIR}")
 FetchContent_Declare(
     meshoptimizer
     GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
-    GIT_TAG 19bb5e6fa8da4ba9c333fc6a265d776363c06b39
+    GIT_TAG a6ecc73c094bdd5d09644f9286bbf25134853679
 )
 
 FetchContent_Declare(

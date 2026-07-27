@@ -19,7 +19,7 @@ static constexpr const char* kTempScenePath = "Cache/GPUSceneGLTF.fscn";
 
 String PrepareScenePayload(JobSystem* jobs, StringView path)
 {
-    String ext = std::filesystem::path(path.data()).extension().string();
+    String ext = std::filesystem::path(path.data()).extension().string().c_str();
     if (ext == ".fscn")
         return String(path);
 

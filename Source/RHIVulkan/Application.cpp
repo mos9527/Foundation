@@ -122,7 +122,7 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     {
         auto const& device = physicalDevices[id];
         auto props = device.getProperties();
-        mDevices.emplace_back(RHIDevice::DeviceDesc{.id = id, .name = props.deviceName});
+        mDevices.emplace_back(RHIDevice::DeviceDesc{.id = id, .name = props.deviceName.data() });
         mPhysicalDevices.emplace_back(device);
     }
     if (isExtensionEnabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
