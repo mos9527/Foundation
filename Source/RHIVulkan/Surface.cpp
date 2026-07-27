@@ -13,12 +13,12 @@ namespace Foundation::RHI {
             CHECK_MSG(SDL_Vulkan_CreateSurface(static_cast<SDL_Window*>(desc.windowHandle), *device.GetApp().GetVkInstance(), device.GetApp().GetVkAllocationCallbacksNative(), &surface),
                       "failed to create window surface: {}", SDL_GetError());
             mSurface = vk::raii::SurfaceKHR(device.GetApp().GetVkInstance(), surface, device.GetApp().GetVkAllocationCallbacks());
-            CHECK_MSG(VkExpect(device.GetVkPhysicalDevice().getSurfaceSupportKHR(device.GetGraphicsQueueFamilyIndex(), *mSurface), "getSurfaceSupportKHR"),
+            CHECK_MSG(VkExpect(device.GetVkPhysicalDevice().getSurfaceSupportKHR(device.GetGraphicsQueueFamilyIndex(), *mSurface)),
                       "Graphics queue family does not support the presentation surface");
         }
 
         if (*mSurface) {
-            auto formats = VkExpect(device.GetVkPhysicalDevice().getSurfaceFormatsKHR(*mSurface), "getSurfaceFormatsKHR");
+            auto formats = VkExpect(device.GetVkPhysicalDevice().getSurfaceFormatsKHR(*mSurface));
             for (auto& fmt : formats) {
                 using enum RHIResourceFormat;
                 using enum RHIColorSpace;
@@ -56,7 +56,7 @@ namespace Foundation::RHI {
                 }
             }
 
-            auto modes = VkExpect(device.GetVkPhysicalDevice().getSurfacePresentModesKHR(*mSurface), "getSurfacePresentModesKHR");
+            auto modes = VkExpect(device.GetVkPhysicalDevice().getSurfacePresentModesKHR(*mSurface));
             for (auto& mode : modes) {
                 switch (mode) {
                 case vk::PresentModeKHR::eMailbox:

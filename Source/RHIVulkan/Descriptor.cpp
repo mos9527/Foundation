@@ -108,7 +108,7 @@ VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& devic
                                                               .maxSets = static_cast<uint32_t>(max_sets),
                                                               .poolSizeCount = static_cast<uint32_t>(pool_sizes.size()),
                                                               .pPoolSizes = pool_sizes.data()},
-                                 mDevice.GetVkAllocationCallbacks()), "createDescriptorPool");
+                                 mDevice.GetVkAllocationCallbacks()));
     CHECK(*mPool && "failed to create Vulkan descriptor pool");
 }
 RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>
@@ -124,7 +124,7 @@ VulkanDeviceDescriptorPool::CreateDescriptorSet(RHIDeviceHandle<RHIDeviceDescrip
         .descriptorSetCount = 1,
         .pSetLayouts = &*vk_layout,
     };
-    auto set = VkExpect(mDevice.GetVkDevice().allocateDescriptorSets(alloc_info), "allocateDescriptorSets");
+    auto set = VkExpect(mDevice.GetVkDevice().allocateDescriptorSets(alloc_info));
     CHECK(!set.empty() && "descriptor set allocation failure");
     auto handle = mStorage.CreateObject<VulkanDeviceDescriptorSet>(*this, std::move(set.front()));
     return {this, handle};

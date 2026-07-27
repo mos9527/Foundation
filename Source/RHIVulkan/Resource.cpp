@@ -248,7 +248,7 @@ RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextu
                                           .levelCount = desc.range.mipCount,
                                           .baseArrayLayer = desc.range.layer.baseArrayLayer,
                                           .layerCount = desc.range.layer.layerCount}},
-        mDevice.GetVkAllocationCallbacks()), "createImageView");
+        mDevice.GetVkAllocationCallbacks()));
     return {this, mViews.CreateObject<VulkanTextureView>(*this, desc, std::move(image_view))};
 }
 RHITextureView* VulkanTexture::GetImageView(Handle handle) const { return mViews.GetObjectPtr<RHITextureView>(handle); }
@@ -323,7 +323,7 @@ VulkanAccelerationStructure::VulkanAccelerationStructure(VulkanDevice const& dev
             .type = desc.type == RHIAccelerationStructureType::TopLevel
                 ? vk::AccelerationStructureTypeKHR::eTopLevel
                 : vk::AccelerationStructureTypeKHR::eBottomLevel},
-        device.GetVkAllocationCallbacks()), "createAccelerationStructureKHR");
+        device.GetVkAllocationCallbacks()));
     mASAddress = mDevice.GetVkDevice().getAccelerationStructureAddressKHR({.accelerationStructure = mAS});
 }
 vk::DeviceAddress VulkanAccelerationStructure::GetVkAccelerationStructureAddress() const

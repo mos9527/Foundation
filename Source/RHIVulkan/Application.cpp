@@ -41,7 +41,7 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     desiredLayers.erase(Ranges::unique(desiredLayers).begin(), desiredLayers.end());
 
     // --- Extension Querying ---
-    auto availableExtensions = VkExpect(mContext.enumerateInstanceExtensionProperties(), "enumerateInstanceExtensionProperties");
+    auto availableExtensions = VkExpect(mContext.enumerateInstanceExtensionProperties());
     auto isExtensionAvailable = [&](const char* extName) -> bool {
         for (auto const& ext : availableExtensions) {
             if (StringView(ext.extensionName.data()) == extName)
@@ -81,7 +81,7 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     };
 
     // --- Layer Querying ---
-    auto availableLayers = VkExpect(mContext.enumerateInstanceLayerProperties(), "enumerateInstanceLayerProperties");
+    auto availableLayers = VkExpect(mContext.enumerateInstanceLayerProperties());
     auto isLayerAvailable = [&](const char* layerName) -> bool {
         for (auto const& layer : availableLayers) {
             if (StringView(layer.layerName.data()) == layerName)
@@ -114,10 +114,10 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     validation_features.pEnabledValidationFeatures = &validation_feature_enables;
     instanceInfo.setPNext(&validation_features);
 #endif
-    mInstance = VkExpect(mContext.createInstance(instanceInfo, GetVkAllocationCallbacks()), "createInstance");    
+    mInstance = VkExpect(mContext.createInstance(instanceInfo, GetVkAllocationCallbacks()));    
     mDevices.clear();
     mPhysicalDevices.clear();
-    auto physicalDevices = VkExpect(mInstance.enumeratePhysicalDevices(), "enumeratePhysicalDevices");
+    auto physicalDevices = VkExpect(mInstance.enumeratePhysicalDevices());
     for (uint32_t id = 0; id < physicalDevices.size(); ++id)
     {
         auto const& device = physicalDevices[id];
@@ -140,7 +140,7 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
         };
         mDebugHandler = VkExpect(mInstance.createDebugUtilsMessengerEXT(
             reinterpret_cast<const vk::DebugUtilsMessengerCreateInfoEXT&>(debugInfo),
-            GetVkAllocationCallbacks()), "createDebugUtilsMessengerEXT");
+            GetVkAllocationCallbacks()));
     }
 }
 

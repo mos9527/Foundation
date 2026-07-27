@@ -159,7 +159,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     DeviceFeatureChain supportedChain{};
 
     // --- Extension Querying ---
-    auto availableExtensions = VkExpect(mPhysicalDevice.enumerateDeviceExtensionProperties(), "enumerateDeviceExtensionProperties");
+    auto availableExtensions = VkExpect(mPhysicalDevice.enumerateDeviceExtensionProperties());
     auto isExtensionAvailable = [&](const char* extName) -> bool {
         for (auto const& ext : availableExtensions) {
             if (StringView(ext.extensionName.data()) == extName) return true;
@@ -296,7 +296,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                                      .pQueueCreateInfos = queueInfos.data(),
                                      .enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
                                      .ppEnabledExtensionNames = enabledExtensions.data()};
-    mDevice = VkExpect(mPhysicalDevice.createDevice(device_info, GetVkAllocationCallbacks()), "createDevice");
+    mDevice = VkExpect(mPhysicalDevice.createDevice(device_info, GetVkAllocationCallbacks()));
     CHECK(*mDevice && "failed to create Vulkan device");
     // Allocate the queues
     mQueues = ConstructUnique<VulkanDeviceQueues>(GetAllocator(), GetAllocator());
@@ -565,7 +565,7 @@ VulkanDeviceSemaphore::VulkanDeviceSemaphore(const VulkanDevice& device, bool is
     vk::SemaphoreTypeCreateInfo tinfo{.semaphoreType = vk::SemaphoreType::eTimeline, .initialValue = 0};
     if (is_timeline)
         info.setPNext(&tinfo);
-    mSemaphore = VkExpect(mDevice.GetVkDevice().createSemaphore(info, mDevice.GetVkAllocationCallbacks()), "createSemaphore");
+    mSemaphore = VkExpect(mDevice.GetVkDevice().createSemaphore(info, mDevice.GetVkAllocationCallbacks()));
 }
 
 void VulkanDeviceSemaphore::DebugSetObjectName(const char* name)
@@ -580,7 +580,7 @@ VulkanDeviceFence::VulkanDeviceFence(const VulkanDevice& device, bool signaled) 
     RHIDeviceFence(device), mDevice(device),
     mFence(VkExpect(device.GetVkDevice().createFence(
         vk::FenceCreateInfo{.flags = signaled ? vk::FenceCreateFlagBits::eSignaled : vk::FenceCreateFlags{}},
-        device.GetVkAllocationCallbacks()), "createFence"))
+        device.GetVkAllocationCallbacks())))
 {
 }
 
@@ -620,7 +620,7 @@ void VulkanDevice::ResetFences(Span<RHIDeviceFence* const> fences)
     vk_fences.reserve(fences.size());
     for (auto* fence : fences)
         vk_fences.emplace_back(static_cast<VulkanDeviceFence*>(fence)->GetVkFence());
-    VkExpect(mDevice.resetFences(vk_fences), "resetFences");
+    VkExpect(mDevice.resetFences(vk_fences));
 }
 
 bool VulkanDevice::WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_all, size_t timeout)
@@ -636,7 +636,7 @@ bool VulkanDevice::WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_a
         return true;
     if (res == vk::Result::eTimeout)
         return false;
-    CHECK_MSG(false, "failed to wait for fence. result={}", vk::to_string(res));
+    CHECK(false);  // Not handled otherwise!
 }
 
 void VulkanDevice::SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores)
@@ -646,7 +646,7 @@ void VulkanDevice::SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*,
         CHECK(signal->mIsTimeline);
         vk::SemaphoreSignalInfo info{.semaphore = static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore(),
                                      .value = val};
-        VkExpect(mDevice.signalSemaphore(info), "signalSemaphore");
+        VkExpect(mDevice.signalSemaphore(info));
     }
 }
 
@@ -672,7 +672,7 @@ bool VulkanDevice::WaitForTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*
         return true;
     if (res == vk::Result::eTimeout)
         return false;
-    CHECK_MSG(false, "failed to wait for semaphores. result={}", vk::to_string(res));
+    CHECK(false); // Not handled otherwise!
 }
 
 vk::AllocationCallbacks const* VulkanDevice::GetVkAllocationCallbacks() const
@@ -769,7 +769,7 @@ void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* com
     }
     std::lock_guard<Mutex> submitLock(mDevice.GetQueueSubmitMutex());
     VkExpect(mQueue.submit(
-        submits, completionFence ? static_cast<VulkanDeviceFence*>(completionFence)->GetVkFence() : vk::Fence(nullptr)), "submit");
+        submits, completionFence ? static_cast<VulkanDeviceFence*>(completionFence)->GetVkFence() : vk::Fence(nullptr)));
 }
 
 RHISwapchainResult VulkanDeviceQueue::Present(PresentDesc const& desc) const
@@ -920,7 +920,7 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
                                           : vk::DescriptorSetLayoutCreateFlagBits{},
                                           .bindingCount = static_cast<uint32_t>(bindings.size()),
                                           .pBindings = bindings.data()},
-        mDevice.GetVkAllocationCallbacks()), "createDescriptorSetLayout");
+        mDevice.GetVkAllocationCallbacks()));
     CHECK_MSG(*mLayout, "failed to create Vulkan descriptor set layout");
 }
 
@@ -977,7 +977,7 @@ VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPo
         break;
     }
     mResults.resize(desc.count);
-    mQueryPool = VkExpect(mDevice.GetVkDevice().createQueryPool(createInfo, mDevice.GetVkAllocationCallbacks()), "createQueryPool");
+    mQueryPool = VkExpect(mDevice.GetVkDevice().createQueryPool(createInfo, mDevice.GetVkAllocationCallbacks()));
     CHECK_MSG(*mQueryPool, "failed to create Vulkan query pool");
 }
 
@@ -1100,7 +1100,7 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
                                   .minLod = desc.lod.min,
                                   .maxLod = desc.lod.max};
     sampler.setPNext(&reduction);
-    mSampler = VkExpect(mDevice.GetVkDevice().createSampler(sampler, mDevice.GetVkAllocationCallbacks()), "createSampler");
+    mSampler = VkExpect(mDevice.GetVkDevice().createSampler(sampler, mDevice.GetVkAllocationCallbacks()));
     CHECK_MSG(*mSampler, "failed to create Vulkan sampler");
 }
 

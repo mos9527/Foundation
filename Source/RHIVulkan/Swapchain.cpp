@@ -10,8 +10,8 @@ using namespace Foundation::RHI;
 vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc desc)
 {
     auto const& surface = static_cast<VulkanSurface*>(desc.surface.Get())->GetVkSurface();
-    auto surface_caps = VkExpect(mDevice.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface), "getSurfaceCapabilitiesKHR");
-    auto present_modes = VkExpect(mDevice.GetVkPhysicalDevice().getSurfacePresentModesKHR(surface), "getSurfacePresentModesKHR");
+    auto surface_caps = VkExpect(mDevice.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface));
+    auto present_modes = VkExpect(mDevice.GetVkPhysicalDevice().getSurfacePresentModesKHR(surface));
     // Validate requested parameters
     desc.extents.x = std::clamp(desc.extents.x, surface_caps.minImageExtent.width, surface_caps.maxImageExtent.width);
     desc.extents.y = std::clamp(desc.extents.y, surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height);
@@ -31,7 +31,7 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDe
     vk::Format vk_format = vkFormatFromRHIFormat(desc.format);
     vk::ColorSpaceKHR vk_color_space = vkColorSpaceFromRHIColorSpace(desc.colorSpace);
     bool format_supported = false;
-    auto formats = VkExpect(mDevice.GetVkPhysicalDevice().getSurfaceFormatsKHR(surface), "getSurfaceFormatsKHR");
+    auto formats = VkExpect(mDevice.GetVkPhysicalDevice().getSurfaceFormatsKHR(surface));
     for (auto const& fmt : formats) {
         if (fmt.format == vk_format && fmt.colorSpace == vk_color_space) {
             format_supported = true;
@@ -63,8 +63,8 @@ void VulkanSwapchain::Instantiate() {
     mImages.reset();
     mImages = ConstructUnique<RHIObjectPool<VulkanTexture>>(mDevice.GetAllocator(), mDevice.GetAllocator());
     mImagesPtrs.clear();
-    mSwapchain = VkExpect(device.createSwapchainKHR(create_info, mDevice.GetVkAllocationCallbacks()), "createSwapchainKHR");
-    auto images = VkExpect(mSwapchain.getImages(), "getImages");
+    mSwapchain = VkExpect(device.createSwapchainKHR(create_info, mDevice.GetVkAllocationCallbacks()));
+    auto images = VkExpect(mSwapchain.getImages());
     for (auto& image : images) {
         const Handle handle = mImages->CreateObject<VulkanTexture>(mDevice, RHITextureDesc{}, vk::raii::Image(device, image, mDevice.GetVkAllocationCallbacks()), true /*shared=true*/);
         mImagesPtrs.push_back(mImages->GetObjectPtr(handle));

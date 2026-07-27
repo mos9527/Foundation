@@ -19,7 +19,7 @@ VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const&
         .flags = flag,
         .queueFamilyIndex = static_cast<VulkanDeviceQueue*>(desc.queue)->GetVkQueueFamily(),
     };
-    mCommandPool = VkExpect(device.GetVkDevice().createCommandPool(pool_info, device.GetVkAllocationCallbacks()), "createCommandPool");
+    mCommandPool = VkExpect(device.GetVkDevice().createCommandPool(pool_info, device.GetVkAllocationCallbacks()));
     CHECK(*mCommandPool && "failed to create Vulkan command pool");
 }
 
@@ -56,7 +56,7 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = 1,
     };
-    mCommandBuffer = std::move(VkExpect(mCommandPool.GetDevice().GetVkDevice().allocateCommandBuffers(alloc_info), "allocateCommandBuffers").front());
+    mCommandBuffer = std::move(VkExpect(mCommandPool.GetDevice().GetVkDevice().allocateCommandBuffers(alloc_info)).front());
     CHECK(*mCommandBuffer && "failed to allocate Vulkan command buffer");
 }
 

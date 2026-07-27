@@ -5,7 +5,7 @@ VulkanShaderModule::VulkanShaderModule(const VulkanDevice& device, ShaderModuleD
         .codeSize = desc.source.size(),
         .pCode = reinterpret_cast<const uint32_t*>(desc.source.data())
     };
-    mShaderModule = VkExpect(device.GetVkDevice().createShaderModule(create_info, device.GetVkAllocationCallbacks()), "createShaderModule");
+    mShaderModule = VkExpect(device.GetVkDevice().createShaderModule(create_info, device.GetVkAllocationCallbacks()));
 }
 
 void VulkanShaderModule::DebugSetObjectName(const char* name) {
