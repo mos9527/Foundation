@@ -45,8 +45,10 @@ constexpr const char* format_as(LogLevel level)
 
 // NOLINTEND
 
-
 extern void Foundation_LogImpl(LogLevel level, const char* tag, const char* formatted);
+// To stdout
+extern void Foundation_PrintImpl(const char* formatted, bool flush);
+
 template<typename ...Args>
 void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...> format, Args&&... args)
 {
@@ -61,6 +63,32 @@ void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...>
         Foundation_LogImpl(level, tag, format.str.data());
     }
 }
+
+namespace Foundation::Core
+{
+    template <typename... Args>
+    void Print(fmt::format_string<Args...> format, Args&&... args)
+    {
+        constexpr size_t kN = sizeof...(Args);
+        if constexpr (kN > 0)
+        {
+            fmt::basic_memory_buffer<char, fmt::inline_buffer_size, StlDefaultAllocator<char>> buffer;
+            fmt::format_to(std::back_inserter(buffer), format, std::forward<Args>(args)...);
+            Foundation_PrintImpl(buffer.data(), false);
+        }
+        else
+        {
+            Foundation_PrintImpl(format.str.data(), false);
+        }
+    }
+
+    template <typename... Args>
+    void Println(fmt::format_string<Args...> format, Args&&... args)
+    {
+        Print(format, std::forward<Args>(args)...);
+        Foundation_PrintImpl("\n", true);
+    }
+} // namespace Foundation::Core
 
 #define LOG(TAG, LEVEL, FORMAT, ...) Foundation_Log(#TAG, LEVEL, FORMAT __VA_OPT__(,) __VA_ARGS__);
 

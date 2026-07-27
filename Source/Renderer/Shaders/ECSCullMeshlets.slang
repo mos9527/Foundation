@@ -198,12 +198,5 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
         }
     }
     // If this was a Task Shader (which it was): DispatchMesh(shared.meshletCount,1,1,shared);
-    // But - Don't bother. See also https://themaister.net/blog/2024/01/17/modernizing-granites-mesh-rendering/
-    // on "Task Shader Woes".
-    // Also, I couldn't get this to work with AMDPRO drivers anyway. We'll aggregate
-    // the mesh dispatches here and use vkCmdDrawMeshTasksIndirectCountEXT without involving Task Shader later.
-    //
-    // An added benefit is that we can also use this buffer to use traditional raster pipeline if needed
-    // since Vulkan supports 8-bit indices for mesh tasks indirect draws.
-    // Alan Wake 2 falls back to this path (and is thus indescribably slow) on older GPUs.
+    // See also https://themaister.net/blog/2024/01/17/modernizing-granites-mesh-rendering/ on "Task Shader Woes".
 }

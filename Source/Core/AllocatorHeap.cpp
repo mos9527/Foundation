@@ -115,3 +115,10 @@ namespace Foundation::Core {
         return &GlobalAllocatorHeap;
     }
 }
+
+// Overriding default new/delete operators to use the Global Allocator
+// XXX: These shouldn't be used by principle. But 3rdparty libs use those a lot
+// TODO: Get rid of these once we can ensure that they get proper patches to use our own containers.
+void* operator new(std::size_t n) noexcept { return GLOBAL_ALLOC->Allocate(n); }
+void* operator new(size_t const n, std::nothrow_t const&) noexcept { return GLOBAL_ALLOC->Allocate(n); }
+void operator delete(void* p) noexcept { GLOBAL_ALLOC->Deallocate(p); }

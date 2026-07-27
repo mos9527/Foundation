@@ -20,4 +20,10 @@ void WriteLog(LogLevel level, const char* tag, double seconds, const char* forma
     }
 }
 
+void Print(const char* formatted, bool flush)
+{
+    fprintf(stdout, "%s", formatted);
+    if (flush)
+        fflush(stdout);    
+}
 } // namespace Foundation::Platform

@@ -79,7 +79,7 @@ if (FOUNDATION_NO_EXCEPTION)
                 -fno-asynchronous-unwind-tables
         )
     endif()
-    add_compile_definitions(FMT_EXCEPTIONS=0)
+    add_compile_definitions(FMT_EXCEPTIONS=0 FMT_USE_LOCALE=0)
 endif()
 
 # Dead-code strip and no RTTI

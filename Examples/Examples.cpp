@@ -74,9 +74,9 @@ namespace
             return;
 
         data.resize(written);
-        std::string dir(path.data());
+        String dir(path.data());
         auto const sep = dir.find_last_of("/\\");
-        if (sep != std::string::npos) dir.resize(sep);
+        if (sep != String::npos) dir.resize(sep);
         app.CreateDirectory(dir.c_str());
 
         FILE* file = fopen(path.data(), "wb");
@@ -504,11 +504,11 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     argh::parser cmdl(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);
     if (cmdl[{"-h", "--help"}])
     {
-        fmt::println("Usage: {} [options]", argv[0]);
-        fmt::println("Options:");
-        fmt::println("\t-h, --help\t\tShow this help message");
-        fmt::println("\t-g, --gpu <id>\t\tSpecify GPU device index");
-        fmt::println("\t-l, --list-gpus\t\tList available GPU devices");
+        Println("Usage: {} [options]", argv[0]);
+        Println("Options:");
+        Println("\t-h, --help\t\tShow this help message");
+        Println("\t-g, --gpu <id>\t\tSpecify GPU device index");
+        Println("\t-l, --list-gpus\t\tList available GPU devices");
         std::exit(0);
     }
     const bool headless = window == nullptr;
@@ -516,7 +516,7 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     {
         auto* app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
         for (auto const& d : app->EnumerateDevices())
-            fmt::println("[{}] {}", d.id, d.name);
+            Println("[{}] {}", d.id, d.name);
         Destruct(GLOBAL_ALLOC, app);
         std::exit(0);
     }

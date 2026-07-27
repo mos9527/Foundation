@@ -13,5 +13,10 @@ void WriteLog(LogLevel level, const char* tag, double seconds, const char* forma
     int priority = (level >= 0 && level < 4) ? kAndroidPriority[level] : ANDROID_LOG_DEFAULT;
     __android_log_print(priority, tag, "%s", str.c_str());
 }
-
+void Print(const char* formatted, bool flush)
+{
+    fprintf(stdout, "%s", formatted);
+    if (flush)
+        fflush(stdout);
+}
 } // namespace Foundation::Platform

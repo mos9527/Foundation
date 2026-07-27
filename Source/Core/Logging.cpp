@@ -12,3 +12,9 @@ void Foundation_LogImpl(LogLevel level, const char* tag, const char* formatted)
     std::unique_lock lock(gLogImplMutex);
     Platform::WriteLog(level, tag, seconds, formatted);
 }
+
+void Foundation_PrintImpl(const char* formatted, bool flush)
+{
+    std::unique_lock lock(gLogImplMutex);
+    Platform::Print(formatted, flush);
+}

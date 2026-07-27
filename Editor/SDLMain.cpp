@@ -44,12 +44,12 @@ int main(int argc, char** argv)
     argh::parser cmdl(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);
     if (cmdl[{"-h", "--help"}])
     {
-        fmt::println("Usage: {} [options] [files...]", argv[0]);
-        fmt::println("Options:");
-        fmt::println("\t-h, --help\t\tShow this help message");
-        fmt::println("\t-g, --gpu <id>\t\tSpecify GPU device index");
-        fmt::println("\t-l, --list-gpus\t\tList available GPU devices");
-        fmt::println("\t-s, --render-scale <f>\tInitial render resolution scale (0.25..1.0)");
+        Println("Usage: {} [options] [files...]", argv[0]);
+        Println("Options:");
+        Println("\t-h, --help\t\tShow this help message");
+        Println("\t-g, --gpu <id>\t\tSpecify GPU device index");
+        Println("\t-l, --list-gpus\t\tList available GPU devices");
+        Println("\t-s, --render-scale <f>\tInitial render resolution scale (0.25..1.0)");
         return 0;
     }
     Paths::Init(argv[0]);
@@ -68,7 +68,7 @@ int main(int argc, char** argv)
     {
         auto* app = ConstructBase<RHIApplication, VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC);
         for (auto const& d : app->EnumerateDevices())
-            fmt::println("[{}] {}", d.id, d.name);
+            Println("[{}] {}", d.id, d.name);
         Destruct(GLOBAL_ALLOC, app);
         return 0;
     }

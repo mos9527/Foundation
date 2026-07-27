@@ -168,11 +168,11 @@ int main(int argc, char** argv)
                 Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
                 Examples_NewFrame(ctx.renderer.get());
                 ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
-                fmt::print("\rSample {}/{} ({:.0f}%)   ", f + 1, sampleCount,
+                Print("\rSample {}/{} ({:.0f}%)   ", f + 1, sampleCount,
                            100.0f * static_cast<float>(f + 1) / static_cast<float>(sampleCount));
                 std::fflush(stdout);
             }
-            fmt::println("");
+            Println("");
             ctx.renderer->WaitForFrame();
             // Readback and save the image
             {

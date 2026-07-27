@@ -73,7 +73,7 @@ enum class T##Bits : INT_T {
  * @code{.cpp}
  *  Color c = Color::Red;
  *  std::cout << to_string(c); // prints "Red"
- *  fmt::print("Color is {}\n", c); // prints "Color is Red"
+ *  Print("Color is {}\n", c); // prints "Color is Red"
  * @endcode
  * @param T Enum type
  * @note The actual enum values must be defined between ENUM_NAME_CONV_BEGIN and ENUM_NAME_CONV_END.

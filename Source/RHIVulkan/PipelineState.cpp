@@ -542,8 +542,12 @@ void VulkanPipelineState::InitializeRayTracing()
         .usage = RHIBufferUsageBits::ShaderBindingTable | RHIBufferUsageBits::DeviceAddress,
         .size = sbtSize,
     });
-    auto handles = VkExpect(mPipeline.getRayTracingShaderGroupHandlesKHR<uint8_t>(
-        0, static_cast<uint32_t>(groups.size()), handleSize * groups.size()));
+    auto const& vkDevice = mDevice.GetVkDevice();
+    Vector<uint8_t> handles(mDevice.GetAllocator());
+    handles.resize(handleSize * groups.size());
+    VkExpect(vkDevice.getDispatcher()->vkGetRayTracingShaderGroupHandlesKHR(
+        static_cast<VkDevice>(*vkDevice), static_cast<VkPipeline>(*mPipeline),
+        0, static_cast<uint32_t>(groups.size()), handles.size(), handles.data()));
     auto pData = mSBTBuffer->Map<uint8_t>();
     vk::DeviceAddress sbtAddr = static_cast<VulkanBuffer*>(mSBTBuffer.Get())->GetBufferAddress();
     auto CopyHandlesToSBT = [&](uint32_t startGroupIdx, uint32_t count, uint32_t bufferOffset)

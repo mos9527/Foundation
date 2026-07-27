@@ -67,9 +67,9 @@ int main(int argc, const char** argv)
         return main_texture(argv[2], argv[3]);
     }
 END:
-    fmt::println("available tools:");
-    fmt::println("\tscene [--no-texture-compression] [src] [dst]");
-    fmt::println("\ttexture");
-    fmt::println("run 'util [tool name]' for more info");
+    Println("available tools:");
+    Println("\tscene [--no-texture-compression] [src] [dst]");
+    Println("\ttexture");
+    Println("run 'util [tool name]' for more info");
     return 1;
 }

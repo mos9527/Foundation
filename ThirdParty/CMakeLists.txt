@@ -94,8 +94,12 @@ FetchContent_Declare(
 FetchContent_Declare(
     fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 11.2.0
+    GIT_TAG 12.1.0
     GIT_SHALLOW TRUE
+    PATCH_COMMAND  
+        ${GIT_EXECUTABLE} reset --hard
+        COMMAND ${GIT_EXECUTABLE} clean -fdx
+        COMMAND ${GIT_EXECUTABLE} apply ${CMAKE_CURRENT_LIST_DIR}/fmt.patch
 )
 
 FetchContent_Declare(
@@ -155,6 +159,10 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/adishavit/argh.git
     GIT_TAG v1.3.2
     GIT_SHALLOW TRUE
+    PATCH_COMMAND  
+        ${GIT_EXECUTABLE} reset --hard
+        COMMAND ${GIT_EXECUTABLE} clean -fdx
+        COMMAND ${GIT_EXECUTABLE} apply ${CMAKE_CURRENT_LIST_DIR}/argh.patch
 )
 
 FetchContent_MakeAvailable(stb)
