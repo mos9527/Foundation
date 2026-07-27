@@ -198,7 +198,7 @@ int main(int argc, char** argv)
                                                  RHIOffset2D{}, cfg.renderExtent);
                 readback.End();
                 readback.WaitIdle();
-                Examples_DumpAndOpenImage(outputPath, cfg.renderExtent, pixels);
+                Examples_DumpAndOpenImage(ctx.app.Get(), outputPath, cfg.renderExtent, pixels);
             }
         }
         else

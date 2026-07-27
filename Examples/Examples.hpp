@@ -176,7 +176,7 @@ void Examples_NewFrame(SDL_Window* window, ExampleVulkanContext& ctx); // To Win
 void Examples_ResetRenderer(ExampleVulkanContext& ctx, RendererDesc desc = {});
 void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx);
 bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISurface>& outSurface, RHIDeviceScopedHandle<RHISwapchain>& outSwapchain);
-void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* data,
+void Examples_DumpAndOpenImage(RHIApplication const& app, StringView path, RHIExtent2D extent, void const* data,
                                int channels = 4, int strideBytes = 0);
 float Examples_GetTime();
 

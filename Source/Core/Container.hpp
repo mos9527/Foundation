@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <variant>
 #include <vector>
+#include <stack>
 
 #include "Allocator.hpp"
 #include "Hash.hpp"
@@ -145,7 +146,6 @@ namespace Foundation::Core
      */
     template <typename T>
     using Vector = std::vector<T, StlAllocator<T>>;
-
     /**
      * @brief `std::set` with explicit @ref Foundation::Core::StlAllocator constructor
      *
@@ -210,6 +210,15 @@ namespace Foundation::Core
      */
     template <typename T>
     using Deque = std::deque<T, StlAllocator<T>>;
+    /**
+     * @brief `std::stack` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template <typename T>
+    using Stack = std::stack<T, Deque<T>>;
     /**
      * @brief `std::list` with explicit @ref Foundation::Core::StlAllocator constructor
      *

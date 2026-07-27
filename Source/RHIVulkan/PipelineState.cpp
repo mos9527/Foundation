@@ -512,12 +512,16 @@ void VulkanPipelineState::InitializeRayTracing()
         .maxPipelineRayRecursionDepth = std::min(rtProps.maxRayRecursionDepth, 3u),
         .layout = mPipelineLayout,
     };
-    vk::Optional<const vk::raii::PipelineCache> cacheHandle(nullptr);
+    VkPipelineCache cacheHandle = VK_NULL_HANDLE;
     if (mDesc.psoCache)
-        cacheHandle = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache)->GetVkPipelineCache();
-    auto pipelines = VkExpect(mDevice.GetVkDevice().createRayTracingPipelinesKHR(nullptr, cacheHandle, pipelineInfo,
-                                   mDevice.GetVkAllocationCallbacks()));
-    mPipeline = std::move(pipelines.front());
+        cacheHandle = static_cast<VkPipelineCache>(*static_cast<VulkanPipelineStateCache*>(mDesc.psoCache)->GetVkPipelineCache());
+    auto const& device = mDevice.GetVkDevice();
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkExpect(device.getDispatcher()->vkCreateRayTracingPipelinesKHR(
+        static_cast<VkDevice>(*device), VK_NULL_HANDLE, cacheHandle, 1,
+        reinterpret_cast<const VkRayTracingPipelineCreateInfoKHR*>(&pipelineInfo),
+        mDevice.GetVkAllocationCallbacksNative(), &pipeline));
+    mPipeline = vk::raii::Pipeline(device, pipeline, mDevice.GetVkAllocationCallbacks());
     const uint32_t handleSize = rtProps.shaderGroupHandleSize;
     const uint32_t handleAlignment = rtProps.shaderGroupHandleAlignment;
     const uint32_t baseAlignment = rtProps.shaderGroupBaseAlignment;

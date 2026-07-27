@@ -4,7 +4,6 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
-#include <stack>
 #include <vector>
 
 namespace
@@ -531,7 +530,7 @@ void finalizeNodeIndices(LightBVHBuild& bvh)
     bvh.stats.minDepth = std::numeric_limits<uint32_t>::max();
 
     Vector<uint32_t> nodeCountPerLevel(bvh.allocator);
-    std::stack<std::pair<uint32_t, uint32_t>> stack;
+    Stack<std::pair<uint32_t, uint32_t>> stack(bvh.allocator);
     stack.push({0u, 0u});
     while (!stack.empty())
     {

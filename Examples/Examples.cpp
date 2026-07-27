@@ -6,9 +6,8 @@
 #include <argh.h>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 #include <exception>
-#include <filesystem>
-#include <fstream>
 #include <optional>
 #include <stb_image_write.h>
 
@@ -32,64 +31,38 @@ namespace
     constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
         RHISwapchainPresentMode::Mailbox, RHISwapchainPresentMode::Tearing, RHISwapchainPresentMode::Fifo};
 
-    String PipelineCachePathForDevice(RHIDevice const& device)
+    String PipelineCachePathForApp(RHIApplication const& app)
     {
-        auto key = device.GetPipelineCacheKey();
-        return device.mApp.ResolveRelativePathBase(
-            Format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
+        return app.ResolveRelativePathBase("Examples-Cache.pso");
     }
 
-    Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)
+    Vector<unsigned char> LoadPipelineCacheBytes(RHIApplication const& app, StringView path, Allocator* allocator)
     {
         Vector<unsigned char> data(allocator);
-        if (!std::filesystem::exists(path.data()))
+        auto info = app.QueryFileInfo(path);
+        if (!info)
             return data;
 
-        std::ifstream file(path.data(), std::ios::binary | std::ios::ate);
+        FILE* file = fopen(path.data(), "rb");
         if (!file)
         {
             LOG(Examples, LogWarn, "Failed to open pipeline cache file for reading: {}", path);
             return data;
         }
 
-        auto fileSize = file.tellg();
-        if (fileSize <= std::streampos(0))
-            return data;
-
-        auto size = static_cast<size_t>(fileSize);
+        auto size = static_cast<size_t>(info.Get().size);
         data.resize(size);
-        file.seekg(0, std::ios::beg);
-        if (!file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size)))
+        if (fread(data.data(), 1, size, file) != size)
         {
             LOG(Examples, LogWarn, "Failed to read pipeline cache file: {}", path);
             data.clear();
         }
+        fclose(file);
         return data;
     }
 
-    void ClearStalePipelineCaches(StringView activePath)
-    {
-        std::filesystem::path cacheDir = std::filesystem::path(activePath).parent_path();
-        if (!std::filesystem::exists(cacheDir))
-            return;
-
-        std::filesystem::path active(activePath);
-        for (auto const& entry : std::filesystem::directory_iterator(cacheDir))
-        {
-            if (!entry.is_regular_file() || entry.path() == active)
-                continue;
-
-            auto filename = entry.path().filename().string();
-            if (!filename.starts_with("pso-cache-") || !filename.ends_with(".bin"))
-                continue;
-
-            LOG(Examples, LogInfo, "Clearing stale pipeline cache: {}", entry.path().string());
-            std::error_code ec;
-            std::filesystem::remove(entry.path(), ec);
-        }
-    }
-
-    void SavePipelineCache(RHIPipelineStateCache const& cache, StringView path, Allocator* allocator)
+    void SavePipelineCache(RHIApplication const& app, RHIPipelineStateCache const& cache, StringView path,
+                           Allocator* allocator)
     {
         size_t size = cache.GetSerializedDataSize();
         if (size == 0)
@@ -101,17 +74,20 @@ namespace
             return;
 
         data.resize(written);
-        std::filesystem::path fsPath(path);
-        std::filesystem::create_directories(fsPath.parent_path());
-        std::ofstream file(fsPath, std::ios::binary | std::ios::trunc);
+        std::string dir(path.data());
+        auto const sep = dir.find_last_of("/\\");
+        if (sep != std::string::npos) dir.resize(sep);
+        app.CreateDirectory(dir.c_str());
+
+        FILE* file = fopen(path.data(), "wb");
         if (!file)
         {
             LOG(Examples, LogWarn, "Failed to open pipeline cache file for writing: {}", path);
             return;
         }
 
-        file.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
-        if (!file)
+        fwrite(data.data(), 1, data.size(), file);
+        if (ferror(file))
         {
             LOG(Examples, LogWarn, "Failed to write pipeline cache file: {}", path);
         }
@@ -119,19 +95,9 @@ namespace
         {
             LOG(Examples, LogInfo, "Saved pipeline cache: {} ({} bytes)", path, data.size());
         }
+        fclose(file);
     }
 
-#if defined(__ANDROID__)
-    // Bridges r->GetApplication()->ResolveRelativePathBase to SDL's APK-asset loader. Registered
-    // in Examples_InitVulkan so shaders/bundled assets are lazily materialized out
-    // of the APK on first PathsResolve access (see Source/Core/Paths.cpp).
-    void* Examples_SDLAssetLoader(const char* relPath, size_t* outSize) { return SDL_LoadFile(relPath, outSize); }
-#endif
-
-    // Surface a fatal failure with a visible prompt instead of dying with a bare trap/abort.
-    // In no-except builds there is no exception object to unwrap; the underlying CHECK/LOG already
-    // printed the failure, so Examples_ReportFatalException just shows a generic box (and a logcat
-    // line on Android).
     void Examples_TerminateHandler()
     {
         Examples_ReportFatalException();
@@ -585,17 +551,16 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     if (ctx.swapchain.IsValid())
         ctx.presenter = ConstructUnique<Presenter>(GLOBAL_ALLOC, device.Get(), ctx.swapchain, GLOBAL_ALLOC);
 
-    String psoCachePath;
-    psoCachePath = PipelineCachePathForDevice(*device.Get());
-    ClearStalePipelineCaches(psoCachePath);
-    auto psoCacheBytes = LoadPipelineCacheBytes(psoCachePath, GLOBAL_ALLOC);
-    ctx.psoCache = device->CreatePipelineCache(
+    ctx.app = std::move(app);
+    ctx.device = std::move(device);
+
+    String psoCachePath = PipelineCachePathForApp(*ctx.app);
+    auto psoCacheBytes = LoadPipelineCacheBytes(*ctx.app, psoCachePath, GLOBAL_ALLOC);
+    ctx.psoCache = ctx.device->CreatePipelineCache(
         {.initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())});
 
     LOG(Examples, LogInfo, "Pipeline cache {}: {} ({} bytes)", ctx.psoCache->GetImportStatus(), psoCachePath,
         psoCacheBytes.size());
-    ctx.app = std::move(app);
-    ctx.device = std::move(device);
 
     desc.pipelineCache = ctx.psoCache.Get();
     Examples_ResetRenderer(ctx, desc);
@@ -810,17 +775,18 @@ void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx)
         ctx.jobs->Join();
 
     auto psoCache = ctx.psoCache.Get();
-    auto cachePath = PipelineCachePathForDevice(*ctx.device.Get());
+    auto cachePath = PipelineCachePathForApp(*ctx.app);
     if (psoCache)
-        SavePipelineCache(*psoCache, cachePath, GLOBAL_ALLOC);
+        SavePipelineCache(*ctx.app, *psoCache, cachePath, GLOBAL_ALLOC);
 
     if (window)
         SDL_DestroyWindow(window);
 }
 
-void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* data, int channels, int strideBytes)
+void Examples_DumpAndOpenImage(RHIApplication const& app, StringView path, RHIExtent2D extent, void const* data,
+                               int channels, int strideBytes)
 {
-    const auto outPath = std::filesystem::absolute(path).string();
+    const auto outPath = app.ResolveRelativePathBase(path);
     const int stride = strideBytes ? strideBytes : static_cast<int>(extent.x) * channels;
     if (!stbi_write_png(outPath.c_str(), static_cast<int>(extent.x), static_cast<int>(extent.y), channels, data,
                         stride))

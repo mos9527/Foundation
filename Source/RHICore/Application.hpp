@@ -25,11 +25,11 @@ namespace Foundation::RHI {
 
         // Filesystem
         /**
-         * @brief Retrives path relative to the application executable, relative to path
+         * @brief Retrives path relative to the application executable
          */
         [[nodiscard]] virtual String ResolveRelativePathBase(StringView path = "") const = 0;
         /**
-         * @brief Retrives path that's writable and persistent, relative to path
+         * @brief Retrives path that's writable and persistent
          */
         [[nodiscard]] virtual String ResolveRelativePathData(StringView path = "") const = 0;
         [[nodiscard]] virtual Optional<RHIFileInfo> QueryFileInfo(StringView path) const = 0;
