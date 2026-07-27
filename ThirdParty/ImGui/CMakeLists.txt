@@ -29,6 +29,7 @@ endif()
 
 target_link_libraries(ThirdParty_ImGui PUBLIC
     Foundation_RenderCore
+    Foundation_RHIVulkan
 )
 
 # Shader

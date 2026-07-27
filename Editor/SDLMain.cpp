@@ -1,5 +1,4 @@
 #include "ImGui.hpp"
-#include "Paths.hpp"
 #include "EditorState.hpp"
 #include <Core/BuildInfo.hpp>
 #include <argh.h>
@@ -52,7 +51,6 @@ int main(int argc, char** argv)
         Println("\t-s, --render-scale <f>\tInitial render resolution scale (0.25..1.0)");
         return 0;
     }
-    Paths::Init(argv[0]);
 
     if (!SDL_Init(SDL_INIT_VIDEO))
     {

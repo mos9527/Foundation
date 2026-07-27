@@ -1,7 +1,6 @@
 #include "ImGui.hpp"
-#include "Fonts/PlexSansIcon.h"
 #include <filesystem>
-#include <Core/Paths.hpp>
+#include "Fonts/PlexSansIcon.h"
 #include "tracy/Tracy.hpp"
 
 #include <RenderCore/Bindless.hpp>
@@ -48,14 +47,8 @@ void ImGui_ImplFoundation_Init(RHIDevice* device, SDL_Window* window)
     // Init windowing backend
     ImGui_ImplSDL3_InitForOther(window);
 }
-void ImGui_ImplFoundation_ProcessEvent(SDL_Event* event)
-{
-    ImGui_ImplSDL3_ProcessEvent(event);
-}
-void ImGui_ImplFoundation_NewFrame()
-{
-    ImGui_ImplSDL3_NewFrame();
-}
+void ImGui_ImplFoundation_ProcessEvent(SDL_Event* event) { ImGui_ImplSDL3_ProcessEvent(event); }
+void ImGui_ImplFoundation_NewFrame() { ImGui_ImplSDL3_NewFrame(); }
 void ImGui_ImplFoundation_Shutdown() { gImGuiTexturePool.reset(); }
 // Tagged pointer.
 Pair<uint32_t, ImGui_ImplFoundation_ImageSampler> ImGui_ImplFoundation_DecodeImTextureID(ImTextureID id)
@@ -192,8 +185,7 @@ struct PushConstants
 #pragma pack(pop)
 
 void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHandle vtxBuffer,
-                                        ResourceHandle idxBuffer, ResourceHandle linSampler,
-                                        ResourceHandle nearSampler)
+                                        ResourceHandle idxBuffer, ResourceHandle linSampler, ResourceHandle nearSampler)
 {
     r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
     r->BindBufferCopyDst(self, vtxBuffer);
@@ -204,12 +196,13 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
     // We can output to these colorspaces:
     const int kFlagsOutputSrgb = 1 << 0;
     const int kFlagsOutputSt2084 = 1 << 1;
-    // As for formats, disallow sRGB backbuffers since these doesn't make scene for UI elements *and* we'd always tonemap to sRGB space
-    // (output in SDR therefore *requires* UNORM backbuffers)
-    // HDR-wise we'd only support ST2084/PQ and it happily takes RGB10A2 formats.
-    CHECK_MSG(!IsFormatSRGB(r->GetSwapchain()->mDesc.format), "sRGB backbuffers are not supported by ImGui. Please use UNORM formats instead.");
+    // As for formats, disallow sRGB backbuffers since these doesn't make scene for UI elements *and* we'd always
+    // tonemap to sRGB space (output in SDR therefore *requires* UNORM backbuffers) HDR-wise we'd only support ST2084/PQ
+    // and it happily takes RGB10A2 formats.
+    CHECK_MSG(!IsFormatSRGB(r->GetSwapchain()->mDesc.format),
+              "sRGB backbuffers are not supported by ImGui. Please use UNORM formats instead.");
     switch (r->GetSwapchain()->mDesc.colorSpace)
-    {       
+    {
     case RHIColorSpace::Hdr10St2084:
         flags |= kFlagsOutputSt2084;
         break;
@@ -218,8 +211,10 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
         flags |= kFlagsOutputSrgb;
         break;
     }
-    r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", r->GetApplication()->ResolveRelativePath("Data/Shaders/ImGui.spv"), AsBytes(AsSpan(flags)));
-    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", r->GetApplication()->ResolveRelativePath("Data/Shaders/ImGui.spv"), AsBytes(AsSpan(flags)));
+    r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain",
+                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ImGui.spv"), AsBytes(AsSpan(flags)));
+    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ImGui.spv"), AsBytes(AsSpan(flags)));
     r->BindDescriptorSet(self, "textures", gImGuiTexturePool->GetDescriptorSetLayout());
     // We have fixed samplers for ImGui - quite enough for UI elements
     r->BindTextureSampler(self, linSampler, "linSampler");
@@ -233,7 +228,7 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
              {.location = 2, .offset = offsetof(ImDrawVert, col), .format = RHIResourceFormat::R8G8B8A8Unorm},
          }}});
     // No culling
-    r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});    
+    r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});
 }
 void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clear, RHICommandList* cmd,
                                          ResourceHandle vtxBuffer, ResourceHandle idxBuffer)
@@ -253,7 +248,8 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
     auto* bd = static_cast<ImGuiImplFoundationBd*>(ImGui::GetIO().BackendRendererUserData);
     // Bump or rewind
     {
-        int vtxBufferSize = kVertexBufferSize - bd->vtxBufferOffset, idxBufferSize = kIndexBufferSize - bd->idxBufferOffset;
+        int vtxBufferSize = kVertexBufferSize - bd->vtxBufferOffset,
+            idxBufferSize = kIndexBufferSize - bd->idxBufferOffset;
         for (const ImDrawList* draw_list : draw_data->CmdLists)
         {
             vtxBufferSize -= draw_list->VtxBuffer.size() * sizeof(ImDrawVert);
@@ -344,8 +340,8 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
     cmd->EndGraphics();
 }
 void ImGui_ImplFoundation_ImplCreateResources(Renderer* renderer, ResourceHandle& outVtxBuffer,
-                                              ResourceHandle& outIdxBuffer,
-                                              ResourceHandle& outLinearSampler, ResourceHandle& outNearestSampler)
+                                              ResourceHandle& outIdxBuffer, ResourceHandle& outLinearSampler,
+                                              ResourceHandle& outNearestSampler)
 {
     outVtxBuffer = renderer->CreateResource(
         "ImGui Vertex Buffer",
@@ -401,7 +397,8 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     float accentH, accentS, accentV;
     ImGui::ColorConvertRGBtoHSV(accentColor.x, accentColor.y, accentColor.z, accentH, accentS, accentV);
     auto saturate = [](float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); };
-    auto accent = [&](float saturationScale, float valueScale, float alpha = 1.0f) {
+    auto accent = [&](float saturationScale, float valueScale, float alpha = 1.0f)
+    {
         ImVec4 result;
         ImGui::ColorConvertHSVtoRGB(accentH, saturate(accentS * saturationScale), saturate(accentV * valueScale),
                                     result.x, result.y, result.z);
@@ -462,7 +459,7 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.08f, 0.08f, 0.08f, 0.35f);
     colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.08f, 0.08f, 0.08f, 0.55f);
     colors[ImGuiCol_ButtonActive] = colors[ImGuiCol_HeaderActive] = colors[ImGuiCol_SliderGrabActive] =
-    colors[ImGuiCol_SeparatorActive] = accent(1.0f, 1.0f);
+        colors[ImGuiCol_SeparatorActive] = accent(1.0f, 1.0f);
     colors[ImGuiCol_ButtonHovered] = colors[ImGuiCol_HeaderHovered] = colors[ImGuiCol_SeparatorHovered] =
         accent(1.0f, 0.75f);
 }

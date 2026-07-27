@@ -1,4 +1,3 @@
-#include <Core/Paths.hpp>
 #include <algorithm>
 #include <filesystem>
 #include <cctype>
@@ -63,7 +62,7 @@ static FTexture LoadViewLUT(StringView path, Allocator* alloc = GLOBAL_ALLOC)
 {
     CHECK(alloc != nullptr);
     FTexture texture(alloc);
-    LoadDDS(texture, PathsResolve(path));
+    LoadDDS(texture, GContext->application->ResolveRelativePathBase(path));
     return texture;
 }
 
@@ -79,7 +78,7 @@ static FTexture LoadMatcapTexture(StringView path, Allocator* alloc = GLOBAL_ALL
 {
     CHECK(alloc != nullptr);
     FTexture texture(alloc);
-    String resolvedPath = PathsResolve(path);
+    String resolvedPath = GContext->application->ResolveRelativePathBase(path);
     if (HasDDSExtension(resolvedPath))
         LoadDDS(texture, resolvedPath);
     else
@@ -465,7 +464,7 @@ static String PrepareScenePayloadFile(StringView path)
     // GLTF import would commit to a file first too.
     // In this way we don't need to have the whole scene allocated in memory
     // explicitly - and works the same way as loading from FSCN.
-    String scenePayloadPath = PathsResolve(kTempScenePath);
+    String scenePayloadPath = GContext->application->ResolveRelativePathBase(kTempScenePath);
     ReleaseScenePayloadFileForRewrite(scenePayloadPath);
     std::filesystem::path scenePayloadDir = std::filesystem::path(scenePayloadPath).parent_path();
     if (!scenePayloadDir.empty())

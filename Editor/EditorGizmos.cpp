@@ -1,7 +1,6 @@
 #include "EditorGizmos.hpp"
 #include "EditorState.hpp"
 #include "Context.hpp"
-#include <Core/Paths.hpp>
 #include <RenderCore/Bindless.hpp>
 #include <RenderCore/ImmediateContext.hpp>
 #include <Renderer/Mesh.hpp>
@@ -13,7 +12,6 @@
 
 using namespace Foundation;
 using namespace Foundation::RenderCore;
-using r->GetApplication()->ResolveRelativePath;
 
 namespace
 {
@@ -109,7 +107,7 @@ static int TonemapSpecializationFlags(Renderer* renderer)
 static uint32_t UploadIconTexture(BindlessPool& pool, RHIDevice* device, StringView relPath)
 {
     FTexture cpu(GLOBAL_ALLOC);
-    LoadRGBA8(cpu, PathsResolve(relPath), false);
+    LoadRGBA8(cpu, GContext->application->ResolveRelativePathBase(relPath), false);
 
     RHITextureDesc texDesc{
         .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
@@ -507,9 +505,9 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
                                  RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::FragmentShader,
                                  "globalParams");
             r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain",
-                          PathsResolve("Data/Shaders/Editor/EditorGizmo.spv"));
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Editor/EditorGizmo.spv"));
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                          PathsResolve("Data/Shaders/Editor/EditorGizmo.spv"));
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Editor/EditorGizmo.spv"));
             r->BindTextureSampler(self, sGizmo.linearSampler, "linSampler");
             if (depthTexture != kInvalidHandle)
             {
@@ -555,9 +553,9 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
                                      RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::FragmentShader,
                                      "globalParams");
                 r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain",
-                              PathsResolve("Data/Shaders/Editor/EditorLightBVH.spv"));
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Editor/EditorLightBVH.spv"));
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                              PathsResolve("Data/Shaders/Editor/EditorLightBVH.spv"));
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Editor/EditorLightBVH.spv"));
                 r->BindTextureSampler(self, sGizmo.linearSampler, "linSampler");
                 if (depthTexture != kInvalidHandle)
                 {
@@ -607,9 +605,9 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
                                  RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::FragmentShader,
                                  "globalParams");
             r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain",
-                          PathsResolve("Data/Shaders/Editor/EditorGizmoSprite.spv"), AsBytes(AsSpan(flags)));
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Editor/EditorGizmoSprite.spv"), AsBytes(AsSpan(flags)));
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                          PathsResolve("Data/Shaders/Editor/EditorGizmoSprite.spv"), AsBytes(AsSpan(flags)));
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Editor/EditorGizmoSprite.spv"), AsBytes(AsSpan(flags)));
             r->BindDescriptorSet(self, "gTextures2D", sGizmo.iconPool->GetDescriptorSetLayout());
             r->BindTextureSampler(self, sGizmo.linearSampler, "linSampler");
             if (depthTexture != kInvalidHandle)

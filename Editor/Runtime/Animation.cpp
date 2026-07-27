@@ -1,9 +1,6 @@
 #include "Animation.hpp"
-#include <Core/Paths.hpp>
 #include <algorithm>
 #include <cmath>
-
-using r->GetApplication()->ResolveRelativePath;
 
 namespace
 {
@@ -363,7 +360,7 @@ void FAnimationRuntime::BuildGraph(Renderer* renderer, RendererResources& resour
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                          PathsResolve("Data/Shaders/Editor/ECSSkinning.spv"));
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Editor/ECSSkinning.spv"));
             r->BindBufferStorageRead(self, input, RHIPipelineStageBits::ComputeShader, "skinningInput");
             r->BindBufferStorageRead(self, palettes, RHIPipelineStageBits::ComputeShader, "skinningPalette");
             r->BindBufferUnordered(self, dynamicPrimitiveBuffer, RHIPipelineStageBits::ComputeShader,

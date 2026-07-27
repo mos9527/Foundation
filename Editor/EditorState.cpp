@@ -1,5 +1,4 @@
 #include "EditorState.hpp"
-#include <Core/Paths.hpp>
 #include <ImGuizmo.h>
 #include <RenderCore/Presenter.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
@@ -8,7 +7,6 @@
 #include <imgui.h>
 #include "EditorGizmos.hpp"
 using namespace RenderUtils;
-using r->GetApplication()->ResolveRelativePath;
 
 EditorState GEditor;
 static ResourceHandle sPickResultBuffer;
@@ -233,7 +231,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
             [=](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                              PathsResolve("Data/Shaders/EPSPostprocessPT.spv"));
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPSPostprocessPT.spv"));
                 r->BindTextureSRV(
                     self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
                     RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
@@ -263,7 +261,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                                  PathsResolve("Data/Shaders/PSCopy.spv"));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/PSCopy.spv"));
                     r->BindTextureSampler(self, CopySampler, "sampler");
                     r->BindTextureSRV(self, outputs.debugOutput, "srcTexture", RHIPipelineStageBits::FragmentShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
@@ -279,7 +277,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                                  PathsResolve("Data/Shaders/EPSPostprocess.spv"));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPSPostprocess.spv"));
                     CHECK_MSG(outputs.diffuse != kInvalidHandle, "Raster postprocess missing diffuse output");
                     ResourceHandle specular = outputs.specular != kInvalidHandle ? outputs.specular : outputs.diffuse;
                     r->BindTextureSRV(self, outputs.diffuse, "diffuseTex", RHIPipelineStageBits::FragmentShader,
@@ -321,7 +319,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
             uint flags{};
             if (!isRendering)
                 flags |= kViewInteractive;
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve("Data/Shaders/EPSBlit.spv"),
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPSBlit.spv"),
                           AsBytes(AsSpan(flags)));
             r->BindTextureSRV(
                 self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,

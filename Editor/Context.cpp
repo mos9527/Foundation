@@ -1,6 +1,4 @@
 #include "Context.hpp"
-#include "Paths.hpp"
-
 #include <RHIVulkan/Application.hpp>
 
 #include <filesystem>
@@ -11,7 +9,7 @@ FContext* GContext = nullptr;
 static String PipelineCachePathForDevice(RHIDevice const& device)
 {
     auto key = device.GetPipelineCacheKey();
-    return Paths::Resolve(Format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
+    return device.mApp.ResolveRelativePathBase(Format("Editor-Cache.pso", key.high, key.low));
 }
 
 static Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)
