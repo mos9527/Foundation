@@ -7,7 +7,7 @@
 #include <Renderer/Texture.hpp>
 #include <utility>
 
-namespace Foundation::RHI { struct RHIDeviceCapabilities; }
+namespace Foundation::RHI { struct RHIDeviceCapabilities; class RHIApplication; }
 struct GPUSceneDesc;
 
 // Components
@@ -542,13 +542,14 @@ struct FSceneBuildOptions
     bool optimizeMeshes{true};
 };
 
-void LoadGLTF(JobSystem* jobs, StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC,
-              FSceneBuildOptions const& buildOptions = FSceneBuildOptions{});
+// app provides platform file queries (texture/HDRI discovery next to the scene file).
+void LoadGLTF(Foundation::RHI::RHIApplication const& app, JobSystem* jobs, StringView path, FImportedScene& scene,
+              Allocator* scratchAlloc = GLOBAL_ALLOC, FSceneBuildOptions const& buildOptions = FSceneBuildOptions{});
 void LoadFSCN(FImportedScene& scene);
 
 /**
  * Loads a scene from a path, inferring format from extension.
  * Returns the FSCN path that backs payload blob reads.
  */
-String LoadScene(JobSystem* jobs, StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC,
-                 FSceneBuildOptions const& buildOptions = FSceneBuildOptions{});
+String LoadScene(Foundation::RHI::RHIApplication const& app, JobSystem* jobs, StringView path, FImportedScene& scene,
+                 Allocator* scratchAlloc = GLOBAL_ALLOC, FSceneBuildOptions const& buildOptions = FSceneBuildOptions{});

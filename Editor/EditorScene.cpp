@@ -1,9 +1,9 @@
 #include <algorithm>
-#include <filesystem>
 #include <cctype>
 #include <limits>
 #include <numbers>
 
+#include "PathUtil.hpp"
 #include "EditorState.hpp"
 #include <Fonts/PlexSansIcon.h>
 #include <Renderer/Mesh.hpp>
@@ -15,25 +15,29 @@
 #include <imgui.h>
 #include <tracy/Tracy.hpp>
 #include <cmath>
+
+using namespace EditorPathUtil;
+
 static constexpr const char* kTempScenePath = "Cache/Last.fscn";
 
 static String sDeferredScenePath;
 static String sDeferredEnvMapPath;
 
+// Both inputs are produced by the same resolution routine (OpenSceneFile stores the
+// exact string returned by PrepareScenePayloadFile, which itself comes from
+// ResolveRelativePathBase for the temp payload), so they are byte-identical whenever
+// they refer to the same file. A lexical comparison is therefore sufficient and avoids
+// touching the OS filesystem APIs (no equivalent()/weakly_canonical() needed).
 static bool PathsReferToSameFile(StringView a, StringView b)
 {
-    std::error_code ec;
-    if (std::filesystem::equivalent(a.data(), b.data(), ec))
-        return true;
-    ec.clear();
-    auto const canonA = std::filesystem::weakly_canonical(a.data(), ec);
-    if (ec)
+    if (a.size() != b.size())
         return false;
-    ec.clear();
-    auto const canonB = std::filesystem::weakly_canonical(b.data(), ec);
-    if (ec)
-        return false;
-    return canonA == canonB;
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
+            return false;
+    }
+    return true;
 }
 
 // Drop the editor's read-only mapping when we need to rewrite the same payload file (e.g. the
@@ -68,10 +72,7 @@ static FTexture LoadViewLUT(StringView path, Allocator* alloc = GLOBAL_ALLOC)
 
 static bool HasDDSExtension(StringView path)
 {
-    String ext = std::filesystem::path(path.data()).extension().string().c_str();
-    for (auto& c : ext)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return ext == ".dds";
+    return LowerExtension(path) == ".dds";
 }
 
 static FTexture LoadMatcapTexture(StringView path, Allocator* alloc = GLOBAL_ALLOC)
@@ -455,9 +456,7 @@ static void DestroyGPUScene(GPUScene*& gpu)
 
 static String PrepareScenePayloadFile(StringView path)
 {
-    auto ext = std::filesystem::path(path.data()).extension().string();
-    for (auto& c : ext)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    auto ext = LowerExtension(path);
     if (ext == ".fscn")
         return String(path);
 
@@ -466,12 +465,12 @@ static String PrepareScenePayloadFile(StringView path)
     // explicitly - and works the same way as loading from FSCN.
     String scenePayloadPath = GContext->application->ResolveRelativePathBase(kTempScenePath);
     ReleaseScenePayloadFileForRewrite(scenePayloadPath);
-    if (auto slash = scenePayloadPath.find_last_of("/\\"); slash != String::npos && slash > 0)
-        GContext->application->CreateDirectory(scenePayloadPath.substr(0, slash));
+    if (auto const parent = ParentPath(scenePayloadPath); !parent.empty())
+        GContext->application->CreateDirectory(parent);
     Allocator* importScratch = GLOBAL_ALLOC;
     MemoryMappedFile sceneFile(scenePayloadPath, 64ull * 1024ull * 1024ull /* grows on demand */);
     FImportedScene writeScene(sceneFile, importScratch);
-    LoadScene(GContext->jobs.get(), path, writeScene, importScratch);
+    LoadScene(*GContext->application, GContext->jobs.get(), path, writeScene, importScratch);
     return scenePayloadPath;
 }
 

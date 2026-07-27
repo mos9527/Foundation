@@ -10,28 +10,26 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
-#include <filesystem>
 #include <thread>
 #include "Examples.hpp"
 
-using r->GetApplication()->ResolveRelativePath;
 static constexpr const char* kTempScenePath = "Cache/GPUSceneGLTF.fscn";
 
-String PrepareScenePayload(JobSystem* jobs, StringView path)
+String PrepareScenePayload(RHIApplication const& app, JobSystem* jobs, StringView path)
 {
-    String ext = std::filesystem::path(path.data()).extension().string().c_str();
-    if (ext == ".fscn")
+    auto dot = path.find_last_of('.');
+    auto sep = path.find_last_of("/\\");
+    if (dot != StringView::npos && (sep == StringView::npos || dot > sep) && path.substr(dot) == ".fscn")
         return String(path);
 
     String scenePayloadPath = PathsResolve(kTempScenePath);
-    std::filesystem::path scenePayloadDir = std::filesystem::path(scenePayloadPath).parent_path();
-    if (!scenePayloadDir.empty())
-        std::filesystem::create_directories(scenePayloadDir);
+    if (auto slash = scenePayloadPath.find_last_of("/\\"); slash != String::npos && slash > 0)
+        app.CreateDirectory(scenePayloadPath.substr(0, slash));
 
     {
         MemoryMappedFile sceneFile(scenePayloadPath, 256ull * 1024ull * 1024ull /* grows on demand */);
         FImportedScene writeScene(sceneFile, GLOBAL_ALLOC);
-        LoadScene(jobs, path, writeScene, GLOBAL_ALLOC);
+        LoadScene(app, jobs, path, writeScene, GLOBAL_ALLOC);
     }
     return scenePayloadPath;
 }
@@ -127,8 +125,8 @@ int main(int argc, char** argv)
 
     auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});
     // Prepare scene file
-    String path =
-        PrepareScenePayload(ctx.jobs.get(), !scenePathArg.empty() ? scenePathArg : PathsResolve("Data/Assets/demo.glb"));
+    String path = PrepareScenePayload(*ctx.app, ctx.jobs.get(),
+                                      !scenePathArg.empty() ? scenePathArg : PathsResolve("Data/Assets/demo.glb"));
     MemoryMappedFile sceneFile(path, MemoryMappedAccess::ReadOnly);
     FImportedScene scene(sceneFile, GLOBAL_ALLOC);
     LoadFSCN(scene);

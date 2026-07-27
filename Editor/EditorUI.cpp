@@ -1,15 +1,17 @@
 #include <cmath>
 #include <cfloat>
 #include <cstring>
-#include <filesystem>
 #include <algorithm>
 #include <Math/Decompose.hpp>
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
 #include <Renderer/Postprocess.hpp>
 #include <Fonts/PlexSansIcon.h>
+#include "PathUtil.hpp"
 #include "EditorState.hpp"
 #include <Renderer/Mesh.hpp>
+
+using namespace EditorPathUtil;
 
 static void DrawLightGizmos();
 static void DrawInstanceGizmos();
@@ -63,8 +65,7 @@ bool SaveFile(SDL_DialogFileFilter filter, String& outPath)
 
     // Native save dialogs don't reliably append an extension from the filter,
     // so enforce the filter's first extension if the user typed a bare name.
-    std::filesystem::path path(outPath);
-    String ext = path.extension().string().c_str();
+    String ext = LowerExtension(outPath);
     if (!ext.empty())
         ext.erase(0, 1);
 
@@ -85,7 +86,7 @@ bool SaveFile(SDL_DialogFileFilter filter, String& outPath)
     {
         char const* firstExtEnd = std::strchr(filter.pattern, ';');
         auto firstExt = firstExtEnd ? std::string(filter.pattern, firstExtEnd) : std::string(filter.pattern);
-        outPath = path.string() + "." + firstExt;
+        outPath = std::string(outPath.c_str()) + "." + firstExt;
     }
     return true;
 }

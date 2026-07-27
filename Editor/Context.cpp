@@ -1,22 +1,12 @@
 #include "Context.hpp"
+#include "PathUtil.hpp"
 #include <RHIVulkan/Application.hpp>
 
 #include <fstream>
 
+using namespace EditorPathUtil;
+
 FContext* GContext = nullptr;
-
-// Lexical helpers; separators may be '/' or '\\' (ResolveRelativePath* joins with '/').
-static StringView ParentPath(StringView path)
-{
-    auto pos = path.find_last_of("/\\");
-    return pos == StringView::npos ? StringView{} : path.substr(0, pos);
-}
-
-static StringView FileName(StringView path)
-{
-    auto pos = path.find_last_of("/\\");
-    return pos == StringView::npos ? path : path.substr(pos + 1);
-}
 
 static String PipelineCachePathForDevice(RHIDevice const& device)
 {

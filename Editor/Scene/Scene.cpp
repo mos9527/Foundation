@@ -9,15 +9,18 @@
 #include <cgltf.h>
 #include <climits>
 #include <cstring>
-#include <filesystem>
 #include <lz4.h>
 #include <numeric>
 #include <type_traits>
+#include <RHICore/Application.hpp>
 #include <RHICore/Device.hpp>
 #include <Renderer/Postprocess.hpp>
 #include <Renderer/GPUScene.hpp>
 #include <Renderer/Mesh.hpp>
 #include "Curve.hpp"
+#include "../PathUtil.hpp"
+
+using namespace EditorPathUtil;
 
 namespace
 {
@@ -28,12 +31,10 @@ String DecodeURI(StringView encoded)
     return uri;
 }
 
-String LowerExtension(std::filesystem::path const& path)
+bool FileExists(RHIApplication const& app, StringView path)
 {
-    auto ext = path.extension().string();
-    for (char& c : ext)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return {ext.begin(), ext.end()};
+    auto info = app.QueryFileInfo(path);
+    return info.has_value() && !info.Get().isDirectory;
 }
 
 FSerializedBounds BuildMeshBounds(FImportedMesh const& mesh)
@@ -220,8 +221,7 @@ FEnvironmentTextureSource LoadFoundationEnvironmentExtension(cgltf_data const* d
             return FEnvironmentTextureSource{.bufferView = environment.buffer_view};
 
         String uri = DecodeURI(environment.uri);
-        std::filesystem::path hdriPath = std::filesystem::path(scenePath.data()).parent_path() / uri;
-        return FEnvironmentTextureSource{.path = {hdriPath.string().c_str()}};
+        return FEnvironmentTextureSource{.path = {JoinPath(ParentPath(scenePath), uri)}};
     }
 
     CHECK_MSG(false, "EXT_foundation_environment has unsupported type");
@@ -655,30 +655,30 @@ FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratch
     return mesh;
 }
 
-Optional<FTexture> LoadTexture(StringView path, Allocator* scratchAlloc, bool gamma = false)
+Optional<FTexture> LoadTexture(RHIApplication const& app, StringView path, Allocator* scratchAlloc, bool gamma = false)
 {
-    std::filesystem::path dir = std::filesystem::path(path).parent_path();
-    String imageNameWE = std::filesystem::path(path).stem().string().c_str();
+    // Base path without extension; sibling lookups swap the extension in place.
+    String base = JoinPath(ParentPath(path), Stem(path));
     // Try common extensions
     {
         const char* extensions[] = {".png", ".jpg", ".jpeg", ".bmp"};
         for (auto ext : extensions)
         {
-            auto imagePath = dir / (imageNameWE + ext);
-            if (std::filesystem::exists(imagePath))
+            String imagePath = base + ext;
+            if (FileExists(app, imagePath))
             {
                 FTexture res(scratchAlloc);
-                return LoadRGBA8(res, imagePath.string(), gamma), res;
+                return LoadRGBA8(res, imagePath, gamma), res;
             }
         }
     }
     // DDS?
     {
-        auto imagePath = dir / (imageNameWE + ".dds");
-        if (std::filesystem::exists(imagePath))
+        String imagePath = base + ".dds";
+        if (FileExists(app, imagePath))
         {
             FTexture res(scratchAlloc);
-            return LoadDDS(res, imagePath.string()), res;
+            return LoadDDS(res, imagePath), res;
         }
     }
     // HDR/HDRI?
@@ -686,18 +686,19 @@ Optional<FTexture> LoadTexture(StringView path, Allocator* scratchAlloc, bool ga
         const char* extensions[] = {".hdr", ".hdri"};
         for (auto ext : extensions)
         {
-            auto imagePath = dir / (imageNameWE + ext);
-            if (std::filesystem::exists(imagePath))
+            String imagePath = base + ext;
+            if (FileExists(app, imagePath))
             {
                 FTexture res(scratchAlloc);
-                return LoadHDR(res, imagePath.string()), res;
+                return LoadHDR(res, imagePath), res;
             }
         }
     }
     return {};
 }
     // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#images
-Optional<FTexture> LoadGLTFTexture(cgltf_texture* texture, StringView scenePath, Allocator* scratchAlloc, bool gamma = false)
+Optional<FTexture> LoadGLTFTexture(RHIApplication const& app, cgltf_texture* texture, StringView scenePath,
+                                   Allocator* scratchAlloc, bool gamma = false)
 {
     CHECK(scratchAlloc != nullptr);
     if (texture->image)
@@ -712,11 +713,7 @@ Optional<FTexture> LoadGLTFTexture(cgltf_texture* texture, StringView scenePath,
         // image URIs in cgltf_data are left as-is, so do it ourselves before touching the FS.
         String uri = texture->image->uri;
         uri.resize(cgltf_decode_uri(uri.data()));
-        String imageName = std::filesystem::path(uri).filename().string().c_str();
-        std::filesystem::path dir = std::filesystem::path(scenePath.data()).parent_path();
-        dir = dir / std::filesystem::path(uri).parent_path();
-        auto fullpath = dir / imageName;
-        auto result = LoadTexture(fullpath.string(), scratchAlloc, gamma);
+        auto result = LoadTexture(app, JoinPath(ParentPath(scenePath), uri), scratchAlloc, gamma);
         if (result)
             return result;
         LOG(Scene, LogWarn, "Texture image file not found: {}", uri);
@@ -1083,8 +1080,8 @@ bool BuildAnimChannel(cgltf_animation_channel const* ch, uint32_t joint, FAnimCh
     return true;
 }
 
-void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& scene, Allocator* scratchAlloc,
-                              FSceneBuildOptions const& buildOptions)
+void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, StringView path, FImportedScene& scene,
+                              Allocator* scratchAlloc, FSceneBuildOptions const& buildOptions)
 {
     CHECK(jobs != nullptr);
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
@@ -1282,7 +1279,7 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
                     unsigned flags = textureFlags[i];
                     FTexture texture(scratchAlloc);
                     LOG(Scene, LogInfo, "Loading texture {}", name);
-                    auto loaded = LoadGLTFTexture(src, path, scratchAlloc, flags & kTextureInSRGB);
+                    auto loaded = LoadGLTFTexture(app, src, path, scratchAlloc, flags & kTextureInSRGB);
                     if (loaded.has_value())
                     {
                         if (loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Unorm ||
@@ -1326,7 +1323,7 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
         else
         {
             LOG(Scene, LogInfo, "Loading environment HDRI {}", *environmentTextureSource.path);
-            auto result = LoadTexture(*environmentTextureSource.path, scratchAlloc, true);
+            auto result = LoadTexture(app, *environmentTextureSource.path, scratchAlloc, true);
             if (!result)
             {
                 LOG(Scene, LogError, "Failed to load environment HDRI {}", *environmentTextureSource.path);
@@ -2034,13 +2031,13 @@ FImportedScene::~FImportedScene()
         FinalizeSceneWriter(*this);
 }
 
-void LoadGLTF(JobSystem* jobs, StringView path, FImportedScene& scene, Allocator* scratchAlloc,
-              FSceneBuildOptions const& buildOptions)
+void LoadGLTF(RHIApplication const& app, JobSystem* jobs, StringView path, FImportedScene& scene,
+              Allocator* scratchAlloc, FSceneBuildOptions const& buildOptions)
 {
     CHECK(jobs != nullptr);
     CHECK(scene.mWriting);
     CHECK(scratchAlloc != nullptr);
-    BuildGLTFSerializedScene(jobs, path, scene, scratchAlloc, buildOptions);
+    BuildGLTFSerializedScene(app, jobs, path, scene, scratchAlloc, buildOptions);
     scene.RebuildIndex();
 }
 
@@ -2063,12 +2060,12 @@ void LoadFSCN(FImportedScene& scene)
     scene.RebuildIndex();
 }
 
-String LoadScene(JobSystem* jobs, StringView path, FImportedScene& scene, Allocator* scratchAlloc,
-                 FSceneBuildOptions const& buildOptions)
+String LoadScene(RHIApplication const& app, JobSystem* jobs, StringView path, FImportedScene& scene,
+                 Allocator* scratchAlloc, FSceneBuildOptions const& buildOptions)
 {
     CHECK(jobs != nullptr);
     CHECK(scratchAlloc != nullptr);
-    auto ext = LowerExtension(std::filesystem::path(path.data()));
+    auto ext = LowerExtension(path);
     if (ext == ".fscn")
     {
         CHECK(scene.mFile != nullptr);
@@ -2078,6 +2075,6 @@ String LoadScene(JobSystem* jobs, StringView path, FImportedScene& scene, Alloca
     }
 
     CHECK(scene.mWriting);
-    LoadGLTF(jobs, path, scene, scratchAlloc, buildOptions);
+    LoadGLTF(app, jobs, path, scene, scratchAlloc, buildOptions);
     return String(path);
 }
