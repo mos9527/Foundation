@@ -11,4 +11,3 @@
 #include "Logging.hpp"
 #include "Thread.hpp"
 #include "ThreadPool.hpp"
-#include "Variant.hpp"

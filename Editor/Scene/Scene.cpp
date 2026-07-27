@@ -1293,10 +1293,10 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
                             if (buildOptions.textureCompression == FSceneTextureCompression::BC7)
                                 texture = loaded->EncodeBC7(scratchAlloc);
                             else
-                                texture = std::move(loaded.value());
+                                texture = std::move(loaded.Get());
                         }
                         else
-                            texture = loaded.value();
+                            texture = loaded.Get();
                         LOG(Scene, LogInfo, "Loaded texture {}", name);
                     }
                     else
@@ -1332,7 +1332,7 @@ void BuildGLTFSerializedScene(JobSystem* jobs, StringView path, FImportedScene& 
                 LOG(Scene, LogError, "Failed to load environment HDRI {}", *environmentTextureSource.path);
                 return;
             }
-            environmentTexture = std::move(result.value());
+            environmentTexture = std::move(result.Get());
         }
         BuildTextureBlobJobs(scene.mTables.textures[environmentTextureIndex],
                              textureBlobJobs[environmentTextureIndex].jobs, std::move(environmentTexture));

@@ -3,7 +3,6 @@
 #include <Core/JobSystem.hpp>
 #include <Core/Logging.hpp>
 #include <Core/ThreadPool.hpp>
-#include <Core/Variant.hpp>
 #include <RHICore/Command.hpp>
 #include <RHICore/Descriptor.hpp>
 #include <RHICore/Device.hpp>
@@ -163,9 +162,9 @@ namespace Foundation::RenderCore
             CHECK(mip_end < textureMips);
             CHECK(layer_end < textureLayers);
             uint32_t mip_stride = textureLayers * kTextureAspectCount;
-            return Views::all(Span<SubresourceState>(lastSubresourceStates.begin() + mip_begin * mip_stride,
+            return std::views::all(Span<SubresourceState>(lastSubresourceStates.begin() + mip_begin * mip_stride,
                                                      lastSubresourceStates.begin() + (mip_end + 1) * mip_stride)) |
-                Views::filter(
+                std::views::filter(
                        [=](const SubresourceState& state)
                        {
                            return (RHITextureAspectFlag(state.aspect) & range.layer.aspect) && state.mip >= mip_begin &&

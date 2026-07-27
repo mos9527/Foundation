@@ -658,10 +658,10 @@ void Renderer::CullPasses(PassHandle epilogue) const
     auto pushDependenciesProduced = [&](PassHandle pass)
     {
         auto const& tpass = mSetup->trackedPasses[pass];
-        auto textureProduces = Views::all(tpass.textureUsages) |
-            Views::filter([](auto const& t) { return (std::get<1>(t) & kAllShaderWrites); }) | Views::keys;
-        auto bufferProduces = Views::all(tpass.bufferUsages) |
-            Views::filter([](auto const& b) { return (std::get<1>(b) & kAllShaderWrites); }) | Views::keys;
+        auto textureProduces = std::views::all(tpass.textureUsages) |
+            std::views::filter([](auto const& t) { return (std::get<1>(t) & kAllShaderWrites); }) | std::views::keys;
+        auto bufferProduces = std::views::all(tpass.bufferUsages) |
+            std::views::filter([](auto const& b) { return (std::get<1>(b) & kAllShaderWrites); }) | std::views::keys;
         produced.insert(textureProduces.begin(), textureProduces.end());
         produced.insert(bufferProduces.begin(), bufferProduces.end());
     };
@@ -701,11 +701,11 @@ void Renderer::CullPasses(PassHandle epilogue) const
     }
     // Assign last Graphics/Compute group
     {
-        auto it = Ranges::find_if(groups | Views::reverse,
+        auto it = Ranges::find_if(groups | std::views::reverse,
                                   [](auto const& g) { return g.queue == RHIDeviceQueueType::Graphics; });
         if (it != groups.rend())
             it->isLastGraphics = true;
-        it = Ranges::find_if(groups | Views::reverse,
+        it = Ranges::find_if(groups | std::views::reverse,
                              [](auto const& g) { return g.queue == RHIDeviceQueueType::Compute; });
         if (it != groups.rend())
             it->isLastCompute = true;
@@ -981,7 +981,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     std::sort(bindings.begin(), bindings.end());
     // Separate into descriptor sets
     Vector<RHIDeviceDescriptorSetLayoutDesc::Binding> set_bindings(mAllocator);
-    for (const auto& binding : bindings | Views::values)
+    for (const auto& binding : bindings | std::views::values)
     {
         CHECK_MSG(var_types.contains(binding) || var_ext_sets.contains(binding),
                   "Binding {} is not bound by pass {}, but is used by one of its shaders.", binding, tracked.name);
@@ -1118,7 +1118,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     // Add Backbuffer UAV set if needed
     if (backbufferUAVUsage.has_value())
     {
-        auto set = backbufferUAVUsage.value();
+        auto set = backbufferUAVUsage.Get();
         CHECK_MSG(
             set == tracked.pDescriptorLayouts.size(),
             "Backbuffer UAV View MUST be the last descriptor set in pass {}. Declared {}, but pass only has {} sets.",
@@ -1149,7 +1149,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         if (tracked.backbufferRTV)
         {
             attachments.push_back(
-                {.blending = tracked.backbufferRTV.value(), .renderTarget = {.format = mSwapchain->mDesc.format}});
+                {.blending = tracked.backbufferRTV.Get(), .renderTarget = {.format = mSwapchain->mDesc.format}});
         }
         for (auto const& [rtv, blending] : tracked.rtvs)
         {
@@ -1242,7 +1242,7 @@ void Renderer::FinalizeResources()
     if (!mSetup->activeResources.empty())
         mResources->fit(mSetup->trackedResources.size());
     // !! TODO: Overlap transient resources if possible
-    for (const auto& handle : mSetup->activeResources | Views::keys)
+    for (const auto& handle : mSetup->activeResources | std::views::keys)
     {
         auto& res = mSetup->trackedResources[handle];
         bool needShared = res.hasComputeUsage && res.hasGraphicsUsage;
@@ -1294,7 +1294,7 @@ void Renderer::FinalizeResources()
         auto& pass = mSetup->trackedPasses[mSetup->execution[ord]];
         for (auto hdl : pass.texviews)
             activeViews.push_back(hdl);
-        for (const auto& key : pass.samplers | Views::keys)
+        for (const auto& key : pass.samplers | std::views::keys)
             activeSamplers.push_back(key);
     }
     // Instantiate views
@@ -2148,7 +2148,7 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
     if (!tpass.pDescriptorSets.empty())
         cmd->BindDescriptorSet(tpass.GetPipelineType(), tpass.pso.Get(), tpass.pDescriptorSets, 0);
     if (tpass.backbufferUAV)
-        CmdBindDescriptorSet(pass, cmd, tpass.backbufferUAV.value(), mSwaps[GetSwap()].viewSet.Get());
+        CmdBindDescriptorSet(pass, cmd, tpass.backbufferUAV.Get(), mSwaps[GetSwap()].viewSet.Get());
 }
 
 void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32_t set_index,

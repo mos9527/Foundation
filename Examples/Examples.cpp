@@ -489,21 +489,21 @@ bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceSc
     if (!outSurface)
         outSurface = device->CreateSurface(RHISurface::SurfaceDesc{.windowHandle = window});
 
-    auto format = Ranges::FirstOf(Views::all(kFormatPreferenceList) |
-                                  Views::filter(Ranges::ContainedBy(outSurface->GetSupportedFormats())));
-    auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
-                                   Views::filter(Ranges::ContainedBy(outSurface->GetSupportedPresentModes())));
-    CHECK_MSG(format.has_value(), "No supported swapchain format found!");
-    LOG(RenderApplication, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format,
-        format.value().colorSpace);
-    CHECK_MSG(present.has_value(), "No supported presentation mode found!");
-    LOG(RenderApplication, LogDebug, "Selected swapchain present mode: {}", present.value());
+    auto format = Ranges::FirstOf(std::views::all(kFormatPreferenceList) |
+                                  std::views::filter(Ranges::ContainedBy(outSurface->GetSupportedFormats())));
+    auto present = Ranges::FirstOf(std::views::all(kPresentModePreferenceList) |
+                                   std::views::filter(Ranges::ContainedBy(outSurface->GetSupportedPresentModes())));
+    CHECK_MSG(format.GetIf(), "No supported swapchain format found!");
+    LOG(RenderApplication, LogDebug, "Selected swapchain format: {} with color space: {}", format.Get().format,
+        format.Get().colorSpace);
+    CHECK_MSG(present.GetIf(), "No supported presentation mode found!");
+    LOG(RenderApplication, LogDebug, "Selected swapchain present mode: {}", present.Get());
     outSwap = device->CreateSwapchain(RHISwapchain::SwapchainDesc{
-        .format = format.value().format,
-        .colorSpace = format.value().colorSpace,
+        .format = format.Get().format,
+        .colorSpace = format.Get().colorSpace,
         .extents = RHIExtent3D{w, h, 1},
         .minBufferCount = 3,
-        .presentMode = present.value(),
+        .presentMode = present.Get(),
         .surface = outSurface,
     });
     return true;
@@ -823,7 +823,7 @@ void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx)
 
 void Examples_DumpAndOpenImage(StringView path, RHIExtent2D extent, void const* data, int channels, int strideBytes)
 {
-    const auto outPath = std::filesystem::absolute(std::string(path.data(), path.size())).string();
+    const auto outPath = std::filesystem::absolute(path).string();
     const int stride = strideBytes ? strideBytes : static_cast<int>(extent.x) * channels;
     if (!stbi_write_png(outPath.c_str(), static_cast<int>(extent.x), static_cast<int>(extent.y), channels, data,
                         stride))

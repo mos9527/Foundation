@@ -1,7 +1,6 @@
 #pragma once
 #include <RHICore/Resource.hpp>
 #include <RHICore/Command.hpp>
-#include <Core/Variant.hpp>
 #include <Core/AtomicPool.hpp>
 namespace Foundation::RenderCore
 {

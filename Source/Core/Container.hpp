@@ -15,19 +15,14 @@
 #include <vector>
 #include <ranges>
 #include <algorithm>
+#include <variant>
 
 #include "Allocator.hpp"
 #include "Hash.hpp"
+#include "Logging.hpp"
 namespace Foundation::Core {
 
     /* -- STL Value types -- */
-
-    /**
-     * @brief Alias for `std::optional`
-     */
-    template<typename T>
-    using Optional = std::optional<T>;
-
     /**
      * @brief Alias for `std::pair`
      */
@@ -225,7 +220,137 @@ namespace Foundation::Core {
     using PriorityQueue = std::priority_queue<T, Container, Predicate>;
 
     /**
-     * @brief STL Ranges extensions
+     * @brief std::optional with convenience Get()/GetIf() methods.
+     */
+    template <typename T>
+    struct Optional : public std::optional<T>
+    {
+        using Base = std::optional<T>;
+
+        using Base::Base;
+
+        Optional() = default;
+        Optional(const Optional&) = default;
+        Optional(Optional&&) = default;
+
+        Optional& operator=(const Optional&) = default;
+        Optional& operator=(Optional&&) = default;
+
+        Optional& operator=(std::nullopt_t) noexcept
+        {
+            Base::operator=(std::nullopt);
+            return *this;
+        }
+
+        Optional& operator=(const T& value)
+        {
+            Base::operator=(value);
+            return *this;
+        }
+
+        Optional& operator=(T&& value)
+        {
+            Base::operator=(std::move(value));
+            return *this;
+        }
+
+        T& Get()
+        {
+            T* ptr = GetIf();
+            CHECK_MSG(ptr, "null-optional access");
+            return *ptr;
+        }
+
+        const T& Get() const
+        {
+            const T* ptr = GetIf();
+            CHECK_MSG(ptr, "null-optional access");
+            return *ptr;
+        }
+
+        T* GetIf() { return Base::has_value() ? std::addressof(Base::value()) : nullptr; }
+
+        const T* GetIf() const { return Base::has_value() ? std::addressof(Base::value()) : nullptr; }
+    };
+    /*! \cond */
+    template <typename... T>
+    struct Visitor : T...
+    {
+        using T::operator()...;
+    };
+    template <typename... T>
+    struct VisitorDefault : T...
+    {
+        using T::operator()...;
+        template <typename Arg>
+            requires(!std::is_invocable_v<T, Arg&> && ...)
+        auto operator()(Arg&) { /* nop */ };
+    };
+    /*! \endcond */
+    /**
+     * @brief std::variant with C++23 visit() behavior and convenience Get()/GetIf() methods.
+     */
+    template <typename... Args>
+    struct Variant : public std::variant<Args...>
+    {
+        using std::variant<Args...>::variant;
+        using std::variant<Args...>::operator=;
+
+        // C++23 visit() behavior
+        template <typename... Visitors>
+        auto Visit(Visitors&&... visitors)
+        {
+            return std::visit(Visitor{std::forward<Visitors>(visitors)...}, *this);
+        }
+        template <typename... Visitors>
+        auto Visit(Visitors&&... visitors) const
+        {
+            return std::visit(Visitor{std::forward<Visitors>(visitors)...}, *this);
+        }
+        // C++23 visit() behavior with default no-op visitor.
+        template <typename... Visitors>
+        auto VisitDefault(Visitors&&... visitors)
+        {
+            return std::visit(VisitorDefault{std::forward<Visitors>(visitors)...}, *this);
+        }
+        template <typename... Visitors>
+        auto VisitDefault(Visitors&&... visitors) const
+        {
+            return std::visit(VisitorDefault{std::forward<Visitors>(visitors)...}, *this);
+        }
+
+        // std::get<T>
+        template <typename T>
+        constexpr T& Get()
+        {
+            CHECK_MSG(GetIf<T>(), "null-variant access");
+            return *GetIf<T>();
+        }
+
+        // std::get<T>
+        template <typename T>
+        [[nodiscard]] constexpr const T& Get() const
+        {
+            CHECK_MSG(GetIf<T>(), "null-variant access");
+            return *GetIf<T>();
+        }
+
+        // std::get_if<T>
+        template <typename T>
+        constexpr T* GetIf()
+        {
+            return std::get_if<T>(this);
+        }
+
+        // std::get_if<T>
+        template <typename T>
+        [[nodiscard]] constexpr const T* GetIf() const
+        {
+            return std::get_if<T>(this);
+        }
+    };
+    /**
+     * @brief Ranges extensions
      */
     namespace Ranges
     {
@@ -255,15 +380,8 @@ namespace Foundation::Core {
         }
     } // namespace Ranges
     /**
-     * @brief STL Views extensions
+     * @breif Hash helpers
      */
-    namespace Views
-    {
-        using namespace std::views;
-    } // namespace Views
-    /**
-    * @breif Hash helpers
-    */
     template <typename T>
     [[nodiscard]] constexpr uint64_t FNV1a64(Span<const T> span) noexcept
     {

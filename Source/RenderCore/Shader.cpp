@@ -145,7 +145,7 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
     for (auto& element : ID) {
         if (element.specID.has_value())
         {
-            mSpecializationConstants.push_back({.id = element.specID.value(), .name = element.name });
+            mSpecializationConstants.push_back({.id = element.specID.Get(), .name = element.name});
         }
         if (element.opcode == spv::OpVariable) {
             switch (static_cast<spv::StorageClass>(element.storageClass)) {

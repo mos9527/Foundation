@@ -157,32 +157,33 @@ void UpdateSwapchain(FContext* context)
     if (!context->surface)
         context->surface = context->device->CreateSurface(RHISurface::SurfaceDesc{.windowHandle = context->window});
     auto supportedFormats = context->surface->GetSupportedFormats();
-    auto firstHDR = Ranges::FirstOf(Views::all(kFormatPreferenceListHDR) |
-                                  Views::filter(Ranges::ContainedBy(supportedFormats)));
-    auto firstSDR = Ranges::FirstOf(Views::all(kFormatPreferenceListSDR) |
-                                  Views::filter(Ranges::ContainedBy(supportedFormats)));
+    auto firstHDR = Ranges::FirstOf(std::views::all(kFormatPreferenceListHDR) |
+                                  std::views::filter(Ranges::ContainedBy(supportedFormats)));
+    auto firstSDR = Ranges::FirstOf(std::views::all(kFormatPreferenceListSDR) |
+                                  std::views::filter(Ranges::ContainedBy(supportedFormats)));
     bool hdrBlockedByWindow = context->windowHDR.propertiesAvailable && !context->windowHDR.enabled;
     auto format = context->enableHDR && !hdrBlockedByWindow ? firstHDR : firstSDR;
     if (context->enableHDR && hdrBlockedByWindow)
         LOG(RenderApplication, LogWarn, "HDR output requested, but SDL reports no HDR headroom for this window; using SDR");
     if (!format.has_value() && firstSDR.has_value())
     {
-        LOG(RenderApplication, LogError, "Fallback to SDR {} as HDR is not supported", firstSDR.value().format);
+        LOG(RenderApplication, LogError, "Fallback to SDR {} as HDR is not supported", firstSDR.Get().format);
         format = firstSDR;
     }
     CHECK_MSG(format.has_value(), "No supported swapchain format found!");
     auto present =
-        Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
-                        Views::filter(Ranges::ContainedBy(context->surface->GetSupportedPresentModes())));
+        Ranges::FirstOf(std::views::all(kPresentModePreferenceList) |
+                        std::views::filter(Ranges::ContainedBy(context->surface->GetSupportedPresentModes())));
     CHECK_MSG(present.has_value(), "No supported presentation mode found!");
-    LOG(Editor, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format, format.value().colorSpace);
-    LOG(Editor, LogDebug, "Selected swapchain present mode: {}", present.value());
+    LOG(Editor, LogDebug, "Selected swapchain format: {} with color space: {}", format.Get().format,
+        format.Get().colorSpace);
+    LOG(Editor, LogDebug, "Selected swapchain present mode: {}", present.Get());
     context->swapchain = context->device->CreateSwapchain(RHISwapchain::SwapchainDesc{
-        .format = format.value().format,
-        .colorSpace = format.value().colorSpace,
+        .format = format.Get().format,
+        .colorSpace = format.Get().colorSpace,
         .extents = RHIExtent3D{w, h, 1},
         .minBufferCount = 3,
-        .presentMode = present.value(),
+        .presentMode = present.Get(),
         .surface = context->surface,
     });
 }
