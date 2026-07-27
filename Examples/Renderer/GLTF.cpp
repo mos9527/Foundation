@@ -1,5 +1,4 @@
 // Demonstrates loading a glTF/GLB/FSCN into GPUScene with the Pathtracer integrator
-#include <Core/Paths.hpp>
 #include <Editor/Runtime/GPUScene.hpp>
 #include <RenderCore/ImmediateContext.hpp> // For ImmediateReadback
 #include <Renderer/Renderer.hpp>
@@ -22,7 +21,7 @@ String PrepareScenePayload(RHIApplication const& app, JobSystem* jobs, StringVie
     if (dot != StringView::npos && (sep == StringView::npos || dot > sep) && path.substr(dot) == ".fscn")
         return String(path);
 
-    String scenePayloadPath = PathsResolve(kTempScenePath);
+    String scenePayloadPath = app.ResolveRelativePathBase(kTempScenePath);
     if (auto slash = scenePayloadPath.find_last_of("/\\"); slash != String::npos && slash > 0)
         app.CreateDirectory(scenePayloadPath.substr(0, slash));
 
@@ -126,7 +125,7 @@ int main(int argc, char** argv)
     auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});
     // Prepare scene file
     String path = PrepareScenePayload(*ctx.app, ctx.jobs.get(),
-                                      !scenePathArg.empty() ? scenePathArg : PathsResolve("Data/Assets/demo.glb"));
+                                      !scenePathArg.empty() ? scenePathArg : ctx.app->ResolveRelativePathBase("Data/Assets/demo.glb"));
     MemoryMappedFile sceneFile(path, MemoryMappedAccess::ReadOnly);
     FImportedScene scene(sceneFile, GLOBAL_ALLOC);
     LoadFSCN(scene);
@@ -196,7 +195,7 @@ int main(int argc, char** argv)
                                                  RHIOffset2D{}, cfg.renderExtent);
                 readback.End();
                 readback.WaitIdle();
-                Examples_DumpAndOpenImage(ctx.app.Get(), outputPath, cfg.renderExtent, pixels);
+                Examples_DumpAndOpenImage(*ctx.app, outputPath, cfg.renderExtent, pixels);
             }
         }
         else

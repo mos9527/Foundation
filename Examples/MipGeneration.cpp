@@ -16,7 +16,7 @@ int main(int argc, char** argv)
                                                                   });
     {
         int x, y, n;
-        stbi_uc* data = stbi_load(r->GetApplication()->ResolveRelativePath("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
+        stbi_uc* data = stbi_load(ctx.app->ResolveRelativePathBase("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
         CHECK_MSG(data, "Image did not load.");
         auto numMips = static_cast<uint32_t>(std::ceil(std::log2(std::max(x, y)))) + 1;
         auto texture = ImmediateCreateTexture(

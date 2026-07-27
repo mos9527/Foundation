@@ -25,7 +25,7 @@ int main(int argc, char** argv)
                                                                   });
     {
         int x, y, n;
-        stbi_uc* data = stbi_load(r->GetApplication()->ResolveRelativePath("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
+        stbi_uc* data = stbi_load(ctx.app->ResolveRelativePathBase("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
         CHECK_MSG(data, "Image did not load.");
         CHECK_MSG((x % 4 == 0) && (y % 4 == 0), "Autodiff encoder requires dimensions that are multiples of 4.");
 
