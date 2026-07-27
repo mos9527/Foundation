@@ -30,10 +30,10 @@ String DecodeURI(StringView encoded)
 
 String LowerExtension(std::filesystem::path const& path)
 {
-    String ext = path.extension().string();
+    auto ext = path.extension().string();
     for (char& c : ext)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return ext;
+    return {ext.begin(), ext.end()};
 }
 
 FSerializedBounds BuildMeshBounds(FImportedMesh const& mesh)
@@ -221,7 +221,7 @@ FEnvironmentTextureSource LoadFoundationEnvironmentExtension(cgltf_data const* d
 
         String uri = DecodeURI(environment.uri);
         std::filesystem::path hdriPath = std::filesystem::path(scenePath.data()).parent_path() / uri;
-        return FEnvironmentTextureSource{.path = hdriPath.string()};
+        return FEnvironmentTextureSource{.path = {hdriPath.string().c_str()}};
     }
 
     CHECK_MSG(false, "EXT_foundation_environment has unsupported type");
@@ -658,7 +658,7 @@ FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratch
 Optional<FTexture> LoadTexture(StringView path, Allocator* scratchAlloc, bool gamma = false)
 {
     std::filesystem::path dir = std::filesystem::path(path).parent_path();
-    String imageNameWE = std::filesystem::path(path).stem().string();
+    String imageNameWE = std::filesystem::path(path).stem().string().c_str();
     // Try common extensions
     {
         const char* extensions[] = {".png", ".jpg", ".jpeg", ".bmp"};
@@ -712,7 +712,7 @@ Optional<FTexture> LoadGLTFTexture(cgltf_texture* texture, StringView scenePath,
         // image URIs in cgltf_data are left as-is, so do it ourselves before touching the FS.
         String uri = texture->image->uri;
         uri.resize(cgltf_decode_uri(uri.data()));
-        String imageName = std::filesystem::path(uri).filename().string();
+        String imageName = std::filesystem::path(uri).filename().string().c_str();
         std::filesystem::path dir = std::filesystem::path(scenePath.data()).parent_path();
         dir = dir / std::filesystem::path(uri).parent_path();
         auto fullpath = dir / imageName;

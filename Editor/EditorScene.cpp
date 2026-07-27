@@ -69,7 +69,7 @@ static FTexture LoadViewLUT(StringView path, Allocator* alloc = GLOBAL_ALLOC)
 
 static bool HasDDSExtension(StringView path)
 {
-    String ext = std::filesystem::path(path.data()).extension().string();
+    String ext = std::filesystem::path(path.data()).extension().string().c_str();
     for (auto& c : ext)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return ext == ".dds";
@@ -697,7 +697,7 @@ void HandleFile(const char* filePath)
     {
         // HDRIs sharing the scene's filename load too. The scene load is async, so defer
         // the env map until the scene is installed (PollSceneLoad applies it).
-        String hdriPath = path.string().substr(0, path.string().length() - ext.length());
+        String hdriPath = path.string().substr(0, path.string().length() - ext.length()).c_str();
         String envPath;
         if (std::filesystem::exists(hdriPath + ".hdr"))
             envPath = hdriPath + ".hdr";

@@ -64,7 +64,7 @@ bool SaveFile(SDL_DialogFileFilter filter, String& outPath)
     // Native save dialogs don't reliably append an extension from the filter,
     // so enforce the filter's first extension if the user typed a bare name.
     std::filesystem::path path(outPath);
-    String ext = path.extension().string();
+    String ext = path.extension().string().c_str();
     if (!ext.empty())
         ext.erase(0, 1);
 
@@ -84,7 +84,7 @@ bool SaveFile(SDL_DialogFileFilter filter, String& outPath)
     if (!matchesFilter)
     {
         char const* firstExtEnd = std::strchr(filter.pattern, ';');
-        String firstExt = firstExtEnd ? String(filter.pattern, firstExtEnd) : String(filter.pattern);
+        auto firstExt = firstExtEnd ? std::string(filter.pattern, firstExtEnd) : std::string(filter.pattern);
         outPath = path.string() + "." + firstExt;
     }
     return true;
