@@ -17,7 +17,7 @@ namespace Foundation::RHI
         RHIDeviceQueueFlags sharedQueues{RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute |
                                          RHIDeviceQueueFlagsBits::Transfer};
         /// Guarantees that the host can see the latest data written by the device without explicit flush
-        /// On implementations that do not support this, exceptions will be thrown when trying to create such resources.
+        /// On implementations that do not support this, this will cause a CHECK.
         bool coherent{false};
         /// Hint that the resource will be used for staging
         /// With this flag - the resource may be not host-visible regardless of the host_access flag.

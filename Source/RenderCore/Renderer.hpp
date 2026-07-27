@@ -1100,7 +1100,7 @@ namespace Foundation::RenderCore
         /**
          * @brief Helper that retrieves the local size declared by a compute pass.
          *
-         * Calling this on a non-CS/Task/Mesh bound queue is incorrect, and will throw.
+         * Calling this on a non-CS/Task/Mesh bound queue is incorrect, and will CHECK.
          */
         [[nodiscard]] RHIExtent3D CmdGetComputeLocalSize(PassHandle pass) const;
         /**

@@ -13,16 +13,12 @@
 
 #include <RHICore/Common.hpp>
 namespace Foundation::RHI {
-    // Unwrap a fallible Vulkan-Hpp call. In no-exceptions mode fallible factories return
-    // vk::ResultValue<T>; on failure this fatally checks (matching the previous throwing
-    // behaviour) and otherwise moves the value out.
     template <typename T>
     [[nodiscard]] T VkExpect(vk::ResultValue<T>&& rv, const char* what = "vk call") {
         CHECK_MSG(rv.result == vk::Result::eSuccess, "Vulkan call failed ({}): {}", what, vk::to_string(rv.result));
         return std::move(rv.value);
     }
 
-    // Overload for plain Result-returning calls (no payload).
     inline void VkExpect(vk::Result result, const char* what = "vk call") {
         CHECK_MSG(result == vk::Result::eSuccess, "Vulkan call failed ({}): {}", what, vk::to_string(result));
     }

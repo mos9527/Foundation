@@ -61,17 +61,17 @@ void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...>
 #define LOG(TAG, LEVEL, FORMAT, ...) Foundation_Log(#TAG, LEVEL, FORMAT __VA_OPT__(,) __VA_ARGS__);
 
 #if defined(_MSC_VER)
-#define FOUNDATION_DEBUG_BREAK() __debugbreak()
+#define FOUNDATION_TRAP() __debugbreak()
 #elif defined(__clang__) && __has_builtin(__builtin_debugtrap)
-#define FOUNDATION_DEBUG_BREAK() __builtin_debugtrap()
+#define FOUNDATION_TRAP() __builtin_debugtrap()
 #else
-#define FOUNDATION_DEBUG_BREAK() __builtin_trap()
+#define FOUNDATION_TRAP() __builtin_trap()
 #endif
 
 #define CHECK(expr) do { \
     if (!(expr)) [[unlikely]] { \
         LOG(Core, LogError, "Check failed: {}", #expr); \
-        FOUNDATION_DEBUG_BREAK(); \
+        FOUNDATION_TRAP(); \
         std::abort(); \
     } \
 } while (false);
@@ -79,7 +79,7 @@ void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...>
 #define CHECK_MSG(expr, format_str, ...) do { \
     if (!(expr)) [[unlikely]] { \
         LOG(Core, LogError, format_str __VA_OPT__(,) __VA_ARGS__); \
-        FOUNDATION_DEBUG_BREAK(); \
+        FOUNDATION_TRAP(); \
         std::abort(); \
     } \
 } while (false);
