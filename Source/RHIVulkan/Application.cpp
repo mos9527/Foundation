@@ -200,19 +200,31 @@ Optional<RHIFileInfo> VulkanApplication::QueryFileInfo(StringView path) const
 {
     SDL_PathInfo info{};
     if (SDL_GetPathInfo(path.data(), &info))
-    {
-        if (info.type != SDL_PATHTYPE_FILE)
-            return {};
+    {        
         return RHIFileInfo{
             .size = info.size,
             .ctime = SDL_NS_TO_SECONDS(info.create_time),
             .mtime = SDL_NS_TO_SECONDS(info.modify_time),
-            .atime = SDL_NS_TO_SECONDS(info.access_time)
+            .atime = SDL_NS_TO_SECONDS(info.access_time),
+            .isDirectory = info.type == SDL_PATHTYPE_DIRECTORY,
         };
     }
     return {};
 }
-
-bool VulkanApplication::CreateDirectory(StringView path) const { return SDL_CreateDirectory(path.data()) == 0; }
-bool VulkanApplication::RemoveDirectory(StringView path) const { return SDL_RemovePath(path.data()) == 0; }
-bool VulkanApplication::RemoveFile(StringView path) const { return SDL_RemovePath(path.data()) == 0; }
+struct SDLIteratorCallbackData
+{
+    RHIDirectoryIteratorCallback fnActual;
+    void* userData;
+};
+static SDL_EnumerationResult SDLDirectoryIteratorCallback(void* userData, const char* directory, const char* file)
+{
+    auto* data = static_cast<SDLIteratorCallbackData*>(userData);
+    return data->fnActual(data->userData, directory, file) ? SDL_ENUM_CONTINUE : SDL_ENUM_SUCCESS;
+}
+bool VulkanApplication::IterateDirectory(StringView path, RHIDirectoryIteratorCallback cb, void* userData) const {
+    SDLIteratorCallbackData data{.fnActual = cb, .userData = userData};
+    return SDL_EnumerateDirectory(path.data(), SDLDirectoryIteratorCallback, &data);
+}
+bool VulkanApplication::CreateDirectory(StringView path) const { return SDL_CreateDirectory(path.data()); }
+bool VulkanApplication::RemoveDirectory(StringView path) const { return SDL_RemovePath(path.data()); }
+bool VulkanApplication::RemoveFile(StringView path) const { return SDL_RemovePath(path.data()); }

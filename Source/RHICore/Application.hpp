@@ -5,10 +5,18 @@ namespace Foundation::RHI {
     class RHIApplication;
     struct RHIFileInfo
     {
+        // In bytes
         uint64_t size;
         // Seconds since UNIX epoch
         long long ctime, mtime, atime;
+        // Is this a directory?
+        bool isDirectory;
     };
+    /**
+     * @brief Directory iterator callback.
+     * @return true to continue iterating, false to stop.
+     */
+    using RHIDirectoryIteratorCallback = bool (*)(void* userData, StringView directory, StringView file);
     /**
      * @brief The root object of everything RHI.
      * Implementation of this class inherently defines the RHI backend.
@@ -33,9 +41,30 @@ namespace Foundation::RHI {
          */
         [[nodiscard]] virtual String ResolveRelativePathData(StringView path = "") const = 0;
         [[nodiscard]] virtual Optional<RHIFileInfo> QueryFileInfo(StringView path) const = 0;
+        /**
+         * @brief Iterate over the files in a directory, calling the provided callback for each file.
+         * @param cb Callback invoked per entry; returns true to continue iterating, false to stop.
+         * @return false if the directory could not be enumerated.
+         */
+        virtual bool IterateDirectory(StringView path, RHIDirectoryIteratorCallback cb, void* userData) const = 0;
         virtual bool CreateDirectory(StringView path) const = 0;
         virtual bool RemoveDirectory(StringView path) const = 0;
         virtual bool RemoveFile(StringView path) const = 0;
+        /**
+         * @brief Iterate over the files in a directory, calling the provided callback for each file.
+         * @tparam T Lambda taking (StringView directory, StringView file) -> bool
+         *           Returns true to continue iterating, false to stop.
+         */
+        template<typename T>
+        bool IterateDirectory(StringView path, T&& cb) const
+        {
+            auto wrapper = [](void* userData, StringView directory, StringView file) -> bool
+            {
+                auto& func = *static_cast<std::remove_reference_t<T>*>(userData);
+                return func(directory, file);
+            };
+            return IterateDirectory(path, wrapper, &cb);
+        }
     };
     template<> struct RHIObjectTraits<RHIApplication, RHIDevice> {
         static RHIDevice* Get(RHIApplication const* app, Handle handle) {

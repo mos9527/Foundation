@@ -1,10 +1,22 @@
 #include "Context.hpp"
 #include <RHIVulkan/Application.hpp>
 
-#include <filesystem>
 #include <fstream>
 
 FContext* GContext = nullptr;
+
+// Lexical helpers; separators may be '/' or '\\' (ResolveRelativePath* joins with '/').
+static StringView ParentPath(StringView path)
+{
+    auto pos = path.find_last_of("/\\");
+    return pos == StringView::npos ? StringView{} : path.substr(0, pos);
+}
+
+static StringView FileName(StringView path)
+{
+    auto pos = path.find_last_of("/\\");
+    return pos == StringView::npos ? path : path.substr(pos + 1);
+}
 
 static String PipelineCachePathForDevice(RHIDevice const& device)
 {
@@ -12,10 +24,11 @@ static String PipelineCachePathForDevice(RHIDevice const& device)
     return device.mApp.ResolveRelativePathBase(Format("Editor-Cache.pso", key.high, key.low));
 }
 
-static Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)
+static Vector<unsigned char> LoadPipelineCacheBytes(RHIApplication const& app, StringView path, Allocator* allocator)
 {
     Vector<unsigned char> data(allocator);
-    if (!std::filesystem::exists(path.data()))
+    auto info = app.QueryFileInfo(path);
+    if (!info.has_value() || info.Get().isDirectory)
         return data;
 
     std::ifstream file(path.data(), std::ios::binary | std::ios::ate);
@@ -53,9 +66,9 @@ static void SavePipelineCache(FContext const& context)
     if (written == 0)
         return;
     data.resize(written);
-    std::filesystem::path path(context.psoCachePath);
-    std::filesystem::create_directories(path.parent_path());
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (auto parent = String{ParentPath(context.psoCachePath)}; !parent.empty())
+        context.application->CreateDirectory(parent);
+    std::ofstream file(context.psoCachePath.c_str(), std::ios::binary | std::ios::trunc);
     if (!file)
     {
         LOG(Editor, LogWarn, "Failed to open pipeline cache file for writing: {}", context.psoCachePath);
@@ -211,26 +224,29 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::Dev
     
     // Clear stale caches
     {
-        std::filesystem::path cacheDir = std::filesystem::path(context->psoCachePath).parent_path();
-        if (std::filesystem::exists(cacheDir))
-        {
-            for (auto const& entry : std::filesystem::directory_iterator(cacheDir))
+        String cacheDir{ParentPath(context->psoCachePath)};
+        StringView keepName = FileName(context->psoCachePath);
+        context->application->IterateDirectory(cacheDir,
+            [&](StringView directory, StringView file)
             {
-                if (entry.is_regular_file() && entry.path() != std::filesystem::path(context->psoCachePath))
+                if (file != keepName && file.starts_with("pso-cache-") && file.ends_with(".bin"))
                 {
-                    auto filename = entry.path().filename().string();
-                    if (filename.starts_with("pso-cache-") && filename.ends_with(".bin"))
+                    String stale{directory};
+                    if (!stale.empty() && stale.back() != '/' && stale.back() != '\\')
+                        stale += '/';
+                    stale += file;
+                    if (auto info = context->application->QueryFileInfo(stale);
+                        info.has_value() && !info.Get().isDirectory)
                     {
-                        LOG(Editor, LogInfo, "Clearing stale pipeline cache: {}", entry.path().string());
-                        std::error_code ec;
-                        std::filesystem::remove(entry.path(), ec);
+                        LOG(Editor, LogInfo, "Clearing stale pipeline cache: {}", stale);
+                        context->application->RemoveFile(stale);
                     }
                 }
-            }
-        }
+                return true;
+            });
     }
 
-    auto psoCacheBytes = LoadPipelineCacheBytes(context->psoCachePath, allocator);
+    auto psoCacheBytes = LoadPipelineCacheBytes(*context->application, context->psoCachePath, allocator);
     context->psoCache = context->device->CreatePipelineCache({
         .initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())
     });

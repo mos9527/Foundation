@@ -33,6 +33,7 @@ namespace Foundation::RHI {
         [[nodiscard]] virtual String ResolveRelativePathBase(StringView path = "") const override;
         [[nodiscard]] virtual String ResolveRelativePathData(StringView path = "") const override;
         [[nodiscard]] virtual Optional<RHIFileInfo> QueryFileInfo(StringView path) const override;
+        virtual bool IterateDirectory(StringView path, RHIDirectoryIteratorCallback cb, void* userData) const override;
         virtual bool CreateDirectory(StringView path) const override;
         virtual bool RemoveDirectory(StringView path) const override;
         virtual bool RemoveFile(StringView path) const override;

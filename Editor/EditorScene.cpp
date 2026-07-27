@@ -466,9 +466,8 @@ static String PrepareScenePayloadFile(StringView path)
     // explicitly - and works the same way as loading from FSCN.
     String scenePayloadPath = GContext->application->ResolveRelativePathBase(kTempScenePath);
     ReleaseScenePayloadFileForRewrite(scenePayloadPath);
-    std::filesystem::path scenePayloadDir = std::filesystem::path(scenePayloadPath).parent_path();
-    if (!scenePayloadDir.empty())
-        std::filesystem::create_directories(scenePayloadDir);
+    if (auto slash = scenePayloadPath.find_last_of("/\\"); slash != String::npos && slash > 0)
+        GContext->application->CreateDirectory(scenePayloadPath.substr(0, slash));
     Allocator* importScratch = GLOBAL_ALLOC;
     MemoryMappedFile sceneFile(scenePayloadPath, 64ull * 1024ull * 1024ull /* grows on demand */);
     FImportedScene writeScene(sceneFile, importScratch);
@@ -687,8 +686,12 @@ void LoadEnvMap(StringView path)
 
 void HandleFile(const char* filePath)
 {
-    auto path = std::filesystem::path(filePath);
-    auto ext = path.extension().string();
+    StringView pathView(filePath);
+    auto dot = pathView.find_last_of('.');
+    auto sep = pathView.find_last_of("/\\");
+    String ext;
+    if (dot != StringView::npos && (sep == StringView::npos || dot > sep))
+        ext = String(pathView.substr(dot));
     // Normalize to lowercase
     for (auto& c : ext)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -696,11 +699,12 @@ void HandleFile(const char* filePath)
     {
         // HDRIs sharing the scene's filename load too. The scene load is async, so defer
         // the env map until the scene is installed (PollSceneLoad applies it).
-        String hdriPath = path.string().substr(0, path.string().length() - ext.length()).c_str();
+        String hdriPath{pathView.substr(0, pathView.length() - ext.length())};
         String envPath;
-        if (std::filesystem::exists(hdriPath + ".hdr"))
+        auto& app = *GContext->application;
+        if (auto info = app.QueryFileInfo(hdriPath + ".hdr"); info.has_value() && !info.Get().isDirectory)
             envPath = hdriPath + ".hdr";
-        else if (std::filesystem::exists(hdriPath + ".hdri"))
+        else if (auto info = app.QueryFileInfo(hdriPath + ".hdri"); info.has_value() && !info.Get().isDirectory)
             envPath = hdriPath + ".hdri";
         RequestLoadScene(filePath, envPath);
     }
