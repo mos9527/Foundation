@@ -229,6 +229,7 @@ void FImportedMesh::SimplifyLOD(int levels, float scale)
         GenerateLOD<FVertex, uint32_t>(lods[i].indices, vertices, lods[i - 1].indices, scale);
     }
 }
+// TODO clodBuildHierarchy
 struct DAGCluster
 {
     uint32_t group{~0u}; // ID of the FLODGroup this cluster belongs to

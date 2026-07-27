@@ -118,6 +118,7 @@ FetchContent_Declare(
     meshoptimizer
     GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
     GIT_TAG a6ecc73c094bdd5d09644f9286bbf25134853679
+    PATCH_COMMAND  git apply ${CMAKE_CURRENT_LIST_DIR}/meshoptmizer.clod.patch
 )
 
 FetchContent_Declare(
