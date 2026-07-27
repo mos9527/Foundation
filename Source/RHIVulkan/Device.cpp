@@ -21,21 +21,6 @@ const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "
 
 namespace
 {
-    constexpr uint64_t kFnvPrime = 1099511628211ull;
-
-    void HashBytes(uint64_t& hash, const void* data, size_t size)
-    {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (size_t i = 0; i < size; ++i)
-            hash = (hash ^ bytes[i]) * kFnvPrime;
-    }
-
-    template <typename T>
-    void HashValue(uint64_t& hash, T const& value)
-    {
-        static_assert(std::is_trivially_copyable_v<T>);
-        HashBytes(hash, &value, sizeof(T));
-    }
 
 #ifndef FOUNDATION_GIT_COMMIT_HASH
 #define FOUNDATION_GIT_COMMIT_HASH "unknown"
@@ -43,28 +28,27 @@ namespace
 
     RHIPipelineStateCacheKey MakePipelineCacheKey(vk::PhysicalDeviceProperties const& properties)
     {
-        uint64_t high = 14695981039346656037ull;
-        uint64_t low = 1099511628211ull;
         constexpr auto backend = RHIPipelineStateCacheBackend::Vulkan;
         constexpr auto cacheVersion = RHIPipelineStateCache::kSerializedDataVersion;
-        HashValue(high, backend);
-        HashValue(high, properties.vendorID);
-        HashValue(high, properties.deviceID);
-        HashBytes(high, properties.pipelineCacheUUID, VK_UUID_SIZE);
-        HashValue(high, cacheVersion);
+        uint64_t hi = 0, lo = 0;
+        hi = FNV1a64Combine(hi, backend);
+        hi = FNV1a64Combine(hi, properties.vendorID);
+        hi = FNV1a64Combine(hi, properties.deviceID);
+        hi = FNV1a64CombineBytes(hi, properties.pipelineCacheUUID.data(), VK_UUID_SIZE);
+        hi = FNV1a64Combine(hi, cacheVersion);
         
         const StringView gitHash = FOUNDATION_GIT_COMMIT_HASH;
-        HashBytes(high, gitHash.data(), gitHash.size());
+        hi = FNV1a64CombineBytes(hi, gitHash.data(), gitHash.size());
 
-        HashValue(low, cacheVersion);
-        HashBytes(low, properties.pipelineCacheUUID, VK_UUID_SIZE);
-        HashValue(low, properties.deviceID);
-        HashValue(low, properties.vendorID);
-        HashValue(low, backend);
+        lo = FNV1a64Combine(lo, cacheVersion);
+        lo = FNV1a64CombineBytes(lo, properties.pipelineCacheUUID, VK_UUID_SIZE);
+        lo = FNV1a64Combine(lo, properties.deviceID);
+        lo = FNV1a64Combine(lo, properties.vendorID);
+        lo = FNV1a64Combine(lo, backend);
 
-        HashBytes(low, gitHash.data(), gitHash.size());
+        lo = FNV1a64CombineBytes(lo, gitHash.data(), gitHash.size());
 
-        return {.high = high, .low = low};
+        return {.high = hi, .low = lo};
     }
 }
 
@@ -78,7 +62,13 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
 {
     mPhysicalDeviceProperties = mPhysicalDevice.getProperties();
     mPipelineCacheKey = MakePipelineCacheKey(mPhysicalDeviceProperties);
-    auto families = mPhysicalDevice.getQueueFamilyProperties();
+    auto families = VkEnumerate<vk::QueueFamilyProperties>(
+        [&](uint32_t* count, vk::QueueFamilyProperties* data) {
+            mPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyProperties(
+                static_cast<VkPhysicalDevice>(*mPhysicalDevice), count,
+                reinterpret_cast<VkQueueFamilyProperties*>(data));
+            return VK_SUCCESS;
+        }, GetAllocator());
     // Find queues
     // Graphics, Compute, Transfer should be preferably mutually exclusive
     // vvv [Family, Index]
@@ -159,10 +149,14 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     DeviceFeatureChain supportedChain{};
 
     // --- Extension Querying ---
-    auto availableExtensions = VkExpect(mPhysicalDevice.enumerateDeviceExtensionProperties());
+    auto availableExtensions = VkEnumerate<VkExtensionProperties>(
+        [&](uint32_t* count, VkExtensionProperties* data) {
+            return mPhysicalDevice.getDispatcher()->vkEnumerateDeviceExtensionProperties(
+                static_cast<VkPhysicalDevice>(*mPhysicalDevice), nullptr, count, data);
+        }, GetAllocator());
     auto isExtensionAvailable = [&](const char* extName) -> bool {
         for (auto const& ext : availableExtensions) {
-            if (StringView(ext.extensionName.data()) == extName) return true;
+            if (StringView(ext.extensionName) == extName) return true;
         }
         return false;
     };

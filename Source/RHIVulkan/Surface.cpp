@@ -18,7 +18,13 @@ namespace Foundation::RHI {
         }
 
         if (*mSurface) {
-            auto formats = VkExpect(device.GetVkPhysicalDevice().getSurfaceFormatsKHR(*mSurface));
+            auto const& physical_device = device.GetVkPhysicalDevice();
+            auto formats = VkEnumerate<vk::SurfaceFormatKHR>(
+                [&](uint32_t* count, vk::SurfaceFormatKHR* data) {
+                    return physical_device.getDispatcher()->vkGetPhysicalDeviceSurfaceFormatsKHR(
+                        static_cast<VkPhysicalDevice>(*physical_device), static_cast<VkSurfaceKHR>(*mSurface),
+                        count, reinterpret_cast<VkSurfaceFormatKHR*>(data));
+                }, device.GetAllocator());
             for (auto& fmt : formats) {
                 using enum RHIResourceFormat;
                 using enum RHIColorSpace;
@@ -56,7 +62,12 @@ namespace Foundation::RHI {
                 }
             }
 
-            auto modes = VkExpect(device.GetVkPhysicalDevice().getSurfacePresentModesKHR(*mSurface));
+            auto modes = VkEnumerate<vk::PresentModeKHR>(
+                [&](uint32_t* count, vk::PresentModeKHR* data) {
+                    return physical_device.getDispatcher()->vkGetPhysicalDeviceSurfacePresentModesKHR(
+                        static_cast<VkPhysicalDevice>(*physical_device), static_cast<VkSurfaceKHR>(*mSurface),
+                        count, reinterpret_cast<VkPresentModeKHR*>(data));
+                }, device.GetAllocator());
             for (auto& mode : modes) {
                 switch (mode) {
                 case vk::PresentModeKHR::eMailbox:

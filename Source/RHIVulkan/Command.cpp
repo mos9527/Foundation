@@ -56,7 +56,12 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = 1,
     };
-    mCommandBuffer = std::move(VkExpect(mCommandPool.GetDevice().GetVkDevice().allocateCommandBuffers(alloc_info)).front());
+    auto const& device = mCommandPool.GetDevice().GetVkDevice();
+    VkCommandBuffer buffer = VK_NULL_HANDLE;
+    VkExpect(device.getDispatcher()->vkAllocateCommandBuffers(
+        static_cast<VkDevice>(*device),
+        reinterpret_cast<const VkCommandBufferAllocateInfo*>(&alloc_info), &buffer));
+    mCommandBuffer = vk::raii::CommandBuffer(device, buffer, *mCommandPool.GetVkCommandPool());
     CHECK(*mCommandBuffer && "failed to allocate Vulkan command buffer");
 }
 

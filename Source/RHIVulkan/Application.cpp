@@ -41,10 +41,13 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     desiredLayers.erase(Ranges::unique(desiredLayers).begin(), desiredLayers.end());
 
     // --- Extension Querying ---
-    auto availableExtensions = VkExpect(mContext.enumerateInstanceExtensionProperties());
+    auto availableExtensions = VkEnumerate<VkExtensionProperties>(
+        [&](uint32_t* count, VkExtensionProperties* data) {
+            return mContext.getDispatcher()->vkEnumerateInstanceExtensionProperties(nullptr, count, data);
+        }, mAllocator);
     auto isExtensionAvailable = [&](const char* extName) -> bool {
         for (auto const& ext : availableExtensions) {
-            if (StringView(ext.extensionName.data()) == extName)
+            if (StringView(ext.extensionName) == extName)
                 return true;
         }
         return false;
@@ -81,10 +84,13 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     };
 
     // --- Layer Querying ---
-    auto availableLayers = VkExpect(mContext.enumerateInstanceLayerProperties());
+    auto availableLayers = VkEnumerate<VkLayerProperties>(
+        [&](uint32_t* count, VkLayerProperties* data) {
+            return mContext.getDispatcher()->vkEnumerateInstanceLayerProperties(count, data);
+        }, mAllocator);
     auto isLayerAvailable = [&](const char* layerName) -> bool {
         for (auto const& layer : availableLayers) {
-            if (StringView(layer.layerName.data()) == layerName)
+            if (StringView(layer.layerName) == layerName)
                 return true;
         }
         return false;
@@ -117,13 +123,16 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     mInstance = VkExpect(mContext.createInstance(instanceInfo, GetVkAllocationCallbacks()));    
     mDevices.clear();
     mPhysicalDevices.clear();
-    auto physicalDevices = VkExpect(mInstance.enumeratePhysicalDevices());
+    auto physicalDevices = VkEnumerate<VkPhysicalDevice>(
+        [&](uint32_t* count, VkPhysicalDevice* data) {
+            return mInstance.getDispatcher()->vkEnumeratePhysicalDevices(static_cast<VkInstance>(*mInstance), count, data);
+        }, mAllocator);
     for (uint32_t id = 0; id < physicalDevices.size(); ++id)
     {
-        auto const& device = physicalDevices[id];
+        vk::raii::PhysicalDevice device(mInstance, physicalDevices[id]);
         auto props = device.getProperties();
         mDevices.emplace_back(RHIDevice::DeviceDesc{.id = id, .name = props.deviceName.data() });
-        mPhysicalDevices.emplace_back(device);
+        mPhysicalDevices.emplace_back(std::move(device));
     }
     if (isExtensionEnabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
         VkDebugUtilsMessengerCreateInfoEXT debugInfo{

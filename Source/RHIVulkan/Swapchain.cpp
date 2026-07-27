@@ -11,7 +11,13 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDe
 {
     auto const& surface = static_cast<VulkanSurface*>(desc.surface.Get())->GetVkSurface();
     auto surface_caps = VkExpect(mDevice.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface));
-    auto present_modes = VkExpect(mDevice.GetVkPhysicalDevice().getSurfacePresentModesKHR(surface));
+    auto const& physical_device = mDevice.GetVkPhysicalDevice();
+    auto present_modes = VkEnumerate<vk::PresentModeKHR>(
+        [&](uint32_t* count, vk::PresentModeKHR* data) {
+            return physical_device.getDispatcher()->vkGetPhysicalDeviceSurfacePresentModesKHR(
+                static_cast<VkPhysicalDevice>(*physical_device), static_cast<VkSurfaceKHR>(*surface),
+                count, reinterpret_cast<VkPresentModeKHR*>(data));
+        }, mDevice.GetAllocator());
     // Validate requested parameters
     desc.extents.x = std::clamp(desc.extents.x, surface_caps.minImageExtent.width, surface_caps.maxImageExtent.width);
     desc.extents.y = std::clamp(desc.extents.y, surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height);
@@ -31,7 +37,12 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDe
     vk::Format vk_format = vkFormatFromRHIFormat(desc.format);
     vk::ColorSpaceKHR vk_color_space = vkColorSpaceFromRHIColorSpace(desc.colorSpace);
     bool format_supported = false;
-    auto formats = VkExpect(mDevice.GetVkPhysicalDevice().getSurfaceFormatsKHR(surface));
+    auto formats = VkEnumerate<vk::SurfaceFormatKHR>(
+        [&](uint32_t* count, vk::SurfaceFormatKHR* data) {
+            return physical_device.getDispatcher()->vkGetPhysicalDeviceSurfaceFormatsKHR(
+                static_cast<VkPhysicalDevice>(*physical_device), static_cast<VkSurfaceKHR>(*surface),
+                count, reinterpret_cast<VkSurfaceFormatKHR*>(data));
+        }, mDevice.GetAllocator());
     for (auto const& fmt : formats) {
         if (fmt.format == vk_format && fmt.colorSpace == vk_color_space) {
             format_supported = true;
@@ -64,7 +75,11 @@ void VulkanSwapchain::Instantiate() {
     mImages = ConstructUnique<RHIObjectPool<VulkanTexture>>(mDevice.GetAllocator(), mDevice.GetAllocator());
     mImagesPtrs.clear();
     mSwapchain = VkExpect(device.createSwapchainKHR(create_info, mDevice.GetVkAllocationCallbacks()));
-    auto images = VkExpect(mSwapchain.getImages());
+    auto images = VkEnumerate<VkImage>(
+        [&](uint32_t* count, VkImage* data) {
+            return device.getDispatcher()->vkGetSwapchainImagesKHR(
+                static_cast<VkDevice>(*device), static_cast<VkSwapchainKHR>(*mSwapchain), count, data);
+        }, mDevice.GetAllocator());
     for (auto& image : images) {
         const Handle handle = mImages->CreateObject<VulkanTexture>(mDevice, RHITextureDesc{}, vk::raii::Image(device, image, mDevice.GetVkAllocationCallbacks()), true /*shared=true*/);
         mImagesPtrs.push_back(mImages->GetObjectPtr(handle));

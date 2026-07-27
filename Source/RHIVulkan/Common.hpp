@@ -2,7 +2,7 @@
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #define VULKAN_HPP_NO_EXCEPTIONS
 #ifndef VULKAN_HPP_ASSERT_ON_RESULT
-#define VULKAN_HPP_ASSERT_ON_RESULT(expr) ((void)0)
+#define VULKAN_HPP_ASSERT_ON_RESULT(expr) CHECK(expr)
 #endif
 // This thing uses std::format!!!
 #define VULKAN_HPP_NO_TO_STRING
@@ -19,6 +19,28 @@ namespace Foundation::RHI {
 
     inline void VkExpect(vk::Result result) {
         CHECK(result == vk::Result::eSuccess);
+    }
+
+    inline void VkExpect(VkResult result) {
+        CHECK(result == VK_SUCCESS);
+    }
+
+    template <typename T, typename Enumerator>
+    [[nodiscard]] Vector<T> VkEnumerate(Enumerator&& enumerate, Allocator* allocator = GLOBAL_ALLOC) noexcept {
+        Vector<T> values(allocator);
+        uint32_t count = 0;
+        VkResult result;
+        do {
+            result = enumerate(&count, nullptr);
+            CHECK(result == VK_SUCCESS);
+            if (count == 0)
+                break;
+            values.resize(count);
+            result = enumerate(&count, values.data());
+        } while (result == VK_INCOMPLETE);
+        CHECK(result == VK_SUCCESS);
+        values.resize(count);
+        return values;
     }
     struct VulkanAllocationCallbacks
     {

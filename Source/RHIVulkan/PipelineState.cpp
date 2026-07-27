@@ -323,12 +323,16 @@ void VulkanPipelineState::InitializeGraphics()
                                                 .pDynamicState = &dynamic_state,
                                                 .layout = mPipelineLayout,
                                                 .renderPass = nullptr};
-    vk::Optional<const vk::raii::PipelineCache> cacheHandle(nullptr);
+    VkPipelineCache cacheHandle = VK_NULL_HANDLE;
     if (mDesc.psoCache)
-        cacheHandle = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache)->GetVkPipelineCache();
-    auto pipelines = VkExpect(mDevice.GetVkDevice().createGraphicsPipelines(cacheHandle, pipelineInfo,
-                                   mDevice.GetVkAllocationCallbacks()));
-    mPipeline = std::move(pipelines.front());
+        cacheHandle = static_cast<VkPipelineCache>(*static_cast<VulkanPipelineStateCache*>(mDesc.psoCache)->GetVkPipelineCache());
+    auto const& device = mDevice.GetVkDevice();
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkExpect(device.getDispatcher()->vkCreateGraphicsPipelines(
+        static_cast<VkDevice>(*device), cacheHandle, 1,
+        reinterpret_cast<const VkGraphicsPipelineCreateInfo*>(&pipelineInfo),
+        mDevice.GetVkAllocationCallbacksNative(), &pipeline));
+    mPipeline = vk::raii::Pipeline(device, pipeline, mDevice.GetVkAllocationCallbacks());
 }
 
 void VulkanPipelineState::InitializeCompute()
@@ -357,12 +361,16 @@ void VulkanPipelineState::InitializeCompute()
         .pSpecializationInfo = pSpecializationInfo
     };
     vk::ComputePipelineCreateInfo pipelineInfo{.stage = stage_info, .layout = mPipelineLayout};
-    vk::Optional<const vk::raii::PipelineCache> cacheHandle(nullptr);
+    VkPipelineCache cacheHandle = VK_NULL_HANDLE;
     if (mDesc.psoCache)
-        cacheHandle = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache)->GetVkPipelineCache();
-    auto pipelines = VkExpect(mDevice.GetVkDevice().createComputePipelines(cacheHandle, pipelineInfo,
-                                   mDevice.GetVkAllocationCallbacks()));
-    mPipeline = std::move(pipelines.front());
+        cacheHandle = static_cast<VkPipelineCache>(*static_cast<VulkanPipelineStateCache*>(mDesc.psoCache)->GetVkPipelineCache());
+    auto const& device = mDevice.GetVkDevice();
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkExpect(device.getDispatcher()->vkCreateComputePipelines(
+        static_cast<VkDevice>(*device), cacheHandle, 1,
+        reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo),
+        mDevice.GetVkAllocationCallbacksNative(), &pipeline));
+    mPipeline = vk::raii::Pipeline(device, pipeline, mDevice.GetVkAllocationCallbacks());
 }
 
 void VulkanPipelineState::InitializeRayTracing()

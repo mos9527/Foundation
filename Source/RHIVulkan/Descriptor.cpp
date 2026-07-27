@@ -124,9 +124,13 @@ VulkanDeviceDescriptorPool::CreateDescriptorSet(RHIDeviceHandle<RHIDeviceDescrip
         .descriptorSetCount = 1,
         .pSetLayouts = &*vk_layout,
     };
-    auto set = VkExpect(mDevice.GetVkDevice().allocateDescriptorSets(alloc_info));
-    CHECK(!set.empty() && "descriptor set allocation failure");
-    auto handle = mStorage.CreateObject<VulkanDeviceDescriptorSet>(*this, std::move(set.front()));
+    auto const& device = mDevice.GetVkDevice();
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    VkExpect(device.getDispatcher()->vkAllocateDescriptorSets(
+        static_cast<VkDevice>(*device),
+        reinterpret_cast<const VkDescriptorSetAllocateInfo*>(&alloc_info), &set));
+    CHECK(set != VK_NULL_HANDLE && "descriptor set allocation failure");
+    auto handle = mStorage.CreateObject<VulkanDeviceDescriptorSet>(*this, vk::raii::DescriptorSet(device, set, *mPool));
     return {this, handle};
 }
 RHIDeviceDescriptorSet* VulkanDeviceDescriptorPool::GetDescriptorSet(Handle handle) const
