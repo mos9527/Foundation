@@ -12,7 +12,7 @@ namespace Foundation::Core
             CHECK_MSG(std::has_single_bit(maxTasks), "ThreadPool maxTasks must be a non-zero power of two");
             return allocator;
         }
-    }
+    } // namespace
 
     ThreadPool::ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name) :
         mAllocator(ValidateThreadPoolDesc(alloc, maxTasks)), mName(name),
@@ -26,21 +26,26 @@ namespace Foundation::Core
     void ThreadPool::Shutdown()
     {
         CHECK_MSG(gWorkerThreadPool != this, "ThreadPool cannot be shut down from one of its jobs");
+        bool waitShutdown = false;
         {
             std::unique_lock submitLock(mSubmitMutex);
             if (!mAccepting.load(std::memory_order_relaxed))
+                waitShutdown = true;
+            else
             {
-                submitLock.unlock();
-                bool shutdown = mShutdown.load(std::memory_order_acquire);
-                while (!shutdown)
-                {
-                    mShutdown.wait(false, std::memory_order_relaxed);
-                    shutdown = mShutdown.load(std::memory_order_acquire);
-                }
-                return;
+                mAccepting.store(false, std::memory_order_release);
+                mSubmitCV.wait(submitLock, [this] { return mSubmitting == 0; });
             }
-            mAccepting.store(false, std::memory_order_release);
-            mSubmitCV.wait(submitLock, [this] { return mSubmitting == 0; });
+        }
+        if (waitShutdown)
+        {
+            bool shutdown = mShutdown.load(std::memory_order_acquire);
+            while (!shutdown)
+            {
+                mShutdown.wait(false, std::memory_order_relaxed);
+                shutdown = mShutdown.load(std::memory_order_acquire);
+            }
+            return;
         }
         Join();
         mShutdown.store(true, std::memory_order_release);

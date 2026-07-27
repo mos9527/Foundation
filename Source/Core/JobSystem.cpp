@@ -21,7 +21,7 @@ namespace Foundation::Core
                       "JobSystem ready queue must be a power of two and hold maxJobs entries");
             return desc.allocator;
         }
-    }
+    } // namespace
 
     struct JobBarrierState
     {
@@ -266,10 +266,7 @@ namespace Foundation::Core
         mGeneration = 0;
     }
 
-    bool JobHandle::IsValid() const noexcept
-    {
-        return mPool && mPool->Validate(mIndex, mGeneration);
-    }
+    bool JobHandle::IsValid() const noexcept { return mPool && mPool->Validate(mIndex, mGeneration); }
 
     JobStatus JobHandle::Status() const noexcept
     {
@@ -289,8 +286,7 @@ namespace Foundation::Core
         std::lock_guard lock(node.completionMutex);
         CHECK_MSG(node.status.load(std::memory_order_relaxed) == JobStatus::Waiting,
                   "Cannot add a dependency to a queued or completed job");
-        CHECK_MSG(node.dependencies <= std::numeric_limits<uint32_t>::max() - count,
-                  "Job dependency counter overflow");
+        CHECK_MSG(node.dependencies <= std::numeric_limits<uint32_t>::max() - count, "Job dependency counter overflow");
         node.dependencies += count;
         mPool->ReleaseOwner();
     }
@@ -304,8 +300,7 @@ namespace Foundation::Core
         mPool->ReleaseOwner();
     }
 
-    JobBarrier::JobBarrier(JobBarrier&& other) noexcept :
-        mPool(std::move(other.mPool)), mState(std::move(other.mState))
+    JobBarrier::JobBarrier(JobBarrier&& other) noexcept : mPool(std::move(other.mPool)), mState(std::move(other.mState))
     {
     }
 
@@ -383,8 +378,7 @@ namespace Foundation::Core
     }
 
     JobSystem::JobSystem(JobSystemDesc const& desc) :
-        mAllocator(ValidateDesc(desc)),
-        mName(desc.name), mMaxBarriers(desc.maxBarriers),
+        mAllocator(ValidateDesc(desc)), mName(desc.name), mMaxBarriers(desc.maxBarriers),
         mPool(ConstructShared<JobPool>(mAllocator, mAllocator, desc.maxJobs)),
         mReady{ReadyQueue(desc.readyQueueSize, mAllocator), ReadyQueue(desc.readyQueueSize, mAllocator),
                ReadyQueue(desc.readyQueueSize, mAllocator)},
@@ -608,8 +602,7 @@ namespace Foundation::Core
 
     void JobSystem::Wait(JobBarrier& barrier)
     {
-        CHECK_MSG(barrier.mPool.get() == mPool.get() && barrier.mState,
-                  "Job barrier belongs to another JobSystem");
+        CHECK_MSG(barrier.mPool.get() == mPool.get() && barrier.mState, "Job barrier belongs to another JobSystem");
         CHECK_MSG(gExecutingJobSystem != this, "Jobs cannot wait on their JobSystem");
         std::unique_lock callerLock(mCallerMutex);
         {
@@ -666,28 +659,30 @@ namespace Foundation::Core
     void JobSystem::Shutdown()
     {
         CHECK_MSG(gExecutingJobSystem != this, "JobSystem cannot be shut down from one of its jobs");
-
+        bool waitStopped = false;
         {
             std::unique_lock submitLock(mSubmitMutex);
             if (!mAccepting.load(std::memory_order_relaxed))
+                waitStopped = true;
+            else
             {
-                submitLock.unlock();
-                bool stopped = mStopped.load(std::memory_order_acquire);
-                while (!stopped)
-                {
-                    mStopped.wait(false, std::memory_order_relaxed);
-                    stopped = mStopped.load(std::memory_order_acquire);
-                }
-                return;
+                mAccepting.store(false, std::memory_order_release);
+                mSubmitCV.wait(submitLock, [this] { return mSubmitting == 0; });
             }
-            mAccepting.store(false, std::memory_order_release);
-            mSubmitCV.wait(submitLock, [this] { return mSubmitting == 0; });
         }
-
+        if (waitStopped)
+        {
+            bool stopped = mStopped.load(std::memory_order_acquire);
+            while (!stopped)
+            {
+                mStopped.wait(false, std::memory_order_relaxed);
+                stopped = mStopped.load(std::memory_order_acquire);
+            }
+            return;
+        }
         for (uint32_t i = 0; i < mPool->nodes.size(); ++i)
             if (JobHandle job = mPool->AcquireActive(mPool, i); job.IsValid())
                 CancelInternal(job);
-
         {
             std::unique_lock callerLock(mCallerMutex);
             while (mOutstanding.load(std::memory_order_acquire) != 0)
@@ -698,8 +693,7 @@ namespace Foundation::Core
                 if (outstanding != 0)
                     mOutstanding.wait(outstanding, std::memory_order_relaxed);
             }
-        }
-
+        }       
         mStopping.store(true, std::memory_order_release);
         mWakeEpoch.fetch_add(1, std::memory_order_release);
         mWakeEpoch.notify_all();
