@@ -49,9 +49,12 @@ else ()
     target_compile_definitions(Foundation_RHIVulkan PUBLIC FOUNDATION_RHIVULKAN_VVL=0)
 endif ()
 
+FetchContent_MakeAvailable(SDL3)
 target_link_libraries(Foundation_RHIVulkan PUBLIC Foundation_RHICore Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator)
 if (ANDROID)
-    target_link_libraries(Foundation_RHIVulkan PUBLIC Vulkan::Headers)
+    target_link_libraries(Foundation_RHIVulkan PUBLIC SDL3::SDL3-shared Foundation_RHIVulkan PUBLIC Vulkan::Headers)
+else()
+    target_link_libraries(Foundation_RHIVulkan PUBLIC SDL3::SDL3-static)
 endif()
 target_include_directories(
         Foundation_RHIVulkan

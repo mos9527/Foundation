@@ -1003,9 +1003,13 @@ namespace Foundation::RenderCore
 #pragma endregion
 #pragma region Swapchain
         /**
-         * @brief Get the device this renderer was constructed with.
+         * @brief Get the @ref RHIDevice this @ref Renderer was constructed with.
          */
         [[nodiscard]] RHIDevice* GetDevice() const { return mDevice.Get(); }
+        /**
+         * @brief Get the @ref RHIApplication this @ref Renderer was constructed with.
+         */
+        [[nodiscard]] const RHIApplication* GetApplication() const { return &mDevice->mApp; }
         /**
          * @brief Get the current swapchain extents.
          * @note Requires a bound swapchain. Headless callers should track extents themselves.

@@ -243,16 +243,14 @@ namespace Foundation::RHI
         explicit RHIDeviceMemoryStats(Allocator* allocator) : heaps(allocator), memoryTypes(allocator) {}
     };
     class RHIDevice : public RHIObject
-    {
-    protected:
-        const RHIApplication& mApp;
-
+    {    
     public:
         struct DeviceDesc
         {
             uint32_t id = 0;
             String name = "RHIDevice";
         };
+        const RHIApplication& mApp;
         RHIDevice(RHIApplication const& app) : mApp(app) {}
 
         [[nodiscard]] virtual RHIDeviceCapabilities GetCapabilities() const = 0;

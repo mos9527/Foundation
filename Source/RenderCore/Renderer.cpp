@@ -1,5 +1,3 @@
-#include <filesystem>
-#include <fstream>
 #include <tracy/Tracy.hpp>
 #include "Presenter.hpp"
 
@@ -746,12 +744,12 @@ void Renderer::BuildPipelineState(PassHandle pass)
     {
         if (!shaders.contains(shader_path))
         {
-            std::error_code ec;
-            auto size = std::filesystem::file_size(shader_path, ec);
-            CHECK_MSG(!ec, "Failed to open shader file {}: {}", shader_path, ec.message());
-            data.resize(size);
-            std::ifstream file(shader_path.c_str(), std::ios::binary);
-            CHECK_MSG(file.is_open() && file.read(data.data(), size), "Failed to read shader {}", shader_path);
+            auto info = GetApplication()->QueryFileInfo(shader_path);
+            FILE* fp = fopen(shader_path.c_str(), "rb");
+            CHECK_MSG(fp, "Failed to open shader file {}", shader_path);
+            data.resize(info.Get().size);
+            fread(data.data(), 1, data.size(), fp);
+            fclose(fp);
             reflections.emplace(shader_path, ConstructUnique<Shader>(mAllocator, data, mAllocator));
             shaders[shader_path] = mDevice->CreateShaderModule({.source = data});
             shaders[shader_path]->DebugSetObjectName(shader_path.c_str());
@@ -1195,20 +1193,15 @@ Core::JobBarrier Renderer::BuildPipelineStateAll()
         if (!pass.used)
             continue;
         auto handle = pass.handle;
-        compilationJobs.push_back(mJobs->CreateJob(
-            "RendererPSO",
-            [this, handle]
-            {
-                BuildPipelineState(handle);
-            }));
+        compilationJobs.push_back(mJobs->CreateJob("RendererPSO", [this, handle] { BuildPipelineState(handle); }));
     }
-    Core::JobHandle epilogue = mJobs->CreateJobAfter(
-        "RendererPSOEpilogue", compilationJobs,
-        [this]
-        {
-            mPipelineStateCompilationComplete.store(true, std::memory_order_release);
-            LOG(Renderer, LogInfo, "Compiled Shaders.");
-        });
+    Core::JobHandle epilogue =
+        mJobs->CreateJobAfter("RendererPSOEpilogue", compilationJobs,
+                              [this]
+                              {
+                                  mPipelineStateCompilationComplete.store(true, std::memory_order_release);
+                                  LOG(Renderer, LogInfo, "Compiled Shaders.");
+                              });
     Core::JobBarrier barrier = mJobs->CreateBarrier();
     barrier.Add(compilationJobs);
     barrier.Add(epilogue);

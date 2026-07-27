@@ -1,5 +1,4 @@
 #include "../Rasterizer.hpp"
-#include <Core/Paths.hpp>
 
 using namespace Foundation;
 using namespace Foundation::Core;

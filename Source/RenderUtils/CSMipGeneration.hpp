@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/Paths.hpp>
 #include <RenderCore/Renderer.hpp>
 #include <RHICore/Device.hpp>
 #include <Math/Math.hpp>
@@ -24,7 +23,7 @@ namespace Foundation::RenderUtils
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindTextureSampler(self, srcSampler, "sampler");
-                    r->BindShader(self, RHIShaderStageBits::Compute, "csMain", Foundation::Core::PathsResolve("Data/Shaders/CSMipGeneration.spv"));
+                    r->BindShader(self, RHIShaderStageBits::Compute, "csMain", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/CSMipGeneration.spv"));
                     uint32_t dstMipLevel = i;
                     if (src != dst)
                         dstMipLevel--;
@@ -112,7 +111,7 @@ namespace Foundation::RenderUtils
                     reductionMode = 2;
                     break;
                 }
-                r->BindShader(self, RHIShaderStageBits::Compute, "csMain", Foundation::Core::PathsResolve("Data/Shaders/CSMipGenerationSinglePass.spv"),
+                r->BindShader(self, RHIShaderStageBits::Compute, "csMain", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/CSMipGenerationSinglePass.spv"),
                               AsBytes(AsSpan(reductionMode)));
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstants));
                 r->BindTextureSampler(self, srcSampler, "srcSampler");

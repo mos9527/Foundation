@@ -7,11 +7,10 @@ add_library(Foundation_RHICore INTERFACE ${INCLUDES})
 
 set_target_properties(Foundation_RHICore PROPERTIES LINKER_LANGUAGE CXX)
 
-FetchContent_MakeAvailable(SDL3)
 if (ANDROID)
-    target_link_libraries(Foundation_RHICore INTERFACE Foundation_Core Foundation_Math SDL3::SDL3-shared)
+    target_link_libraries(Foundation_RHICore INTERFACE Foundation_Core Foundation_Math)
 else()
-    target_link_libraries(Foundation_RHICore INTERFACE Foundation_Core Foundation_Math SDL3::SDL3-static)
+    target_link_libraries(Foundation_RHICore INTERFACE Foundation_Core Foundation_Math)
 endif()
 
 target_include_directories(

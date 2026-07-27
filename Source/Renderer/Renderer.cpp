@@ -1,4 +1,3 @@
-#include <Core/Paths.hpp>
 #include "Renderer.hpp"
 
 RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* scene)
@@ -95,7 +94,7 @@ void BuildGPUSceneLightBVHRefitPasses(Renderer* renderer, RendererResources& res
             r->BindBufferStorageRead(self, resources.lightBVHNodeIndexBuffer, RHIPipelineStageBits::ComputeShader,
                                      "gNodeIndices");
             r->BindShader(self, RHIShaderStageBits::Compute, "updateLeafNodes",
-                          PathsResolve("Data/Shaders/ECSLightBVHRefit.spv"));
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSLightBVHRefit.spv"));
             r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(LightBVHRefitPush));
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -128,7 +127,7 @@ void BuildGPUSceneLightBVHRefitPasses(Renderer* renderer, RendererResources& res
             r->BindBufferStorageRead(self, resources.lightBVHNodeIndexBuffer, RHIPipelineStageBits::ComputeShader,
                                      "gNodeIndices");
             r->BindShader(self, RHIShaderStageBits::Compute, "updateInternalNodes",
-                          PathsResolve("Data/Shaders/ECSLightBVHRefit.spv"));
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSLightBVHRefit.spv"));
             r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(LightBVHRefitPush));
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)

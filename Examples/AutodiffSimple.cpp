@@ -25,7 +25,7 @@ int main(int argc, char** argv)
                                                                   });
     {
         int x, y, n;
-        stbi_uc* data = stbi_load(Foundation::Core::PathsResolve("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
+        stbi_uc* data = stbi_load(r->GetApplication()->ResolveRelativePath("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
         CHECK_MSG(data, "Image did not load.");
         CHECK_MSG((x % 4 == 0) && (y % 4 == 0), "Autodiff encoder requires dimensions that are multiples of 4.");
 
@@ -74,7 +74,7 @@ int main(int argc, char** argv)
             [&](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "encoder",
-                              Foundation::Core::PathsResolve("Data/Shaders/AutodiffSimple.spv"));
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/AutodiffSimple.spv"));
                 r->BindTextureSRV(self, srcHdl, "gInputTex", RHIPipelineStageBits::ComputeShader,
                                   {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                    .range = RHITextureSubresourceRange::Create()});

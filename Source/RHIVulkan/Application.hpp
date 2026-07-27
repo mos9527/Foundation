@@ -29,18 +29,18 @@ namespace Foundation::RHI {
         RHIApplicationScopedHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc) override;
         RHIDevice* GetDevice(Handle handle) const override;
         void DestroyDevice(Handle handle) override;
+        
+        [[nodiscard]] virtual String ResolveRelativePathBase(StringView path = "") const override;
+        [[nodiscard]] virtual String ResolveRelativePathData(StringView path = "") const override;
+        [[nodiscard]] virtual Optional<RHIFileInfo> QueryFileInfo(StringView path) const override;
+        virtual bool CreateDirectory(StringView path) const override;
+        virtual bool RemoveDirectory(StringView path) const override;
+        virtual bool RemoveFile(StringView path) const override;
 
         Allocator* GetAllocator() const { return mAllocator; }
         auto const& GetVkInstance() const { return mInstance; }
         [[nodiscard]] vk::AllocationCallbacks const* GetVkAllocationCallbacks() const { return mVkAllocationCallbacks.Get(); }
         [[nodiscard]] VkAllocationCallbacks const* GetVkAllocationCallbacksNative() const { return mVkAllocationCallbacks.GetNative(); }
-        /**
-         * @brief Whether this instance was created without Vulkan WSI (window/surface) extensions.
-         *
-         * Headless instances cannot create a hardware presentation surface or swapchain; they are intended
-         * for offscreen rendering (e.g. software rasterizers such as Lavapipe that do not expose WSI).
-         */
-        [[nodiscard]] bool IsHeadless() const { return mHeadless; }
     private:
         bool mHeadless{false};
     };

@@ -1,5 +1,4 @@
 #include "Rasterizer.hpp"
-#include <Core/Paths.hpp>
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
@@ -159,7 +158,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         "Indirect Meshlet Cull Generation", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSCullInstances.spv"));
+            r->BindShader(self, RHIShaderStageBits::Compute, "main", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSCullInstances.spv"));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
@@ -258,7 +257,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                   {.format = RHIResourceFormat::R32Uint,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                 r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                              PathsResolve("Data/Shaders/ECSOverdrawClear.spv"));
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSOverdrawClear.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
                 r->BindBufferCopyDst(self, ReduceBuffer);
             },
@@ -304,7 +303,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     else
                         flags |= to_integer(CullFlagsBits::StageLate);
                     r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                                  PathsResolve("Data/Shaders/ECSCullMeshlets.spv"), AsBytes(AsSpan(flags)));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSCullMeshlets.spv"), AsBytes(AsSpan(flags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferIndirectRead(self, IndirectTaskDispatch);
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
@@ -341,10 +340,10 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     // This is what we could've had. Instead of AddCullPass if it actually works on all platforms.
                     // It should. But it doesn't.
                     // r->BindShader(self, RHIShaderStageBits::Task, "main",
-                    // PathsResolve("Data/Shaders/ETSMeshletCull.spv"), AsBytes(AsSpan(TSFlags)));
-                    r->BindShader(self, RHIShaderStageBits::Mesh, "main", PathsResolve("Data/Shaders/EMSBasic.spv"));
+                    // r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ETSMeshletCull.spv"), AsBytes(AsSpan(TSFlags)));
+                    r->BindShader(self, RHIShaderStageBits::Mesh, "main", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EMSBasic.spv"));
                     r->BindShader(self, RHIShaderStageBits::Fragment, "main",
-                                  PathsResolve("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
@@ -453,7 +452,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferCopyDst(self, DynamicDrawCount);
                     r->BindBufferCopyDst(self, DynamicMotionDrawCount);
                     r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                                  PathsResolve("Data/Shaders/ECSIndirectDraw.spv"));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSIndirectDraw.spv"));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::ComputeShader,
@@ -481,9 +480,9 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindShader(self, RHIShaderStageBits::Vertex, "main",
-                                  PathsResolve("Data/Shaders/EVSIndirectDraw.spv"));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EVSIndirectDraw.spv"));
                     r->BindShader(self, RHIShaderStageBits::Fragment, "main",
-                                  PathsResolve("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
                     r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::AllGraphics,
@@ -567,7 +566,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferCopyDst(self, CurveDrawCount);
                     r->BindBufferCopyDst(self, CurveMotionDrawCount);
                     r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                                  PathsResolve("Data/Shaders/ECSCurveIndirectDraw.spv"));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSCurveIndirectDraw.spv"));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
@@ -596,9 +595,9 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindShader(self, RHIShaderStageBits::Vertex, "main",
-                                  PathsResolve("Data/Shaders/EVSCurveDraw.spv"));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EVSCurveDraw.spv"));
                     r->BindShader(self, RHIShaderStageBits::Fragment, "main",
-                                  PathsResolve("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
@@ -654,7 +653,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             [=](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                              PathsResolve("Data/Shaders/ECSCameraMotionVectors.spv"));
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSCameraMotionVectors.spv"));
                 r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                 r->BindTextureSRV(
                     self, Depth, "depth", RHIPipelineStageBits::ComputeShader,
@@ -676,7 +675,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                                  PathsResolve("Data/Shaders/ECSOverdrawReduce.spv"));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSOverdrawReduce.spv"));
                     r->BindTextureSRV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                          .range = RHITextureSubresourceRange::Create()});
@@ -709,7 +708,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                                  PathsResolve("Data/Shaders/EPSOverdrawDebug.spv"));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPSOverdrawDebug.spv"));
                     r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                          .range = RHITextureSubresourceRange::Create()});
@@ -779,7 +778,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                           RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
                                                              .range = RHITextureSubresourceRange::Create()});
                         r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                                      PathsResolve("Data/Shaders/CSClearBuffer.spv"));
+                                      r->GetApplication()->ResolveRelativePathBase("Data/Shaders/CSClearBuffer.spv"));
                         r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
                     },
                     [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -797,7 +796,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     uint32_t lightingFlags = lightingViewFlags |
                         (hasAmbientOcclusion ? to_integer(ViewFlagsBits::EnableRasterAmbientOcclusion) : 0u);
                     r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                                  PathsResolve("Data/Shaders/ECSLighting.spv"), AsBytes(AsSpan(lightingFlags)));
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSLighting.spv"), AsBytes(AsSpan(lightingFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,

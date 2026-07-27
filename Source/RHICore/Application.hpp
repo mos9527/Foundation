@@ -1,9 +1,14 @@
 #pragma once
 #include "Device.hpp"
-#include <SDL3/SDL.h>
 namespace Foundation::RHI {
     class RHIDevice;
     class RHIApplication;
+    struct RHIFileInfo
+    {
+        uint64_t size;
+        // Seconds since UNIX epoch
+        long long ctime, mtime, atime;
+    };
     /**
      * @brief The root object of everything RHI.
      * Implementation of this class inherently defines the RHI backend.
@@ -12,12 +17,25 @@ namespace Foundation::RHI {
     public:
         RHIApplication() = default;
         RHIApplication(RHIApplication const&) = delete;
-
-        [[nodiscard]] virtual Span<const RHIDevice::DeviceDesc> EnumerateDevices() const = 0;
-
+        // RHI
+        [[nodiscard]] virtual Span<const RHIDevice::DeviceDesc> EnumerateDevices() const = 0;         
         [[nodiscard]] virtual RHIApplicationScopedHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc) = 0;
         [[nodiscard]] virtual RHIDevice* GetDevice(Handle handle) const = 0;
         virtual void DestroyDevice(Handle handle) = 0;
+
+        // Filesystem
+        /**
+         * @brief Retrives path relative to the application executable, relative to path
+         */
+        [[nodiscard]] virtual String ResolveRelativePathBase(StringView path = "") const = 0;
+        /**
+         * @brief Retrives path that's writable and persistent, relative to path
+         */
+        [[nodiscard]] virtual String ResolveRelativePathData(StringView path = "") const = 0;
+        [[nodiscard]] virtual Optional<RHIFileInfo> QueryFileInfo(StringView path) const = 0;
+        virtual bool CreateDirectory(StringView path) const = 0;
+        virtual bool RemoveDirectory(StringView path) const = 0;
+        virtual bool RemoveFile(StringView path) const = 0;
     };
     template<> struct RHIObjectTraits<RHIApplication, RHIDevice> {
         static RHIDevice* Get(RHIApplication const* app, Handle handle) {

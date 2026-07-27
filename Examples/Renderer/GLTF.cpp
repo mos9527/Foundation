@@ -14,7 +14,7 @@
 #include <thread>
 #include "Examples.hpp"
 
-using Foundation::Core::PathsResolve;
+using r->GetApplication()->ResolveRelativePath;
 static constexpr const char* kTempScenePath = "Cache/GPUSceneGLTF.fscn";
 
 String PrepareScenePayload(JobSystem* jobs, StringView path)

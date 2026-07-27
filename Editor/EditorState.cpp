@@ -8,7 +8,7 @@
 #include <imgui.h>
 #include "EditorGizmos.hpp"
 using namespace RenderUtils;
-using Foundation::Core::PathsResolve;
+using r->GetApplication()->ResolveRelativePath;
 
 EditorState GEditor;
 static ResourceHandle sPickResultBuffer;

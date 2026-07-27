@@ -42,7 +42,7 @@ namespace
             [=](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                              PathsResolve("Data/Shaders/DynamicGerstner.spv"));
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/DynamicGerstner.spv"));
                 r->BindBufferUnordered(self, resources.dynamicPrimitiveBuffer, RHIPipelineStageBits::ComputeShader,
                                        "dynamicPrimitives");
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(GerstnerPush));

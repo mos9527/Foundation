@@ -27,7 +27,8 @@ void GTAOFeatureCallback(RasterFeatureContext& ctx, void const* configPtr)
         "GTAO", RHIDeviceQueueType::Compute, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSGTAO.spv"));
+            r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSGTAO.spv"));
             r->BindBufferUniform(self, ctx.globalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindTextureSRV(
                 self, ctx.gbuffer1, "RT1", RHIPipelineStageBits::ComputeShader,
@@ -51,7 +52,8 @@ void GTAOFeatureCallback(RasterFeatureContext& ctx, void const* configPtr)
         "GTAO Upsample", RHIDeviceQueueType::Compute, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSGTAOUpsample.spv"));
+            r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSGTAOUpsample.spv"));
             r->BindBufferUniform(self, ctx.globalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindTextureUAV(self, HalfAO, "halfAO", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = kAOFormat, .range = RHITextureSubresourceRange::Create()});

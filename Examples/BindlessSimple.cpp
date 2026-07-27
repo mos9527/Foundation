@@ -57,7 +57,7 @@ int main(int argc, char** argv)
             ctx.renderer.get(), "Atlas Display",
             [&](PassHandle self, Renderer* r)
             {
-                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/BindlessSimple.spv"));
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/BindlessSimple.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(PushConstant));
                 r->BindTextureSampler(self, linSampler, "sampler");
                 r->BindDescriptorSet(self, "gTextures2D",  bindings.GetDescriptorSetLayout());

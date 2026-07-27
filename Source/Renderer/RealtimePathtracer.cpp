@@ -1,4 +1,3 @@
-#include <Core/Paths.hpp>
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <algorithm>
@@ -105,7 +104,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
             r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "TLAS");
             const uint kCompileOptions =
                 PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode);
-            const auto shader = PathsResolve(!shaderExecutionReordering ? "Data/Shaders/EPathTracingRealtime.spv"
+            const auto shader = r->GetApplication()->ResolveRelativePathBase(!shaderExecutionReordering ? "Data/Shaders/EPathTracingRealtime.spv"
                                                                         : "Data/Shaders/EPathTracingRealtime_SER.spv");
             if (shaderExecutionReordering)
             {

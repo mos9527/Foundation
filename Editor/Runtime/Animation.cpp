@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-using Foundation::Core::PathsResolve;
+using r->GetApplication()->ResolveRelativePath;
 
 namespace
 {

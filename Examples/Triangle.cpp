@@ -19,8 +19,8 @@ int main(int argc, char** argv)
         "Triangle", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r) {
             r->BindBackbufferRTV(self);
-            r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("Data/Shaders/Triangle.spv"));
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/Triangle.spv"));
+            r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Triangle.spv"));
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Triangle.spv"));
             r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, sizeof(float));
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd) {

@@ -212,9 +212,9 @@ int main(int argc, char** argv)
             r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
                                 sizeof(ViewPushConstant));
             r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain",
-                          Foundation::Core::PathsResolve("Data/Shaders/CIEChromacity.spv"));
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/CIEChromacity.spv"));
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                          Foundation::Core::PathsResolve("Data/Shaders/CIEChromacity.spv"));
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/CIEChromacity.spv"));
             r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone},
                                       {.depthTest = false, .depthWrite = false});
         },

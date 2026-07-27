@@ -34,7 +34,7 @@ ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs
     auto postprocessSetup = [=](PassHandle self, Renderer* r)
     {
         r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                      PathsResolve("Data/Shaders/PostprocessBasic.spv"));
+                      r->GetApplication()->ResolveRelativePathBase("Data/Shaders/PostprocessBasic.spv"));
         r->BindTextureSRV(
             self, outputs.diffuse, "bufferA", RHIPipelineStageBits::FragmentShader,
             RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});

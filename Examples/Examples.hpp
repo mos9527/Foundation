@@ -1,7 +1,6 @@
 #pragma once
 #include <Core/BuildInfo.hpp>
 #include <Core/JobSystem.hpp>
-#include <Core/Paths.hpp>
 #include <RHIVulkan/Application.hpp>
 #include <RenderCore/Renderer.hpp>
 #include <RenderCore/Presenter.hpp>

@@ -35,7 +35,8 @@ namespace
     String PipelineCachePathForDevice(RHIDevice const& device)
     {
         auto key = device.GetPipelineCacheKey();
-        return PathsResolve(Format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
+        return device.mApp.ResolveRelativePathBase(
+            Format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
     }
 
     Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)
@@ -121,7 +122,7 @@ namespace
     }
 
 #if defined(__ANDROID__)
-    // Bridges Foundation::Core::PathsResolve to SDL's APK-asset loader. Registered
+    // Bridges r->GetApplication()->ResolveRelativePathBase to SDL's APK-asset loader. Registered
     // in Examples_InitVulkan so shaders/bundled assets are lazily materialized out
     // of the APK on first PathsResolve access (see Source/Core/Paths.cpp).
     void* Examples_SDLAssetLoader(const char* relPath, size_t* outSize) { return SDL_LoadFile(relPath, outSize); }
@@ -555,9 +556,7 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     }
     int gpuId = 0;
     cmdl({"-g", "--gpu"}, 0) >> gpuId;
-    if (headless)
-        PathsInit(argv[0]);
-    else
+    if (!headless)
     {
         std::set_terminate(Examples_TerminateHandler);
 #if defined(__ANDROID__)
@@ -565,8 +564,6 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
         PathsRegisterAssetLoader(&Examples_SDLAssetLoader);
         PathsInitFromDir(prefPath);
         SDL_free((void*)prefPath);
-#else
-        PathsInitFromDir(SDL_GetBasePath());
 #endif
     }
     ExampleVulkanContext ctx{};

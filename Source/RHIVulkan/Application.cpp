@@ -16,7 +16,7 @@ VkDebugLayerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUti
 VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const char* appName, const char* engineName,
                                      const uint32_t apiVersion) :
     mAllocator(allocator), mVkAllocationCallbacks(nullptr /* NOTE: Many drivers do not like this roundtrip to our own code. Disabled for sanity. */),
-    mPhysicalDevices(allocator), mDevices(allocator), mStorage(allocator), mName(appName), mVulkanApiVersion(apiVersion), mHeadless(headless)
+    mPhysicalDevices(allocator), mDevices(allocator), mStorage(allocator), mName(Format("{} powered by {}", appName, engineName)), mVulkanApiVersion(apiVersion), mHeadless(headless)
 {
     auto vkAppInfo = vk::ApplicationInfo{
         .pApplicationName = appName,
@@ -176,3 +176,43 @@ RHIApplicationScopedHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice:
 RHIDevice* VulkanApplication::GetDevice(Handle handle) const { return mStorage.GetObjectPtr<RHIDevice>(handle); }
 void VulkanApplication::DestroyDevice(Handle handle) { mStorage.DestroyObject(handle); }
 
+String VulkanApplication::ResolveRelativePathBase(StringView path) const
+{
+    const char* basePath = SDL_GetBasePath();
+    if (!basePath)
+        return String(path);
+    if (path.empty())
+        return String(basePath);
+    return Format("{}/{}", basePath, path);
+}
+
+String VulkanApplication::ResolveRelativePathData(StringView path) const
+{
+    const char* basePath = SDL_GetPrefPath("", mName.c_str());
+    if (!basePath)
+        return String(path);
+    if (path.empty())
+        return String(basePath);
+    return Format("{}/{}", basePath, path);
+}
+
+Optional<RHIFileInfo> VulkanApplication::QueryFileInfo(StringView path) const
+{
+    SDL_PathInfo info{};
+    if (SDL_GetPathInfo(path.data(), &info))
+    {
+        if (info.type != SDL_PATHTYPE_FILE)
+            return {};
+        return RHIFileInfo{
+            .size = info.size,
+            .ctime = SDL_NS_TO_SECONDS(info.create_time),
+            .mtime = SDL_NS_TO_SECONDS(info.modify_time),
+            .atime = SDL_NS_TO_SECONDS(info.access_time)
+        };
+    }
+    return {};
+}
+
+bool VulkanApplication::CreateDirectory(StringView path) const { return SDL_CreateDirectory(path.data()) == 0; }
+bool VulkanApplication::RemoveDirectory(StringView path) const { return SDL_RemovePath(path.data()) == 0; }
+bool VulkanApplication::RemoveFile(StringView path) const { return SDL_RemovePath(path.data()) == 0; }

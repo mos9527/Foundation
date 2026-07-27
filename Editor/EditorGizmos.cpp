@@ -13,7 +13,7 @@
 
 using namespace Foundation;
 using namespace Foundation::RenderCore;
-using Foundation::Core::PathsResolve;
+using r->GetApplication()->ResolveRelativePath;
 
 namespace
 {

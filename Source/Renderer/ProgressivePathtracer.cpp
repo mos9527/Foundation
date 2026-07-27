@@ -1,4 +1,3 @@
-#include <Core/Paths.hpp>
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <algorithm>
@@ -116,7 +115,8 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
             const uint kCompileOptions =
                 PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode,
                                    cfg.energyCompensation);
-            const auto shader = PathsResolve(!shaderExecutionReordering ? "Data/Shaders/EPathTracingProgressive.spv"
+            const auto shader = r->GetApplication()->ResolveRelativePathBase(
+                !shaderExecutionReordering ? "Data/Shaders/EPathTracingProgressive.spv"
                                                                         : "Data/Shaders/EPathTracingProgressive_SER.spv");
             if (shaderExecutionReordering)
             {
@@ -184,7 +184,7 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
             if (globals->adaptiveThreshold > 0.0f)
                 r->MakePassUncullable(self);
             r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain",
-                          PathsResolve("Data/Shaders/ECSAdaptiveFilter.spv"),
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSAdaptiveFilter.spv"),
                           AsBytes(AsSpan(0u))); // Pass 0
             r->BindTextureUAV(
                 self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::ComputeShader,
@@ -207,7 +207,7 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
             if (globals->adaptiveThreshold > 0.0f)
                 r->MakePassUncullable(self);
             r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain",
-                          PathsResolve("Data/Shaders/ECSAdaptiveFilter.spv"),
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSAdaptiveFilter.spv"),
                           AsBytes(AsSpan(1u))); // Pass 1
             r->BindTextureUAV(
                 self, AdaptiveAux, "adaptiveAux", RHIPipelineStageBits::ComputeShader,
