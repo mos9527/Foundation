@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <bitset>
 #include <list>
@@ -6,21 +7,21 @@
 #include <numeric>
 #include <optional>
 #include <queue>
+#include <ranges>
 #include <set>
 #include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
-#include <ranges>
-#include <algorithm>
 #include <variant>
+#include <vector>
 
 #include "Allocator.hpp"
 #include "Hash.hpp"
 #include "Logging.hpp"
-namespace Foundation::Core {
+namespace Foundation::Core
+{
 
     /* -- STL Value types -- */
     /**
@@ -32,51 +33,56 @@ namespace Foundation::Core {
     /**
      * @brief Alias for `std::tuple`
      */
-    template<typename ...Args>
+    template <typename... Args>
     using Tuple = std::tuple<Args...>;
 
     /**
      * @brief Alias for `std::array`
      */
-    template<typename T, size_t Size>
+    template <typename T, size_t Size>
     using Array = std::array<T, Size>;
 
     /**
      * @brief Alias for `std::bitset`
      */
-    template<size_t Size>
+    template <size_t Size>
     using Bitset = std::bitset<Size>;
 
     /**
-    * @brief Alias for `std::basic_string_view<char>`
-    */
+     * @brief Alias for `std::basic_string_view<char>`
+     */
     using StringView = std::basic_string_view<char>;
 
     /**
      * @brief Alias for `std::span`
      */
-    template<typename T> using Span = std::span<T>;
+    template <typename T>
+    using Span = std::span<T>;
 
-    template<typename T> Span<const char> AsBytes(Span<T> data)
+    template <typename T>
+    Span<const char> AsBytes(Span<T> data)
     {
-        return { reinterpret_cast<const char*>(data.data()), data.size_bytes() };
+        return {reinterpret_cast<const char*>(data.data()), data.size_bytes()};
     }
     /**
      * @brief Helper to construct one const r-value as a single element span.
      */
-    template <typename T> Span<const T> AsSpan(T const& data) requires std::is_trivially_copyable_v<T>
+    template <typename T>
+    Span<const T> AsSpan(T const& data)
+        requires std::is_trivially_copyable_v<T>
     {
-        return { &data, 1 };
+        return {&data, 1};
     }
     /**
      * @brief Convenience function for constructing a Span with memory allocated from a @ref
-     *        Foundation::Core::Allocator. Possibly constructs objects in-place if they are not trivially constructible (e.g.
-     *        non-PODs)
+     *        Foundation::Core::Allocator. Possibly constructs objects in-place if they are not trivially constructible
+     * (e.g. non-PODs)
      * @note Data is _not_ guaranteed to be zero-initialized. Pass in constructor args if needed.
      * @note Constructor args are only used if T is not trivially constructible, or if more than 0 args are passed in.
      */
-    template <typename T, typename ...Args>
-    Span<T> ConstructSpan(Allocator* resource, size_t size, Args&& ...args) {
+    template <typename T, typename... Args>
+    Span<T> ConstructSpan(Allocator* resource, size_t size, Args&&... args)
+    {
         T* data = static_cast<T*>(resource->Allocate(size * sizeof(T), alignof(T)));
         if constexpr (!std::is_trivially_constructible_v<T> || sizeof...(Args) > 0)
         {
@@ -89,8 +95,9 @@ namespace Foundation::Core {
      * @brief Convenience function for destructing a Span allocated with @ref ConstructSpan.
      *        Calls destructors in-place if the type is not trivially destructible (e.g. non-PODs)
      */
-    template<typename T>
-    void DestructSpan(Allocator* resource, Span<T> span) {
+    template <typename T>
+    void DestructSpan(Allocator* resource, Span<T> span)
+    {
         if constexpr (!std::is_trivially_destructible_v<T>)
         {
             for (T& item : span)
@@ -124,7 +131,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename T>
+    template <typename T>
     using Vector = std::vector<T, StlAllocator<T>>;
 
     /**
@@ -134,7 +141,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename T, typename Predicate = std::less<T>>
+    template <typename T, typename Predicate = std::less<T>>
     using Set = std::set<T, Predicate, StlAllocator<T>>;
 
     /**
@@ -144,7 +151,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename T, typename Predicate = std::less<T>>
+    template <typename T, typename Predicate = std::less<T>>
     using MultiSet = std::multiset<T, Predicate, StlAllocator<T>>;
 
     /**
@@ -154,7 +161,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename K, typename V, typename Predicate = std::less<K>>
+    template <typename K, typename V, typename Predicate = std::less<K>>
     using Map = std::map<K, V, Predicate, StlAllocator<Pair<const K, V>>>;
 
     /**
@@ -162,7 +169,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename K, typename V, typename Hash = std::hash<K>, typename KeyEq = std::equal_to<K>>
+    template <typename K, typename V, typename Hash = std::hash<K>, typename KeyEq = std::equal_to<K>>
     using HashMap = std::unordered_map<K, V, Hash, KeyEq, StlAllocator<Pair<const K, V>>>;
 
     /**
@@ -170,7 +177,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename K, typename Hash = std::hash<K>, typename KeyEq = std::equal_to<K>>
+    template <typename K, typename Hash = std::hash<K>, typename KeyEq = std::equal_to<K>>
     using HashSet = std::unordered_set<K, Hash, KeyEq, StlAllocator<K>>;
 
     /**
@@ -180,7 +187,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename K, typename V, typename Predicate = std::less<K>>
+    template <typename K, typename V, typename Predicate = std::less<K>>
     using MultiMap = std::multimap<K, V, Predicate, StlAllocator<Pair<const K, V>>>;
     /**
      * @brief `std::deque` with explicit @ref Foundation::Core::StlAllocator constructor
@@ -189,7 +196,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename T>
+    template <typename T>
     using Deque = std::deque<T, StlAllocator<T>>;
     /**
      * @brief `std::list` with explicit @ref Foundation::Core::StlAllocator constructor
@@ -198,7 +205,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename T>
+    template <typename T>
     using List = std::list<T, StlAllocator<T>>;
     /**
      * @brief `std::queue` with explicit @ref Foundation::Core::StlAllocator constructor
@@ -207,7 +214,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename T, typename Container = Deque<T>>
+    template <typename T, typename Container = Deque<T>>
     using Queue = std::queue<T, Container>;
     /**
      * @brief `std::priority_queue` with explicit @ref Foundation::Core::StlAllocator constructor
@@ -216,7 +223,7 @@ namespace Foundation::Core {
      *
      * @note Thread-safety is _not_ guaranteed as with other STL containers.
      */
-    template<typename T, typename Predicate = std::less<T>, typename Container = Vector<T>>
+    template <typename T, typename Predicate = std::less<T>, typename Container = Vector<T>>
     using PriorityQueue = std::priority_queue<T, Container, Predicate>;
 
     /**
@@ -289,36 +296,127 @@ namespace Foundation::Core {
     /*! \endcond */
     /**
      * @brief std::variant with C++23 visit() behavior and convenience Get()/GetIf() methods.
+     *        Also read upon https://bitbashing.io/std-visit.html - which is not used here.
      */
     template <typename... Args>
     struct Variant : public std::variant<Args...>
     {
-        using std::variant<Args...>::variant;
-        using std::variant<Args...>::operator=;
+        using Base = std::variant<Args...>;
 
-        // C++23 visit() behavior
-        template <typename... Visitors>
-        auto Visit(Visitors&&... visitors)
+        using Base::Base;
+        using Base::operator=;
+
+    private:
+        template <typename R, std::size_t I = 0, typename Vis, typename Var>
+        static R VisitImpl(Vis& vis, Var& var) noexcept
         {
-            return std::visit(Visitor{std::forward<Visitors>(visitors)...}, *this);
-        }
-        template <typename... Visitors>
-        auto Visit(Visitors&&... visitors) const
-        {
-            return std::visit(Visitor{std::forward<Visitors>(visitors)...}, *this);
-        }
-        // C++23 visit() behavior with default no-op visitor.
-        template <typename... Visitors>
-        auto VisitDefault(Visitors&&... visitors)
-        {
-            return std::visit(VisitorDefault{std::forward<Visitors>(visitors)...}, *this);
-        }
-        template <typename... Visitors>
-        auto VisitDefault(Visitors&&... visitors) const
-        {
-            return std::visit(VisitorDefault{std::forward<Visitors>(visitors)...}, *this);
+            if constexpr (I >= sizeof...(Args))
+            {
+                CHECK_MSG(false, "valueless variant access");
+                std::terminate();
+            }
+            else
+            {
+                if (var.index() == I)
+                {
+                    auto* p = std::get_if<I>(&var);
+                    CHECK_MSG(p, "variant index/get_if mismatch");
+
+                    if constexpr (std::is_void_v<R>)
+                    {
+                        std::invoke(vis, *p);
+                        return;
+                    }
+                    else
+                    {
+                        return std::invoke(vis, *p);
+                    }
+                }
+
+                return VisitImpl<R, I + 1>(vis, var);
+            }
         }
 
+    public:
+        template <typename... Visitors>
+        auto Visit(Visitors&&... visitors) noexcept
+        {
+            using Vis = Visitor<std::decay_t<Visitors>...>;
+
+            static_assert((std::is_invocable_v<Vis&, Args&> && ...), "Visitor must handle every variant alternative");
+
+            using R = std::invoke_result_t<Vis&, std::variant_alternative_t<0, Base>&>;
+
+            static_assert((std::same_as<R, std::invoke_result_t<Vis&, Args&>> && ...),
+                          "All visitor overloads must return the same type");
+
+            Vis vis{std::forward<Visitors>(visitors)...};
+            Base& base = *this;
+
+            return VisitImpl<R>(vis, base);
+        }
+
+        template <typename... Visitors>
+        auto Visit(Visitors&&... visitors) const noexcept
+        {
+            using Vis = Visitor<std::decay_t<Visitors>...>;
+            using ConstBase = const Base;
+
+            static_assert((std::is_invocable_v<Vis&, const Args&> && ...),
+                          "Visitor must handle every variant alternative");
+
+
+            using R = std::invoke_result_t<Vis&, std::variant_alternative_t<0, ConstBase>&>;
+
+            static_assert((std::same_as<R, std::invoke_result_t<Vis&, const Args&>> && ...),
+                          "All visitor overloads must return the same type");
+
+            Vis vis{std::forward<Visitors>(visitors)...};
+            const Base& base = *this;
+
+            return VisitImpl<R>(vis, base);
+        }
+
+        template <typename... Visitors>
+        auto VisitDefault(Visitors&&... visitors) noexcept
+        {
+            using Vis = VisitorDefault<std::decay_t<Visitors>...>;
+
+            static_assert((std::is_invocable_v<Vis&, Args&> && ...), "Visitor must handle every variant alternative");
+
+            using R = std::invoke_result_t<Vis&, std::variant_alternative_t<0, Base>&>;
+
+            static_assert((std::same_as<R, std::invoke_result_t<Vis&, Args&>> && ...),
+                          "All visitor overloads must return the same type");
+
+            Vis vis{std::forward<Visitors>(visitors)...};
+            Base& base = *this;
+
+            return VisitImpl<R>(vis, base);
+        }
+
+        template <typename... Visitors>
+        auto VisitDefault(Visitors&&... visitors) const noexcept
+        {
+            using Vis = VisitorDefault<std::decay_t<Visitors>...>;
+            using ConstBase = const Base;
+
+            static_assert((std::is_invocable_v<Vis&, const Args&> && ...),
+                          "Visitor must handle every variant alternative");
+
+            static_assert((std::is_nothrow_invocable_v<Vis&, const Args&> && ...),
+                          "Visitor must be noexcept for every variant alternative");
+
+            using R = std::invoke_result_t<Vis&, std::variant_alternative_t<0, ConstBase>&>;
+
+            static_assert((std::same_as<R, std::invoke_result_t<Vis&, const Args&>> && ...),
+                          "All visitor overloads must return the same type");
+
+            Vis vis{std::forward<Visitors>(visitors)...};
+            const Base& base = *this;
+
+            return VisitImpl<R>(vis, base);
+        }
         // std::get<T>
         template <typename T>
         constexpr T& Get()
@@ -326,6 +424,7 @@ namespace Foundation::Core {
             CHECK_MSG(GetIf<T>(), "null-variant access");
             return *GetIf<T>();
         }
+
 
         // std::get<T>
         template <typename T>
@@ -335,12 +434,14 @@ namespace Foundation::Core {
             return *GetIf<T>();
         }
 
+
         // std::get_if<T>
         template <typename T>
         constexpr T* GetIf()
         {
             return std::get_if<T>(this);
         }
+
 
         // std::get_if<T>
         template <typename T>
@@ -392,4 +493,4 @@ namespace Foundation::Core {
     {
         return FNV1a64CombineBytes(kFNV1a64OffsetBasis, span.data(), span.size_bytes());
     }
-}
+} // namespace Foundation::Core
