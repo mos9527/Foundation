@@ -1,5 +1,4 @@
 #pragma once
-#include <SDL3/SDL.h>
 #include <RHICore/Application.hpp>
 
 #include "Common.hpp"

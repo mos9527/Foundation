@@ -1,13 +1,14 @@
 #include "Scene/Scene.hpp"
 #include <Renderer/Texture.hpp>
 #include <Core/AllocatorStack.hpp>
-
+#include <RHIVulkan/Application.hpp>
 int main_scene(JobSystem* jobs, StringView srcPath, StringView dstPath, FSceneBuildOptions const& buildOptions)
 {
     MemoryMappedFile file(dstPath, 64ull * 1024ull * 1024ull /* grows on demand */);
     FImportedScene scene(file, GLOBAL_ALLOC);
     LOG(Util, LogDebug, "Saving");
-    LoadGLTF(jobs, srcPath, scene, GLOBAL_ALLOC, buildOptions);
+    VulkanApplication app(GLOBAL_ALLOC, true);
+    LoadGLTF(app, jobs, srcPath, scene, GLOBAL_ALLOC, buildOptions);
     return 0;
 }
 int main_texture(StringView srcImagePath, StringView dstDDSPath)
@@ -67,9 +68,9 @@ int main(int argc, const char** argv)
         return main_texture(argv[2], argv[3]);
     }
 END:
-    Println("available tools:");
-    Println("\tscene [--no-texture-compression] [src] [dst]");
-    Println("\ttexture");
-    Println("run 'util [tool name]' for more info");
+    fmt::println("available tools:");
+    fmt::println("\tscene [--no-texture-compression] [src] [dst]");
+    fmt::println("\ttexture");
+    fmt::println("run 'util [tool name]' for more info");
     return 1;
 }

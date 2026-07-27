@@ -96,6 +96,7 @@ if (NOT ANDROID)
     target_link_libraries(
             Editor_Util PRIVATE
             Editor_Assets
+            Foundation_RHIVulkan
     )
     add_custom_target(EditorWithUtil DEPENDS Editor Editor_Util)
 endif()
