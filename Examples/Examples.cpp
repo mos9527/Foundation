@@ -525,12 +525,6 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     if (!headless)
     {
         std::set_terminate(Examples_TerminateHandler);
-#if defined(__ANDROID__)
-        const char* prefPath = SDL_GetPrefPath("foundation", "examples");
-        PathsRegisterAssetLoader(&Examples_SDLAssetLoader);
-        PathsInitFromDir(prefPath);
-        SDL_free((void*)prefPath);
-#endif
     }
     ExampleVulkanContext ctx{};
     unsigned const hardware = std::thread::hardware_concurrency();

@@ -104,7 +104,7 @@ namespace Foundation::Core
     if (!(expr)) [[unlikely]] { \
         LOG(Core, LogError, "Check failed: {}", #expr); \
         FOUNDATION_TRAP(); \
-        std::abort(); \
+        std::terminate(); \
     } \
 } while (false);
 
@@ -112,6 +112,6 @@ namespace Foundation::Core
     if (!(expr)) [[unlikely]] { \
         LOG(Core, LogError, format_str __VA_OPT__(,) __VA_ARGS__); \
         FOUNDATION_TRAP(); \
-        std::abort(); \
+        std::terminate(); \
     } \
 } while (false);
