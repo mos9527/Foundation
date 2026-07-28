@@ -1192,7 +1192,7 @@ static FSerializedBounds BuildMeshBounds(FImportedMesh const& mesh)
 static std::pair<FSerializedMesh, Vector<unsigned char>> SerializedFromMesh(FImportedMesh const& mesh, Allocator* alloc,
                                                                             FUUID skeleton)
 {
-    const_cast<FImportedMesh&>(mesh).EnsureQuantized();
+    CHECK_MSG(mesh.IsQuantized(), "Mesh input is not quantized");
 
     FSerializedMesh desc(alloc);
     desc.bounds = BuildMeshBounds(mesh);

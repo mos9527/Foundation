@@ -34,3 +34,10 @@ if (FOUNDATION_WITH_JOLT_EXAMPLES)
     target_link_libraries(ExampleRenderer_JoltPhysics PUBLIC Example_Jolt)
     add_dependencies(ExampleRenderer_JoltPhysics Foundation_Shaders Editor_Data Shader_PostprocessBasic)
 endif()
+
+if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    # Apparently it *is* quite easy to integrate. Let's have some fun       
+    add_example(ExampleRenderer_LibSM64 "SM64/LibSM64.cpp")
+    target_link_libraries(ExampleRenderer_LibSM64 PUBLIC Example_Common Example_Renderer)
+    add_dependencies(ExampleRenderer_LibSM64 Foundation_Shaders Editor_Data Shader_PostprocessBasic)
+endif()

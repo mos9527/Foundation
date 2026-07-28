@@ -52,16 +52,10 @@ extern void Foundation_PrintImpl(const char* formatted, bool flush);
 template<typename ...Args>
 void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...> format, Args&&... args)
 {
-    constexpr size_t kN = sizeof...(Args);
-    if constexpr (kN > 0)
-    {
-        fmt::basic_memory_buffer<char, fmt::inline_buffer_size, Foundation::Core::StlDefaultAllocator<char>> buffer;
-        fmt::format_to(std::back_inserter(buffer), format, std::forward<Args>(args)...);
-        Foundation_LogImpl(level, tag, buffer.data());
-    } else
-    {
-        Foundation_LogImpl(level, tag, format.str.data());
-    }
+    fmt::basic_memory_buffer<char, fmt::inline_buffer_size, Foundation::Core::StlDefaultAllocator<char>> buffer;
+    fmt::format_to(std::back_inserter(buffer), format, std::forward<Args>(args)...);
+    buffer.push_back('\0');
+    Foundation_LogImpl(level, tag, buffer.data());
 }
 
 namespace Foundation::Core
@@ -69,17 +63,10 @@ namespace Foundation::Core
     template <typename... Args>
     void Print(fmt::format_string<Args...> format, Args&&... args)
     {
-        constexpr size_t kN = sizeof...(Args);
-        if constexpr (kN > 0)
-        {
-            fmt::basic_memory_buffer<char, fmt::inline_buffer_size, StlDefaultAllocator<char>> buffer;
-            fmt::format_to(std::back_inserter(buffer), format, std::forward<Args>(args)...);
-            Foundation_PrintImpl(buffer.data(), false);
-        }
-        else
-        {
-            Foundation_PrintImpl(format.str.data(), false);
-        }
+        fmt::basic_memory_buffer<char, fmt::inline_buffer_size, StlDefaultAllocator<char>> buffer;
+        fmt::format_to(std::back_inserter(buffer), format, std::forward<Args>(args)...);
+        buffer.push_back('\0');
+        Foundation_PrintImpl(buffer.data(), false);
     }
 
     template <typename... Args>

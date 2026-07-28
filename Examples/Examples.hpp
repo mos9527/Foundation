@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/BuildInfo.hpp>
 #include <Core/JobSystem.hpp>
+#include <Core/Container.hpp>
 #include <RHIVulkan/Application.hpp>
 #include <RenderCore/Renderer.hpp>
 #include <RenderCore/Presenter.hpp>
@@ -14,10 +15,6 @@
 #include <RenderUtils/CSDebugText.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
 #include <SDL3/SDL_main.h>
-#include <array>
-#include <tuple>
-#include <vector>
-
 void Examples_ReportFatalException();
 
 #if defined(__ANDROID__) && !defined(FOUNDATION_EXAMPLES_IMPLEMENTATION)
