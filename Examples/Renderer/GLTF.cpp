@@ -117,15 +117,19 @@ int main(int argc, char** argv)
     String scenePathArg;
     if (auto positional = cmdl(1))
         scenePathArg = positional.str();
-
+    else
+    {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Missing scene path",
+                                 "Please specify a scene path (glTF/GLB/FSCN) as the first argument.", nullptr);
+        return 1;
+    }
     SDL_Window* window = headless ? nullptr
                                   : SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("GPUScene glTF Viewer"), 1280, 720,
                                                      Examples_SDLWindowFlagsVulkan);
 
     auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});
     // Prepare scene file
-    String path = PrepareScenePayload(*ctx.app, ctx.jobs.get(),
-                                      !scenePathArg.empty() ? scenePathArg : ctx.app->ResolveRelativePathBase("Data/Assets/demo.glb"));
+    String path = PrepareScenePayload(*ctx.app, ctx.jobs.get(), scenePathArg);
     MemoryMappedFile sceneFile(path, MemoryMappedAccess::ReadOnly);
     FImportedScene scene(sceneFile, GLOBAL_ALLOC);
     LoadFSCN(scene);
