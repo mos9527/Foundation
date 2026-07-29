@@ -372,11 +372,6 @@ namespace
         inputs.buttonA = (kbd[SDL_SCANCODE_SPACE] || kbd[SDL_SCANCODE_X]) ? 1u : 0u;
         inputs.buttonB = (kbd[SDL_SCANCODE_LSHIFT] || kbd[SDL_SCANCODE_C]) ? 1u : 0u;
         inputs.buttonZ = kbd[SDL_SCANCODE_Z] ? 1u : 0u;
-        if (kbd[SDL_SCANCODE_LEFT])
-            camYawDelta -= 1.0f;
-        if (kbd[SDL_SCANCODE_RIGHT])
-            camYawDelta += 1.0f;
-
         if (gGamepad)
         {
             const float lx = ReadAxis(SDL_GetGamepadAxis(gGamepad, SDL_GAMEPAD_AXIS_LEFTX));
@@ -394,6 +389,11 @@ namespace
                 inputs.buttonZ = 1u;
             camYawDelta = rx;
         }
+
+        if (kbd[SDL_SCANCODE_LEFT])
+            camYawDelta -= 1.0f;
+        if (kbd[SDL_SCANCODE_RIGHT])
+            camYawDelta += 1.0f;
 
         inputs.camLookX = -camera.radius * cosf(camera.yaw);
         inputs.camLookZ = -camera.radius * sinf(camera.yaw);
@@ -639,7 +639,7 @@ int main(int argc, char** argv)
         Examples_Text(input, Format("Game tick: {}, Frame: {}", ticks, ctx.renderer->GetFrame()));
         Examples_Text(input, "WASD/LS move | Space/X jump | LShift/C action | Z/L1 crouch | Arrows/RS orbit");
         if (gGamepad)
-            Examples_Text(input, Format("Gamepad connected (id {})", SDL_GetGamepadID(gGamepad)));
+            Examples_Text(input, Format("{} connected", SDL_GetGamepadNameForID(SDL_GetGamepadID(gGamepad))));
         if (Examples_RendererSwitchButton(input, renderer))
             input.wantResizeOrRebuild = true;
 

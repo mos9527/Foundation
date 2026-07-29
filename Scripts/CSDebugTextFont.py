@@ -4,7 +4,7 @@ TEXTURE_WIDTH = 1024
 BW_THRESHOLD = 128
 
 FONT_HEIGHT = 16
-font_path = "/home/mos9527/.fonts/Perfect DOS VGA 437.ttf"
+font_path = "Data/Perfect DOS VGA 437.ttf"
 
 font = ImageFont.truetype(font_path, FONT_HEIGHT)
 char_set = [chr(i) for i in range(ord(' '), 256)]  # Printable ASCII + extended
