@@ -17,6 +17,7 @@ BUILD_GRADLE = REPO_ROOT / "Android" / "app" / "build.gradle.kts"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build.yml"
 
 ANDROID_EXCLUDED_EXAMPLES = {
+    "ExampleRenderer_SM64"
 }
 
 CI_EXCLUDED_EXAMPLES = {

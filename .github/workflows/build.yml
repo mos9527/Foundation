@@ -87,6 +87,7 @@ jobs:
           ExampleRenderer_JoltPhysics
           ExampleRenderer_Dynamic
           ExampleRenderer_GLTF
+          ExampleRenderer_SM64
           Example_BindlessSimple
           Example_DebugText
           Example_SDF2D

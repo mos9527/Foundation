@@ -29,7 +29,7 @@ using SMVector = std::vector<T, StlDefaultAllocator<T>>;
 namespace
 {
     using namespace Foundation::Math;
-    struct LibSM64
+    struct SM64
     {
         void (*global_init)(const uint8_t* rom, uint8_t* outTexture);
         void (*global_terminate)(void);
@@ -51,7 +51,7 @@ namespace
         return out != nullptr;
     }
 
-    static void LoadLibSM64(const char* dllPath)
+    static void LoadSM64(const char* dllPath)
     {
         g_libModule = SDL_LoadObject(dllPath);
         CHECK(g_libModule != nullptr);
@@ -65,7 +65,7 @@ namespace
         CHECK(Resolve(g_libModule, *(void**)&g_sm64.mario_tick, "sm64_mario_tick"));
         CHECK(Resolve(g_libModule, *(void**)&g_sm64.mario_delete, "sm64_mario_delete"));
     }
-    static void FreeLibSM64() { SDL_UnloadObject(g_libModule); }
+    static void FreeSM64() { SDL_UnloadObject(g_libModule); }
 
     constexpr uint32_t kMaxTris = SM64_GEO_MAX_TRIANGLES;
     constexpr uint32_t kMaxVerts = kMaxTris * 3u;
@@ -468,7 +468,7 @@ int main(int argc, char** argv)
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("libsm64 Mario (CPU dynamic mesh)"), 1280, 720,
                                           Examples_SDLWindowFlagsVulkan);
     auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});
-    LoadLibSM64(ctx.app->ResolveRelativePathBase(SM64_LIB_NAME).c_str());
+    LoadSM64(ctx.app->ResolveRelativePathBase(SM64_LIB_NAME).c_str());
     void* sm64_rom;
     {
         auto file = ctx.app->ResolveRelativePathBase(SM64_ROM_NAME);
@@ -673,7 +673,7 @@ int main(int argc, char** argv)
     SDL_DestroyAudioStream(audioStream);
     g_sm64.mario_delete(marioId);
     g_sm64.global_terminate();
-    FreeLibSM64();
+    FreeSM64();
     GLOBAL_ALLOC->Deallocate(sm64_rom);
     GLOBAL_ALLOC->Deallocate(sm64_tex);
     Examples_DestroyVulkan(window, ctx);

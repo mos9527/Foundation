@@ -50,7 +50,7 @@ public class MainActivity extends Activity {
 
         // BEGIN GENERATED ANDROID EXAMPLES
         Example[] examples = {
-            new Example("ExampleRenderer_JoltPhysics", "JoltPhysics", ""),
+            new Example("ExampleRenderer_JoltPhysics", "JoltPhysics", "Box Galore(tm) Example demonstrating integartion with Jolt Physics!"),
             new Example("ExampleRenderer_Dynamic", "Dynamic", "Demonstrates GPU-generated dynamic geometry and CPU-generated static geo usage."),
             new Example("ExampleRenderer_GLTF", "GLTF", "Demonstrates loading a glTF/GLB/FSCN into GPUScene with the Pathtracer integrator"),
             new Example("Example_BindlessSimple", "BindlessSimple", "Demonstrates bindless texture sampling with a pool of procedurally generated textures. The fullscreen shader cycles through many sampled images without rebinding descriptors."),
