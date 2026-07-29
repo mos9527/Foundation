@@ -341,18 +341,7 @@ void FTexture::GenerateMips()
             float b = bytes[i + 2] / 255.0f;
             float a = bytes[i + 3] / 255.0f;
             // https://en.wikipedia.org/wiki/SRGB#Definition
-            if (inverse)
-            {
-                r = (r <= 0.0031308f) ? (r * 12.92f) : (1.055f * std::pow(r, 1.0f / 2.4f) - 0.055f);
-                g = (g <= 0.0031308f) ? (g * 12.92f) : (1.055f * std::pow(g, 1.0f / 2.4f) - 0.055f);
-                b = (b <= 0.0031308f) ? (b * 12.92f) : (1.055f * std::pow(b, 1.0f / 2.4f) - 0.055f);
-            }
-            else
-            {
-                r = (r <= 0.04045f) ? (r / 12.92f) : std::pow((r + 0.055f) / 1.055f, 2.4f);
-                g = (g <= 0.04045f) ? (g / 12.92f) : std::pow((g + 0.055f) / 1.055f, 2.4f);
-                b = (b <= 0.04045f) ? (b / 12.92f) : std::pow((b + 0.055f) / 1.055f, 2.4f);
-            }
+
             bytes[i + 0] = static_cast<unsigned char>(std::clamp(r * 255.0f, 0.0f, 255.0f));
             bytes[i + 1] = static_cast<unsigned char>(std::clamp(g * 255.0f, 0.0f, 255.0f));
             bytes[i + 2] = static_cast<unsigned char>(std::clamp(b * 255.0f, 0.0f, 255.0f));
