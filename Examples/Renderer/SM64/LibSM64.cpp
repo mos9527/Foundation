@@ -33,6 +33,9 @@ namespace
     {
         void (*global_init)(const uint8_t* rom, uint8_t* outTexture);
         void (*global_terminate)(void);
+        void (*audio_init)(const uint8_t* rom);
+        uint32_t (*audio_tick)(uint32_t numQueuedSamples, uint32_t numDesiredSamples, int16_t* audio_buffer);
+        void (*play_music)(uint8_t player, uint16_t seqArgs, uint16_t fadeTimer);
         void (*static_surfaces_load)(const SM64Surface* surfaceArray, uint32_t numSurfaces);
         int32_t (*mario_create)(float x, float y, float z);
         void (*mario_tick)(int32_t marioId, const SM64MarioInputs* inputs, SM64MarioState* outState,
@@ -54,6 +57,9 @@ namespace
         CHECK(g_libModule != nullptr);
         CHECK(Resolve(g_libModule, *(void**)&g_sm64.global_init, "sm64_global_init"));
         CHECK(Resolve(g_libModule, *(void**)&g_sm64.global_terminate, "sm64_global_terminate"));
+        CHECK(Resolve(g_libModule, *(void**)&g_sm64.audio_init, "sm64_audio_init"));
+        CHECK(Resolve(g_libModule, *(void**)&g_sm64.audio_tick, "sm64_audio_tick"));
+        CHECK(Resolve(g_libModule, *(void**)&g_sm64.play_music, "sm64_play_music"));
         CHECK(Resolve(g_libModule, *(void**)&g_sm64.static_surfaces_load, "sm64_static_surfaces_load"));
         CHECK(Resolve(g_libModule, *(void**)&g_sm64.mario_create, "sm64_mario_create"));
         CHECK(Resolve(g_libModule, *(void**)&g_sm64.mario_tick, "sm64_mario_tick"));
@@ -457,7 +463,7 @@ namespace
 
 int main(int argc, char** argv)
 {
-    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
     OpenFirstGamepad();
     SDL_Window* window = SDL_CreateWindow(FOUNDATION_APPLICATION_TITLE("libsm64 Mario (CPU dynamic mesh)"), 1280, 720,
                                           Examples_SDLWindowFlagsVulkan);
@@ -476,10 +482,21 @@ int main(int argc, char** argv)
     }
     void* sm64_tex = GLOBAL_ALLOC->Allocate(SM64_TEXTURE_WIDTH * SM64_TEXTURE_HEIGHT * 4);
     g_sm64.global_init(static_cast<uint8_t*>(sm64_rom), static_cast<uint8_t*>(sm64_tex));
+    g_sm64.audio_init(static_cast<uint8_t*>(sm64_rom));
     g_sm64.static_surfaces_load(surfaces, static_cast<uint32_t>(surfaces_count));
+
+    SDL_AudioSpec audioSpec{};
+    audioSpec.freq = 32000;
+    audioSpec.format = SDL_AUDIO_S16;
+    audioSpec.channels = 2;
+    SDL_AudioStream* audioStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audioSpec, nullptr, nullptr);
+    CHECK(audioStream != nullptr);
+    SDL_ResumeAudioDevice(SDL_GetAudioStreamDevice(audioStream));
 
     int32_t marioId = g_sm64.mario_create(0.0f, 1000.0f, 0.0f);
     CHECK(marioId >= 0);
+
+    g_sm64.play_music(0, 0x05 | 0x80, 0);
 
     // Gemoetry states
     // These are always morphed on the CPU
@@ -597,6 +614,11 @@ int main(int argc, char** argv)
             ticks++;
             g_sm64.mario_tick(marioId, &inputs, &state, &geo);
 
+            int16_t audioBuffer[544 * 2 * 2];
+            uint32_t numSamples = g_sm64.audio_tick(SDL_GetAudioStreamAvailable(audioStream) / 4, 1100, audioBuffer);
+            if (SDL_GetAudioStreamAvailable(audioStream) / 4 < 6000)
+                SDL_PutAudioStreamData(audioStream, audioBuffer, numSamples * 2 * 4);
+
             currPos = float3(state.position[0], state.position[1], state.position[2]);
             currGeoPos = posBuf;
         }
@@ -648,6 +670,7 @@ int main(int argc, char** argv)
 
     if (gGamepad)
         SDL_CloseGamepad(gGamepad);
+    SDL_DestroyAudioStream(audioStream);
     g_sm64.mario_delete(marioId);
     g_sm64.global_terminate();
     FreeLibSM64();
