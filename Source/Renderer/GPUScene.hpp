@@ -187,7 +187,7 @@ public:
     ~GPUScene();
 
     Result Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
-    Result Upload(FImportedMesh const& source, GeometryHandle& outHandle, FUUID skeleton = kNilUUID);
+    Result Upload(FImportedMesh const& source, GeometryHandle& outHandle);
 
     /**
      * @brief Allocates a dynamic geometry handle.
@@ -202,7 +202,8 @@ public:
     Result Upload(FTexture const& source, TextureHandle& outTexture, const char* debugName = nullptr,
                   bool pinned = false);
     Result UploadEnvironmentMap(FTexture const& source);
-    
+    [[nodiscard]] bool HasEnvironmentMap() const { return mEnvMapIndex.IsValid(); }
+
     Result Upload(RHIBuffer* dst, Span<const unsigned char> data, uint32_t dstOffset = 0);
     
     [[nodiscard]] Result Query(GeometryHandle handle) const;
@@ -350,34 +351,9 @@ public:
     [[nodiscard]] BindlessPool* GetTexture3DPool();
     [[nodiscard]] BindlessPool const* GetTexture2DPool() const;
     [[nodiscard]] BindlessPool const* GetTexture3DPool() const;
-    [[nodiscard]] uint32_t GetGGXLutEIndex() const { return mLUTGGXEIndex.index; }
-    [[nodiscard]] uint32_t GetGGXLutEavgIndex() const { return mLUTGGXEavgIndex.index; }
-    [[nodiscard]] uint32_t GetGGXLutEIORIndex() const { return mLUTGGXEIORIndex.index; }
-    [[nodiscard]] uint32_t GetGGXLutEIORavgIndex() const { return mLUTGGXEIORavgIndex.index; }
-    [[nodiscard]] uint32_t GetGGXLutEIORInvIndex() const { return mLUTGGXEIORInvIndex.index; }
-    [[nodiscard]] uint32_t GetGGXLutEIORInvavgIndex() const { return mLUTGGXEIORInvavgIndex.index; }
-    [[nodiscard]] uint32_t GetSheenLtcIndex() const { return mLUTSheenLTCIndex.index; }
     [[nodiscard]] RHITexture* GetFoundationDefaultTexture2D() const;
     [[nodiscard]] RHITexture* GetFoundationDefaultTexture2DFloat() const;
     [[nodiscard]] RHIBuffer* GetFoundationDefaultBufferFloat() const { return mFoundationDefaultBufferFloat.Get(); }
-    // Environment map
-    [[nodiscard]] bool HasEnvMap() const { return mEnvMapIndex.IsValid(); }
-    [[nodiscard]] uint32_t GetEnvMapIndexOrDefault() const
-    {
-        return HasEnvMap() ? mEnvMapIndex.index : mFoundationDefaultTexture2DIndex.index;
-    }
-    [[nodiscard]] uint32_t GetEnvMapMarginalCDFIndexOrDefault() const
-    {
-        return mEnvMapMarginalCDFIndex.IsValid() ? mEnvMapMarginalCDFIndex.index
-                                                 : mFoundationDefaultTexture2DFloatIndex.index;
-    }
-    [[nodiscard]] uint32_t GetEnvMapConditionalCDFIndexOrDefault() const
-    {
-        return mEnvMapConditionalCDFIndex.IsValid() ? mEnvMapConditionalCDFIndex.index
-                                                    : mFoundationDefaultTexture2DFloatIndex.index;
-    }
-    [[nodiscard]] uint32_t GetEnvMapPrefilteredMips() const { return mEnvMapPrefilteredMips; }
-    [[nodiscard]] Span<const float3> GetEnvSHCoeffs() const { return {mEnvSHCoeffs.data(), mEnvSHCoeffs.size()}; }
     /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const
     {
@@ -390,6 +366,8 @@ public:
 
 private:
     friend struct GPUSceneImpl;
+    UniquePtr<GPUSceneImpl> mImpl;
+
     UpdateResult mLastUpdateResult;
     // Per-frame commits
     Vector<GSInstance> mCommittedInstances;
@@ -404,6 +382,9 @@ private:
     // Shared default resources
     RHIDeviceScopedHandle<RHIBuffer> mSobolMatricesBuffer;
     RHIDeviceScopedHandle<RHIBuffer> mFoundationDefaultBufferFloat;
+
+public:
+    // Texture Handles
     TextureHandle mFoundationDefaultTexture2DIndex;
     TextureHandle mFoundationDefaultTexture2DFloatIndex;
     // Precomputed LUTs (texture2D pool)
@@ -422,8 +403,6 @@ private:
     uint32_t mEnvMapPrefilteredMips{0u};
     Array<float3, 9> mEnvSHCoeffs{};
     float mEnvMapAverageRadiance{1.0f};
-
-    UniquePtr<GPUSceneImpl> mImpl;
 };
 
 ENUM_NAME_CONV_BEGIN(GPUScene::Result)

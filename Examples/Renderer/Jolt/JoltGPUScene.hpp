@@ -49,8 +49,7 @@ namespace Foundation::Examples
         [[nodiscard]] GPUScene& GetGPUScene() { return mGPU; }
         [[nodiscard]] GPUScene const& GetGPUScene() const { return mGPU; }
 
-        [[nodiscard]] GPUScene::Result Upload(FImportedMesh const& source, GeometryHandle& outHandle,
-                                              FUUID skeleton = kNilUUID);
+        [[nodiscard]] GPUScene::Result Upload(FImportedMesh const& source, GeometryHandle& outHandle);
         void Join();
 
         [[nodiscard]] PhysicsStatus CreateShape(PhysicsShapeDesc const& desc, PhysicsShapeHandle& outHandle);

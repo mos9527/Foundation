@@ -2348,11 +2348,11 @@ void FLightingPanel()
                 if (isEnvironment)
                 {
                     ImGui::Separator();
-                    bool hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvMap();
+                    bool hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvironmentMap();
                     ImGui::Text(hasEnv ? PSI_OK " HDRI Loaded" : PSI_WARNING_SIGN " No HDRI");
                     if (hasEnv)
                     {
-                        DrawTexturePreview("HDRI", GContext->gpuScene->GetEnvMapIndexOrDefault());
+                        DrawTexturePreview("HDRI", GContext->gpuScene->mEnvMapIndex.index);
                         if (!light.environmentTexture.IsNil())
                         {
                             uint32_t const envTexIdx = SceneTextureIndexFromId(light.environmentTexture);

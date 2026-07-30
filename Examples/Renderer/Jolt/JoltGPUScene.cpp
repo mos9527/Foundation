@@ -37,9 +37,9 @@ namespace Foundation::Examples
 
     void JoltGPUScene::MarkBroadPhaseDirty() { mBroadPhaseDirty = true; }
 
-    GPUScene::Result JoltGPUScene::Upload(FImportedMesh const& source, GeometryHandle& outHandle, FUUID skeleton)
+    GPUScene::Result JoltGPUScene::Upload(FImportedMesh const& source, GeometryHandle& outHandle)
     {
-        return mGPU.Upload(source, outHandle, skeleton);
+        return mGPU.Upload(source, outHandle);
     }
 
     void JoltGPUScene::Join() { mGPU.Join(); }

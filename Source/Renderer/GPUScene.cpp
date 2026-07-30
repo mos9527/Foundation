@@ -4,8 +4,8 @@
 #include <Core/Atomic.hpp>
 #include <Core/AtomicQueue.hpp>
 #include <Core/Hash.hpp>
-#include <Core/Thread.hpp>
 #include <Core/JobSystem.hpp>
+#include <Core/Thread.hpp>
 #include <algorithm>
 #include <bit>
 #include <condition_variable>
@@ -265,9 +265,8 @@ struct GPUSceneImpl
     {
         explicit UploadBatchState(Allocator* allocator) :
             allocator(allocator), geometry(allocator), textures(allocator), buffers(allocator), writes(allocator),
-            scratchArenas(allocator), scratchAllocators(allocator), geometryHandles(allocator),
-            geometryBLAS(allocator), uploadedTextures(allocator), uncompactedBLAS(allocator),
-            meshGeometryIndices(allocator)
+            scratchArenas(allocator), scratchAllocators(allocator), geometryHandles(allocator), geometryBLAS(allocator),
+            uploadedTextures(allocator), uncompactedBLAS(allocator), meshGeometryIndices(allocator)
         {
         }
         ~UploadBatchState()
@@ -289,7 +288,7 @@ struct GPUSceneImpl
         Vector<UniquePtr<AllocatorStack>> scratchAllocators;
         Vector<GeometryHandle> geometryHandles;
         Vector<uint32_t> geometryBLAS;
-        Vector<std::pair<uint32_t, bool>> uploadedTextures;
+        Vector<Pair<uint32_t, bool>> uploadedTextures;
         RHIDeviceScopedHandle<RHIDeviceSemaphore> completionTimeline;
         RHIDeviceScopedHandle<RHIDeviceQueryPool> compactionQueries;
         RHIDeviceScopedHandle<RHIBuffer> uncompactedBLASBuffer;
@@ -350,7 +349,7 @@ struct GPUSceneImpl
 
     /* Mesh */
     Result Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
-    Result Upload(FImportedMesh const& source, GeometryHandle& outHandle, FUUID skeleton);
+    Result Upload(FImportedMesh const& source, GeometryHandle& outHandle);
     Result Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu);
     /* Curve */
     Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
@@ -427,8 +426,7 @@ GPUScene::GPUScene(RHIDevice* device, JobSystem* jobs, Allocator* allocator, GPU
 }
 
 GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, Allocator* allocator,
-                           GPUSceneDesc const& desc,
-                           AllocatorStack* frameScratch) :
+                           GPUSceneDesc const& desc, AllocatorStack* frameScratch) :
     owner(owner), mDevice(device), mJobs(jobs), mAllocator(allocator), mStackAlloc(frameScratch),
     mInstanceBuffer(device, desc.instanceBudget), mMaterialBuffer(device, desc.materialBudget),
     mLightBuffer(device, desc.lightBudget), mLightBVHNodeBuffer(device, desc.lightBudget * 2u),
@@ -899,14 +897,16 @@ void GPUScene::UpdateUBO(RendererUBO& globals) const
     globals.ggxLutEIORInvIndex = mLUTGGXEIORInvIndex.index;
     globals.ggxLutEIORInvavgIndex = mLUTGGXEIORInvavgIndex.index;
     globals.sheenLtcIndex = mLUTSheenLTCIndex.index;
-    globals.envMapTextureIndex = GetEnvMapIndexOrDefault();
-    globals.envMapMarginalCDFIndex = GetEnvMapMarginalCDFIndexOrDefault();
-    globals.envMapConditionalCDFIndex = GetEnvMapConditionalCDFIndexOrDefault();
-    globals.envMapPrefilteredMips = HasEnvMap() ? mEnvMapPrefilteredMips : 0u;
-    globals.hasEnvMap = HasEnvMap() ? 1u : 0u;
-    Span<const float3> sh = GetEnvSHCoeffs();
-    for (size_t i = 0; i < sh.size(); ++i)
-        globals.envSHCoeffs[i] = sh[i];
+    globals.envMapTextureIndex = HasEnvironmentMap() ? mEnvMapIndex.index : mFoundationDefaultTexture2DIndex.index;
+    globals.envMapMarginalCDFIndex =
+        mEnvMapMarginalCDFIndex.IsValid() ? mEnvMapMarginalCDFIndex.index : mFoundationDefaultTexture2DFloatIndex.index;
+    globals.envMapConditionalCDFIndex = mEnvMapConditionalCDFIndex.IsValid()
+        ? mEnvMapConditionalCDFIndex.index
+        : mFoundationDefaultTexture2DFloatIndex.index;
+    globals.envMapPrefilteredMips = HasEnvironmentMap() ? mEnvMapPrefilteredMips : 0u;
+    globals.hasEnvMap = HasEnvironmentMap() ? 1u : 0u;
+    for (size_t i = 0; i < 9; ++i)
+        globals.envSHCoeffs[i] = mEnvSHCoeffs[i];
 }
 
 void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
@@ -1189,15 +1189,13 @@ static FSerializedBounds BuildMeshBounds(FImportedMesh const& mesh)
     return bounds;
 }
 
-static std::pair<FSerializedMesh, Vector<unsigned char>> SerializedFromMesh(FImportedMesh const& mesh, Allocator* alloc,
-                                                                            FUUID skeleton)
+static Pair<FSerializedMesh, Vector<unsigned char>> SerializedFromMesh(FImportedMesh const& mesh, Allocator* alloc)
 {
     CHECK_MSG(mesh.IsQuantized(), "Mesh input is not quantized");
 
     FSerializedMesh desc(alloc);
     desc.bounds = BuildMeshBounds(mesh);
     desc.vertexCount = static_cast<uint32_t>(mesh.verticesQuantized.size());
-    desc.skeleton = skeleton;
 
     Vector<unsigned char> payload(alloc);
     MemoryBlobSerializer serializer(payload);
@@ -1423,12 +1421,12 @@ GPUScene::Result GPUSceneImpl::Upload(FTexture const& source, TextureHandle& out
     return Result::Ready;
 }
 
-GPUScene::Result GPUSceneImpl::Upload(FImportedMesh const& source, GeometryHandle& outHandle, FUUID skeleton)
+GPUScene::Result GPUSceneImpl::Upload(FImportedMesh const& source, GeometryHandle& outHandle)
 {
     if (source.vertices.empty())
         return Result::InvalidInput;
 
-    auto [adaptor, payload] = SerializedFromMesh(source, mAllocator, skeleton);
+    auto [adaptor, payload] = SerializedFromMesh(source, mAllocator);
     FBlobDeserializer blobs(Span<const unsigned char>(payload.data(), payload.size()));
     Result r = Upload(&blobs, adaptor, outHandle);
     if (r != Result::InProgress)
@@ -1521,8 +1519,8 @@ bool GPUSceneImpl::UploadBatchBegin()
             mImmediateUpload->WaitIdle();
         mImmediateUploadCapacity = std::bit_ceil(stagingBudget);
         // NOTE: BLAS builds happen on their own cmdlists on Graphics queue.
-        mImmediateUpload = ConstructUnique<ImmediateUpload>(
-            mAllocator, mDevice, mImmediateUploadCapacity, RHIDeviceQueueType::Transfer, kUploadStagingBuffers);
+        mImmediateUpload = ConstructUnique<ImmediateUpload>(mAllocator, mDevice, mImmediateUploadCapacity,
+                                                            RHIDeviceQueueType::Transfer, kUploadStagingBuffers);
     }
     size_t taskCount = 0;
     for (PendingGeometryUpload const& pending : state->geometry)
@@ -1539,35 +1537,31 @@ bool GPUSceneImpl::UploadBatchBegin()
     }
 
     UploadBatchState* batchState = state.get();
-    state->prepareJob = mJobs->CreateJob(
-        "GPUScenePrepare", [this, batchState] { PrepareUploads(*batchState); });
-    size_t const chunkCount =
-        std::min(taskCount, std::max<size_t>(mJobs->GetMaxConcurrency() * 4u, 1u));
+    state->prepareJob = mJobs->CreateJob("GPUScenePrepare", [this, batchState] { PrepareUploads(*batchState); });
+    size_t const chunkCount = std::min(taskCount, std::max<size_t>(mJobs->GetMaxConcurrency() * 4u, 1u));
     Vector<JobHandle> decodeJobs(mAllocator);
     decodeJobs.reserve(chunkCount);
     for (size_t chunk = 0; chunk < chunkCount; ++chunk)
     {
-        decodeJobs.push_back(mJobs->CreateJobAfter(
-            "GPUSceneDecode", Span<const JobHandle>(&state->prepareJob, 1),
-            [this, batchState, chunk, chunkCount](JobContext& context)
-            {
-                size_t const count = batchState->writes.size();
-                size_t const begin = count * chunk / chunkCount;
-                size_t const end = count * (chunk + 1u) / chunkCount;
-                DecodeUploads(*batchState, begin, end, context);
-            }));
+        decodeJobs.push_back(mJobs->CreateJobAfter("GPUSceneDecode", Span<const JobHandle>(&state->prepareJob, 1),
+                                                   [this, batchState, chunk, chunkCount](JobContext& context)
+                                                   {
+                                                       size_t const count = batchState->writes.size();
+                                                       size_t const begin = count * chunk / chunkCount;
+                                                       size_t const end = count * (chunk + 1u) / chunkCount;
+                                                       DecodeUploads(*batchState, begin, end, context);
+                                                   }));
     }
     state->decodeJob = decodeJobs.empty()
         ? mJobs->CreateJobAfter("GPUSceneDecode", Span<const JobHandle>(&state->prepareJob, 1), [] {})
         : mJobs->CreateJobAfter("GPUSceneDecode", decodeJobs, [] {});
     // NOTE: Submitting is not waited on by host, see @ref UploadBatchMoveNext
-    state->submitJob = mJobs->CreateJobAfter(
-        "GPUSceneSubmit", Span<const JobHandle>(&state->decodeJob, 1),
-        [this, batchState]
-        {
-            LOG(GPUScene, LogDebug, "GPUScene Submitting Uploads")
-            SubmitUploads(*batchState);
-        });
+    state->submitJob = mJobs->CreateJobAfter("GPUSceneSubmit", Span<const JobHandle>(&state->decodeJob, 1),
+                                             [this, batchState]
+                                             {
+                                                 LOG(GPUScene, LogDebug, "GPUScene Submitting Uploads")
+                                                 SubmitUploads(*batchState);
+                                             });
     mActiveUpload = std::move(state);
     return true;
 }
@@ -1588,8 +1582,8 @@ bool GPUSceneImpl::UploadBatchMoveNext(size_t timeout)
         if (!state.gpuComplete)
         {
             RHIDeviceQueue::TimelinePair wait{state.nextSemaphoreTimeline, state.nextSemaphoreTimelineValue};
-            state.gpuComplete = mDevice->WaitForTimelineSemaphores(
-                Span<const RHIDeviceQueue::TimelinePair>(&wait, 1), timeout);
+            state.gpuComplete =
+                mDevice->WaitForTimelineSemaphores(Span<const RHIDeviceQueue::TimelinePair>(&wait, 1), timeout);
         }
         /* B -> [@GPU BLAS compaction] -> A */
         if (state.gpuComplete && state.needsCompaction)
@@ -1676,8 +1670,7 @@ void GPUSceneImpl::PrepareUploads(UploadBatchState& state)
     for (size_t i = 0; i < workerCount; ++i)
     {
         state.scratchArenas[i] = {scratch + i * laneBudget, laneBudget};
-        state.scratchAllocators.push_back(
-            ConstructUnique<AllocatorStack>(mAllocator, state.scratchArenas[i]));
+        state.scratchAllocators.push_back(ConstructUnique<AllocatorStack>(mAllocator, state.scratchArenas[i]));
     }
 
     Vector<size_t> order(state.geometry.size(), mAllocator);
@@ -1721,8 +1714,7 @@ void GPUSceneImpl::PrepareUploads(UploadBatchState& state)
         FTextureHeader const& metadata = static_cast<FTextureHeader const&>(*state.textures[slot].source);
         for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
             for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
-                subresources.push_back(
-                    {slot, layer, mip, GPUSceneTextureSubresourceFootprint(metadata, layer, mip)});
+                subresources.push_back({slot, layer, mip, GPUSceneTextureSubresourceFootprint(metadata, layer, mip)});
     }
     std::sort(subresources.begin(), subresources.end(),
               [](Subresource const& a, Subresource const& b) { return a.footprint > b.footprint; });
@@ -1740,8 +1732,8 @@ void GPUSceneImpl::PrepareUploads(UploadBatchState& state)
             transitioned[subresource.slot] = 1u;
         }
         size_t const firstWrite = state.writes.size();
-        size_t const staged = StageTextureSubresource(
-            &state.batch, *pending.source, texture, subresource.layer, subresource.mip, state.writes);
+        size_t const staged = StageTextureSubresource(&state.batch, *pending.source, texture, subresource.layer,
+                                                      subresource.mip, state.writes);
         CHECK_MSG(staged != 0, "Staging buffer too small for texture subresource");
         for (size_t i = firstWrite; i < state.writes.size(); ++i)
             state.writes[i].blobs = &pending.blobs;
@@ -1909,8 +1901,7 @@ void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const
         .size = scratchBytes,
         .alignment = 256,
     });
-    state.blasContext = ConstructUnique<ImmediateContext>(
-        mAllocator, RHIDeviceQueueType::Compute, mDevice);
+    state.blasContext = ConstructUnique<ImmediateContext>(mAllocator, RHIDeviceQueueType::Compute, mDevice);
     RHICommandList* cmd = state.blasContext->Get();
     cmd->Begin();
     state.geometryBLAS.resize(count, UINT32_MAX);
@@ -1955,17 +1946,16 @@ void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const
     }
     if (!state.uncompactedBLAS.empty())
     {
-        state.compactionQueries = mDevice->CreateQueryPool(
-            {.type = RHIDeviceQueryPool::QueryPoolDesc::AccelerationStructureCompactedSize,
-             .count = static_cast<uint32_t>(state.uncompactedBLAS.size())});
+        state.compactionQueries =
+            mDevice->CreateQueryPool({.type = RHIDeviceQueryPool::QueryPoolDesc::AccelerationStructureCompactedSize,
+                                      .count = static_cast<uint32_t>(state.uncompactedBLAS.size())});
         state.compactionQueries->Reset();
         cmd->BeginTransition();
-        cmd->SetBufferTransition(
-            state.uncompactedBLASBuffer.Get(),
-            {.srcAccess = RHIResourceAccessBits::AccelerationStructureWrite,
-             .dstAccess = RHIResourceAccessBits::AccelerationStructureRead,
-             .srcStage = RHIPipelineStageBits::AccelerationBuild,
-             .dstStage = RHIPipelineStageBits::AccelerationBuild});
+        cmd->SetBufferTransition(state.uncompactedBLASBuffer.Get(),
+                                 {.srcAccess = RHIResourceAccessBits::AccelerationStructureWrite,
+                                  .dstAccess = RHIResourceAccessBits::AccelerationStructureRead,
+                                  .srcStage = RHIPipelineStageBits::AccelerationBuild,
+                                  .dstStage = RHIPipelineStageBits::AccelerationBuild});
         cmd->EndTransition();
         Vector<RHIAccelerationStructure*> pointers(mAllocator);
         pointers.reserve(state.uncompactedBLAS.size());
@@ -2667,24 +2657,22 @@ GPUScene::Result GPUSceneImpl::UploadEnvironmentMap(FTexture const& source)
     const float4* pixels = reinterpret_cast<const float4*>(data.data());
 
     Vector<float> f(width * height, mAllocator);
-    size_t const grain = std::max<size_t>(
-        1u, height / std::max<size_t>(mJobs->GetMaxConcurrency() * 4u, 1u));
-    mJobs->Wait(mJobs->ParallelFor(
-        ExecutionPolicy::Par, "EnvLuminance", height, grain,
-        [&](size_t begin, size_t end, JobContext&)
-        {
-            for (size_t y = begin; y < end; ++y)
-            {
-                float v = (static_cast<float>(y) + 0.5f) / height;
-                float sinTheta = std::sin(pi<float>() * v);
-                for (uint32_t x = 0; x < width; ++x)
-                {
-                    float4 pixel = pixels[y * width + x];
-                    float luminance = max(pixel.x, max(pixel.y, pixel.z));
-                    f[y * width + x] = luminance * sinTheta;
-                }
-            }
-        }));
+    size_t const grain = std::max<size_t>(1u, height / std::max<size_t>(mJobs->GetMaxConcurrency() * 4u, 1u));
+    mJobs->Wait(mJobs->ParallelFor(ExecutionPolicy::Par, "EnvLuminance", height, grain,
+                                   [&](size_t begin, size_t end, JobContext&)
+                                   {
+                                       for (size_t y = begin; y < end; ++y)
+                                       {
+                                           float v = (static_cast<float>(y) + 0.5f) / height;
+                                           float sinTheta = std::sin(pi<float>() * v);
+                                           for (uint32_t x = 0; x < width; ++x)
+                                           {
+                                               float4 pixel = pixels[y * width + x];
+                                               float luminance = max(pixel.x, max(pixel.y, pixel.z));
+                                               f[y * width + x] = luminance * sinTheta;
+                                           }
+                                       }
+                                   }));
 
     PiecewiseConstant2D cdf(f, width, height, mAllocator);
     owner.mEnvMapAverageRadiance = cdf.Int() * pi<float>() / 2.0f;
@@ -2729,8 +2717,8 @@ GPUScene::Result GPUSceneImpl::UploadEnvironmentMap(FTexture const& source)
     if (Result r = Upload(prefiltered, owner.mEnvMapIndex, "Environment Map", true); r != Result::Ready)
         return r;
 
-    LOG(GPUScene, LogDebug, "Environment map uploaded: {}x{} ({} prefilter mips)", source.GetWidth(), source.GetHeight(),
-        owner.mEnvMapPrefilteredMips);
+    LOG(GPUScene, LogDebug, "Environment map uploaded: {}x{} ({} prefilter mips)", source.GetWidth(),
+        source.GetHeight(), owner.mEnvMapPrefilteredMips);
     return Result::Ready;
 }
 
@@ -2813,9 +2801,9 @@ GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedMesh cons
     return mImpl->Upload(blobs, source, outHandle);
 }
 
-GPUScene::Result GPUScene::Upload(FImportedMesh const& source, GeometryHandle& outHandle, FUUID skeleton)
+GPUScene::Result GPUScene::Upload(FImportedMesh const& source, GeometryHandle& outHandle)
 {
-    return mImpl->Upload(source, outHandle, skeleton);
+    return mImpl->Upload(source, outHandle);
 }
 
 GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle)

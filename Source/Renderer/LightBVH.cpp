@@ -235,7 +235,7 @@ SplitResult computeSplitWithBinnedSAH(BuildingData const& data, Range const& lig
         }
     };
 
-    std::pair<float, SplitResult> overallBest = {std::numeric_limits<float>::infinity(), {}};
+    Pair<float, SplitResult> overallBest = {std::numeric_limits<float>::infinity(), {}};
     Vector<Bin> bins(parameters.binCount, data.alloc);
     Vector<float> costs(parameters.binCount - 1u, data.alloc);
 
@@ -269,7 +269,7 @@ SplitResult computeSplitWithBinnedSAH(BuildingData const& data, Range const& lig
             costs[i - 1] += evalSAH(total.bounds, total.lightCount, parameters);
         }
 
-        std::pair<float, SplitResult> axisBest = {std::numeric_limits<float>::infinity(),
+        Pair<float, SplitResult> axisBest = {std::numeric_limits<float>::infinity(),
                                                   SplitResult{dimension, 0}};
         for (uint32_t i = 0, lightIdx = lightRange.begin; i < costs.size(); ++i)
         {
@@ -337,7 +337,7 @@ SplitResult computeSplitWithBinnedSAOH(BuildingData const& data, Range const& li
                                     ? 2u
                                     : (dimensions.y >= dimensions.x ? 1u : 0u);
 
-    std::pair<float, SplitResult> overallBest = {std::numeric_limits<float>::infinity(), {}};
+    Pair<float, SplitResult> overallBest = {std::numeric_limits<float>::infinity(), {}};
     Vector<Bin> bins(parameters.binCount, data.alloc);
     Vector<float> costs(parameters.binCount - 1u, data.alloc);
 
@@ -402,7 +402,7 @@ SplitResult computeSplitWithBinnedSAOH(BuildingData const& data, Range const& li
             costs[i - 1] += evalSAOH(total.bounds, total.flux, cosTheta, parameters);
         }
 
-        std::pair<float, SplitResult> axisBest = {std::numeric_limits<float>::infinity(),
+        Pair<float, SplitResult> axisBest = {std::numeric_limits<float>::infinity(),
                                                   SplitResult{dimension, 0}};
         for (uint32_t i = 0, lightIdx = lightRange.begin; i < costs.size(); ++i)
         {
@@ -530,7 +530,7 @@ void finalizeNodeIndices(LightBVHBuild& bvh)
     bvh.stats.minDepth = std::numeric_limits<uint32_t>::max();
 
     Vector<uint32_t> nodeCountPerLevel(bvh.allocator);
-    Stack<std::pair<uint32_t, uint32_t>> stack(bvh.allocator);
+    Stack<Pair<uint32_t, uint32_t>> stack(bvh.allocator);
     stack.push({0u, 0u});
     while (!stack.empty())
     {
@@ -826,7 +826,7 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
         return Fail("BVH light membership mismatch");
 
     std::vector<uint8_t> covered(lights.size(), 0u);
-    std::stack<std::pair<uint32_t, uint32_t>> stack;
+    std::stack<Pair<uint32_t, uint32_t>> stack;
     if (bvh.valid)
         stack.push({0u, 0u});
     while (!stack.empty())

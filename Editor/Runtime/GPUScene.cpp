@@ -180,7 +180,7 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu)
     }
     if (src.type == FLightType::Environment)
     {
-        bool const hasEnvMap = src.environmentMap && gpu.HasEnvMap();
+        bool const hasEnvMap = src.environmentMap && gpu.HasEnvironmentMap();
         dst.color = hasEnvMap ? float3(1.0f) : src.color;
         dst.power = src.power;
         if (hasEnvMap)
