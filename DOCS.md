@@ -110,14 +110,15 @@ The following CMake options are available:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| FOUNDATION_NO_EXCEPTIONS | Build without exceptions | ON |
+| FOUNDATION_RHIVULKAN_VALIDATION_LAYER | Build with Vulkan Validation Layer enabled | ON |
 | FOUNDATION_WITH_ASAN | Build with Address Sanitizer enabled | OFF |
 | FOUNDATION_WITH_TSAN | Build with Thread Sanitizer enabled | OFF |
 | FOUNDATION_WITH_PROFILING | Build with profiler (Tracy) enabled | ON |
-| FOUNDATION_RHIVULKAN_VALIDATION_LAYER | Build with Vulkan Validation Layer enabled | ON |
 | FOUNDATION_WITH_EXAMPLES | Build examples | ON |
+| FOUNDATION_WITH_JOLT_EXAMPLES | Build examples that require Jolt Physics | OFF |
 
-
-Toggle these options with `-D<OPTION>=ON/OFF` when running `cmake ..`, e.g. `cmake -DFOUNDATION_WITH_SANITIZERS=ON ..`
+Toggle these options with `-D<OPTION>=ON/OFF` when running `cmake ..`, e.g. `cmake -FOUNDATION_WITH_ASAN=ON ..`
 
 [CMake Unity Builds](https://cmake.org/cmake/help/latest/prop_tgt/UNITY_BUILD.html) are supported, and can be enabled with `-DCMAKE_UNITY_BUILD=ON` when running `cmake ..`.
 
