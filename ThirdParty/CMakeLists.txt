@@ -97,7 +97,7 @@ FetchContent_Declare(
     PATCH_COMMAND  
         ${GIT_EXECUTABLE} reset --hard
         COMMAND ${GIT_EXECUTABLE} clean -fdx
-        COMMAND ${GIT_EXECUTABLE} apply ${CMAKE_CURRENT_LIST_DIR}/fmt.patch
+        COMMAND ${GIT_EXECUTABLE} apply --ignore-whitespace ${CMAKE_CURRENT_LIST_DIR}/fmt.patch
 )
 
 FetchContent_Declare(
@@ -123,7 +123,7 @@ FetchContent_Declare(
     PATCH_COMMAND  
         ${GIT_EXECUTABLE} reset --hard
         COMMAND ${GIT_EXECUTABLE} clean -fdx
-        COMMAND ${GIT_EXECUTABLE} apply ${CMAKE_CURRENT_LIST_DIR}/meshoptimizer.clod.patch
+        COMMAND ${GIT_EXECUTABLE} apply --ignore-whitespace ${CMAKE_CURRENT_LIST_DIR}/meshoptimizer.clod.patch
 )
 
 FetchContent_Declare(
@@ -160,7 +160,7 @@ FetchContent_Declare(
     PATCH_COMMAND  
         ${GIT_EXECUTABLE} reset --hard
         COMMAND ${GIT_EXECUTABLE} clean -fdx
-        COMMAND ${GIT_EXECUTABLE} apply ${CMAKE_CURRENT_LIST_DIR}/argh.patch
+        COMMAND ${GIT_EXECUTABLE} apply --ignore-whitespace ${CMAKE_CURRENT_LIST_DIR}/argh.patch
 )
 
 FetchContent_MakeAvailable(stb)
