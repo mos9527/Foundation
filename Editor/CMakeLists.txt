@@ -12,7 +12,7 @@ add_custom_target(
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${ASSET_BUILD_DIR}/ViewLUTs"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${ASSET_BUILD_DIR}/Matcaps"
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-                "${CMAKE_SOURCE_DIR}/Source/Renderer/Data"
+                "${FOUNDATION_ROOT_DIR}/Source/Renderer/Data"
                 "${ASSET_BUILD_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/Data/Icons"

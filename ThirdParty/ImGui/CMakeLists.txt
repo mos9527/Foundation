@@ -38,7 +38,7 @@ slangc_compile(
     "Shader_ImGui"
     SOURCE          "${CMAKE_CURRENT_LIST_DIR}/Bindings/ImGui.slang"
     OUTPUT_DIR      "${SHADER_BUILD_DIR}"
-    INCLUDE_DIRS    "${CMAKE_SOURCE_DIR}/Source/Renderer/Shaders"
+    INCLUDE_DIRS    "${FOUNDATION_ROOT_DIR}/Source/Renderer/Shaders"
 )
 add_dependencies(
     ThirdParty_ImGui

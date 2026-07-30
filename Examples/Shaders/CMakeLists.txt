@@ -8,7 +8,7 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             "Shader_${ShaderName}"
             SOURCE          "${SlangFile}"
             OUTPUT_DIR      "${SHADER_BUILD_DIR}"
-            INCLUDE_DIRS     "${CMAKE_SOURCE_DIR}/Source/Renderer/Shaders"
+            INCLUDE_DIRS     "${FOUNDATION_ROOT_DIR}/Source/Renderer/Shaders"
     )
 endforeach()
 

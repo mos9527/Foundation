@@ -65,7 +65,7 @@ FetchContent_MakeAvailable(SDL3)
 if (ANDROID)
     # Copy SDL3 Java sources to the Android project so Gradle can find them
     file(COPY "${sdl3_SOURCE_DIR}/android-project/app/src/main/java/org"
-         DESTINATION "${CMAKE_SOURCE_DIR}/Android/app/src/main/java")
+         DESTINATION "${FOUNDATION_ROOT_DIR}/Android/app/src/main/java")
 endif()
 
 FetchContent_Declare(

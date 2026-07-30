@@ -6,6 +6,8 @@ if(APPLE)
 endif()
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
+set(FOUNDATION_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_C_STANDARD 17)
 
@@ -137,7 +139,7 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 if (ANDROID)
-    set(DERIVED_DATA_DIR "${CMAKE_SOURCE_DIR}/Android/app/src/main/assets/Data")
+    set(DERIVED_DATA_DIR "${FOUNDATION_ROOT_DIR}/Android/app/src/main/assets/Data")
 else()
     set(DERIVED_DATA_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Data")
 endif()
@@ -153,9 +155,9 @@ file(MAKE_DIRECTORY ${DERIVED_DATA_DIR})
 file(MAKE_DIRECTORY ${SHADER_BUILD_DIR})
 file(MAKE_DIRECTORY ${ASSET_BUILD_DIR})
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/Source")
+list(APPEND CMAKE_MODULE_PATH "${FOUNDATION_ROOT_DIR}/Source")
 
-include("${CMAKE_SOURCE_DIR}/DetectGitInfo.cmake")
+include("${FOUNDATION_ROOT_DIR}/DetectGitInfo.cmake")
 Foundation_DetectGitInfo()
 add_compile_definitions(
     FOUNDATION_GIT_COMMIT_HASH="${FOUNDATION_GIT_COMMIT_HASH}"

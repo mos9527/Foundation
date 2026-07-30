@@ -20,7 +20,7 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             "Shader_Editor_${ShaderName}"
             SOURCE          "${SlangFile}"
             OUTPUT_DIR      "${SHADER_BUILD_DIR}/Editor"
-            INCLUDE_DIRS    "${CMAKE_SOURCE_DIR}/Source/Renderer/Shaders"
+            INCLUDE_DIRS    "${FOUNDATION_ROOT_DIR}/Source/Renderer/Shaders"
             CAPABILITIES    ${ShaderCapabilities}
     )
     add_dependencies(Editor_Shaders "Shader_Editor_${ShaderName}")
