@@ -23,7 +23,7 @@ else()
     option(FOUNDATION_WITH_PROFILING "Build with profiling (Tracy) enabled" ON)
     option(FOUNDATION_RHIVULKAN_VALIDATION_LAYER "[RHIVulkan] Build with Vulkan Validation Layer (VVL)" ON)
 endif()
-option(FOUNDATION_CORE_USES_OS_ALLOC "Use OS allocator instead of mimalloc for AllocatorHeap" OFF)
+option(FOUNDATION_OS_ALLOCATOR "Use OS allocator instead of mimalloc for AllocatorHeap" OFF)
 option(FOUNDATION_USE_PCH "Build with target_precompile_headers (turn off to bisect stale-PCH issues)" ON)
 
 if (FOUNDATION_WITH_PROFILING)

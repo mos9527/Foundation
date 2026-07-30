@@ -117,6 +117,9 @@ The following CMake options are available:
 | FOUNDATION_WITH_PROFILING | Build with profiler (Tracy) enabled | ON |
 | FOUNDATION_WITH_EXAMPLES | Build examples | ON |
 | FOUNDATION_WITH_JOLT_EXAMPLES | Build examples that require Jolt Physics | OFF |
+| FOUNDATION_OS_ALLOCATOR | Build with OS allocator, instead of using `mimalloc` | ON |
+
+- NOTE: On MinGW GCC, you might need `-DFOUNDATION_OS_ALLOCATOR=ON` to use the OS allocator should you encounter crashes into `ntdll!RtlFreeHeap`.
 
 Toggle these options with `-D<OPTION>=ON/OFF` when running `cmake ..`, e.g. `cmake -FOUNDATION_WITH_ASAN=ON ..`
 

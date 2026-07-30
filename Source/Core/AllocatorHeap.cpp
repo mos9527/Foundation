@@ -1,4 +1,4 @@
-#if !(FOUNDATION_CORE_USES_OS_ALLOC)
+#if !(FOUNDATION_OS_ALLOCATOR)
 #include <mimalloc.h>
 #else
 #include <cstdlib>
@@ -19,7 +19,7 @@ namespace Foundation::Core {
         constexpr int kTracyAllocatorCallstackDepth = 16;
         constexpr const char* kTracyAllocatorName = "AllocatorHeap";
 
-#if FOUNDATION_CORE_USES_OS_ALLOC
+#if FOUNDATION_OS_ALLOCATOR
         size_t AllocationSize(pointer ptr)
         {
             return ptr ? _msize(ptr) : 0;
@@ -34,7 +34,7 @@ namespace Foundation::Core {
 
     pointer AllocatorHeap::Allocate(size_type size, size_t alignment) noexcept
     {
-#if FOUNDATION_CORE_USES_OS_ALLOC     
+#if FOUNDATION_OS_ALLOCATOR     
         auto* ptr = aligned_alloc(alignment, size);
 #else
         auto* ptr = mi_malloc_aligned(size, alignment);
@@ -56,7 +56,7 @@ namespace Foundation::Core {
             return nullptr;
         }
         size_t oldSize = AllocationSize(ptr);
-#if FOUNDATION_CORE_USES_OS_ALLOC
+#if FOUNDATION_OS_ALLOCATOR
         auto* newPtr = aligned_realloc(ptr, new_size, alignment);
 #else
         auto* newPtr = mi_realloc_aligned(ptr, new_size, alignment);
@@ -76,7 +76,7 @@ namespace Foundation::Core {
     }
     void AllocatorHeap::QueryBudget(size_t& used, size_t& budget) const
     {
-#if FOUNDATION_CORE_USES_OS_ALLOC
+#if FOUNDATION_OS_ALLOCATOR
         used = budget = 0;
 #else
         size_t elapsed_msecs,  user_msecs,  system_msecs,
@@ -99,7 +99,7 @@ namespace Foundation::Core {
             mHeapUsage.fetch_sub(AllocationSize(ptr), std::memory_order_relaxed);
             TracyFreeNS(ptr, kTracyAllocatorCallstackDepth, kTracyAllocatorName);
         }
-#if FOUNDATION_CORE_USES_OS_ALLOC
+#if FOUNDATION_OS_ALLOCATOR
         return aligned_free(ptr);
 #else
         mi_free(ptr);

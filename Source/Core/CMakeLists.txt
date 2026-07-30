@@ -22,8 +22,8 @@ FetchContent_MakeAvailable(tracy)
 
 target_link_libraries(Foundation_Core PUBLIC fmt::fmt)
 
-if (FOUNDATION_CORE_USES_OS_ALLOC OR FOUNDATION_WITH_ASAN)
-    target_compile_definitions(Foundation_Core PUBLIC "FOUNDATION_CORE_USES_OS_ALLOC=1")
+if (FOUNDATION_OS_ALLOCATOR OR FOUNDATION_WITH_ASAN)
+    target_compile_definitions(Foundation_Core PUBLIC "FOUNDATION_OS_ALLOCATOR=1")
 else ()    
     set(MI_BUILD_STATIC ON CACHE BOOL "" FORCE)
     set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
@@ -35,7 +35,7 @@ else ()
     endif()
     FetchContent_MakeAvailable(mimalloc)
 
-    target_compile_definitions(Foundation_Core PUBLIC "FOUNDATION_CORE_USES_OS_ALLOC=0")
+    target_compile_definitions(Foundation_Core PUBLIC "FOUNDATION_OS_ALLOCATOR=0")
     target_link_libraries(Foundation_Core PUBLIC mimalloc-static)
 endif()
 
