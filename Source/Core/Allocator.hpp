@@ -33,9 +33,6 @@ namespace Foundation::Core
         virtual void Deallocate(pointer ptr) noexcept = 0;
         virtual pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) noexcept = 0;
 
-        virtual void QueryBudget(size_t& used, size_t& budget) const = 0;
-        virtual size_t QueryHeapUsage() const = 0;
-
         Arena AllocateArena(size_type size, size_t alignment) { return {Allocate(size, alignment), size}; }
         Arena AllocateArena(size_type size) { return {Allocate(size), size}; }
         void DeallocateArena(Arena arena)

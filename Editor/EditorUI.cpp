@@ -2685,13 +2685,6 @@ void FRunningImGui()
                         ImGui::TreePop();
                     }
                 }
-                {
-                    size_t used, budget;
-                    GLOBAL_ALLOC->QueryBudget(used, budget);
-                    size_t heapUsage = GLOBAL_ALLOC->QueryHeapUsage();
-                    ImGui::Text("CPU RSS Memory: %.1f MB", BytesToMiB(used));
-                    ImGui::Text("CPU Heap Usage: %.1f MB", BytesToMiB(heapUsage));
-                }
                 ImGui::TreePop();
             }
             if (ImGui::TreeNodeEx(PSI_SITEMAP " GPU Scene", ImGuiTreeNodeFlags_DefaultOpen))

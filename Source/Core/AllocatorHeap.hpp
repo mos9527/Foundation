@@ -15,12 +15,5 @@ namespace Foundation::Core {
         pointer Allocate(size_type size, size_t alignment) noexcept override;
         void Deallocate(pointer ptr) noexcept override;
         pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) noexcept override;
-        /**
-	     * @note Queried values will reflect the global state of the underlying allocator.
-	     */
-        void QueryBudget(size_t& used, size_t& budget) const override;
-        size_t QueryHeapUsage() const override;
-    private:
-        Atomic<size_t> mHeapUsage{0};
 	};    
 }

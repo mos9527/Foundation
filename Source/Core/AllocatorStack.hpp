@@ -43,13 +43,6 @@ namespace Foundation::Core
             return nullptr;
         }
         constexpr operator bool() const noexcept { return mMemory != nullptr; }
-
-        void QueryBudget(size_t& used, size_t& budget) const override
-        {
-            used = mCurrent - reinterpret_cast<size_type>(mMemory);
-            budget = mEnd - reinterpret_cast<size_type>(mMemory);
-        }
-        size_t QueryHeapUsage() const override { return 0; }
     private:
         pointer mMemory{nullptr};
         Atomic<size_type> mCurrent{};

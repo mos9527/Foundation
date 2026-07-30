@@ -18,18 +18,6 @@ namespace Foundation::Core {
     {
         constexpr int kTracyAllocatorCallstackDepth = 16;
         constexpr const char* kTracyAllocatorName = "AllocatorHeap";
-
-#if FOUNDATION_OS_ALLOCATOR
-        size_t AllocationSize(pointer ptr)
-        {
-            return ptr ? _msize(ptr) : 0;
-        }
-#else
-        size_t AllocationSize(pointer ptr)
-        {
-            return ptr ? mi_usable_size(ptr) : 0;
-        }
-#endif
     }
 
     pointer AllocatorHeap::Allocate(size_type size, size_t alignment) noexcept
@@ -41,7 +29,6 @@ namespace Foundation::Core {
 #endif
         if (ptr)
         {
-            mHeapUsage.fetch_add(AllocationSize(ptr), std::memory_order_relaxed);
             TracyAllocNS(ptr, size, kTracyAllocatorCallstackDepth, kTracyAllocatorName);
         }
         return ptr;
@@ -55,7 +42,6 @@ namespace Foundation::Core {
             Deallocate(ptr);
             return nullptr;
         }
-        size_t oldSize = AllocationSize(ptr);
 #if FOUNDATION_OS_ALLOCATOR
         auto* newPtr = aligned_realloc(ptr, new_size, alignment);
 #else
@@ -63,40 +49,16 @@ namespace Foundation::Core {
 #endif
         if (newPtr)
         {
-            size_t newSize = AllocationSize(newPtr);
-            if (newSize >= oldSize)
-                mHeapUsage.fetch_add(newSize - oldSize, std::memory_order_relaxed);
-            else
-                mHeapUsage.fetch_sub(oldSize - newSize, std::memory_order_relaxed);
             if (ptr)
                 TracyFreeNS(ptr, kTracyAllocatorCallstackDepth, kTracyAllocatorName);
             TracyAllocNS(newPtr, new_size, kTracyAllocatorCallstackDepth, kTracyAllocatorName);
         }
         return newPtr;
-    }
-    void AllocatorHeap::QueryBudget(size_t& used, size_t& budget) const
-    {
-#if FOUNDATION_OS_ALLOCATOR
-        used = budget = 0;
-#else
-        size_t elapsed_msecs,  user_msecs,  system_msecs,
-                                     current_rss,  peak_rss,
-                                     current_commit,  peak_commit,  page_faults;
-        mi_process_info(&elapsed_msecs, &user_msecs, &system_msecs, &current_rss, &peak_rss,
-                        &current_commit, &peak_commit, &page_faults);
-        used = current_rss;
-        budget = SIZE_MAX; // No budget info available
-#endif
-    }
-    size_t AllocatorHeap::QueryHeapUsage() const
-    {
-        return mHeapUsage.load(std::memory_order_relaxed);
-    }
+    }    
     void AllocatorHeap::Deallocate(pointer ptr) noexcept
     {
         if (ptr)
         {
-            mHeapUsage.fetch_sub(AllocationSize(ptr), std::memory_order_relaxed);
             TracyFreeNS(ptr, kTracyAllocatorCallstackDepth, kTracyAllocatorName);
         }
 #if FOUNDATION_OS_ALLOCATOR
