@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <functional>
 #include <list>
 #include <map>
 #include <numeric>

@@ -86,10 +86,12 @@ namespace Foundation::Core
 #else
 #define FOUNDATION_TRAP() __builtin_trap()
 #endif
-
+#define FOUNDATION_STRINGIFY_2(x) #x
+#define FOUNDATION_STRINGIFY(x) FOUNDATION_STRINGIFY_2(x)
+#define FOUNDATION_SOURCE_LOC __FILE__ "@" FOUNDATION_STRINGIFY(__LINE__)
 #define CHECK(expr) do { \
     if (!(expr)) [[unlikely]] { \
-        LOG(Core, LogError, "Check failed: {}", #expr); \
+        LOG(Core, LogError, "Check failed: {}", FOUNDATION_SOURCE_LOC ":" #expr); \
         FOUNDATION_TRAP(); \
         std::terminate(); \
     } \
@@ -97,6 +99,7 @@ namespace Foundation::Core
 
 #define CHECK_MSG(expr, format_str, ...) do { \
     if (!(expr)) [[unlikely]] { \
+        LOG(Core, LogError, "Check failed: {}", FOUNDATION_SOURCE_LOC ":" #expr); \
         LOG(Core, LogError, format_str __VA_OPT__(,) __VA_ARGS__); \
         FOUNDATION_TRAP(); \
         std::terminate(); \

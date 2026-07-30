@@ -16,37 +16,11 @@ namespace Foundation::Core
         High,
     };
     inline constexpr size_t kJobPriorityCount = static_cast<size_t>(JobPriority::High) + 1;
-
-    /**
-     * @brief Runtime execution policy for @ref ThreadPool::ParallelFor, mirroring std::execution's
-     *        seq/par — but chosen at runtime, so a caller can downgrade to serial with a one-argument
-     *        change (debugging, determinism, or tiny workloads) instead of a compile-time switch.
-     */
-    enum class ExecutionPolicy
-    {
-        Seq, // run inline on the calling thread, in index order
-        Par, // fork-join across the pool (default)
-    };
-
-    /**
-     * @brief Job interface for use with @ref ThreadPool
-     *
-     * Custom implementations of @ref ThreadPoolJob can be constructed in-place with @ref ThreadPool::PushImpl
-     * For simple, stateless jobs, consider using @ref ThreadPool::Push with a lambda instead.
-     */
     struct Job
     {
         virtual ~Job() = default;
         virtual void Execute(size_t id) noexcept = 0;
     };
-    /**
-     * @brief State-carrying lambda job for use with @ref ThreadPool
-     *
-     * @note This is not meant to be used directly. Instead, use @ref ThreadPool::Push with a lambda function.
-     *
-     * @tparam Lambda Type of the lambda function.
-     * @tparam ReturnType Return type of the lambda function.
-     */
     template <typename Lambda, typename ReturnType, typename... Args>
     struct LambdaJob final : public Job
     {
@@ -148,21 +122,8 @@ namespace Foundation::Core
             return std::move(fut);
         }
 
-    public:
-        /**
-         * @brief Construct a thread pool with the given number of worker threads.
-         * @param numThreads Number of worker threads to spawn.
-         * @param maxTasks Max number of tasks that can be queued per priority. Must be a power of two - see @ref getTaskSize
-         * @param alloc Allocator to use for internal and job allocations
-         * @param name Prefix for worker thread names ("name@id")
-         */
+    public:       
         ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name = "ThreadPool");
-        /**
-         * @brief Push a job implementing @ref ThreadPoolJob to the thread pool.
-         * @note This by itself does not return a future or any way to get the result of the job
-         *       It's up to the implementation of the job to provide a way to get the result.
-         *       See also @ref ThreadPoolLambdaJob
-         */
         template <typename T, typename... Args>
             requires std::is_base_of_v<Job, T>
         void PushImpl(JobPriority priority, Args&&... args)

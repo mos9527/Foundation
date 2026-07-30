@@ -22,7 +22,7 @@ FetchContent_MakeAvailable(tracy)
 
 target_link_libraries(Foundation_Core PUBLIC fmt::fmt)
 
-if (FOUNDATION_CORE_USES_OS_ALLOC)
+if (FOUNDATION_CORE_USES_OS_ALLOC OR FOUNDATION_WITH_ASAN)
     target_compile_definitions(Foundation_Core PUBLIC "FOUNDATION_CORE_USES_OS_ALLOC=1")
 else ()    
     set(MI_BUILD_STATIC ON CACHE BOOL "" FORCE)

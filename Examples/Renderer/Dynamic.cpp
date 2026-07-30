@@ -151,7 +151,7 @@ int main(int argc, char** argv)
         FImportedMesh groundMesh = Examples_MakePlaneMesh(kGroundExtent, kGroundY, GLOBAL_ALLOC);
         groundMesh.Optimize();
         groundMesh.ClusterizeDAG();
-
+        groundMesh.Quantize();
         CHECK(gpu.Upload(groundMesh, ground) == GPUScene::Result::Ready);
         CHECK(gpu.Allocate(kWaterVerts, kWaterIndices, water, true) == GPUScene::Result::Ready);
     }

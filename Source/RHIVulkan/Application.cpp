@@ -176,6 +176,21 @@ RHIApplicationScopedHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice:
 RHIDevice* VulkanApplication::GetDevice(Handle handle) const { return mStorage.GetObjectPtr<RHIDevice>(handle); }
 void VulkanApplication::DestroyDevice(Handle handle) { mStorage.DestroyObject(handle); }
 
+static String JoinPath(StringView a, StringView b)
+{
+    const char* seps[] = {"/", "\\"};
+    for (auto sep : seps)
+    {
+        if (!a.empty() && a.ends_with(sep))
+            a.remove_suffix(1);
+    }
+    if (a.empty())
+        return b.data();
+    if (b.empty())
+        return a.data();
+    return Format("{}/{}", a, b);
+}
+
 String VulkanApplication::ResolveRelativePathBase(StringView path) const
 {
     const char* basePath = SDL_GetBasePath();
@@ -183,7 +198,7 @@ String VulkanApplication::ResolveRelativePathBase(StringView path) const
         return String(path);
     if (path.empty())
         return String(basePath);
-    return Format("{}/{}", basePath, path);
+    return JoinPath(basePath, path);
 }
 
 String VulkanApplication::ResolveRelativePathData(StringView path) const
@@ -193,7 +208,7 @@ String VulkanApplication::ResolveRelativePathData(StringView path) const
         return String(path);
     if (path.empty())
         return String(basePath);
-    return Format("{}/{}", basePath, path);
+    return JoinPath(basePath, path);
 }
 
 Optional<RHIFileInfo> VulkanApplication::QueryFileInfo(StringView path) const

@@ -6,13 +6,9 @@
 #include <malloc.h>
 #endif
 #ifndef aligned_alloc
-#if defined(_MSC_VER) // Thanks as always.
 void* aligned_alloc(size_t alignment, size_t size) { return _aligned_malloc(size, alignment); }
 void aligned_free(void* ptr) { _aligned_free(ptr); }
 void* aligned_realloc(void* ptr, size_t size, size_t alignment) { return _aligned_realloc(ptr, size, alignment); }
-#else
-static_assert(false, "aligned_alloc not defined on this platform");
-#endif
 #endif 
 #endif
 #include <tracy/Tracy.hpp>
@@ -115,10 +111,3 @@ namespace Foundation::Core {
         return &GlobalAllocatorHeap;
     }
 }
-
-// Overriding default new/delete operators to use the Global Allocator
-// XXX: These shouldn't be used by principle. But 3rdparty libs use those a lot
-// TODO: Get rid of these once we can ensure that they get proper patches to use our own containers.
-void* operator new(std::size_t n) { return GLOBAL_ALLOC->Allocate(n); }
-void* operator new(size_t const n, std::nothrow_t const&) noexcept { return GLOBAL_ALLOC->Allocate(n); }
-void operator delete(void* p) { GLOBAL_ALLOC->Deallocate(p); }

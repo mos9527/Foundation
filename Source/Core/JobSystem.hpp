@@ -269,19 +269,13 @@ namespace Foundation::Core
         }
 
         template <typename Fn>
-        JobBarrier ParallelFor(ExecutionPolicy policy, StringView name, size_t count, size_t step, Fn&& function)
+        JobBarrier ParallelFor(StringView name, size_t count, size_t step, Fn&& function)
         {
             CHECK_MSG(step != 0, "ParallelFor grain size must be non-zero");
             if (step == 0)
                 return CreateBarrier();
             if (count == 0)
                 return CreateBarrier();
-            if (policy == ExecutionPolicy::Seq || count <= step || mThreads.empty())
-            {
-                JobContext context(mThreads.size(), nullptr);
-                std::invoke(function, size_t{0}, count, context);
-                return CreateBarrier();
-            }
             JobBarrier barrier = CreateBarrier();
             JobHandle completion =
                 Dispatch(name, count, step, JobPriority::Normal, std::forward<Fn>(function));

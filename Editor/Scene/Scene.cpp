@@ -1268,7 +1268,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             scene.mTables.textures[i].name = internString(data->textures[i].name);
 
         textureJobs = jobs->ParallelFor(
-            ExecutionPolicy::Par, "SceneTexture", data->textures_count,
+            "SceneTexture", data->textures_count,
             GetSceneJobGrain(*jobs, data->textures_count),
             [&](size_t begin, size_t end, JobContext&)
             {
@@ -1453,7 +1453,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             }
         }
         geometryJobs = jobs->ParallelFor(
-            ExecutionPolicy::Par, "SceneGeometry", geometryTasks.size(), GetSceneJobGrain(*jobs, geometryTasks.size()),
+            "SceneGeometry", geometryTasks.size(), GetSceneJobGrain(*jobs, geometryTasks.size()),
             [&](size_t begin, size_t end, JobContext&)
             {
                 for (size_t i = begin; i < end; ++i)
@@ -1558,7 +1558,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
     if (!blobJobs.empty())
     {
         jobs->Wait(jobs->ParallelFor(
-            ExecutionPolicy::Par, "SceneBlob", blobJobs.size(), GetSceneJobGrain(*jobs, blobJobs.size()),
+            "SceneBlob", blobJobs.size(), GetSceneJobGrain(*jobs, blobJobs.size()),
             [&](size_t begin, size_t end, JobContext&)
             {
                 for (size_t i = begin; i < end; ++i)

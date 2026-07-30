@@ -2658,7 +2658,7 @@ GPUScene::Result GPUSceneImpl::UploadEnvironmentMap(FTexture const& source)
 
     Vector<float> f(width * height, mAllocator);
     size_t const grain = std::max<size_t>(1u, height / std::max<size_t>(mJobs->GetMaxConcurrency() * 4u, 1u));
-    mJobs->Wait(mJobs->ParallelFor(ExecutionPolicy::Par, "EnvLuminance", height, grain,
+    mJobs->Wait(mJobs->ParallelFor("EnvLuminance", height, grain,
                                    [&](size_t begin, size_t end, JobContext&)
                                    {
                                        for (size_t y = begin; y < end; ++y)

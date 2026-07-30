@@ -134,7 +134,7 @@ void PrefilterEnvmapSH9(const FTexture& source, Span<float3> sh9, JobSystem* job
     Vector<SHRow> rows(height, SHRow{}, alloc);
     size_t const grain = std::max<size_t>(1u, height / std::max<size_t>(jobs->GetMaxConcurrency() * 4u, 1u));
     jobs->Wait(jobs->ParallelFor(
-        ExecutionPolicy::Par, "EnvSH", height, grain,
+        "EnvSH", height, grain,
         [&](size_t begin, size_t end, JobContext&)
         {
             for (size_t y = begin; y < end; ++y)
@@ -206,7 +206,7 @@ FTexture PrefilterEnvmapSpecular(const FTexture& source, JobSystem* jobs, Alloca
         size_t const grain =
             std::max<size_t>(1u, mipHeight / std::max<size_t>(jobs->GetMaxConcurrency() * 4u, 1u));
         jobs->Wait(jobs->ParallelFor(
-            ExecutionPolicy::Par, "EnvSpecular", mipHeight, grain,
+            "EnvSpecular", mipHeight, grain,
             [&](size_t begin, size_t end, JobContext&)
             {
                 for (size_t y = begin; y < end; ++y)
