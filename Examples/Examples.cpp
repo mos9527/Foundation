@@ -773,6 +773,9 @@ void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx)
     if (psoCache)
         SavePipelineCache(*ctx.app, *psoCache, cachePath, GLOBAL_ALLOC);
 
+    ctx.renderer.reset();
+    ctx.presenter.reset();
+
     if (window)
         SDL_DestroyWindow(window);
 }

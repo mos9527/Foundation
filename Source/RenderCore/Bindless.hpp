@@ -34,6 +34,9 @@ namespace Foundation::RenderCore
         RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> mDescLayout;
         RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mDescPool;
         RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> mDescSet;
+        RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> mStorageDescLayout;
+        RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mStorageDescPool;
+        RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> mStorageDescSet;
 
         Mutex mDescMutex;
         uint32_t mActiveBindings{0};
@@ -44,6 +47,7 @@ namespace Foundation::RenderCore
         RHIDeviceIdleGuard mIdleGuard;
 
         uint32_t UpdateDescriptor(uint32_t id, RHITextureView* view);
+        void UpdateStorageDescriptor(uint32_t id, RHITextureView* view);
         void AddStats(Binding const& binding);
         void RemoveStats(Binding const& binding);
     public:
@@ -85,5 +89,9 @@ namespace Foundation::RenderCore
 
         RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout() const { return mDescLayout.Get(); }
         RHIDeviceDescriptorSet* GetDescriptorSet() const { return mDescSet.Get(); }
+        RHIDeviceDescriptorSetLayout* GetStorageDescriptorSetLayout() const { return mStorageDescLayout.Get(); }
+        RHIDeviceDescriptorSet* GetStorageDescriptorSet() const { return mStorageDescSet.Get(); }
+        void UpdateStorageView(uint32_t id, RHITextureView* view);
+        void ClearStorageView(uint32_t id) { UpdateStorageView(id, nullptr); }
     };
 }

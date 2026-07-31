@@ -164,6 +164,20 @@ struct GPUSceneImpl
     uint32_t mDynamicStagingFrameSize{0};
     uint32_t mDynamicStagingCursor{0};
     Vector<RHICommandList::CopyBufferRegion> mDynamicUploadRegions;
+    struct DynamicTextureUpload
+    {
+        RHITexture* texture{nullptr};
+        bool initialized{false};
+        RHICommandList::CopyImageRegion region{};
+    };
+    Vector<DynamicTextureUpload> mDynamicTextureUploads;
+    struct DynamicTextureGPUUpdate
+    {
+        uint32_t encodedSlot;
+        GPUScene::DynamicTextureGPUAccess access;
+    };
+    Vector<DynamicTextureGPUUpdate> mDynamicTextureGPUUpdates;
+    Vector<uint32_t> mDynamicTextures;
     Vector<uint32_t> mDynamicGeometries; // index into mGeometry
     uint32_t mLastRefitCount{0};
     uint32_t mLastRebuildCount{0};
@@ -217,6 +231,10 @@ struct GPUSceneImpl
         bool live{false};
         bool pinned{false}; // do not recycle. used for LUTs, defaults, and env map.
         bool resident{false}; // readable by device
+        bool dynamicTexture{false};
+        bool isGpu{false};
+        bool initialized{false};
+        RHITextureDesc textureDesc{};
     };
     Vector<Texture> mTexture2DSlots;
     Vector<Texture> mTexture3DSlots;
@@ -226,6 +244,10 @@ struct GPUSceneImpl
         return is3D ? mTexture3DSlots : mTexture2DSlots;
     }
     [[nodiscard]] BindlessPool& TexturePool(bool is3D) { return is3D ? mTexture3DPool : mTexture2DPool; }
+    [[nodiscard]] BindlessPool const& TexturePool(bool is3D) const
+    {
+        return is3D ? mTexture3DPool : mTexture2DPool;
+    }
     void FreeTextureSlot(bool is3D, uint32_t slot);
     [[nodiscard]] BindlessPool& SelectTexturePool(RHITextureDimension viewDimension);
     [[nodiscard]] BindlessPool const& SelectTexturePool(RHITextureDimension viewDimension) const;
@@ -353,6 +375,7 @@ struct GPUSceneImpl
     Result Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu);
     Result Allocate(uint32_t vertexCount, uint32_t indexCount, uint32_t leafCount,
                     GeometryHandle& outHandle, bool isGpu);
+    Result Allocate(RHITextureDesc const& desc, const char* debugName, TextureHandle& outHandle, bool isGpu);
     /* Curve */
     Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
     /* Texture */
@@ -382,6 +405,7 @@ struct GPUSceneImpl
     [[nodiscard]] uint32_t AllocateDynamicStaging(uint32_t size, uint32_t alignment);
     void AllocateDynamicBLAS(Geometry& g);
     [[nodiscard]] bool HasDynamicGeometry() const { return !mDynamicGeometries.empty(); }
+    [[nodiscard]] bool HasDynamicTextures() const { return !mDynamicTextures.empty(); }
     [[nodiscard]] bool HasCurveGeometry() const
     {
         for (Geometry const& g : mGeometry)
@@ -391,14 +415,21 @@ struct GPUSceneImpl
         }
         return false;
     }
-    void BeginDynamicGeometryUpdate();
-    void UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
+    void BeginDynamicUpdate();
+    void UpdateDynamicMeshGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
     void UpdateDynamicCurveGPU(GeometryHandle handle, bool updateVertices, bool updateIndices, bool updateLeaves);
-    void UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices, Span<const uint32_t> indices);
+    void UpdateDynamicMeshCPU(GeometryHandle handle, Span<const FQVertex> vertices, Span<const uint32_t> indices);
     void UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurveDOTSVertex> vertices,
                                Span<const uint32_t> indices, Span<const FCurveLeaf> leaves);
-    void EndDynamicGeometryUpdate();
+    void UpdateDynamicTextureCPU(TextureHandle handle, FTexture const& source);
+    [[nodiscard]] uint32_t UpdateDynamicTextureGPU(TextureHandle handle, GPUScene::DynamicTextureGPUAccess access);
+    void EndDynamicUpdate();
     void UploadDynamicGeometryCPU(RHICommandList* cmd);
+    void UploadDynamicTexturesCPU(RHICommandList* cmd);
+    void BeginDynamicTextureGPU(RHICommandList* cmd, bool is3D, GPUScene::GPUScene::DynamicTextureGPUAccess access);
+    void EndDynamicTextureGPU(RHICommandList* cmd, bool is3D, GPUScene::DynamicTextureGPUAccess access);
+    [[nodiscard]] RHITexture* ResolveDynamicTextureGPU(TextureHandle handle, RHITextureUsage requiredUsage);
+    void CompleteDynamicTextureGPU(TextureHandle handle, GPUScene::DynamicTextureGPUAccess access);
     void BuildBLAS(RHICommandList* cmd);
 };
 
@@ -442,7 +473,9 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
                    {.maxBindings = kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack}),
     mTexture2DSlots(allocator), mTexture3DSlots(allocator), mBLASes(allocator), mBLASBuffers(allocator),
     mBLASFreelist(allocator), mCurveBLASes(allocator), mCurveBLASBuffers(allocator), mCurveBLASFreelist(allocator),
-    mGeometry(allocator), mGeometryFreelist(allocator), mDynamicUploadRegions(allocator), mDynamicGeometries(allocator),
+    mGeometry(allocator), mGeometryFreelist(allocator), mDynamicUploadRegions(allocator),
+    mDynamicTextureUploads(allocator), mDynamicTextureGPUUpdates(allocator), mDynamicTextures(allocator),
+    mDynamicGeometries(allocator),
     mUploadGeometryQueue(std::bit_ceil(static_cast<size_t>(desc.geometryBudget) + 1), allocator),
     mUploadTextureQueue(std::bit_ceil(static_cast<size_t>(desc.texturesBudget) + 1), allocator),
     mUploadBufferQueue(std::bit_ceil(static_cast<size_t>(kGPUSceneBufferQueueCapacity)), allocator),
@@ -452,9 +485,6 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
     CHECK(mDevice != nullptr);
     CHECK(mJobs != nullptr);
     CHECK(mAllocator != nullptr);
-    CHECK_MSG(desc.dynamicGeometryBudget != 0 || desc.dynamicStagingBudget == 0,
-              "dynamicStagingBudget requires dynamicGeometryBudget");
-
     static_assert(sizeof(GSLightBVHNode) == 48);
     mGeometry.reserve(desc.geometryBudget);
     mBLASes.reserve(desc.geometryBudget);
@@ -496,23 +526,22 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
              .size = desc.dynamicGeometryBudget});
         mDynamicPrimitiveBuffer->DebugSetObjectName("Dynamic Primitive Buffer");
         mDynamicPrimitiveAlloc = mDevice->CreateVirtualAllocator(desc.dynamicGeometryBudget);
-        if (desc.dynamicStagingBudget != 0)
-        {
-            CHECK_MSG(desc.dynamicStagingFramesInFlight >= 1, "dynamicStagingFramesInFlight must be >= 1");
-            mDynamicStagingFrames = desc.dynamicStagingFramesInFlight + 1u;
-            mDynamicStagingFrameSize = desc.dynamicStagingBudget;
-            size_t const stagingBytes = static_cast<size_t>(desc.dynamicStagingBudget) * mDynamicStagingFrames;
-            mDynamicStagingBuffer = mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
-                                                                        .hostAccess = RHIResourceHostAccess::WriteOnly,
-                                                                        .coherent = true,
-                                                                        .staging = true},
-                                                           .usage = RHIBufferUsageBits::TransferSource,
-                                                           .size = stagingBytes});
-            mDynamicStagingBuffer->DebugSetObjectName("Dynamic Primitive Staging");
-            mDynamicStagingMapped = mDynamicStagingBuffer->Map<char>();
-        }
-        LOG(GPUScene, LogDebug, "Dynamic geometry: {} MiB device + {} MiB staging per frame.",
-            desc.dynamicGeometryBudget / (1u << 20), desc.dynamicStagingBudget / (1u << 20));
+        LOG(GPUScene, LogDebug, "Dynamic geometry: {} MiB device budget.", desc.dynamicGeometryBudget / (1u << 20));
+    }
+    if (desc.dynamicStagingBudget != 0)
+    {
+        CHECK_MSG(desc.dynamicStagingFramesInFlight >= 1, "dynamicStagingFramesInFlight must be >= 1");
+        mDynamicStagingFrames = desc.dynamicStagingFramesInFlight + 1u;
+        mDynamicStagingFrameSize = desc.dynamicStagingBudget;
+        size_t const stagingBytes = static_cast<size_t>(desc.dynamicStagingBudget) * mDynamicStagingFrames;
+        mDynamicStagingBuffer = mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
+                                                                    .hostAccess = RHIResourceHostAccess::WriteOnly,
+                                                                    .coherent = true,
+                                                                    .staging = true},
+                                                       .usage = RHIBufferUsageBits::TransferSource,
+                                                       .size = stagingBytes});
+        mDynamicStagingBuffer->DebugSetObjectName("Dynamic Texture Staging");
+        mDynamicStagingMapped = mDynamicStagingBuffer->Map<char>();
     }
     mTLASBuffer =
         mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
@@ -2214,6 +2243,53 @@ GPUScene::Result GPUSceneImpl::Allocate(uint32_t vertexCount, uint32_t indexCoun
     return Result::Ready;
 }
 
+GPUScene::Result GPUSceneImpl::Allocate(RHITextureDesc const& sourceDesc, const char* debugName, TextureHandle& outHandle, bool isGpu)
+{
+    if (outHandle.IsValid())
+        return Result::InvalidInput;
+    if (sourceDesc.dimension == RHITextureDimension::E1D || sourceDesc.extent.x == 0 || sourceDesc.extent.y == 0 ||
+        sourceDesc.extent.z == 0 || sourceDesc.mipLevels == 0 || sourceDesc.arrayLayers == 0 ||
+        (isGpu && sourceDesc.mipLevels != 1))
+        return Result::InvalidInput;
+    if (isGpu && !(sourceDesc.usage & (RHITextureUsageBits::StorageImage | RHITextureUsageBits::RenderTarget)))
+        return Result::InvalidInput;
+
+    bool const is3D = IsTexture3DView(sourceDesc.dimension);
+    RHITextureDesc desc = sourceDesc;
+    desc.resource.shared |= isGpu;
+    desc.usage |= RHITextureUsageBits::SampledImage;
+    auto texture = mDevice->CreateTexture(desc);
+    if (debugName)
+        texture->DebugSetObjectName(debugName);
+    auto view = texture->CreateTextureView(
+        {.format = desc.format,
+         .dimension = desc.dimension,
+         .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0, desc.mipLevels, 0,
+                                                     desc.arrayLayers)});
+
+    BindlessPool& pool = TexturePool(is3D);
+    Vector<Texture>& slots = TextureSlots(is3D);
+    std::lock_guard<Mutex> lock(mUploadStateMutex);
+    uint32_t const slot = pool.Allocate(std::move(texture), std::move(view));
+    if (slot >= slots.size())
+        slots.resize(slot + 1);
+    Texture& state = slots[slot];
+    uint32_t const version = state.version;
+    state = Texture{};
+    state.version = version;
+    state.live = true;
+    state.pinned = true; // Dynamic handles have no separate public free operation.
+    state.resident = true;
+    state.dynamicTexture = true;
+    state.isGpu = isGpu;
+    state.textureDesc = desc;
+    if (isGpu && (desc.usage & RHITextureUsageBits::StorageImage))
+        pool.UpdateStorageView(slot, pool.GetView(slot));
+    mDynamicTextures.push_back(slot | (is3D ? 0x80000000u : 0u));
+    outHandle = {slot, version, is3D};
+    return Result::Ready;
+}
+
 uint32_t GPUSceneImpl::AllocateDynamicStaging(uint32_t size, uint32_t alignment)
 {
     CHECK_MSG(mDynamicStagingMapped, "CPU dynamic updates require GPUSceneDesc::dynamicStagingBudget");
@@ -2224,26 +2300,27 @@ uint32_t GPUSceneImpl::AllocateDynamicStaging(uint32_t size, uint32_t alignment)
     return mDynamicStagingFrameIndex * mDynamicStagingFrameSize + offset;
 }
 
-void GPUSceneImpl::BeginDynamicGeometryUpdate()
+void GPUSceneImpl::BeginDynamicUpdate()
 {
-    CHECK_MSG(!mDynamicIsUpdate, "BeginDynamicGeometryUpdate called while a window is already open");
+    CHECK_MSG(!mDynamicIsUpdate, "BeginDynamicUpdate called while a window is already open");
     CHECK_MSG(mDynamicUploadRegions.empty(),
-              "BeginDynamicGeometryUpdate called before pending CPU updates were uploaded");
+              "BeginDynamicUpdate called before pending CPU updates were uploaded");
     mDynamicIsUpdate = true;
     if (mDynamicStagingFrames != 0)
         mDynamicStagingFrameIndex = (mDynamicStagingFrameIndex + 1u) % mDynamicStagingFrames;
     mDynamicStagingCursor = 0;
 }
 
-void GPUSceneImpl::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices)
+void GPUSceneImpl::UpdateDynamicMeshGPU(GeometryHandle handle, bool updateVertices, bool updateIndices)
 {
     CHECK_MSG(mDynamicIsUpdate,
-              "UpdateDynamicGeometryGPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate "
+              "UpdateDynamicMeshGPU must be called inside a BeginDynamicUpdate / EndDynamicUpdate "
               "window");
     Geometry* g = ResolveGeometry(handle);
-    CHECK_MSG(g && g->dynamic, "UpdateDynamicGeometryGPU on a non-dynamic or invalid geometry handle");
-    CHECK_MSG(g->isGpu, "UpdateDynamicGeometryGPU called on CPU-authored geometry");
-    CHECK_MSG(updateVertices || updateIndices, "UpdateDynamicGeometryGPU requires at least one updated range");
+    CHECK_MSG(g && g->dynamic && g->type == kGSInstanceTypeMesh,
+              "UpdateDynamicMeshGPU on a non-dynamic mesh or invalid geometry handle");
+    CHECK_MSG(g->isGpu, "UpdateDynamicMeshGPU called on CPU-authored geometry");
+    CHECK_MSG(updateVertices || updateIndices, "UpdateDynamicMeshGPU requires at least one updated range");
     g->dirty = true;
     g->dynamicIndicesDirty |= updateIndices;
 }
@@ -2251,7 +2328,7 @@ void GPUSceneImpl::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVe
 void GPUSceneImpl::UpdateDynamicCurveGPU(GeometryHandle handle, bool updateVertices, bool updateIndices, bool updateLeaves)
 {
     CHECK_MSG(mDynamicIsUpdate,
-              "UpdateDynamicCurveGPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+              "UpdateDynamicCurveGPU must be called inside a BeginDynamicUpdate / EndDynamicUpdate window");
     Geometry* g = ResolveGeometry(handle);
     CHECK_MSG(g && g->dynamic && g->type == kGSInstanceTypeCurve,
               "UpdateDynamicCurveGPU on a non-dynamic curve or invalid geometry handle");
@@ -2262,16 +2339,17 @@ void GPUSceneImpl::UpdateDynamicCurveGPU(GeometryHandle handle, bool updateVerti
     g->dynamicIndicesDirty |= updateIndices;
 }
 
-void GPUSceneImpl::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices,
-                                            Span<const uint32_t> indices)
+void GPUSceneImpl::UpdateDynamicMeshCPU(GeometryHandle handle, Span<const FQVertex> vertices,
+                                        Span<const uint32_t> indices)
 {
     CHECK_MSG(mDynamicIsUpdate,
-              "UpdateDynamicGeometryCPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate "
+              "UpdateDynamicMeshCPU must be called inside a BeginDynamicUpdate / EndDynamicUpdate "
               "window");
     Geometry* g = ResolveGeometry(handle);
-    CHECK_MSG(g && g->dynamic, "UpdateDynamicGeometryCPU on a non-dynamic or invalid geometry handle");
-    CHECK_MSG(!g->isGpu, "CPU-authored UpdateDynamicGeometryCPU called on GPU-authored geometry");
-    CHECK_MSG(!vertices.empty() || !indices.empty(), "UpdateDynamicGeometryCPU requires at least one updated range");
+    CHECK_MSG(g && g->dynamic && g->type == kGSInstanceTypeMesh,
+              "UpdateDynamicMeshCPU on a non-dynamic mesh or invalid geometry handle");
+    CHECK_MSG(!g->isGpu, "CPU-authored UpdateDynamicMeshCPU called on GPU-authored geometry");
+    CHECK_MSG(!vertices.empty() || !indices.empty(), "UpdateDynamicMeshCPU requires at least one updated range");
     CHECK_MSG(vertices.empty() || vertices.size() == g->mesh.vertices.count,
               "Dynamic vertex update has {} vertices; expected {}", vertices.size(), g->mesh.vertices.count);
     CHECK_MSG(indices.empty() || indices.size() == g->mesh.indices.count,
@@ -2299,7 +2377,7 @@ void GPUSceneImpl::UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurv
                                          Span<const uint32_t> indices, Span<const FCurveLeaf> leaves)
 {
     CHECK_MSG(mDynamicIsUpdate,
-              "UpdateDynamicCurveCPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+              "UpdateDynamicCurveCPU must be called inside a BeginDynamicUpdate / EndDynamicUpdate window");
     Geometry* g = ResolveGeometry(handle);
     CHECK_MSG(g && g->dynamic && g->type == kGSInstanceTypeCurve,
               "UpdateDynamicCurveCPU on a non-dynamic curve or invalid geometry handle");
@@ -2338,9 +2416,79 @@ void GPUSceneImpl::UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurv
     g->dirty = true;
 }
 
-void GPUSceneImpl::EndDynamicGeometryUpdate()
+void GPUSceneImpl::UpdateDynamicTextureCPU(TextureHandle handle, FTexture const& source)
 {
-    CHECK_MSG(mDynamicIsUpdate, "EndDynamicGeometryUpdate called without a matching BeginDynamicGeometryUpdate");
+    CHECK_MSG(mDynamicIsUpdate,
+              "UpdateDynamicTextureCPU must be called inside a BeginDynamicUpdate / EndDynamicUpdate window");
+    Vector<Texture>& slots = TextureSlots(handle.is3D);
+    CHECK_MSG(handle.IsValid() && handle.index < slots.size() && slots[handle.index].live &&
+                  slots[handle.index].version == handle.version,
+              "UpdateDynamicTextureCPU on an invalid texture handle");
+    Texture& state = slots[handle.index];
+    CHECK_MSG(state.dynamicTexture, "UpdateDynamicTextureCPU requires a dynamically allocated texture");
+    CHECK_MSG(!state.isGpu, "CPU-authored UpdateDynamicTextureCPU called on GPU-authored texture");
+    CHECK_MSG(source.IsValid(), "UpdateDynamicTextureCPU source texture is invalid");
+    RHITextureDesc const sourceDesc = source.GetDesc();
+    CHECK_MSG(sourceDesc.dimension == state.textureDesc.dimension && sourceDesc.format == state.textureDesc.format &&
+                  sourceDesc.extent.x == state.textureDesc.extent.x && sourceDesc.extent.y == state.textureDesc.extent.y &&
+                  sourceDesc.extent.z == state.textureDesc.extent.z && sourceDesc.mipLevels == state.textureDesc.mipLevels &&
+                  sourceDesc.arrayLayers == state.textureDesc.arrayLayers,
+              "UpdateDynamicTextureCPU source description does not match the allocated texture");
+
+    BindlessPool& pool = TexturePool(handle.is3D);
+    RHITexture* texture = pool.GetResource(handle.index);
+    CHECK(texture);
+    uint32_t const alignment = GetTextureUploadAlignment(source);
+    for (uint32_t layer = 0; layer < source.GetNumLayers(); ++layer)
+    {
+        for (uint32_t mip = 0; mip < source.GetNumMips(); ++mip)
+        {
+            Span<unsigned char> subresource = source.GetSubresource(mip, layer);
+            uint32_t const srcOffset = AllocateDynamicStaging(static_cast<uint32_t>(subresource.size()), alignment);
+            std::memcpy(mDynamicStagingMapped + srcOffset, subresource.data(), subresource.size());
+            mDynamicTextureUploads.push_back(
+                {texture, state.initialized,
+                 {.srcBufferOffset = srcOffset,
+                  .dstLayer = {.aspect = RHITextureAspectFlagBits::Color,
+                               .mipLevel = mip,
+                               .baseArrayLayer = layer,
+                               .layerCount = 1},
+                  .extent = source.GetMipExtent(mip)}});
+        }
+    }
+    state.initialized = true;
+}
+
+uint32_t GPUSceneImpl::UpdateDynamicTextureGPU(TextureHandle handle, GPUScene::DynamicTextureGPUAccess access)
+{
+    CHECK_MSG(mDynamicIsUpdate,
+              "UpdateDynamicTextureGPU must be called inside a BeginDynamicUpdate / EndDynamicUpdate window");
+    Vector<Texture>& slots = TextureSlots(handle.is3D);
+    CHECK_MSG(handle.IsValid() && handle.index < slots.size() && slots[handle.index].live &&
+                  slots[handle.index].version == handle.version,
+              "UpdateDynamicTextureGPU on an invalid texture handle");
+    Texture& state = slots[handle.index];
+    CHECK_MSG(state.dynamicTexture, "UpdateDynamicTextureGPU requires a dynamically allocated texture");
+    CHECK_MSG(state.isGpu, "UpdateDynamicTextureGPU called on CPU-authored texture");
+    CHECK_MSG(access != GPUScene::DynamicTextureGPUAccess::RTV || !handle.is3D, "RTV updates only support 2D textures");
+    RHITextureUsage const requiredUsage = access == GPUScene::DynamicTextureGPUAccess::UAV
+        ? RHITextureUsageBits::StorageImage
+        : RHITextureUsageBits::RenderTarget;
+    CHECK_MSG(state.textureDesc.usage & requiredUsage, "Dynamic texture does not support the requested GPU access");
+    uint32_t const encodedSlot = handle.index | (handle.is3D ? 0x80000000u : 0u);
+    auto const existing = std::find_if(mDynamicTextureGPUUpdates.begin(), mDynamicTextureGPUUpdates.end(),
+                                       [encodedSlot](DynamicTextureGPUUpdate const& update)
+                                       { return update.encodedSlot == encodedSlot; });
+    CHECK_MSG(existing == mDynamicTextureGPUUpdates.end() || existing->access == access,
+              "A dynamic texture cannot be updated through UAV and RTV access in the same update window");
+    if (existing == mDynamicTextureGPUUpdates.end())
+        mDynamicTextureGPUUpdates.push_back({encodedSlot, access});
+    return handle.index;
+}
+
+void GPUSceneImpl::EndDynamicUpdate()
+{
+    CHECK_MSG(mDynamicIsUpdate, "EndDynamicUpdate called without a matching BeginDynamicUpdate");
     mDynamicIsUpdate = false;
 }
 
@@ -2348,7 +2496,7 @@ void GPUSceneImpl::UploadDynamicGeometryCPU(RHICommandList* cmd)
 {
     CHECK_MSG(!mDynamicIsUpdate,
               "UploadDynamicGeometryCPU recorded while a dynamic update is still in progress "
-              "(call EndDynamicGeometryUpdate before the upload pass)");
+              "(call EndDynamicUpdate before the upload pass)");
     CHECK(cmd);
     if (!mDynamicPrimitiveBuffer || mDynamicGeometries.empty())
         return;
@@ -2372,6 +2520,196 @@ void GPUSceneImpl::UploadDynamicGeometryCPU(RHICommandList* cmd)
     CHECK(mDynamicStagingBuffer);
     cmd->CopyBuffer(mDynamicStagingBuffer.Get(), mDynamicPrimitiveBuffer.Get(), mDynamicUploadRegions);
     mDynamicUploadRegions.clear();
+}
+
+void GPUSceneImpl::UploadDynamicTexturesCPU(RHICommandList* cmd)
+{
+    CHECK_MSG(!mDynamicIsUpdate,
+              "UploadDynamicTexturesCPU recorded while a dynamic update is still in progress "
+              "(call EndDynamicUpdate before the upload pass)");
+    CHECK(cmd);
+    if (!mDynamicStagingBuffer || mDynamicTextureUploads.empty())
+        return;
+
+    Vector<RHITexture*> transitioned(mAllocator);
+    for (DynamicTextureUpload const& upload : mDynamicTextureUploads)
+    {
+        if (std::find(transitioned.begin(), transitioned.end(), upload.texture) == transitioned.end())
+        {
+            transitioned.push_back(upload.texture);
+            cmd->BeginTransition();
+            cmd->SetImageTransition(
+                upload.texture,
+                {.srcAccess = upload.initialized ? RHIResourceAccessBits::ShaderRead : RHIResourceAccessBits{},
+                 .dstAccess = RHIResourceAccessBits::TransferWrite,
+                 .srcStage = upload.initialized
+                     ? RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader |
+                         RHIPipelineStageBits::RayTracingShader
+                     : RHIPipelineStageBits::TopOfPipe,
+                 .dstStage = RHIPipelineStageBits::Transfer,
+                 .srcImgLayout = upload.initialized ? RHITextureLayout::ShaderReadOnly : RHITextureLayout::Undefined,
+                 .dstImgLayout = RHITextureLayout::TransferDst,
+                 .srcImgRange = RHITextureSubresourceRange::Create(
+                     RHITextureAspectFlagBits::Color, 0, upload.texture->mDesc.mipLevels, 0,
+                     upload.texture->mDesc.arrayLayers)});
+            cmd->EndTransition();
+        }
+    }
+    for (DynamicTextureUpload const& upload : mDynamicTextureUploads)
+    {
+        cmd->CopyBufferToImage(mDynamicStagingBuffer.Get(), upload.texture, RHITextureLayout::TransferDst,
+                               Span<const RHICommandList::CopyImageRegion>{&upload.region, 1});
+    }
+    for (RHITexture* texture : transitioned)
+    {
+        cmd->BeginTransition();
+        cmd->SetImageTransition(
+            texture,
+            {.srcAccess = RHIResourceAccessBits::TransferWrite,
+             .dstAccess = RHIResourceAccessBits::ShaderRead,
+             .srcStage = RHIPipelineStageBits::Transfer,
+             .dstStage = RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader |
+                 RHIPipelineStageBits::RayTracingShader,
+             .srcImgLayout = RHITextureLayout::TransferDst,
+             .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+             .srcImgRange = RHITextureSubresourceRange::Create(
+                 RHITextureAspectFlagBits::Color, 0, texture->mDesc.mipLevels, 0, texture->mDesc.arrayLayers)});
+        cmd->EndTransition();
+    }
+    mDynamicTextureUploads.clear();
+}
+
+void GPUSceneImpl::BeginDynamicTextureGPU(RHICommandList* cmd, bool is3D, GPUScene::DynamicTextureGPUAccess access)
+{
+    CHECK(cmd);
+    if (mDynamicTextureGPUUpdates.empty())
+        return;
+    CHECK_MSG(!mDynamicIsUpdate,
+              "BeginDynamicTextureGPU must be recorded after EndDynamicUpdate");
+    for (DynamicTextureGPUUpdate const& update : mDynamicTextureGPUUpdates)
+    {
+        if (update.access != access)
+            continue;
+        uint32_t const encoded = update.encodedSlot;
+        if (((encoded & 0x80000000u) != 0) != is3D)
+            continue;
+        uint32_t const slot = encoded & ~0x80000000u;
+        Vector<Texture> const& slots = TextureSlots(is3D);
+        CHECK_MSG(slot < slots.size() && slots[slot].live && slots[slot].dynamicTexture,
+                  "Dynamic GPU texture slot {} is no longer valid", slot);
+        Texture const& state = slots[slot];
+        RHITextureUsage const requiredUsage = access == GPUScene::DynamicTextureGPUAccess::UAV
+            ? RHITextureUsageBits::StorageImage
+            : RHITextureUsageBits::RenderTarget;
+        CHECK_MSG(state.textureDesc.usage & requiredUsage,
+                  "Dynamic GPU texture slot {} does not support the requested write access", slot);
+        RHITexture* texture = TexturePool(is3D).GetResource(slot);
+        CHECK(texture);
+        RHIResourceAccess const writeAccess = access == GPUScene::DynamicTextureGPUAccess::UAV
+            ? RHIResourceAccessBits::ShaderWrite
+            : RHIResourceAccessBits::RenderTargetWrite;
+        RHIPipelineStage const writeStage = access == GPUScene::DynamicTextureGPUAccess::UAV
+            ? RHIPipelineStageBits::ComputeShader
+            : RHIPipelineStageBits::RenderTargetOutput;
+        RHITextureLayout const writeLayout = access == GPUScene::DynamicTextureGPUAccess::UAV
+            ? RHITextureLayout::General
+            : RHITextureLayout::RenderTarget;
+        cmd->BeginTransition();
+        cmd->SetImageTransition(
+            texture,
+            {.srcAccess = state.initialized ? RHIResourceAccessBits::ShaderRead : RHIResourceAccessBits{},
+             .dstAccess = writeAccess,
+             .srcStage = state.initialized
+                 ? RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader |
+                     RHIPipelineStageBits::RayTracingShader
+                 : RHIPipelineStageBits::TopOfPipe,
+             .dstStage = writeStage,
+             .srcImgLayout = state.initialized ? RHITextureLayout::ShaderReadOnly : RHITextureLayout::Undefined,
+             .dstImgLayout = writeLayout,
+             .srcImgRange = RHITextureSubresourceRange::Create(
+                 RHITextureAspectFlagBits::Color, 0, state.textureDesc.mipLevels, 0, state.textureDesc.arrayLayers)});
+        cmd->EndTransition();
+    }
+}
+
+void GPUSceneImpl::EndDynamicTextureGPU(RHICommandList* cmd, bool is3D, GPUScene::DynamicTextureGPUAccess access)
+{
+    CHECK(cmd);
+    if (mDynamicTextureGPUUpdates.empty())
+        return;
+    for (DynamicTextureGPUUpdate const& update : mDynamicTextureGPUUpdates)
+    {
+        if (update.access != access)
+            continue;
+        uint32_t const encoded = update.encodedSlot;
+        if (((encoded & 0x80000000u) != 0) != is3D)
+            continue;
+        uint32_t const slot = encoded & ~0x80000000u;
+        Vector<Texture> const& slots = TextureSlots(is3D);
+        CHECK_MSG(slot < slots.size() && slots[slot].live && slots[slot].dynamicTexture,
+                  "Dynamic GPU texture slot {} is no longer valid", slot);
+        Texture& state = TextureSlots(is3D)[slot];
+        RHIResourceAccess const writeAccess = access == GPUScene::DynamicTextureGPUAccess::UAV
+            ? RHIResourceAccessBits::ShaderWrite
+            : RHIResourceAccessBits::RenderTargetWrite;
+        RHIPipelineStage const writeStage = access == GPUScene::DynamicTextureGPUAccess::UAV
+            ? RHIPipelineStageBits::ComputeShader
+            : RHIPipelineStageBits::RenderTargetOutput;
+        RHITextureLayout const writeLayout = access == GPUScene::DynamicTextureGPUAccess::UAV
+            ? RHITextureLayout::General
+            : RHITextureLayout::RenderTarget;
+        RHITexture* texture = TexturePool(is3D).GetResource(slot);
+        CHECK(texture);
+        cmd->BeginTransition();
+        cmd->SetImageTransition(
+            texture,
+            {.srcAccess = writeAccess,
+             .dstAccess = RHIResourceAccessBits::ShaderRead,
+             .srcStage = writeStage,
+             .dstStage = RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader |
+                 RHIPipelineStageBits::RayTracingShader,
+             .srcImgLayout = writeLayout,
+             .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+             .srcImgRange = RHITextureSubresourceRange::Create(
+                 RHITextureAspectFlagBits::Color, 0, state.textureDesc.mipLevels, 0, state.textureDesc.arrayLayers)});
+        cmd->EndTransition();
+        state.initialized = true;
+    }
+    auto first = std::remove_if(mDynamicTextureGPUUpdates.begin(), mDynamicTextureGPUUpdates.end(),
+                                [is3D, access](DynamicTextureGPUUpdate const& update)
+                                {
+                                    return update.access == access &&
+                                        ((update.encodedSlot & 0x80000000u) != 0) == is3D;
+                                });
+    mDynamicTextureGPUUpdates.erase(first, mDynamicTextureGPUUpdates.end());
+}
+
+RHITexture* GPUSceneImpl::ResolveDynamicTextureGPU(TextureHandle handle, RHITextureUsage requiredUsage)
+{
+    CHECK_MSG(!handle.is3D, "Render-to-texture only supports 2D textures");
+    Vector<Texture> const& slots = mTexture2DSlots;
+    CHECK_MSG(handle.IsValid() && handle.index < slots.size() && slots[handle.index].live &&
+                  slots[handle.index].version == handle.version,
+              "ResolveDynamicTextureGPU on an invalid texture handle");
+    Texture const& state = slots[handle.index];
+    CHECK_MSG(state.dynamicTexture && state.isGpu, "ResolveDynamicTextureGPU requires a dynamic GPU texture");
+    CHECK_MSG(state.textureDesc.usage & requiredUsage, "Dynamic GPU texture does not support the required usage");
+    return mTexture2DPool.GetResource(handle.index);
+}
+
+void GPUSceneImpl::CompleteDynamicTextureGPU(TextureHandle handle, GPUScene::DynamicTextureGPUAccess access)
+{
+    Vector<Texture>& slots = TextureSlots(handle.is3D);
+    CHECK_MSG(handle.IsValid() && handle.index < slots.size() && slots[handle.index].live &&
+                  slots[handle.index].version == handle.version,
+              "CompleteDynamicTextureGPU on an invalid texture handle");
+    uint32_t const encodedSlot = handle.index | (handle.is3D ? 0x80000000u : 0u);
+    auto const update = std::find_if(mDynamicTextureGPUUpdates.begin(), mDynamicTextureGPUUpdates.end(),
+                                     [encodedSlot, access](DynamicTextureGPUUpdate const& candidate)
+                                     { return candidate.encodedSlot == encodedSlot && candidate.access == access; });
+    CHECK_MSG(update != mDynamicTextureGPUUpdates.end(), "Dynamic GPU texture was not marked for this update pass");
+    slots[handle.index].initialized = true;
+    mDynamicTextureGPUUpdates.erase(update);
 }
 
 void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
@@ -2523,6 +2861,16 @@ void GPUSceneImpl::FreeTextureSlot(bool is3D, uint32_t slot)
     if (!s.live)
         return;
     TexturePool(is3D).Free(slot); // releases the bindless binding + owned resource
+    uint32_t const encoded = slot | (is3D ? 0x80000000u : 0u);
+    for (size_t i = 0; i < mDynamicTextures.size(); ++i)
+    {
+        if (mDynamicTextures[i] == encoded)
+        {
+            mDynamicTextures[i] = mDynamicTextures.back();
+            mDynamicTextures.pop_back();
+            break;
+        }
+    }
     s.live = false;
     ++s.version; // invalidate outstanding handles to this slot
 }
@@ -2961,6 +3309,11 @@ GPUScene::Result GPUScene::Allocate(uint32_t vertexCount, uint32_t indexCount, u
     return mImpl->Allocate(vertexCount, indexCount, leafCount, outHandle, isGpu);
 }
 
+GPUScene::Result GPUScene::Allocate(RHITextureDesc const& desc, TextureHandle& outHandle, bool isGpu, const char* debugName)
+{
+    return mImpl->Allocate(desc, debugName, outHandle, isGpu);
+}
+
 GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedTexture const& source, TextureHandle& outTexture,
                                   const char* debugName, bool pinned)
 {
@@ -3007,28 +3360,54 @@ void GPUScene::Collect() { mImpl->Collect(); }
 void GPUScene::Reset() { mImpl->Reset(); }
 
 bool GPUScene::HasDynamicGeometry() const { return mImpl->HasDynamicGeometry(); }
+bool GPUScene::HasDynamicTextures() const { return mImpl->HasDynamicTextures(); }
 bool GPUScene::HasCurveGeometry() const { return mImpl->HasCurveGeometry(); }
-void GPUScene::BeginDynamicGeometryUpdate() { mImpl->BeginDynamicGeometryUpdate(); }
-void GPUScene::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices)
+void GPUScene::BeginDynamicUpdate() { mImpl->BeginDynamicUpdate(); }
+void GPUScene::UpdateDynamicMeshGPU(GeometryHandle handle, bool updateVertices, bool updateIndices)
 {
-    mImpl->UpdateDynamicGeometryGPU(handle, updateVertices, updateIndices);
+    mImpl->UpdateDynamicMeshGPU(handle, updateVertices, updateIndices);
 }
 void GPUScene::UpdateDynamicCurveGPU(GeometryHandle handle, bool updateVertices, bool updateIndices, bool updateLeaves)
 {
     mImpl->UpdateDynamicCurveGPU(handle, updateVertices, updateIndices, updateLeaves);
 }
-void GPUScene::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices,
-                                        Span<const uint32_t> indices)
+void GPUScene::UpdateDynamicMeshCPU(GeometryHandle handle, Span<const FQVertex> vertices,
+                                    Span<const uint32_t> indices)
 {
-    mImpl->UpdateDynamicGeometryCPU(handle, vertices, indices);
+    mImpl->UpdateDynamicMeshCPU(handle, vertices, indices);
 }
 void GPUScene::UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurveDOTSVertex> vertices,
                                      Span<const uint32_t> indices, Span<const FCurveLeaf> leaves)
 {
     mImpl->UpdateDynamicCurveCPU(handle, vertices, indices, leaves);
 }
-void GPUScene::EndDynamicGeometryUpdate() { mImpl->EndDynamicGeometryUpdate(); }
+void GPUScene::UpdateDynamicTextureCPU(TextureHandle handle, FTexture const& source)
+{
+    mImpl->UpdateDynamicTextureCPU(handle, source);
+}
+uint32_t GPUScene::UpdateDynamicTextureGPU(TextureHandle handle, DynamicTextureGPUAccess access)
+{
+    return mImpl->UpdateDynamicTextureGPU(handle, access);
+}
+void GPUScene::EndDynamicUpdate() { mImpl->EndDynamicUpdate(); }
 void GPUScene::UploadDynamicGeometryCPU(RHICommandList* cmd) { mImpl->UploadDynamicGeometryCPU(cmd); }
+void GPUScene::UploadDynamicTexturesCPU(RHICommandList* cmd) { mImpl->UploadDynamicTexturesCPU(cmd); }
+void GPUScene::BeginDynamicTextureGPU(RHICommandList* cmd, bool is3D, DynamicTextureGPUAccess access)
+{
+    mImpl->BeginDynamicTextureGPU(cmd, is3D, access);
+}
+void GPUScene::EndDynamicTextureGPU(RHICommandList* cmd, bool is3D, DynamicTextureGPUAccess access)
+{
+    mImpl->EndDynamicTextureGPU(cmd, is3D, access);
+}
+RHITexture* GPUScene::ResolveDynamicTextureGPU(TextureHandle handle, RHITextureUsage requiredUsage) const
+{
+    return mImpl->ResolveDynamicTextureGPU(handle, requiredUsage);
+}
+void GPUScene::CompleteDynamicTextureGPU(TextureHandle handle, DynamicTextureGPUAccess access)
+{
+    mImpl->CompleteDynamicTextureGPU(handle, access);
+}
 void GPUScene::BuildBLAS(RHICommandList* cmd) { mImpl->BuildBLAS(cmd); }
 uint32_t GPUScene::GetDynamicRefitCount() const { return mImpl->mLastRefitCount; }
 uint32_t GPUScene::GetDynamicRebuildCount() const { return mImpl->mLastRebuildCount; }

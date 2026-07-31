@@ -294,10 +294,10 @@ bool FAnimationRuntime::Tick(float dt, uint64_t frame)
     }
     if (!mDispatches.empty())
     {
-        mGPU->BeginDynamicGeometryUpdate();
+        mGPU->BeginDynamicUpdate();
         for (Dispatch const& dispatch : mDispatches)
-            mGPU->UpdateDynamicGeometryGPU(dispatch.geometry, true, dispatch.updateIndices);
-        mGPU->EndDynamicGeometryUpdate();
+            mGPU->UpdateDynamicMeshGPU(dispatch.geometry, true, dispatch.updateIndices);
+        mGPU->EndDynamicUpdate();
     }
     mForceUpdate = false;
     return !mDispatches.empty();

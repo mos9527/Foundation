@@ -372,7 +372,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                     r->BindBufferIndirectRead(self, IndirectMeshletDispatch);
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
-                    r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+                    r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -511,7 +511,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferIndirectRead(self, DynamicDrawCmds);
                     r->BindBufferIndirectRead(self, DynamicDrawCount);
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
-                    r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+                    r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -625,7 +625,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferIndirectRead(self, CurveDrawCmds);
                     r->BindBufferIndirectRead(self, CurveDrawCount);
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
-                    r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+                    r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
                     r->PassSetRasterizerFlags(self, curveRaster);
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -818,7 +818,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                       RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
                                                          .range = RHITextureSubresourceRange::Create()});
-                    r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+                    r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
                     r->BindTextureUAV(self, DiffuseBuffer, "diffuseOutput", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create()});

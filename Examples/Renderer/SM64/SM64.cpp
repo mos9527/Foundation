@@ -632,12 +632,12 @@ int main(int argc, char** argv)
 
         PackVertices(verts, geo, posBuf, norBuf, uvBuf, colBuf, paletteColors);
 
-        gpu.BeginDynamicGeometryUpdate();
-        gpu.UpdateDynamicGeometryCPU(mario, Span<const FQVertex>{verts.data(), verts.size()},
+        gpu.BeginDynamicUpdate();
+        gpu.UpdateDynamicMeshCPU(mario, Span<const FQVertex>{verts.data(), verts.size()},
                                      ticks == 0
                                          ? /* needs a rebuild */ Span<const uint32_t>{indices.data(), indices.size()}
                                          : /* no topo change (indices) thus we can refit */ Span<const uint32_t>{});
-        gpu.EndDynamicGeometryUpdate();
+        gpu.EndDynamicUpdate();
         camera.yaw += camYawDelta * dt * 2.0f;
         if (camYawDelta != 0.0f)
             ubo.ptAccumulatedFrames = 0u;

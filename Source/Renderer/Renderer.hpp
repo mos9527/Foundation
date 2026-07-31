@@ -28,7 +28,7 @@ struct RendererUBO
     float apertureRatio{1.0f};
     uint32_t cameraProjection{0u};
     // -- Framebuffers
-    // Note: ALWAYS updated by Renderers themselves (PT/RASTER)    
+    // Note: ALWAYS updated by Renderers themselves (PT/RASTER)
     float fbWidth;
     float fbHeight;
     uint32_t hizLevels;
@@ -85,20 +85,18 @@ struct PostprocessUBO
     float fbWidth{1.0f};
     float fbHeight{1.0f};
     uint32_t outlineInstanceId{~0u};
-    float renderWidth{1.0f};   // Internal render target width
-    float renderHeight{1.0f};  // Internal render target height
+    float renderWidth{1.0f}; // Internal render target width
+    float renderHeight{1.0f}; // Internal render target height
     uint32_t dbgViewFlags{0u};
 };
 
 #pragma pack(pop)
 
-inline void UpdateRendererCameraUBO(RendererUBO& ubo, uint32_t frameNumber, float4x4 const& view,
-                                    float4x4 const& proj)
+inline void UpdateRendererCameraUBO(RendererUBO& ubo, uint32_t frameNumber, float4x4 const& view, float4x4 const& proj)
 {
     if (ubo.cameraHistoryFrame != frameNumber)
     {
-        ubo.previousViewProj =
-            ubo.cameraHistoryFrame == UINT32_MAX ? proj * view : ubo.proj * ubo.view;
+        ubo.previousViewProj = ubo.cameraHistoryFrame == UINT32_MAX ? proj * view : ubo.proj * ubo.view;
         ubo.cameraHistoryFrame = frameNumber;
     }
     ubo.frameNumber = frameNumber;
@@ -159,14 +157,135 @@ struct RendererResources
     RHIBuffer* primitiveBufferRHI{nullptr};
     RHIBuffer* dynamicPrimitiveBufferRHI{nullptr};
     bool hasDynamicGeometry{false};
+    bool hasDynamicTextures{false};
     bool hasCurveGeometry{false};
 };
 
 [[nodiscard]] RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* scene);
 
 void BuildGPUSceneHostUpdatePass(Renderer* renderer, RendererResources& resources);
-void BuildGPUSceneAccelerationStructureUpdatePass(Renderer* renderer, RendererResources& resources);;
+void BuildGPUSceneAccelerationStructureUpdatePass(Renderer* renderer, RendererResources& resources);
+;
 void BuildGPUSceneLightBVHRefitPasses(Renderer* renderer, RendererResources& resources, ResourceHandle ubo);
+
+template <typename FSetup, typename FRecord>
+PassHandle BuildGPUSceneTextures2DUpdatePass(Renderer* renderer, StringView name, RendererResources const& resources,
+                                             FSetup&& setup, FRecord&& record)
+{
+    CHECK(renderer);
+    CHECK(resources.scene);
+    PassHandle preTransition = renderer->CreatePass(
+        Format("{} Pre-Transition", name), RHIDeviceQueueType::Graphics, 100u, FSetupDefault{},
+        [resources](PassHandle, Renderer*, RHICommandList* cmd)
+        { resources.scene->BeginDynamicTextureGPU(cmd, false, GPUScene::DynamicTextureGPUAccess::UAV); });
+    PassHandle update = renderer->CreatePass(
+        name, RHIDeviceQueueType::Compute, 100u,
+        [resources, preTransition, setup = std::forward<FSetup>(setup)](PassHandle self, Renderer* r) mutable
+        {
+            r->BindPass(self, preTransition);
+            r->BindDescriptorSetWrite(self, "gStorageTextures2D",
+                                      resources.textures2D->GetStorageDescriptorSetLayout(),
+                                      resources.textures2D->GetDescriptorSetLayout());
+            setup(self, r);
+        },
+        [resources, record = std::forward<FRecord>(record)](PassHandle self, Renderer* r, RHICommandList* cmd) mutable
+        {
+            r->CmdBindDescriptorSet(self, cmd, "gStorageTextures2D", resources.textures2D->GetStorageDescriptorSet());
+            record(self, r, cmd);
+        });
+    return renderer->CreatePass(
+        Format("{} Post-Transition", name), RHIDeviceQueueType::Graphics, 100u,
+        [resources, update](PassHandle self, Renderer* r)
+        {
+            r->BindPass(self, update);
+            r->BindDescriptorSetWrite(self, resources.textures2D->GetStorageDescriptorSetLayout(),
+                                      resources.textures2D->GetDescriptorSetLayout());
+        },
+        [resources](PassHandle, Renderer*, RHICommandList* cmd)
+        { resources.scene->EndDynamicTextureGPU(cmd, false, GPUScene::DynamicTextureGPUAccess::UAV); });
+}
+
+template <typename FSetup, typename FRecord>
+PassHandle BuildGPUSceneTextures3DUpdatePass(Renderer* renderer, StringView name, RendererResources const& resources,
+                                             FSetup&& setup, FRecord&& record)
+{
+    CHECK(renderer);
+    CHECK(resources.scene);
+    PassHandle preTransition = renderer->CreatePass(
+        Format("{} Pre-Transition", name), RHIDeviceQueueType::Graphics, 100u, FSetupDefault{},
+        [resources](PassHandle, Renderer*, RHICommandList* cmd)
+        { resources.scene->BeginDynamicTextureGPU(cmd, true, GPUScene::DynamicTextureGPUAccess::UAV); });
+    PassHandle update = renderer->CreatePass(
+        name, RHIDeviceQueueType::Compute, 100u,
+        [resources, preTransition, setup = std::forward<FSetup>(setup)](PassHandle self, Renderer* r) mutable
+        {
+            r->BindPass(self, preTransition);
+            r->BindDescriptorSetWrite(self, "gStorageTextures3D",
+                                      resources.textures3D->GetStorageDescriptorSetLayout(),
+                                      resources.textures3D->GetDescriptorSetLayout());
+            setup(self, r);
+        },
+        [resources, record = std::forward<FRecord>(record)](PassHandle self, Renderer* r, RHICommandList* cmd) mutable
+        {
+            r->CmdBindDescriptorSet(self, cmd, "gStorageTextures3D", resources.textures3D->GetStorageDescriptorSet());
+            record(self, r, cmd);
+        });
+    return renderer->CreatePass(
+        Format("{} Post-Transition", name), RHIDeviceQueueType::Graphics, 100u,
+        [resources, update](PassHandle self, Renderer* r)
+        {
+            r->BindPass(self, update);
+            r->BindDescriptorSetWrite(self, resources.textures3D->GetStorageDescriptorSetLayout(),
+                                      resources.textures3D->GetDescriptorSetLayout());
+        },
+        [resources](PassHandle, Renderer*, RHICommandList* cmd)
+        { resources.scene->EndDynamicTextureGPU(cmd, true, GPUScene::DynamicTextureGPUAccess::UAV); });
+}
+
+template <typename FSetup, typename FRecord>
+PassHandle BuildGPUSceneRenderToTexturePass(Renderer* renderer, StringView name, RendererResources const& resources,
+                                            TextureHandle target, FSetup&& setup, FRecord&& record)
+{
+    CHECK(renderer);
+    CHECK(resources.scene);
+    CHECK(resources.textures2D);
+    RHITexture* texture =
+        resources.scene->ResolveDynamicTextureGPU(target, RHITextureUsageBits::RenderTarget);
+    CHECK(texture);
+    ResourceHandle const targetResource = renderer->CreateResource(Format("{} Target", name), texture);
+    RHITextureViewDesc const targetView{
+        .format = texture->mDesc.format,
+        .dimension = texture->mDesc.dimension,
+        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0, texture->mDesc.mipLevels, 0,
+                                                    texture->mDesc.arrayLayers)};
+    PassHandle const update = renderer->CreatePass(
+        name, RHIDeviceQueueType::Graphics, 100u,
+        [resources, targetResource, targetView, setup = std::forward<FSetup>(setup)](PassHandle self,
+                                                                                    Renderer* r) mutable
+        {
+            r->BindDescriptorSetWrite(self, resources.textures2D->GetDescriptorSetLayout());
+            r->BindTextureRTV(self, targetResource, targetView);
+            setup(self, r);
+        },
+        [record = std::forward<FRecord>(record)](PassHandle self, Renderer* r, RHICommandList* cmd) mutable
+        { record(self, r, cmd); });
+    return renderer->CreatePass(
+        Format("{} Post-Transition", name), RHIDeviceQueueType::Graphics, 100u,
+        [resources, targetResource, texture, update](PassHandle self, Renderer* r)
+        {
+            r->BindPass(self, update);
+            r->BindTextureShaderRead(
+                self, targetResource,
+                RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader |
+                    RHIPipelineStageBits::RayTracingShader,
+                RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0, texture->mDesc.mipLevels, 0,
+                                                   texture->mDesc.arrayLayers));
+            r->BindDescriptorSetWrite(self, resources.textures2D->GetDescriptorSetLayout());
+            r->MakePassUncullable(self);
+        },
+        [resources, target](PassHandle, Renderer*, RHICommandList*)
+        { resources.scene->CompleteDynamicTextureGPU(target, GPUScene::DynamicTextureGPUAccess::RTV); });
+}
 
 struct RendererOutputs
 {

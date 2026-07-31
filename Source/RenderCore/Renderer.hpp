@@ -390,6 +390,7 @@ namespace Foundation::RenderCore
             Vector<RHIDeviceSampler::SamplerDesc> trackedSamplers;
             // [resource, ord range]
             Map<ResourceHandle, Pair<PassHandle, PassHandle>> activeResources;
+            Map<uintptr_t, PassHandle> descriptorSetWriters;
             // Passes ordered by pass.ord
             Vector<PassHandle> execution;
             Map<RHIDescriptorType, uint32_t> bindingCounts;
@@ -427,8 +428,8 @@ namespace Foundation::RenderCore
             }
             explicit RendererSetup(Allocator* allocator) :
                 graph(allocator), in(allocator), trackedPasses(allocator), trackedResources(allocator),
-                trackedViews(allocator), trackedSamplers(allocator), activeResources(allocator), execution(allocator),
-                bindingCounts(allocator), executionGroups(allocator)
+                trackedViews(allocator), trackedSamplers(allocator), activeResources(allocator),
+                descriptorSetWriters(allocator), execution(allocator), bindingCounts(allocator), executionGroups(allocator)
             {
             }
         };
@@ -844,12 +845,32 @@ namespace Foundation::RenderCore
          */
         void BindTextureSampler(PassHandle pass, ResourceHandle sampler, StringView bind_point) const;
         /**
-         * @brief Manually bind an existing descriptor set (layout) to the pipeline.
+         * @brief Binds an externally managed descriptor set that this pass writes.
          *
-         * @note This applies to the bind point's *whole* set. You'll need to call @ref CmdBindDescriptorSet at Record
-         * time to bind the set to the pipeline.
+         * This creates an execution dependency from the previous writer of the same layout.
+         * It does not transition or otherwise synchronize the descriptor set's resources.
+         * Call @ref CmdBindDescriptorSet at Record time to bind the set.
+         *
+         * @param reading_layout If provided, the @ref Renderer will ensure this pass become the new writer of `reading_layout`
+         *                       as well as a dependency of the last writer of `reading_layout` and `layout`.
          */
-        void BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout);
+        void BindDescriptorSetWrite(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout,
+                                    RHIDeviceDescriptorSetLayout* reading_layout = nullptr);
+        /**
+         * @brief Declares an external descriptor-set write without binding it to a pipeline.
+         *
+         * This only establishes pass dependencies. Resource transitions remain the caller's responsibility.
+         */
+        void BindDescriptorSetWrite(PassHandle pass, RHIDeviceDescriptorSetLayout* layout,
+                                    RHIDeviceDescriptorSetLayout* reading_layout = nullptr);
+        /**
+         * @brief Binds an externally managed descriptor set that this pass reads.
+         *
+         * This creates an execution dependency from the last writer of the same layout.
+         * It does not transition or otherwise synchronize the descriptor set's resources.
+         * Call @ref CmdBindDescriptorSet at Record time to bind the set.
+         */
+        void BindDescriptorSetRead(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout);
         /**
          * @brief Marks a pass as "uncullable", meaning it will always be executed even if it has no dependencies.
          *
@@ -1136,7 +1157,7 @@ namespace Foundation::RenderCore
          * @brief Helper that binds a single descriptor set to the set of the specified bind point.
          *
          * @note For this to work, the descriptor set MUST have been bound at Setup time with
-         * @ref BindDescriptorSet().
+         * @ref BindDescriptorSetRead() or @ref BindDescriptorSetWrite().
          */
         void CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, StringView bind_point,
                                   RHIDeviceDescriptorSet* descriptor_set) const;

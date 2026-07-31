@@ -160,6 +160,9 @@ ResourceHandle Renderer::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc
 void Renderer::BindPass(PassHandle pass, PassHandle other)
 {
     CHECK(mState == State::Setup);
+    auto const& dependencies = mSetup->trackedPasses[pass].bindPasses;
+    if (std::find(dependencies.begin(), dependencies.end(), other) != dependencies.end())
+        return;
     mSetup->add_edge(pass, other, kInvalidHandle);
     mSetup->trackedPasses[pass].bindPasses.emplace_back(other);
 }
@@ -304,9 +307,44 @@ void Renderer::BindTextureSampler(PassHandle pass, ResourceHandle sampler, Strin
     mSetup->bindingCounts[RHIDescriptorType::Sampler]++;
 }
 
-void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout)
+void Renderer::BindDescriptorSetWrite(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout,
+                                      RHIDeviceDescriptorSetLayout* reading_layout)
+{
+    BindDescriptorSetWrite(pass, layout, reading_layout);
+    mSetup->trackedPasses[pass].externalBindings.emplace_back(bind_point, layout, ~0u);
+}
+
+void Renderer::BindDescriptorSetWrite(PassHandle pass, RHIDeviceDescriptorSetLayout* layout,
+                                      RHIDeviceDescriptorSetLayout* reading_layout)
 {
     CHECK(mState == State::Setup);
+    CHECK(layout);
+    for (RHIDeviceDescriptorSetLayout* ptr : {layout, reading_layout})
+    {
+        if (!ptr)
+            continue;
+        uintptr_t key = reinterpret_cast<uintptr_t>(ptr);
+        if (mSetup->descriptorSetWriters.contains(key))
+        {
+            auto writer = mSetup->descriptorSetWriters[key];
+            if (writer != kInvalidHandle && writer != pass)
+                BindPass(pass, writer);
+        }
+        mSetup->descriptorSetWriters[key] = pass;
+    }
+}
+
+void Renderer::BindDescriptorSetRead(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout)
+{
+    CHECK(mState == State::Setup);
+    CHECK(layout);
+    uintptr_t key = reinterpret_cast<uintptr_t>(layout);
+    if (mSetup->descriptorSetWriters.contains(key))
+    {
+        auto writer = mSetup->descriptorSetWriters[key];
+        if (writer != kInvalidHandle && writer != pass)
+            BindPass(pass, writer);
+    }
     mSetup->trackedPasses[pass].externalBindings.emplace_back(bind_point, layout, ~0u);
 }
 

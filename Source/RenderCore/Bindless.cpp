@@ -9,6 +9,15 @@ namespace Foundation::RenderCore
                           .images = {{{.imageView = view, .layout = RHITextureLayout::ShaderReadOnly}}}});
         return id;
     }
+    void BindlessPool::UpdateStorageDescriptor(uint32_t id, RHITextureView* view)
+    {
+        CHECK(view);
+        std::unique_lock lock(mDescMutex);
+        mStorageDescSet->Update({.binding = 0,
+                                 .startIndex = id,
+                                 .type = RHIDescriptorType::StorageImage,
+                                 .images = {{{.imageView = view, .layout = RHITextureLayout::General}}}});
+    }
     BindlessPool::BindlessPool(RHIDevice* device, Allocator* allocator, BindlessPoolDesc const& desc) :
         mDevice(device), mAllocator(allocator), mBindings(desc.maxBindings, allocator), mIdleGuard(device), mDesc(desc)
     {
@@ -20,6 +29,13 @@ namespace Foundation::RenderCore
                                                                          .type = RHIDescriptorType::SampledImage}}},
                                                           .updateAfterBind = true});
         mDescSet = mDescPool->CreateDescriptorSet(mDescLayout, desc.maxBindings);
+        mStorageDescPool = mDevice->CreateDescriptorPool(
+            {.bindings = {{{.type = RHIDescriptorType::StorageImage, .maxCount = desc.maxBindings}}}});
+        mStorageDescLayout = mDevice->CreateDescriptorSetLayout(
+            {.bindings = {{{.count = desc.maxBindings,
+                            .stage = RHIShaderStageBits::All,
+                            .type = RHIDescriptorType::StorageImage}}}});
+        mStorageDescSet = mStorageDescPool->CreateDescriptorSet(mStorageDescLayout, desc.maxBindings);
     }
     void BindlessPool::AddStats(Binding const& binding)
     {
@@ -77,6 +93,11 @@ namespace Foundation::RenderCore
         binding->id = id;
         AddStats(*binding);
         return id;
+    }
+    void BindlessPool::UpdateStorageView(uint32_t id, RHITextureView* view)
+    {
+        CHECK_MSG(id < mDesc.maxBindings, "Storage texture binding {} out of range {}", id, mDesc.maxBindings);
+        UpdateStorageDescriptor(id, view);
     }
     void BindlessPool::Free(uint32_t id)
     {

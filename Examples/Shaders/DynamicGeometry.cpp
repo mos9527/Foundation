@@ -199,12 +199,12 @@ int main(int argc, char** argv)
             RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, gerstner, renderer);
         }
 
-        gpu.BeginDynamicGeometryUpdate();
+        gpu.BeginDynamicUpdate();
         // NOTE: You don't need to do this every frame. This is to demonstrate dynamic geometry updates from host.
         //       Note that providing indices to be updated/flagging it as true triggers rebuilds. Leaving them empty/false
         //       singlals that refit can be used.
-        gpu.UpdateDynamicGeometryGPU(water, true, true);
-        gpu.EndDynamicGeometryUpdate();
+        gpu.UpdateDynamicMeshGPU(water, true, true);
+        gpu.EndDynamicUpdate();
 
         if (paused < 0.5f)
             ubo.ptAccumulatedFrames = 0u;

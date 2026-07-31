@@ -608,7 +608,7 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
                           r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Editor/EditorGizmoSprite.spv"), AsBytes(AsSpan(flags)));
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
                           r->GetApplication()->ResolveRelativePathBase("Data/Shaders/Editor/EditorGizmoSprite.spv"), AsBytes(AsSpan(flags)));
-            r->BindDescriptorSet(self, "gTextures2D", sGizmo.iconPool->GetDescriptorSetLayout());
+            r->BindDescriptorSetRead(self, "gTextures2D", sGizmo.iconPool->GetDescriptorSetLayout());
             r->BindTextureSampler(self, sGizmo.linearSampler, "linSampler");
             if (depthTexture != kInvalidHandle)
             {

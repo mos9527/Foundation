@@ -159,8 +159,8 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
                 self, AdaptiveAux, "adaptiveAux", pipelineStage,
                 RHITextureViewDesc{.format = kPathTracerAOVFormat, .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, EnvMapSampler, "gEnvMapSampler");
-            r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
-            r->BindDescriptorSet(self, "gTextures3D", gpu.textures3D->GetDescriptorSetLayout());
+            r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+            r->BindDescriptorSetRead(self, "gTextures3D", gpu.textures3D->GetDescriptorSetLayout());
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {

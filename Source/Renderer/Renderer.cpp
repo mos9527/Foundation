@@ -24,9 +24,10 @@ RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* 
         .primitiveBufferRHI = scene->GetPrimitiveBuffer(),
         .dynamicPrimitiveBufferRHI = scene->GetDynamicPrimitiveBuffer(),
         .hasDynamicGeometry = scene->HasDynamicGeometry(),
+        .hasDynamicTextures = scene->HasDynamicTextures(),
         .hasCurveGeometry = scene->HasCurveGeometry(),
     };
-    if (resources.hasDynamicGeometry && scene->GetDynamicStagingBuffer())
+    if ((resources.hasDynamicGeometry || resources.hasDynamicTextures) && scene->GetDynamicStagingBuffer())
         resources.dynamicStagingBuffer =
             renderer->CreateResource("Dynamic Primitive Staging", scene->GetDynamicStagingBuffer());
     if (scene->GetTLAS())
@@ -38,18 +39,27 @@ void BuildGPUSceneHostUpdatePass(Renderer* renderer, RendererResources& resource
 {
     CHECK(renderer);
     CHECK(resources.scene);
-    if (!resources.hasDynamicGeometry)
+    if (!resources.hasDynamicGeometry && !resources.hasDynamicTextures)
         return;
     GPUScene* scene = resources.scene;
     renderer->CreatePass(
         "GPUScene Host Update", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
+            if (resources.hasDynamicTextures)
+                r->MakePassUncullable(self);
             if (resources.dynamicStagingBuffer != kInvalidHandle)
                 r->BindBufferCopySrc(self, resources.dynamicStagingBuffer);
-            r->BindBufferCopyDst(self, resources.dynamicPrimitiveBuffer);
+            if (resources.hasDynamicGeometry)
+                r->BindBufferCopyDst(self, resources.dynamicPrimitiveBuffer);
         },
-        [=](PassHandle, Renderer*, RHICommandList* cmd) { scene->UploadDynamicGeometryCPU(cmd); });
+        [=](PassHandle, Renderer*, RHICommandList* cmd)
+        {
+            if (resources.hasDynamicGeometry)
+                scene->UploadDynamicGeometryCPU(cmd);
+            if (resources.hasDynamicTextures)
+                scene->UploadDynamicTexturesCPU(cmd);
+        });
 }
 
 void BuildGPUSceneAccelerationStructureUpdatePass(Renderer* renderer, RendererResources& resources)

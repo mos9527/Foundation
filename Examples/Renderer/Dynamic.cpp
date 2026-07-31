@@ -19,6 +19,7 @@ namespace
     struct GerstnerState
     {
         GeometryHandle water;
+        TextureHandle caustics;
         float time{0.0f};
         float amplitude{1.0f};
     };
@@ -32,6 +33,61 @@ namespace
         float time;
         float amplitudeScale;
     };
+
+    struct CausticsPush
+    {
+        uint32_t textureIndex;
+        uint32_t width;
+        uint32_t height;
+        float time;
+    };
+
+    // GPU Side Texture update
+    void BuildCausticsPass(Renderer* renderer, RendererResources const& resources, GerstnerState const* state)
+    {
+        /*
+        // Compute/UAV variant:
+        BuildGPUSceneTextures2DUpdatePass(
+            renderer, "GPUScene Caustics Update", resources,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/DynamicCaustics.spv"));
+                r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CausticsPush));
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                CausticsPush push{.textureIndex = state->caustics.index,
+                                  .width = 256u,
+                                  .height = 256u,
+                                  .time = state->time};
+                r->CmdSetPipeline(self, cmd);
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, push);
+                r->CmdDispatch(self, cmd, {256, 256, 1u});
+            });
+        */
+        BuildGPUSceneRenderToTexturePass(
+            renderer, "GPUScene Caustics Update", resources, state->caustics,
+            [=](PassHandle self, Renderer* r)
+            {
+                auto const shader = r->GetApplication()->ResolveRelativePathBase("Data/Shaders/DynamicCaustics.spv");
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", shader);
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", shader);
+                r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(CausticsPush));
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                constexpr RHIExtent2D extent{256u, 256u};
+                CausticsPush push{.textureIndex = state->caustics.index,
+                                  .width = extent.x,
+                                  .height = extent.y,
+                                  .time = state->time};
+                r->CmdBeginGraphics(self, cmd, extent, {{{RHIAttachmentLoadOp::DontCare}}});
+                r->CmdSetPipeline(self, cmd);
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, push);
+                cmd->SetViewport(0, 0, extent.x, extent.y).SetScissor(0, 0, extent.x, extent.y).Draw(3).EndGraphics();
+            });
+    }
 
     // GPU Side geometry update
     // Demonstrates per-frame invocation through a CS pass
@@ -65,7 +121,8 @@ namespace
                 r->CmdDispatch(self, cmd, {std::max(kWaterVerts, kWaterQuads * kWaterQuads), 1, 1});
             });
     }
-    void CommitDemoScene(GPUScene& gpu, GeometryHandle water, GeometryHandle ground, RendererUBO& ubo)
+    void CommitDemoScene(GPUScene& gpu, GeometryHandle water, GeometryHandle ground, TextureHandle caustics,
+                         RendererUBO& ubo)
     {
         auto tables = gpu.BeginScene(2, 2, 2);
         tables.instances[0] = GSInstance{
@@ -94,6 +151,7 @@ namespace
 
         tables.materials[1] = GSMaterial{};
         tables.materials[1].baseColorFactor = float4(1.0f, 1.0f, 1.0f, 1.0f);
+        tables.materials[1].baseColorTexture = caustics.index;
         tables.materials[1].metallicFactor = 0.0f;
         tables.materials[1].roughnessFactor = 0.9f;
         tables.materials[1].ior = 1.5f;
@@ -121,6 +179,7 @@ namespace
         ubo.ptMaxBounces = 2u;
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
+        BuildCausticsPass(ctx.renderer.get(), resources, &gerstner);
         BuildGerstnerPass(ctx.renderer.get(), resources, &gerstner);
         Example_BuildExampleRenderer(renderer, ctx.renderer.get(), &ubo, resources, cfg, outputs);
         Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
@@ -147,6 +206,7 @@ int main(int argc, char** argv)
     GPUScene gpu(ctx.device.Get(), ctx.jobs.get(), GLOBAL_ALLOC, desc);
     GeometryHandle water{};
     GeometryHandle ground{};
+    TextureHandle caustics{};
     {
         FImportedMesh groundMesh = Examples_MakePlaneMesh(kGroundExtent, kGroundY, GLOBAL_ALLOC);
         groundMesh.Optimize();
@@ -154,11 +214,17 @@ int main(int argc, char** argv)
         groundMesh.Quantize();
         CHECK(gpu.Upload(groundMesh, ground) == GPUScene::Result::Ready);
         CHECK(gpu.Allocate(kWaterVerts, kWaterIndices, water, true) == GPUScene::Result::Ready);
+        RHITextureDesc textureDesc{
+            .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::RenderTarget,
+            .extent = {256, 256, 1},
+            .format = RHIResourceFormat::R8G8B8A8Unorm,
+        };
+        CHECK(gpu.Allocate(textureDesc, caustics, true, "Dynamic Caustics") == GPUScene::Result::Ready);
     }
 
     RendererUBO ubo{};
     RendererConfig cfg{.cullFlags{CullFlagsBits::Frustum | CullFlagsBits::Backface}};
-    GerstnerState gerstner{.water = water};
+    GerstnerState gerstner{.water = water, .caustics = caustics};
     if (!ctx.device->GetCapabilities().raytracingInline)
         cfg.viewFlags &= ~ViewFlagsBits::EnableRasterRTShadows;
 
@@ -196,12 +262,19 @@ int main(int argc, char** argv)
             RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, gerstner, renderer);
         }
 
-        gpu.BeginDynamicGeometryUpdate();
+        // You need these markers to tell the GPUScene that you are about to update dynamic geometry and/or textures.
+        // This is required for subsequent GPUScene update passes to work correctly.
+        // * Multiple calls to BeginDynamicUpdate() are allowed, but must be matched with EndDynamicUpdate().
+        gpu.BeginDynamicUpdate();
         // NOTE: You don't need to do this every frame. This is to demonstrate dynamic geometry updates from host.
         //       Note that providing indices to be updated/flagging it as true triggers rebuilds. Leaving them empty/false
         //       singlals that refit can be used.
-        gpu.UpdateDynamicGeometryGPU(water, true, true);
-        gpu.EndDynamicGeometryUpdate();
+        // For GPU Updates these are only marked dirty, and the actual data is generated in the compute shader pass.
+        gpu.UpdateDynamicMeshGPU(water, true, true);
+        // The same goes for textures. You can update them from the host or from the GPU. Here we demonstrate GPU
+        // updates.
+        gpu.UpdateDynamicTextureGPU(caustics, GPUScene::DynamicTextureGPUAccess::RTV);
+        gpu.EndDynamicUpdate();
 
         if (paused < 0.5f)
             ubo.ptAccumulatedFrames = 0u;
@@ -212,7 +285,7 @@ int main(int argc, char** argv)
             ubo.ptAccumulatedFrames = 0u;
 
         Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
-        CommitDemoScene(gpu, water, ground, ubo);
+        CommitDemoScene(gpu, water, ground, caustics, ubo);
 
         Examples_Text(input,
                       Format("Gerstner Water | {:.0f} FPS | refit {} rebuild {}", fps.Update(),

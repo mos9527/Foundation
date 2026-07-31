@@ -143,7 +143,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, EnvMapSampler, "gEnvMapSampler");
-            r->BindDescriptorSet(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+            r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {

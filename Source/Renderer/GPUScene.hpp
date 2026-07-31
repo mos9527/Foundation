@@ -168,6 +168,11 @@ struct GPUSceneDesc
 class GPUScene
 {
 public:
+    enum class DynamicTextureGPUAccess
+    {
+        UAV,
+        RTV
+    };
     enum class Result
     {
         Ready,
@@ -191,11 +196,12 @@ public:
 
     /**
      * @brief Allocates a dynamic geometry handle.
-     * @param isGpu Whether the dynamic geometry is GPU-local. See @ref UpdateDynamicGeometryCPU, @ref UpdateDynamicGeometryGPU.
+     * @param isGpu Whether the dynamic geometry is GPU-local. See @ref UpdateDynamicMeshCPU, @ref UpdateDynamicMeshGPU.
      */
     Result Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu = false);
     Result Allocate(uint32_t vertexCount, uint32_t indexCount, uint32_t leafCount, GeometryHandle& outHandle,
                     bool isGpu = false);
+    Result Allocate(RHITextureDesc const& desc, TextureHandle& outHandle, bool isGpu = false, const char* debugName = nullptr);
     
     Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
     
@@ -269,30 +275,52 @@ public:
     };
     [[nodiscard]] TLASBuildResult BuildTLAS(RHICommandList* cmd, bool update = false);
     [[nodiscard]] bool HasDynamicGeometry() const;
+    [[nodiscard]] bool HasDynamicTextures() const;
     [[nodiscard]] bool HasCurveGeometry() const;
 
-    void BeginDynamicGeometryUpdate();
+    void BeginDynamicUpdate();
     /**
-	 * @brief Host-mapped copy. Requires isGpu = false with @ref Allocate, otherwise use UpdateDynamicGeometryGPU.
+	 * @brief Host-mapped copy. Requires isGpu = false with @ref Allocate.
 	 */
-    void UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices = {},
-                               Span<const uint32_t> indices = {});
+    void UpdateDynamicMeshCPU(GeometryHandle handle, Span<const FQVertex> vertices = {},
+                              Span<const uint32_t> indices = {});
     /**
-     * @brief Device local writes.Requires isGpu = true with @ref Allocate, otherwise use UpdateDynamicGeometryCPU.
+     * @brief Device local writes. Requires isGpu = true with @ref Allocate.
      * @note  This in effect only marks the geometry dirty, and is thread-safe to commit.
      */
-    void UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
-    void UpdateDynamicCurveGPU(GeometryHandle handle, bool updateVertices, bool updateIndices, bool updateLeaves);
+    void UpdateDynamicMeshGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
+    /**
+     * @brief Host-mapped copy. Requires isGpu = false with @ref Allocate.
+     */
     void UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurveDOTSVertex> vertices = {},
                                Span<const uint32_t> indices = {}, Span<const FCurveLeaf> leaves = {});
-    void EndDynamicGeometryUpdate();
+    /**
+     * @brief Device local writes. Requires isGpu = true with @ref Allocate.
+     * @note  This in effect only marks the geometry dirty, and is thread-safe to commit.
+     */
+    void UpdateDynamicCurveGPU(GeometryHandle handle, bool updateVertices, bool updateIndices, bool updateLeaves);
+    /**
+     * @brief Host-mapped copy. Requires isGpu = false with @ref Allocate.
+     */
+    void UpdateDynamicTextureCPU(TextureHandle handle, FTexture const& source);
+    /**
+     * @brief Device local writes. Requires isGpu = true with @ref Allocate.
+     * @note  This in effect only marks the texture dirty, and is thread-safe to commit.
+     */
+    uint32_t UpdateDynamicTextureGPU(TextureHandle handle,
+                                     DynamicTextureGPUAccess access = DynamicTextureGPUAccess::UAV);
+    void EndDynamicUpdate();
 
     /**
-     * @brief Commits Host-side geometry updates through @ref UpdateDynamicGeometryCPU
-     *        No-op if no @ref UpdateDynamicGeometryCPU calls were made since the last @ref EndDynamicGeometryUpdate.
+     * @brief Commits host-side geometry and texture updates.
      *        GPU-side updates are not required to be committed, as they are already in device-local memory.
      */
     void UploadDynamicGeometryCPU(RHICommandList* cmd);
+    void UploadDynamicTexturesCPU(RHICommandList* cmd);
+    void BeginDynamicTextureGPU(RHICommandList* cmd, bool is3D, DynamicTextureGPUAccess access);
+    void EndDynamicTextureGPU(RHICommandList* cmd, bool is3D, DynamicTextureGPUAccess access);
+    [[nodiscard]] RHITexture* ResolveDynamicTextureGPU(TextureHandle handle, RHITextureUsage requiredUsage) const;
+    void CompleteDynamicTextureGPU(TextureHandle handle, DynamicTextureGPUAccess access);
 
     void BuildBLAS(RHICommandList* cmd);
     [[nodiscard]] uint32_t GetDynamicRefitCount() const;

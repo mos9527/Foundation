@@ -10,7 +10,8 @@ add_dependencies(ExampleRenderer_GLTF Foundation_Shaders Editor_Data Examples_Sa
 
 add_example(ExampleRenderer_Dynamic "Dynamic.cpp")
 target_link_libraries(ExampleRenderer_Dynamic PUBLIC Example_Common Example_Renderer)
-add_dependencies(ExampleRenderer_Dynamic Foundation_Shaders Editor_Data Shader_PostprocessBasic Shader_DynamicGerstner)
+add_dependencies(ExampleRenderer_Dynamic Foundation_Shaders Editor_Data Shader_PostprocessBasic Shader_DynamicGerstner
+                Shader_DynamicCaustics)
 
 if (FOUNDATION_WITH_JOLT_EXAMPLES) 
     set(TARGET_UNIT_TESTS OFF CACHE BOOL "" FORCE)
