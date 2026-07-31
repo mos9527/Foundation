@@ -7,7 +7,7 @@ StructuredBuffer<uint> gSobolMatrices;
 RWTexture2D<float4> adaptiveAux;
 // "A Hierarchical Automatic Stopping Condition for Monte Carlo Global Illumination" Hanika 08
 // Cycles does this: subsequent X-Y blur pass is used instead of actually going hierarchical...
-void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float ndcDepth, float sampleCount)
+void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float sampleCount)
 {
     float4 outD = float4(radiance.diffuse, sampleCount);
     float4 outS = float4(radiance.specular, 1.0f);
@@ -15,16 +15,13 @@ void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float ndcDepth, fl
     if (sampleCount == 1) {
         diffuse[pix] = outD;
         specular[pix] = outS;
-        depth[pix] = ndcDepth;
     } else {
         float invN = 1.0f / sampleCount;
         float4 currentD = diffuse[pix];
         currentD.rgb += (outD.rgb - currentD.rgb) * invN;
         currentD.a = sampleCount;
         diffuse[pix] = currentD;
-
         specular[pix] += (outS - specular[pix]) * invN;
-        depth[pix] += (ndcDepth - depth[pix]) * invN;
     }
 
     uint frameA = (uint(sampleCount) + 1) / 2;
@@ -588,5 +585,6 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         }
     }
     WritePrimaryInstanceID(pix, chit.raw.instance);
-    AccumulatePathRadiance(pix, radiance, WorldToNDCDepth(chitState.position), sampleCount);
+    AccumulatePathRadiance(pix, radiance, sampleCount);
+    depth[pix] = WorldToNDCDepth(chitState.position);
 }

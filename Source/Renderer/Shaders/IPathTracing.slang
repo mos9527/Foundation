@@ -547,7 +547,7 @@ float3 GeneratePrimaryRayDirection(float2 pixelSample)
 float WorldToNDCDepth(float3 worldPosition)
 {
     float4 clipPosition = mul(mul(globalParams.proj, globalParams.view), float4(worldPosition, 1.0f));
-    return clipPosition.z / clipPosition.w;
+    return saturate(clipPosition.z / clipPosition.w);
 }
 
 float3 GeneratePrimaryRay<S : ISampler>(uint2 pixel, inout S rng)
