@@ -86,6 +86,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
     RayCone currentRayCone = cameraRay.rayCone;
     HitRecord chit;
     HitState chitState;
+    bool chitMiss = false;
     for (uint bounce = 0; bounce <= globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
 
@@ -162,6 +163,8 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
 
         if (hit.kind == HitKind::None)
         {
+            if (bounce == 0) 
+                chitMiss = true;
             AddEnvironmentMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
             break;
         }
@@ -242,5 +245,5 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
     WritePrimaryInstanceID(pix, chit.raw.instance);
     diffuse[pix] = float4(radiance.diffuse, 1.0f);
     specular[pix] = float4(radiance.specular, 1.0f);
-    depth[pix] = WorldToNDCDepth(chitState.position);
+    depth[pix] = chitMiss ? 0.0f : WorldToNDCDepth(chitState.position);
 }

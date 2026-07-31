@@ -368,6 +368,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     RayCone currentRayCone = cameraRay.rayCone;
     HitRecord chit;
     HitState chitState;
+    bool chitMiss = false;
     for (uint bounce = 0; bounce <= globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
 
@@ -442,6 +443,11 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             ray.Origin = hitPoint + ray.Direction * EPS_TMin;
             bounce--; // Don't count this as a bounce
             continue;
+        }
+
+        if (bounce == 0 && hit.kind == HitKind::None)
+        {
+            chitMiss = true;         
         }
 
         if (!hasAnyDebugView && hit.kind == HitKind::None)
@@ -586,5 +592,5 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     }
     WritePrimaryInstanceID(pix, chit.raw.instance);
     AccumulatePathRadiance(pix, radiance, sampleCount);
-    depth[pix] = WorldToNDCDepth(chitState.position);
+    depth[pix] = chitMiss ? 0.0f : WorldToNDCDepth(chitState.position);
 }
