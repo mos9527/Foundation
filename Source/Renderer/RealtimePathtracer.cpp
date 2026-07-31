@@ -93,6 +93,10 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                                                }});
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
+    RenderUtils::createCSClearTexture(
+        renderer, "Trace Clear Depth", Depth,
+        RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat, .range = RHITextureSubresourceRange::Create()},
+        float4{0.0f, 0.0f, 0.0f, 0.0f});
     String tracePassName = Format("Trace {}", shaderExecutionReordering ? "SER" : "Compute");
     renderer->CreatePass(
         tracePassName.c_str(), RHIDeviceQueueType::Graphics, 0u,
