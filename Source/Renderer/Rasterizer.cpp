@@ -239,12 +239,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::R32Uint});
-    auto MotionVectorRT = renderer->CreateResource("Motion Vectors",
-                                                   RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                                                      RHITextureUsageBits::SampledImage |
-                                                                      RHITextureUsageBits::StorageImage,
-                                                                  .extent = {w, h, 1},
-                                                                  .format = RHIResourceFormat::R16G16SignedFloat});
     auto ReduceBuffer = renderer->CreateResource(
         "Reduced Values", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 256});
     if (cfg.viewFlags & ViewFlagsBits::Overdraw)
@@ -331,6 +325,16 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     cmd->DispatchIndirect(dispatchBuffer, 0);
                 });
         };
+        auto SetRasterFlagsCommon = [=](PassHandle self, Renderer* r)
+        {
+            RHIPipelineState::PipelineStateDesc::Rasterizer rastDesc{};
+            RHIPipelineState::PipelineStateDesc::DepthStencil dsDesc{};
+            if (cfg.cullFlags & CullFlagsBits::Backface)
+                rastDesc.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullBack;
+            else
+                rastDesc.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone;
+            r->PassSetRasterizerFlags(self, rastDesc, dsDesc);
+        };
         auto AddMainPass = [=](bool early)
         {
             renderer->CreatePass(
@@ -373,6 +377,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferIndirectRead(self, IndirectMeshletDispatch);
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
                     r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+                    SetRasterFlagsCommon(self, r);
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -512,6 +517,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferIndirectRead(self, DynamicDrawCount);
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
                     r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+                    SetRasterFlagsCommon(self, r);
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -573,13 +579,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferUnordered(self, CurveDrawCmds, RHIPipelineStageBits::ComputeShader, "outDrawCmds");
                     r->BindBufferUnordered(self, CurveDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
                                            "outDrawInstanceIDs");
-                    r->BindBufferUnordered(self, CurveDrawCount, RHIPipelineStageBits::ComputeShader, "outDrawCount");
-                    r->BindBufferUnordered(self, CurveMotionDrawCmds, RHIPipelineStageBits::ComputeShader,
-                                           "outMotionDrawCmds");
-                    r->BindBufferUnordered(self, CurveMotionDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
-                                           "outMotionDrawInstanceIDs");
-                    r->BindBufferUnordered(self, CurveMotionDrawCount, RHIPipelineStageBits::ComputeShader,
-                                           "outMotionDrawCount");
+                    r->BindBufferUnordered(self, CurveDrawCount, RHIPipelineStageBits::ComputeShader, "outDrawCount");                    
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -648,26 +648,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     cmd->EndGraphics();
                 });
         }
-        renderer->CreatePass(
-            "Camera Motion Vectors", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSCameraMotionVectors.spv"));
-                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-                r->BindTextureSRV(
-                    self, Depth, "depth", RHIPipelineStageBits::ComputeShader,
-                    RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
-                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-                r->BindTextureUAV(self, MotionVectorRT, "motionVectors", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R16G16SignedFloat,
-                                                     .range = RHITextureSubresourceRange::Create()});
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                r->CmdSetPipeline(self, cmd);
-                r->CmdDispatch(self, cmd, {w, h, 1});
-            });
         if (cfg.viewFlags & ViewFlagsBits::Overdraw)
         {
             renderer->CreatePass(
@@ -753,7 +733,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 .gbuffer2 = GBufferRT2,
                 .depth = Depth,
                 .instanceID = InstanceIDBuffer,
-                .motionVectors = MotionVectorRT,
                 .hiz = HIZ,
                 .hizSampler = HIZSampler,
                 .diffuse = DiffuseBuffer,

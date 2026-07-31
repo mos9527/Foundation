@@ -27,7 +27,6 @@ struct RasterFeatureContext
     ResourceHandle gbuffer2{kInvalidHandle};
     ResourceHandle depth{kInvalidHandle};
     ResourceHandle instanceID{kInvalidHandle};
-    ResourceHandle motionVectors{kInvalidHandle};
     ResourceHandle hiz{kInvalidHandle};
     ResourceHandle hizSampler{kInvalidHandle};
     ResourceHandle diffuse{kInvalidHandle};
