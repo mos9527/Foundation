@@ -324,6 +324,7 @@ namespace Foundation::RenderCore
         Vector<Pair<ResourceHandle, RHIPipelineState::PipelineStateDesc::Attachment::Blending>> rtvs;
         // (Graphics Only) Depth Stencil View
         ResourceHandle dsv{kInvalidHandle};
+        bool isDepthReadOnly{false};
         // (Graphics Only) Vertex Input assembly
         Vector<RHIPipelineState::PipelineStateDesc::VertexInput::Binding> vertexInputBindings;
         Vector<RHIVertexAttribute> vertexInputAttributes;

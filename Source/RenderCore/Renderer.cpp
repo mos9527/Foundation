@@ -424,6 +424,7 @@ void Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextur
         readOnly ? RHITextureLayout::DepthStencilReadOnly : RHITextureLayout::DepthStencil);
     ResourceHandle view = CreateTextureView(pass, texture, desc);
     tpass.dsv = view;
+    tpass.isDepthReadOnly = readOnly;
 }
 
 void Renderer::BindBackbufferRTV(PassHandle pass,
@@ -2245,9 +2246,9 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
                   "Graphics extent too large for Depth buffer {}", tres.name);
         cmd->BeginGraphics({.colorAttachments = rtvs,
                             .depthAttachment = {.imageView = DerefTextureView(tpass.dsv),
-                                                .imageLayout = RHITextureLayout::DepthStencil,
+                                                .imageLayout = tpass.isDepthReadOnly ? RHITextureLayout::DepthStencilReadOnly : RHITextureLayout::DepthStencil,
                                                 .loadOp = dsv_load.loadOp,
-                                                .storeOp = RHIAttachmentStoreOp::Store,
+                                                .storeOp = tpass.isDepthReadOnly ? RHIAttachmentStoreOp::DontCare : RHIAttachmentStoreOp::Store,
                                                 .clearDepthStencil = dsv_load.clearValue},
                             .width = extent.x,
                             .height = extent.y});
