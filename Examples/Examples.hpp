@@ -99,6 +99,7 @@ struct ExampleInputState
     float2 pointerPosition{};
     float2 clickPosition{};
     // UI states
+    static constexpr size_t kMaxUiStyleStack = 8;
     int uiX = 16;
     int uiY = 16;
     int uiStartX = 16;
@@ -110,6 +111,12 @@ struct ExampleInputState
     int uiLastItemX{};
     int uiLastItemY{};
     bool uiSameLine{};
+    int uiScale = 2;
+    int uiColor = -1;
+    size_t uiScaleStackCount{};
+    size_t uiColorStackCount{};
+    Array<int, kMaxUiStyleStack> uiScaleStack{};
+    Array<int, kMaxUiStyleStack> uiColorStack{};
     Array<RenderUtils::CSDebugTextData, kMaxHudLines> hud{};
     size_t hudCount{};
     Array<SDL_Keycode, kMaxPressedKeys> pressedKeys{};
@@ -163,6 +170,11 @@ bool Examples_ShouldClose(SDL_Window* window, ExampleVulkanContext& ctx, SDL_Eve
 void Examples_BeginFrameInput(ExampleInputState& input);
 void Examples_BeginControls(ExampleInputState& input, int x = 16, int y = 16);
 void Examples_SameLine(ExampleInputState& input, int spacing = 16);
+void Examples_PushScale(ExampleInputState& input, int scale);
+void Examples_PopScale(ExampleInputState& input);
+void Examples_PushColor(ExampleInputState& input, int col32);
+void Examples_PushColor(ExampleInputState& input, int r, int g, int b, int a = 255);
+void Examples_PopColor(ExampleInputState& input);
 void Examples_Text(ExampleInputState& input, StringView text);
 bool Examples_Button(ExampleInputState& input, StringView text);
 bool Examples_Slider(ExampleInputState& input, StringView label, float& value, float minValue, float maxValue,

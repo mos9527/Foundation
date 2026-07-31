@@ -638,6 +638,10 @@ void Examples_BeginControls(ExampleInputState& input, int x, int y)
     input.uiLastItemX = x;
     input.uiLastItemY = y;
     input.uiSameLine = false;
+    input.uiScale = 2;
+    input.uiColor = kExampleUiDefaultColor;
+    input.uiScaleStackCount = 0;
+    input.uiColorStackCount = 0;
     input.hud = {};
     input.hudCount = 0;
 }
@@ -648,12 +652,44 @@ void Examples_SameLine(ExampleInputState& input, int spacing)
     input.uiSameLineSpacing = spacing;
 }
 
+void Examples_PushScale(ExampleInputState& input, int scale)
+{
+    CHECK_MSG(input.uiScaleStackCount < input.uiScaleStack.size(), "Exceeded ExampleInputState::kMaxUiStyleStack");
+    input.uiScaleStack[input.uiScaleStackCount++] = input.uiScale;
+    input.uiScale = scale;
+}
+
+void Examples_PopScale(ExampleInputState& input)
+{
+    CHECK_MSG(input.uiScaleStackCount > 0, "Examples_PopScale without matching PushScale");
+    input.uiScale = input.uiScaleStack[--input.uiScaleStackCount];
+}
+
+void Examples_PushColor(ExampleInputState& input, int col32)
+{
+    CHECK_MSG(input.uiColorStackCount < input.uiColorStack.size(), "Exceeded ExampleInputState::kMaxUiStyleStack");
+    input.uiColorStack[input.uiColorStackCount++] = input.uiColor;
+    input.uiColor = col32;
+}
+
+void Examples_PushColor(ExampleInputState& input, int r, int g, int b, int a)
+{
+    Examples_PushColor(input, a << 24 | b << 16 | g << 8 | r);
+}
+
+void Examples_PopColor(ExampleInputState& input)
+{
+    CHECK_MSG(input.uiColorStackCount > 0, "Examples_PopColor without matching PushColor");
+    input.uiColor = input.uiColorStack[--input.uiColorStackCount];
+}
+
 void Examples_Text(ExampleInputState& input, StringView text)
 {
     RenderUtils::CSDebugTextData& line = NextHudLine(input);
     PlaceControl(input, line);
+    line.scale = input.uiScale;
     line.SetText(text);
-    line.col32 = kExampleUiDefaultColor;
+    line.col32 = input.uiColor;
     AdvanceControl(input, line);
 }
 
@@ -661,9 +697,10 @@ bool Examples_Button(ExampleInputState& input, StringView text)
 {
     RenderUtils::CSDebugTextData& line = NextHudLine(input);
     PlaceControl(input, line);
+    line.scale = input.uiScale;
     line.SetText(Format(" {} ", text));
     const uint32_t id = input.nextControlId++;
-    line.col32 = input.activeControl == id ? kExampleUiActiveColor : kExampleUiDefaultColor;
+    line.col32 = input.activeControl == id ? kExampleUiActiveColor : input.uiColor;
     RegisterControl(input, id, line);
     AdvanceControl(input, line);
     return input.clickedControl == id;
@@ -697,9 +734,10 @@ bool Examples_Slider(ExampleInputState& input, StringView label, float& value, f
     if (drag)
     {
         PlaceControl(input, barLine);
+        barLine.scale = input.uiScale;
         barLine.SetText(text);
         const uint32_t barId = input.nextControlId++;
-        barLine.col32 = input.activeControl == barId ? kExampleUiActiveColor : kExampleUiDefaultColor;
+        barLine.col32 = input.activeControl == barId ? kExampleUiActiveColor : input.uiColor;
         RegisterControl(input, barId, barLine);
         if (input.activeControl == barId && input.pointerDown)
         {
