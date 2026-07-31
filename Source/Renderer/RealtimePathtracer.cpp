@@ -1,5 +1,6 @@
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
+#include <RenderUtils/PSFullscreen.hpp>
 #include <algorithm>
 #include "GPUScene.hpp"
 #include "ProgressivePathtracer.hpp"
@@ -71,13 +72,17 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                                                                 RHITextureUsageBits::TransferSource,
                                                             .extent = {w, h, 1},
                                                             .format = kPathTracerAOVFormat});
-    auto Depth = renderer->CreateResource("Depth",
-                                          RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
-                                                             RHITextureUsageBits::SampledImage |
-                                                             RHITextureUsageBits::TransferSource |
-                                                             RHITextureUsageBits::DepthStencil,
-                                                         .extent = {w, h, 1},
-                                                         .format = RHIResourceFormat::R32SignedFloat});
+    // PT writes depth as a color UAV; PS-blit to a D32 DSV so consumers match raster.
+    auto DepthUAV = renderer->CreateResource(
+        "Depth UAV",
+        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+                       .extent = {w, h, 1},
+                       .format = RHIResourceFormat::R32SignedFloat});
+    auto Depth = renderer->CreateResource(
+        "Depth",
+        RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
+                       .extent = {w, h, 1},
+                       .format = RHIResourceFormat::D32SignedFloat});
     // Instance ID map: R32_UINT, written every frame on primary hit (no accumulation)
     auto InstanceIDBuffer = renderer->CreateResource(
         "Instance ID Buffer",
@@ -95,7 +100,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
     RenderUtils::createCSClearTexture(
-        renderer, "Trace Clear Depth", Depth,
+        renderer, "Trace Clear Depth", DepthUAV,
         RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat, .range = RHITextureSubresourceRange::Create()},
         float4{0.0f, 0.0f, 0.0f, 0.0f});
     String tracePassName = Format("Trace {}", shaderExecutionReordering ? "SER" : "Compute");
@@ -141,7 +146,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
             r->BindTextureUAV(
                 self, Specular, "specular", pipelineStage,
                 RHITextureViewDesc{.format = kPathTracerAOVFormat, .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureUAV(self, Depth, "depth", pipelineStage,
+            r->BindTextureUAV(self, DepthUAV, "depth", pipelineStage,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureUAV(self, InstanceIDBuffer, "instanceIDBuffer", pipelineStage,
@@ -162,7 +167,8 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                 else
                     cmd->Dispatch((w - 1) / 8 + 1, (h - 1) / 8 + 1, 1);
             }
-        });   
+        });
+    RenderUtils::createPSDepthCopyPass(renderer, "Copy Depth UAV to DSV", DepthUAV, Depth, {w, h});
     out.extent = {w, h};
     out.aovFormat = kPathTracerAOVFormat;
     out.diffuse = Diffuse;

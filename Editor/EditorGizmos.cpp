@@ -512,9 +512,9 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
             if (depthTexture != kInvalidHandle)
             {
                 r->BindTextureSRV(self, depthTexture, "sceneDepth", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create(
-                                                         RHITextureAspectFlagBits::Color)});
+                                                         RHITextureAspectFlagBits::Depth)});
             }
             r->PassSetTopology(self, RHIPipelineState::PipelineStateDesc::LineList);
             r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone},
@@ -560,9 +560,9 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
                 if (depthTexture != kInvalidHandle)
                 {
                     r->BindTextureSRV(self, depthTexture, "sceneDepth", RHIPipelineStageBits::FragmentShader,
-                                      RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create(
-                                                             RHITextureAspectFlagBits::Color)});
+                                                             RHITextureAspectFlagBits::Depth)});
                 }
                 r->PassSetTopology(self, RHIPipelineState::PipelineStateDesc::LineList);
                 r->PassSetRasterizerFlags(
@@ -613,9 +613,9 @@ void InsertPass(Renderer* renderer, ResourceHandle depthTexture, RHIExtent2D ext
             if (depthTexture != kInvalidHandle)
             {
                 r->BindTextureSRV(self, depthTexture, "sceneDepth", RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create(
-                                                         RHITextureAspectFlagBits::Color)});
+                                                         RHITextureAspectFlagBits::Depth)});
             }
             r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone},
                                       {.depthTest = false, .depthWrite = false});

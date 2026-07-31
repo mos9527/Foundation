@@ -121,4 +121,40 @@ namespace Foundation::RenderUtils {
             [](PassHandle, Renderer*, RHICommandList*) {}
         );
     }
+    // Color R32 (etc.) -> D32 depth via SV_Depth; CopyImage cannot cross aspects without maintenance8.
+    inline PassHandle createPSDepthCopyPass(Renderer* r, StringView name, ResourceHandle srcDepth,
+                                            ResourceHandle dstDepth, RHIExtent2D extent,
+                                            RHIResourceFormat srcFormat = RHIResourceFormat::R32SignedFloat)
+    {
+        return r->CreatePass(
+            name, RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain",
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/VSFullscreen.spv"));
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/PSCopyDepth.spv"));
+                r->BindTextureSRV(self, srcDepth, "srcDepth", RHIPipelineStageBits::FragmentShader,
+                                  RHITextureViewDesc{.format = srcFormat,
+                                                     .range = RHITextureSubresourceRange::Create(
+                                                         RHITextureAspectFlagBits::Color)});
+                r->BindTextureDSV(self, dstDepth,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
+                                                     .range = RHITextureSubresourceRange::Create(
+                                                         RHITextureAspectFlagBits::Depth)});
+                r->PassSetRasterizerFlags(
+                    self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone},
+                    {.depthTest = true,
+                     .depthWrite = true,
+                     .depthCompareOp = RHIPipelineState::PipelineStateDesc::DepthStencil::Always});
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                r->CmdSetPipeline(self, cmd);
+                r->CmdBeginGraphics(self, cmd, extent, {}, {RHIAttachmentLoadOp::DontCare});
+                cmd->SetViewport(0, 0, extent.x, extent.y).SetScissor(0, 0, extent.x, extent.y);
+                cmd->Draw(3);
+                cmd->EndGraphics();
+            });
+    }
 }
