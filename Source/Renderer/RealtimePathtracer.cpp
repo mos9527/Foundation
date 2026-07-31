@@ -15,7 +15,7 @@ uint32_t PackCompileOptions(PTSampler sampler, bool forceTextureLOD0, LightSampl
 }
 
 void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
-                                RendererConfig const& cfg, RendererOutputs& out)
+                                        RendererConfig const& cfg, RendererOutputs& out)
 {
     CHECK(renderer);
     CHECK(globals);
@@ -60,18 +60,18 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
     uint32_t h = std::max(renderExtent.y, 1u);
     constexpr RHIResourceFormat kPathTracerAOVFormat = RHIResourceFormat::R16G16B16A16SignedFloat;
     // AOV buffers
-    auto Diffuse = renderer->CreateResource("Diffuse",
-                                            RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
-                                                               RHITextureUsageBits::SampledImage |
-                                                               RHITextureUsageBits::TransferSource,
-                                                           .extent = {w, h, 1},
-                                                           .format = kPathTracerAOVFormat});
-    auto Specular = renderer->CreateResource("Specular",
-                                             RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
-                                                                RHITextureUsageBits::SampledImage |
-                                                                RHITextureUsageBits::TransferSource,
-                                                            .extent = {w, h, 1},
-                                                            .format = kPathTracerAOVFormat});
+    auto Diffuse = renderer->CreateResource(
+        "Diffuse",
+        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage |
+                           RHITextureUsageBits::TransferSource | RHITextureUsageBits::RenderTarget,
+                       .extent = {w, h, 1},
+                       .format = kPathTracerAOVFormat});
+    auto Specular = renderer->CreateResource(
+        "Specular",
+        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage |
+                           RHITextureUsageBits::TransferSource | RHITextureUsageBits::RenderTarget,
+                       .extent = {w, h, 1},
+                       .format = kPathTracerAOVFormat});
     // PT writes depth as a color UAV; PS-blit to a D32 DSV so consumers match raster.
     auto DepthUAV = renderer->CreateResource(
         "Depth UAV",
@@ -112,10 +112,10 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                                                                  : RHIPipelineStageBits::ComputeShader;
             r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
             r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "TLAS");
-            const uint kCompileOptions =
-                PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode);
-            const auto shader = r->GetApplication()->ResolveRelativePathBase(!shaderExecutionReordering ? "Data/Shaders/EPathTracingRealtime.spv"
-                                                                        : "Data/Shaders/EPathTracingRealtime_SER.spv");
+            const uint kCompileOptions = PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode);
+            const auto shader = r->GetApplication()->ResolveRelativePathBase(
+                !shaderExecutionReordering ? "Data/Shaders/EPathTracingRealtime.spv"
+                                           : "Data/Shaders/EPathTracingRealtime_SER.spv");
             if (shaderExecutionReordering)
             {
                 r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,

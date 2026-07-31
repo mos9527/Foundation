@@ -1,9 +1,9 @@
+#include "ProgressivePathtracer.hpp"
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
 #include <algorithm>
 #include "GPUScene.hpp"
-#include "ProgressivePathtracer.hpp"
 
 uint32_t PackCompileOptions(PTSampler sampler, bool forceTextureLOD0, LightSampler lightSamplerMode,
                             bool energyCompensation)
@@ -18,7 +18,7 @@ uint32_t PackCompileOptions(PTSampler sampler, bool forceTextureLOD0, LightSampl
 }
 
 void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu,
-                                RendererConfig const& cfg, RendererOutputs& out)
+                                           RendererConfig const& cfg, RendererOutputs& out)
 {
     CHECK(renderer);
     CHECK(globals);
@@ -64,18 +64,18 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
     uint32_t h = std::max(renderExtent.y, 1u);
     constexpr RHIResourceFormat kPathTracerAOVFormat = RHIResourceFormat::R32G32B32A32SignedFloat;
     // AOV buffers
-    auto Diffuse = renderer->CreateResource("Diffuse",
-                                            RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
-                                                               RHITextureUsageBits::SampledImage |
-                                                               RHITextureUsageBits::TransferSource,
-                                                           .extent = {w, h, 1},
-                                                           .format = kPathTracerAOVFormat});
-    auto Specular = renderer->CreateResource("Specular",
-                                             RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
-                                                                RHITextureUsageBits::SampledImage |
-                                                                RHITextureUsageBits::TransferSource,
-                                                            .extent = {w, h, 1},
-                                                            .format = kPathTracerAOVFormat});
+    auto Diffuse = renderer->CreateResource(
+        "Diffuse",
+        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage |
+                           RHITextureUsageBits::TransferSource | RHITextureUsageBits::RenderTarget,
+                       .extent = {w, h, 1},
+                       .format = kPathTracerAOVFormat});
+    auto Specular = renderer->CreateResource(
+        "Specular",
+        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage |
+                           RHITextureUsageBits::TransferSource | RHITextureUsageBits::RenderTarget,
+                       .extent = {w, h, 1},
+                       .format = kPathTracerAOVFormat});
     // PT writes depth as a color UAV; PS-blit to a D32 DSV so consumers match raster.
     auto DepthUAV = renderer->CreateResource(
         "Depth UAV",
@@ -110,7 +110,7 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
     RenderUtils::createCSClearTexture(
         renderer, "Trace Clear Depth", DepthUAV,
         RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat, .range = RHITextureSubresourceRange::Create()},
-        float4{0.0f, 0.0f, 0.0f, 0.0f});    
+        float4{0.0f, 0.0f, 0.0f, 0.0f});
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
     String tracePassName = Format("Trace {}", shaderExecutionReordering ? "SER" : "Compute");
@@ -123,11 +123,10 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
             r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
             r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "TLAS");
             const uint kCompileOptions =
-                PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode,
-                                   cfg.energyCompensation);
+                PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode, cfg.energyCompensation);
             const auto shader = r->GetApplication()->ResolveRelativePathBase(
                 !shaderExecutionReordering ? "Data/Shaders/EPathTracingProgressive.spv"
-                                                                        : "Data/Shaders/EPathTracingProgressive_SER.spv");
+                                           : "Data/Shaders/EPathTracingProgressive_SER.spv");
             if (shaderExecutionReordering)
             {
                 r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,

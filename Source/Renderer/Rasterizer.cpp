@@ -701,13 +701,13 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             auto DiffuseBuffer = renderer->CreateResource(
                 "Diffuse",
                 RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage |
-                                   RHITextureUsageBits::TransferSource,
+                                   RHITextureUsageBits::TransferSource | RHITextureUsageBits::RenderTarget,
                                .extent = {w, h, 1},
                                .format = RHIResourceFormat::R16G16B16A16SignedFloat});
             auto SpecularBuffer = renderer->CreateResource(
                 "Specular",
                 RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage |
-                                   RHITextureUsageBits::TransferSource,
+                                   RHITextureUsageBits::TransferSource | RHITextureUsageBits::RenderTarget,
                                .extent = {w, h, 1},
                                .format = RHIResourceFormat::R16G16B16A16SignedFloat});
             auto LUTSampler = renderer->CreateSampler({.addressMode = {
