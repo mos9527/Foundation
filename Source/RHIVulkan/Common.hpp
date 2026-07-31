@@ -177,6 +177,19 @@ namespace Foundation::RHI {
         }
     }
 
+    inline RHIDeviceType rhiDeviceTypeFromVkPhysicalDeviceType(vk::PhysicalDeviceType type) {
+        using enum RHIDeviceType;
+        switch (type) {
+        case vk::PhysicalDeviceType::eIntegratedGpu: return IntegratedGpu;
+        case vk::PhysicalDeviceType::eDiscreteGpu: return DiscreteGpu;
+        case vk::PhysicalDeviceType::eVirtualGpu: return VirtualGpu;
+        case vk::PhysicalDeviceType::eCpu: return Cpu;
+        case vk::PhysicalDeviceType::eOther:
+        default:
+            return Other;
+        }
+    }
+
     inline vk::BufferUsageFlags vkBufferUsageFromRHIBufferUsage(RHIBufferUsage usage) {
         using enum RHIBufferUsageBits;
         vk::BufferUsageFlags flags{};

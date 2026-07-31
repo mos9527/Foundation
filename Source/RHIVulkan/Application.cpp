@@ -131,7 +131,11 @@ VulkanApplication::VulkanApplication(Allocator* allocator, bool headless, const 
     {
         vk::raii::PhysicalDevice device(mInstance, physicalDevices[id]);
         auto props = device.getProperties();
-        mDevices.emplace_back(RHIDevice::DeviceDesc{.id = id, .name = props.deviceName.data() });
+        mDevices.emplace_back(RHIDevice::DeviceDesc{
+            .id = id,
+            .name = props.deviceName.data(),
+            .type = rhiDeviceTypeFromVkPhysicalDeviceType(props.deviceType),
+        });
         mPhysicalDevices.emplace_back(std::move(device));
     }
     if (isExtensionEnabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {

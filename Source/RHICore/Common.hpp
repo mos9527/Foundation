@@ -161,6 +161,21 @@ namespace Foundation::RHI {
         // The command pool is meant to be used once
         Transient,
     };
+    enum class RHIDeviceType {
+        Other,
+        IntegratedGpu,
+        DiscreteGpu,
+        VirtualGpu,
+        Cpu,
+    };
+    ENUM_NAME_CONV_BEGIN(RHIDeviceType)
+        ENUM_NAME(Other)
+        ENUM_NAME(IntegratedGpu)
+        ENUM_NAME(DiscreteGpu)
+        ENUM_NAME(VirtualGpu)
+        ENUM_NAME(Cpu)
+    ENUM_NAME_CONV_END()
+
     enum class RHIDeviceQueueType : uint32_t {
         Undefined = ~0u,
         Graphics = 0,

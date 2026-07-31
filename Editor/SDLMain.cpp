@@ -66,7 +66,7 @@ int main(int argc, char** argv)
     {
         auto* app = ConstructBase<RHIApplication, VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC);
         for (auto const& d : app->EnumerateDevices())
-            Println("[{}] {}", d.id, d.name);
+            Println("[{}] {} ({})", d.id, d.name, d.type);
         Destruct(GLOBAL_ALLOC, app);
         return 0;
     }

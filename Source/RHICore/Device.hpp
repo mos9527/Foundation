@@ -249,6 +249,7 @@ namespace Foundation::RHI
         {
             uint32_t id = 0;
             String name = "RHIDevice";
+            RHIDeviceType type = RHIDeviceType::Other;
         };
         const RHIApplication& mApp;
         RHIDevice(RHIApplication const& app) : mApp(app) {}

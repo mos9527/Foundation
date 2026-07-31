@@ -17,8 +17,6 @@ const char* kVulkanDesiredDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
                                                 VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
                                                 VK_NV_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME};
 
-const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
-
 namespace
 {
 
@@ -341,7 +339,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         .raytracingInline = hasRayQuery,
         .raytracingPipeline = hasRayTracingPipeline,
         .timestampQueries = timestampQueries,
-        .integratedGPU = properties.deviceType == vk::PhysicalDeviceType::eIntegratedGpu,
+        .integratedGPU =
+            rhiDeviceTypeFromVkPhysicalDeviceType(properties.deviceType) == RHIDeviceType::IntegratedGpu,
         // Hint for ReBAR or UMA architectures
         .deviceLocalHostVisibleBuffers = deviceLocalHostVisibleBuffers,
         .deviceLocalHostVisibleHeapSize = deviceLocalHostVisibleHeapSize,
@@ -456,7 +455,7 @@ String VulkanDevice::QueryDeviceString() const
 {
     auto properties = mPhysicalDevice.getProperties();
     return Format("{} ({}) on Vulkan {}.{}.{}", &properties.deviceName[0],
-                       kVulkanDeviceTypes[static_cast<size_t>(properties.deviceType)],
+                       rhiDeviceTypeFromVkPhysicalDeviceType(properties.deviceType),
                        VK_VERSION_MAJOR(properties.apiVersion), VK_VERSION_MINOR(properties.apiVersion),
                        VK_VERSION_PATCH(properties.apiVersion));
 }

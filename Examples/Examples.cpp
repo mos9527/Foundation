@@ -516,12 +516,14 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     {
         auto* app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
         for (auto const& d : app->EnumerateDevices())
-            Println("[{}] {}", d.id, d.name);
+            Println("[{}] {} ({})", d.id, d.name, d.type);
         Destruct(GLOBAL_ALLOC, app);
         std::exit(0);
     }
+    bool const gpuSpecified = static_cast<bool>(cmdl({"-g", "--gpu"}));
     int gpuId = 0;
-    cmdl({"-g", "--gpu"}, 0) >> gpuId;
+    if (gpuSpecified)
+        cmdl({"-g", "--gpu"}) >> gpuId;
     if (!headless)
     {
         std::set_terminate(Examples_TerminateHandler);
@@ -539,6 +541,17 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     });
 
     auto app = ConstructUnique<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC, headless);
+    if (!gpuSpecified)
+    {
+        for (auto const& d : app->EnumerateDevices())
+        {
+            if (d.type == RHIDeviceType::DiscreteGpu)
+            {
+                gpuId = static_cast<int>(d.id);
+                break;
+            }
+        }
+    }
     auto device = app->CreateDevice({.id = static_cast<uint32_t>(gpuId)});
     if (!headless)
         CHECK(Examples_CreateSwapchain(window, device.Get(), ctx.surface, ctx.swapchain))
