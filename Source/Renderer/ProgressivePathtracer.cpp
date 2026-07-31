@@ -78,7 +78,8 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
     auto Depth = renderer->CreateResource("Depth",
                                           RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
                                                              RHITextureUsageBits::SampledImage |
-                                                             RHITextureUsageBits::TransferSource,
+                                                             RHITextureUsageBits::TransferSource |
+                                                             RHITextureUsageBits::DepthStencil,
                                                          .extent = {w, h, 1},
                                                          .format = RHIResourceFormat::R32SignedFloat});
     // Instance ID map: R32_UINT, written every frame on primary hit (no accumulation)
