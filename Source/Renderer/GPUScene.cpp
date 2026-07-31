@@ -351,6 +351,8 @@ struct GPUSceneImpl
     Result Upload(FBlobDeserializer* blobs, FSerializedMesh const& source, GeometryHandle& outHandle);
     Result Upload(FImportedMesh const& source, GeometryHandle& outHandle);
     Result Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu);
+    Result Allocate(uint32_t vertexCount, uint32_t indexCount, uint32_t leafCount,
+                    GeometryHandle& outHandle, bool isGpu);
     /* Curve */
     Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
     /* Texture */
@@ -391,7 +393,10 @@ struct GPUSceneImpl
     }
     void BeginDynamicGeometryUpdate();
     void UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
+    void UpdateDynamicCurveGPU(GeometryHandle handle, bool updateVertices, bool updateIndices, bool updateLeaves);
     void UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices, Span<const uint32_t> indices);
+    void UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurveDOTSVertex> vertices,
+                               Span<const uint32_t> indices, Span<const FCurveLeaf> leaves);
     void EndDynamicGeometryUpdate();
     void UploadDynamicGeometryCPU(RHICommandList* cmd);
     void BuildBLAS(RHICommandList* cmd);
@@ -2028,20 +2033,26 @@ void GPUSceneImpl::AllocateDynamicBLAS(Geometry& g)
 {
     CHECK(mDynamicPrimitiveBuffer);
     uint32_t const base = g.offset;
+    bool const curve = g.type == kGSInstanceTypeCurve;
+    uint32_t const vertexOffset = curve ? g.curve.vertices.offset : g.mesh.vertices.offset;
+    uint32_t const vertexCount = curve ? g.curve.vertices.count : g.mesh.vertices.count;
+    uint32_t const indexOffset = curve ? g.curve.indices.offset : g.mesh.indices.offset;
+    uint32_t const indexCount = curve ? g.curve.indices.count : g.mesh.indices.count;
+    uint32_t const vertexStride = curve ? sizeof(FCurveDOTSVertex) : sizeof(FQVertex);
     RHIAccelerationStructureGeometryInfo geo{
         .type = RHIAccelerationGeometryType::Triangles,
         .triangleData = {
             .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
             .vertexBuffer = mDynamicPrimitiveBuffer.Get(),
-            .vertexOffset = base + static_cast<uint32_t>(sizeof(GSMesh)),
-            .vertexCount = g.mesh.vertices.count,
-            .vertexStride = sizeof(FQVertex),
+            .vertexOffset = vertexOffset,
+            .vertexCount = vertexCount,
+            .vertexStride = vertexStride,
             .indexFormat = RHIResourceFormat::R32Uint,
             .indexBuffer = mDynamicPrimitiveBuffer.Get(),
-            .indexOffset = base + static_cast<uint32_t>(sizeof(GSMesh) + g.dynamicVtxBytes),
-            .indexCount = g.mesh.indices.count,
+            .indexOffset = indexOffset,
+            .indexCount = indexCount,
         }};
-    RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = g.mesh.indices.count / 3};
+    RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = indexCount / 3};
     RHIAccelerationStructureBuildFlags const flags =
         RHIAccelerationStructureBuildFlagsBits::PreferFastBuild | RHIAccelerationStructureBuildFlagsBits::AllowUpdate;
     RHIAccelerationStructureBuildDesc desc{.type = RHIAccelerationStructureType::BottomLevel,
@@ -2140,6 +2151,69 @@ GPUScene::Result GPUSceneImpl::Allocate(uint32_t vertexCount, uint32_t indexCoun
     return Result::Ready;
 }
 
+GPUScene::Result GPUSceneImpl::Allocate(uint32_t vertexCount, uint32_t indexCount, uint32_t leafCount,
+                                        GeometryHandle& outHandle, bool isGpu)
+{
+    if (!mDynamicPrimitiveBuffer)
+    {
+        LOG(GPUScene, LogError, "Allocate called but GPUSceneDesc::dynamicGeometryBudget is 0 (feature disabled)");
+        return Result::InvalidInput;
+    }
+    uint64_t const expectedIndexCount = static_cast<uint64_t>(leafCount) * 12u;
+    if (vertexCount == 0 || leafCount == 0 || expectedIndexCount > UINT32_MAX ||
+        indexCount != static_cast<uint32_t>(expectedIndexCount))
+        return Result::InvalidInput;
+
+    uint64_t const vtxBytes64 = static_cast<uint64_t>(vertexCount) * sizeof(FCurveDOTSVertex);
+    uint64_t const idxBytes64 = static_cast<uint64_t>(indexCount) * sizeof(uint32_t);
+    uint64_t const leafBytes64 = static_cast<uint64_t>(leafCount) * sizeof(FCurveLeaf);
+    uint64_t const footprint64 = sizeof(GSCurveSet) + vtxBytes64 + idxBytes64 + leafBytes64;
+    uint64_t const stride64 = AlignUp(footprint64, 16ull);
+    if (vtxBytes64 > UINT32_MAX || idxBytes64 > UINT32_MAX || leafBytes64 > UINT32_MAX || stride64 > UINT32_MAX)
+        return Result::InvalidInput;
+
+    GeometryHandle handle{};
+    Geometry* gp = nullptr;
+    {
+        std::lock_guard<Mutex> lock(mUploadStateMutex);
+        uint64_t base = mDynamicPrimitiveAlloc->Allocate(static_cast<uint32_t>(stride64), 16);
+        if (base == RHIVirtualAllocator::kInvalidOffset)
+            return Result::OutOfMemory;
+        uint32_t slot = FreelistPop(mGeometry, mGeometryFreelist);
+        if (slot == UINT32_MAX)
+        {
+            mDynamicPrimitiveAlloc->Free(base);
+            return Result::OutOfMemory;
+        }
+        Geometry& g = mGeometry[slot];
+        uint32_t const version = g.version;
+        g = Geometry{};
+        g.version = version;
+        g.type = kGSInstanceTypeCurve;
+        g.dynamic = true;
+        g.isGpu = isGpu;
+        g.blas = UINT32_MAX;
+        g.offset = static_cast<uint32_t>(base);
+        g.dynamicVtxBytes = static_cast<uint32_t>(vtxBytes64);
+        g.curve.vertices.count = vertexCount;
+        g.curve.indices.count = indexCount;
+        g.curve.leaves.count = leafCount;
+        g.live = true;
+        g.uploadHeader = true;
+        g.state = ResourceState::Ready;
+        handle = {slot, version};
+        gp = &g;
+        mDynamicGeometries.push_back(slot);
+    }
+    Geometry& g = *gp;
+    g.curve.vertices.offset = g.offset + sizeof(GSCurveSet);
+    g.curve.indices.offset = g.curve.vertices.offset + g.dynamicVtxBytes;
+    g.curve.leaves.offset = g.curve.indices.offset + static_cast<uint32_t>(idxBytes64);
+    AllocateDynamicBLAS(g);
+    outHandle = handle;
+    return Result::Ready;
+}
+
 uint32_t GPUSceneImpl::AllocateDynamicStaging(uint32_t size, uint32_t alignment)
 {
     CHECK_MSG(mDynamicStagingMapped, "CPU dynamic updates require GPUSceneDesc::dynamicStagingBudget");
@@ -2170,6 +2244,20 @@ void GPUSceneImpl::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVe
     CHECK_MSG(g && g->dynamic, "UpdateDynamicGeometryGPU on a non-dynamic or invalid geometry handle");
     CHECK_MSG(g->isGpu, "UpdateDynamicGeometryGPU called on CPU-authored geometry");
     CHECK_MSG(updateVertices || updateIndices, "UpdateDynamicGeometryGPU requires at least one updated range");
+    g->dirty = true;
+    g->dynamicIndicesDirty |= updateIndices;
+}
+
+void GPUSceneImpl::UpdateDynamicCurveGPU(GeometryHandle handle, bool updateVertices, bool updateIndices, bool updateLeaves)
+{
+    CHECK_MSG(mDynamicIsUpdate,
+              "UpdateDynamicCurveGPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+    Geometry* g = ResolveGeometry(handle);
+    CHECK_MSG(g && g->dynamic && g->type == kGSInstanceTypeCurve,
+              "UpdateDynamicCurveGPU on a non-dynamic curve or invalid geometry handle");
+    CHECK_MSG(g->isGpu, "UpdateDynamicCurveGPU called on CPU-authored geometry");
+    CHECK_MSG(updateVertices || updateIndices || updateLeaves,
+              "UpdateDynamicCurveGPU requires at least one updated range");
     g->dirty = true;
     g->dynamicIndicesDirty |= updateIndices;
 }
@@ -2207,6 +2295,49 @@ void GPUSceneImpl::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQ
     g->dirty = true;
 }
 
+void GPUSceneImpl::UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurveDOTSVertex> vertices,
+                                         Span<const uint32_t> indices, Span<const FCurveLeaf> leaves)
+{
+    CHECK_MSG(mDynamicIsUpdate,
+              "UpdateDynamicCurveCPU must be called inside a BeginDynamicGeometryUpdate / EndDynamicGeometryUpdate window");
+    Geometry* g = ResolveGeometry(handle);
+    CHECK_MSG(g && g->dynamic && g->type == kGSInstanceTypeCurve,
+              "UpdateDynamicCurveCPU on a non-dynamic curve or invalid geometry handle");
+    CHECK_MSG(!g->isGpu, "CPU-authored UpdateDynamicCurveCPU called on GPU-authored geometry");
+    CHECK_MSG(!vertices.empty() || !indices.empty() || !leaves.empty(),
+              "UpdateDynamicCurveCPU requires at least one updated range");
+    CHECK_MSG(vertices.empty() || vertices.size() == g->curve.vertices.count,
+              "Dynamic curve vertex update has {} vertices; expected {}", vertices.size(), g->curve.vertices.count);
+    CHECK_MSG(indices.empty() || indices.size() == g->curve.indices.count,
+              "Dynamic curve index update has {} indices; expected {}", indices.size(), g->curve.indices.count);
+    CHECK_MSG(leaves.empty() || leaves.size() == g->curve.leaves.count,
+              "Dynamic curve leaf update has {} leaves; expected {}", leaves.size(), g->curve.leaves.count);
+
+    if (!vertices.empty())
+    {
+        uint32_t const size = static_cast<uint32_t>(vertices.size_bytes());
+        uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(FCurveDOTSVertex));
+        std::memcpy(mDynamicStagingMapped + srcOffset, vertices.data(), size);
+        mDynamicUploadRegions.push_back({.srcOffset = srcOffset, .dstOffset = g->curve.vertices.offset, .size = size});
+    }
+    if (!indices.empty())
+    {
+        uint32_t const size = static_cast<uint32_t>(indices.size_bytes());
+        uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(uint32_t));
+        std::memcpy(mDynamicStagingMapped + srcOffset, indices.data(), size);
+        mDynamicUploadRegions.push_back({.srcOffset = srcOffset, .dstOffset = g->curve.indices.offset, .size = size});
+        g->dynamicIndicesDirty = true;
+    }
+    if (!leaves.empty())
+    {
+        uint32_t const size = static_cast<uint32_t>(leaves.size_bytes());
+        uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(FCurveLeaf));
+        std::memcpy(mDynamicStagingMapped + srcOffset, leaves.data(), size);
+        mDynamicUploadRegions.push_back({.srcOffset = srcOffset, .dstOffset = g->curve.leaves.offset, .size = size});
+    }
+    g->dirty = true;
+}
+
 void GPUSceneImpl::EndDynamicGeometryUpdate()
 {
     CHECK_MSG(mDynamicIsUpdate, "EndDynamicGeometryUpdate called without a matching BeginDynamicGeometryUpdate");
@@ -2229,7 +2360,10 @@ void GPUSceneImpl::UploadDynamicGeometryCPU(RHICommandList* cmd)
             continue;
         if (g.uploadHeader)
         {
-            cmd->UpdateBuffer(mDynamicPrimitiveBuffer.Get(), g.offset, AsBytes(AsSpan(g.mesh)));
+            if (g.type == kGSInstanceTypeCurve)
+                cmd->UpdateBuffer(mDynamicPrimitiveBuffer.Get(), g.offset, AsBytes(AsSpan(g.curve)));
+            else
+                cmd->UpdateBuffer(mDynamicPrimitiveBuffer.Get(), g.offset, AsBytes(AsSpan(g.mesh)));
             g.uploadHeader = false;
         }
     }
@@ -2263,21 +2397,26 @@ void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
             ++g.dynamicLastRebuildFrame;
         ++mLastRefitCount;
         mLastRebuildCount += rebuild ? 1u : 0u;
-        uint32_t const base = g.offset;
+        bool const curve = g.type == kGSInstanceTypeCurve;
+        uint32_t const vertexOffset = curve ? g.curve.vertices.offset : g.mesh.vertices.offset;
+        uint32_t const vertexCount = curve ? g.curve.vertices.count : g.mesh.vertices.count;
+        uint32_t const indexOffset = curve ? g.curve.indices.offset : g.mesh.indices.offset;
+        uint32_t const indexCount = curve ? g.curve.indices.count : g.mesh.indices.count;
+        uint32_t const vertexStride = curve ? sizeof(FCurveDOTSVertex) : sizeof(FQVertex);
         RHIAccelerationStructureGeometryInfo geo{
             .type = RHIAccelerationGeometryType::Triangles,
             .triangleData = {
                 .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
                 .vertexBuffer = mDynamicPrimitiveBuffer.Get(),
-                .vertexOffset = base + static_cast<uint32_t>(sizeof(GSMesh)),
-                .vertexCount = g.mesh.vertices.count,
-                .vertexStride = sizeof(FQVertex),
+                .vertexOffset = vertexOffset,
+                .vertexCount = vertexCount,
+                .vertexStride = vertexStride,
                 .indexFormat = RHIResourceFormat::R32Uint,
                 .indexBuffer = mDynamicPrimitiveBuffer.Get(),
-                .indexOffset = base + static_cast<uint32_t>(sizeof(GSMesh) + g.dynamicVtxBytes),
-                .indexCount = g.mesh.indices.count,
+                .indexOffset = indexOffset,
+                .indexCount = indexCount,
             }};
-        RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = g.mesh.indices.count / 3};
+        RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = indexCount / 3};
         RHIAccelerationStructureBuildDesc desc{.type = RHIAccelerationStructureType::BottomLevel,
                                                .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastBuild |
                                                    RHIAccelerationStructureBuildFlagsBits::AllowUpdate,
@@ -2816,6 +2955,12 @@ GPUScene::Result GPUScene::Allocate(uint32_t vertexCount, uint32_t indexCount, G
     return mImpl->Allocate(vertexCount, indexCount, outHandle, isGpu);
 }
 
+GPUScene::Result GPUScene::Allocate(uint32_t vertexCount, uint32_t indexCount, uint32_t leafCount,
+                                    GeometryHandle& outHandle, bool isGpu)
+{
+    return mImpl->Allocate(vertexCount, indexCount, leafCount, outHandle, isGpu);
+}
+
 GPUScene::Result GPUScene::Upload(FBlobDeserializer* blobs, FSerializedTexture const& source, TextureHandle& outTexture,
                                   const char* debugName, bool pinned)
 {
@@ -2868,10 +3013,19 @@ void GPUScene::UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertic
 {
     mImpl->UpdateDynamicGeometryGPU(handle, updateVertices, updateIndices);
 }
+void GPUScene::UpdateDynamicCurveGPU(GeometryHandle handle, bool updateVertices, bool updateIndices, bool updateLeaves)
+{
+    mImpl->UpdateDynamicCurveGPU(handle, updateVertices, updateIndices, updateLeaves);
+}
 void GPUScene::UpdateDynamicGeometryCPU(GeometryHandle handle, Span<const FQVertex> vertices,
                                         Span<const uint32_t> indices)
 {
     mImpl->UpdateDynamicGeometryCPU(handle, vertices, indices);
+}
+void GPUScene::UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurveDOTSVertex> vertices,
+                                     Span<const uint32_t> indices, Span<const FCurveLeaf> leaves)
+{
+    mImpl->UpdateDynamicCurveCPU(handle, vertices, indices, leaves);
 }
 void GPUScene::EndDynamicGeometryUpdate() { mImpl->EndDynamicGeometryUpdate(); }
 void GPUScene::UploadDynamicGeometryCPU(RHICommandList* cmd) { mImpl->UploadDynamicGeometryCPU(cmd); }

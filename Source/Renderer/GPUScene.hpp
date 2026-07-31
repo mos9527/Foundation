@@ -194,6 +194,8 @@ public:
      * @param isGpu Whether the dynamic geometry is GPU-local. See @ref UpdateDynamicGeometryCPU, @ref UpdateDynamicGeometryGPU.
      */
     Result Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle, bool isGpu = false);
+    Result Allocate(uint32_t vertexCount, uint32_t indexCount, uint32_t leafCount, GeometryHandle& outHandle,
+                    bool isGpu = false);
     
     Result Upload(FBlobDeserializer* blobs, FSerializedCurve const& source, GeometryHandle& outHandle);
     
@@ -280,6 +282,9 @@ public:
      * @note  This in effect only marks the geometry dirty, and is thread-safe to commit.
      */
     void UpdateDynamicGeometryGPU(GeometryHandle handle, bool updateVertices, bool updateIndices);
+    void UpdateDynamicCurveGPU(GeometryHandle handle, bool updateVertices, bool updateIndices, bool updateLeaves);
+    void UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurveDOTSVertex> vertices = {},
+                               Span<const uint32_t> indices = {}, Span<const FCurveLeaf> leaves = {});
     void EndDynamicGeometryUpdate();
 
     /**
