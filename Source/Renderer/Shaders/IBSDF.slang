@@ -237,7 +237,8 @@ public struct DiffuseBSDF : IBxDF {
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection)) return BSDFSample();
         float3 wi = SampleCosineHemisphere(u);
-        wi = FaceForward(wi, float3(0, 0, 1));
+        if (wo.z < 0.0f)
+            wi.z *= -1.0f;
         float pdf = CosineHemispherePDF(AbsCosTheta(wi));
         return BSDFSample(this.f(wo, wi, mode), wi, pdf, BxDFFlags::DiffuseReflection);
     }
@@ -663,6 +664,7 @@ public struct SheenBSDF : IBxDF {
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (!SameHemisphere(wo, wi) || !IsValid()) return 0.0f;
         float3 wiStd = RotateAroundZ(wi, -SheenPhi(wo));
+        wiStd.z = abs(wiStd.z);
         float pdf = SheenLTCDensity(wiStd, transformA, transformB);
         float cosWi = AbsCosTheta(wi);
         return cosWi > EPS ? weight * tint * albedo * pdf / cosWi : float3(0.0f);
@@ -676,7 +678,8 @@ public struct SheenBSDF : IBxDF {
                                         disk.y,
                                         diskZ * transformA));
         float3 wi = RotateAroundZ(wiStd, SheenPhi(wo));
-        wi = FaceForward(wi, float3(0.0f, 0.0f, 1.0f));
+        if (wo.z < 0.0f)
+            wi.z *= -1.0f;
         if (!SameHemisphere(wo, wi)) return BSDFSample();
         float pdf = SheenLTCDensity(wiStd, transformA, transformB);
         if (pdf < 1e-7f) return BSDFSample();
@@ -686,6 +689,7 @@ public struct SheenBSDF : IBxDF {
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection) || !SameHemisphere(wo, wi) || !IsValid()) return 0.0f;
         float3 wiStd = RotateAroundZ(wi, -SheenPhi(wo));
+        wiStd.z = abs(wiStd.z);
         return SheenLTCDensity(wiStd, transformA, transformB);
     }
 };
