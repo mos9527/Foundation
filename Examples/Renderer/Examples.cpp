@@ -9,7 +9,7 @@
 bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& currentRenderer)
 {
     bool changed = false;    
-    if (Examples_Button(input, Format("[{}]", currentRenderer)))
+    if (Examples_Button(input, Format(">> Current Renderer: [{}] <<", currentRenderer)))
     {
         currentRenderer = static_cast<ExampleRenderer>((static_cast<uint32_t>(currentRenderer) + 1) %
                                                        static_cast<uint32_t>(ExampleRenderer::Count));

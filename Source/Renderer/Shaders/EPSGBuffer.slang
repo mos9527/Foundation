@@ -57,7 +57,19 @@ float4 SampleMaterialTexture(uint textureIndex, float2 uv)
     return gTextures2D[NonUniformResourceIndex(textureIndex)].Sample(textureSampler, uv);
 }
 
-Fragment drawGBuffer(V2F input){
+uint Bayer2x2(uint2 pixel)
+{
+    return ((pixel.x ^ pixel.y) << 1u) | pixel.y;
+}
+
+float Bayer4x4(uint2 pixel)
+{
+    uint2 low = pixel & 1u;
+    uint2 high = (pixel >> 1u) & 1u;
+    return (float(Bayer2x2(low) * 4u + Bayer2x2(high)) + 0.5f) / 16.0f;
+}
+
+Fragment drawGBuffer(V2F input, float2 fragCoord){
     Fragment output;
     int materialFlags = globalParams.dbgMaterialFlags;
     GSMaterial material = materials[globalParams.materials.offset + input.materialIndex];
@@ -66,8 +78,7 @@ Fragment drawGBuffer(V2F input){
         baseColor *= SampleMaterialTexture(material.baseColorTexture, input.uv);
     if ((materialFlags & uint32_t(MaterialFlagsBits.DbgWhiteBaseColor)) != 0u)
         baseColor = float4(1.0f, 1.0f, 1.0f, baseColor.a);
-    // TODO TODO TODO Actual transparency pipeline    
-    if (baseColor.a < 0.5f)
+    if (baseColor.a < Bayer4x4(uint2(fragCoord)))
         discard;
     float4 normalTBN = float4(0,0,1,0);
     if (material.normalTexture != ~0u)
@@ -101,7 +112,7 @@ Fragment main(V2F input, float2 fragCoord : SV_Position /* pixel space */)
     else if ((flags & uint32_t(ViewFlagsBits.TextureLOD)) != 0)
         output = drawTextureLOD(input);
     else
-        output = drawGBuffer(input);
+        output = drawGBuffer(input, fragCoord);
     if ((flags & uint32_t(ViewFlagsBits.Overdraw)) != 0)
         imageAtomicAdd(overdraw, int2(fragCoord), 1);
     return output;
