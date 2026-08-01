@@ -8,6 +8,10 @@ import IMaterial;
 import IMath;
 import IBxDF;
 
+#ifndef SHARC_UPDATE
+#define SHARC_UPDATE 0
+#endif
+
 // SER coherence hint layout:
 //   [7:6] hit class (miss, analytic light, triangle, curve)
 //   [5:0] mixed material/light key
@@ -39,12 +43,14 @@ StructuredBuffer<GSLight> gLights;
 #include "ILightBVH.slang"
 SamplerState gTexSampler;
 
+#if !SHARC_UPDATE
 // Path radiance accumulation buffers
 RWTexture2D<float4> diffuse;            // Diffuse lobe radiance
 RWTexture2D<float4> specular;           // Specular lobe radiance (incl. transmission)
 RWTexture2D<float> depth;               // NDC depth
 // Auxilary buffers
 RWTexture2D<uint32_t> instanceIDBuffer;
+#endif
 
 // Hit state helpers
 struct RayCone
@@ -1028,7 +1034,9 @@ void AddSurfaceEmissive(
 
 void WritePrimaryInstanceID(uint2 pix, uint32_t instanceID)
 {
+#if !SHARC_UPDATE
     instanceIDBuffer[pix] = instanceID;
+#endif
 }
 
 bool AddAnalyticLightHitEmission(

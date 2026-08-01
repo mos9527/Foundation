@@ -3,7 +3,8 @@ Foundation {#mainpage}
 
 [Foundation](https://github.com/mos9527/Foundation/) is a work-in-progress cross-platform rendering framework/renderer.
 
-Foundation includes two bespoke renderers - The Path Tracer `PT` *based* on [Physically Based Rendering:From Theory To Implementation](https://www.pbr-book.org/), and a Continuous LOD Meshlet (Nanite-like) Rasterizer `RASTER`.
+Foundation includes three bespoke renderers - The Progressive Path Tracer `PPT` *based* on [Physically Based Rendering:From Theory To Implementation](https://www.pbr-book.org/), a Continuous LOD Meshlet (Nanite-like) Rasterizer `RASTER`,
+and a Real-time Pathtracer `RTPT`
 
 Please note that the Path Tracer is not a faithful recreation of PBRT - however heavily referenced against, with outputs extensively verified against results from [Blender Cycles](https://projects.blender.org/blender/cycles/) et al. `PT` outputs can be considered reference in this context.
 
@@ -40,10 +41,15 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 - Area, point, spot, and directional lights
 - Context-dependent Light BVH sampling for analytical lights
 
+
 ### Rasterizer
 - GPU-driven mesh shader pipeline with hierarchical continuous LOD
 - Two-phase meshlet occlusion culling
 - Optional RT Shadows
+
+### Realtime Path Tracer
+- Basic PBR material support
+- [SHARC](https://github.com/NVIDIA-RTX/SHARC) integration
 
 ### Scene
 - Extended glTF support & Blender data exchange via https://github.com/mos9527/Foundation-Blender-IO/tree/main
@@ -196,10 +202,10 @@ Good to have, not necessary.
 Done
 - [x] Animation (Skinning, BlendShapes, Articulated rigid bodies, camera & lights. Contribution by Claude)
 
-Path Tracer
+Progressive Path Tracer
 ---
 Sorted by priority (high to low), also w/ future blog post series update on:
-- [ ] Emissive triangles in NEE, ReSTIR DI/PT
+- [ ] Emissive triangles in NEE
 - [ ] Tracing from surfaces (for baking lightmaps, probe generation, etc)
 
 Done, awaiting Blog Update:
@@ -268,3 +274,8 @@ Unfortunately not the favourite child. Maybe one day.
 - [ ] Light Probe Volumes
 - [ ] _Really_ Speed up meshlet continuous LOD selection.
   - We're O(N). Nanite does it O (log N) via BVH
+
+Realtime Path Tracer
+---
+- [ ] (Light sampler uses Progressive PT ones - TODOs omitted here)
+- [ ] ReSTIR PT/DI

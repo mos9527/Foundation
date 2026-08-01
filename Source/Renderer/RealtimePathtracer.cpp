@@ -5,6 +5,14 @@
 #include "GPUScene.hpp"
 #include "ProgressivePathtracer.hpp"
 
+namespace
+{
+constexpr size_t kSharcHashEntrySize = sizeof(uint32_t);
+constexpr size_t kSharcAccumulationEntrySize = sizeof(uint32_t) * 4u;
+constexpr size_t kSharcResolvedEntrySize = sizeof(uint32_t) * 4u;
+constexpr uint32_t kSharcMinimumEntries = 16u;
+}
+
 uint32_t PackCompileOptions(PTSampler sampler, bool forceTextureLOD0, LightSampler lightSamplerMode)
 {
     uint32_t options = 0u;
@@ -28,6 +36,17 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
         renderExtent = renderer->GetSwapchainExtent();
     globals->fbWidth = static_cast<float>(renderExtent.x);
     globals->fbHeight = static_cast<float>(renderExtent.y);
+    const bool sharcEnabled = cfg.ptSharc;
+    const uint32_t sharcEntries =
+        sharcEnabled ? std::max(cfg.ptSharcEntries, kSharcMinimumEntries) : kSharcMinimumEntries;
+    globals->sharcEntries = sharcEntries;
+    globals->sharcSceneScale = cfg.ptSharcSceneScale;
+    globals->sharcRadianceScale = 1000.0f;
+    globals->sharcAccumulationFrames = cfg.ptSharcAccumulationFrames;
+    globals->sharcStaleFrames = cfg.ptSharcStaleFrames;
+    globals->sharcRoughnessThreshold = cfg.ptSharcRoughnessThreshold;
+    globals->sharcEnabled = sharcEnabled ? 1u : 0u;
+    globals->sharcUpdateDownscale = std::max(cfg.ptSharcUpdateDownscale, 1u);
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
@@ -58,6 +77,18 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
     auto TexSampler = renderer->CreateSampler(MakeTextureSamplerDesc(cfg));
     uint32_t w = std::max(renderExtent.x, 1u);
     uint32_t h = std::max(renderExtent.y, 1u);
+    auto SharcHashEntries = renderer->CreateResource(
+        "SHARC Hash Entries",
+        RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
+                      .size = size_t(sharcEntries) * kSharcHashEntrySize});
+    auto SharcAccumulation = renderer->CreateResource(
+        "SHARC Accumulation",
+        RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
+                      .size = size_t(sharcEntries) * kSharcAccumulationEntrySize});
+    auto SharcResolved = renderer->CreateResource(
+        "SHARC Resolved",
+        RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
+                      .size = size_t(sharcEntries) * kSharcResolvedEntrySize});
     constexpr RHIResourceFormat kPathTracerAOVFormat = RHIResourceFormat::R16G16B16A16SignedFloat;
     // AOV buffers
     auto Diffuse = renderer->CreateResource(
@@ -99,6 +130,88 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                                                }});
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
+    const uint32_t compileOptions =
+        PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode);
+    renderer->CreatePass(
+        "SHARC Initialize", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindBufferCopyDst(self, SharcHashEntries);
+            r->BindBufferCopyDst(self, SharcAccumulation);
+            r->BindBufferCopyDst(self, SharcResolved);
+        },
+        [=, initialized = false](PassHandle, Renderer* r, RHICommandList* cmd) mutable
+        {
+            if (initialized)
+                return;
+            cmd->FillBuffer(r->DerefResource(SharcHashEntries).Get<RHIBuffer*>(), 0u);
+            cmd->FillBuffer(r->DerefResource(SharcAccumulation).Get<RHIBuffer*>(), 0u);
+            cmd->FillBuffer(r->DerefResource(SharcResolved).Get<RHIBuffer*>(), 0u);
+            initialized = true;
+        });
+    if (sharcEnabled)
+    {
+        renderer->CreatePass(
+            "SHARC Update", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                constexpr auto stage = RHIPipelineStageBits::ComputeShader;
+                r->BindBufferUniform(self, GlobalUBO, stage, "globalParams");
+                r->BindAccelerationStructureSRV(self, TLAS, stage, "TLAS");
+                r->BindShader(
+                    self, RHIShaderStageBits::Compute, "ComputeMain",
+                    r->GetApplication()->ResolveRelativePathBase(
+                        "Data/Shaders/EPathTracingRealtime_SHARC_Update.spv"),
+                    AsBytes(AsSpan(compileOptions)));
+                r->BindBufferStorageRead(self, PrimitiveBuffer, stage, "gPrimBuffer");
+                r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, stage, "gDynamicPrimBuffer");
+                r->BindBufferStorageRead(self, InstanceBuffer, stage, "gInstances");
+                r->BindBufferStorageRead(self, MaterialBuffer, stage, "gMaterials");
+                r->BindBufferStorageRead(self, LightBuffer, stage, "gLights");
+                r->BindBufferStorageRead(self, LightBVHNodeBuffer, stage, "lightBVHNodes");
+                r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, stage, "lightBVHLightIndices");
+                r->BindBufferStorageRead(self, LightBVHBitmaskBuffer, stage, "lightBVHBitmasks");
+                r->BindBufferUnordered(self, SharcHashEntries, stage, "sharcHashEntries");
+                r->BindBufferUnordered(self, SharcAccumulation, stage, "sharcAccumulation");
+                r->BindBufferUnordered(self, SharcResolved, stage, "sharcResolved");
+                r->BindTextureSampler(self, TexSampler, "gTexSampler");
+                r->BindTextureSampler(self, LUTSampler, "gLutSampler");
+                r->BindTextureSampler(self, EnvMapSampler, "gEnvMapSampler");
+                r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                r->CmdSetPipeline(self, cmd);
+                r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
+                if (!cfg.ptRenderPaused || !*cfg.ptRenderPaused)
+                {
+                    const uint32_t updateW = (w + globals->sharcUpdateDownscale - 1u) / globals->sharcUpdateDownscale;
+                    const uint32_t updateH = (h + globals->sharcUpdateDownscale - 1u) / globals->sharcUpdateDownscale;
+                    r->CmdDispatch(self, cmd, {updateW, updateH, 1u});
+                }
+            });
+        renderer->CreatePass(
+            "SHARC Resolve", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                constexpr auto stage = RHIPipelineStageBits::ComputeShader;
+                r->BindBufferUniform(self, GlobalUBO, stage, "globalParams");
+                r->BindBufferUnordered(self, SharcHashEntries, stage, "sharcHashEntries");
+                r->BindBufferUnordered(self, SharcAccumulation, stage, "sharcAccumulation");
+                r->BindBufferUnordered(self, SharcResolved, stage, "sharcResolved");
+                r->BindShader(
+                    self, RHIShaderStageBits::Compute, "ComputeMain",
+                    r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ESharcResolve.spv"));
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                if (!cfg.ptRenderPaused || !*cfg.ptRenderPaused)
+                {
+                    r->CmdSetPipeline(self, cmd);
+                    r->CmdDispatch(self, cmd, {sharcEntries, 1u, 1u});
+                }
+            });
+    }
     RenderUtils::createCSClearTexture(
         renderer, "Trace Clear Depth", DepthUAV,
         RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat, .range = RHITextureSubresourceRange::Create()},
@@ -112,19 +225,18 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                                                                  : RHIPipelineStageBits::ComputeShader;
             r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
             r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "TLAS");
-            const uint kCompileOptions = PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode);
             const auto shader = r->GetApplication()->ResolveRelativePathBase(
                 !shaderExecutionReordering ? "Data/Shaders/EPathTracingRealtime.spv"
                                            : "Data/Shaders/EPathTracingRealtime_SER.spv");
             if (shaderExecutionReordering)
             {
                 r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,
-                              AsBytes(AsSpan(kCompileOptions)));
+                              AsBytes(AsSpan(compileOptions)));
             }
             else
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain", shader,
-                              AsBytes(AsSpan(kCompileOptions)));
+                              AsBytes(AsSpan(compileOptions)));
             }
 
             r->BindBufferStorageRead(self, PrimitiveBuffer, pipelineStage, "gPrimBuffer");
@@ -138,6 +250,8 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
             r->BindBufferStorageRead(self, LightBVHNodeBuffer, pipelineStage, "lightBVHNodes");
             r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, pipelineStage, "lightBVHLightIndices");
             r->BindBufferStorageRead(self, LightBVHBitmaskBuffer, pipelineStage, "lightBVHBitmasks");
+            r->BindBufferStorageRead(self, SharcHashEntries, pipelineStage, "sharcHashEntries");
+            r->BindBufferStorageRead(self, SharcResolved, pipelineStage, "sharcResolved");
             r->BindTextureSampler(self, LUTSampler, "gLutSampler");
             // Accumulation UAVs
             r->BindTextureUAV(

@@ -42,6 +42,9 @@ SHARED_BITMASK_ENUM_BEGIN(ViewFlags, uint32_t)
     AOVDiffuse = 1u << 8,
     AOVSpecular = 1u << 9,
     AOVSampleCount = 1u << 10,
+    SHARCGrid = 1u << 11,
+    SHARCOccupancy = 1u << 12,
+    SHARCRadiance = 1u << 13,
     EnableRasterRTShadows = 1u << 16,
     EnableRasterAmbientOcclusion = 1u << 17,
     ForceTextureLOD0 = 1u << 24

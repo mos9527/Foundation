@@ -300,6 +300,15 @@ public struct UBO
     public float ptFireflyClamp;
     public uint32_t ptSamplesPerPixel;
     public uint32_t ptPrimaryLightVisibility;
+    public float4 sharcPreviousCameraPosition;
+    public uint32_t sharcEntries;
+    public float sharcSceneScale;
+    public float sharcRadianceScale;
+    public uint32_t sharcAccumulationFrames;
+    public uint32_t sharcStaleFrames;
+    public float sharcRoughnessThreshold;
+    public uint32_t sharcEnabled;
+    public uint32_t sharcUpdateDownscale;
     // -- Debug
     public uint32_t dbgShowOutline;
     public uint32_t dbgViewFlags;

@@ -67,6 +67,15 @@ struct RendererUBO
     float ptFireflyClamp{2.0f}; // 10^x
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1.
     uint32_t ptPrimaryLightVisibility{0u}; // Analytic lights + sun disks on bounce 0
+    float4 sharcPreviousCameraPosition{};
+    uint32_t sharcEntries{0u};
+    float sharcSceneScale{50.0f};
+    float sharcRadianceScale{1000.0f};
+    uint32_t sharcAccumulationFrames{20u};
+    uint32_t sharcStaleFrames{60u};
+    float sharcRoughnessThreshold{0.4f};
+    uint32_t sharcEnabled{0u};
+    uint32_t sharcUpdateDownscale{5u};
     // -- Debug
     uint32_t dbgShowOutline{0u};
     uint32_t dbgViewFlags{0u};
@@ -96,6 +105,7 @@ inline void UpdateRendererCameraUBO(RendererUBO& ubo, uint32_t frameNumber, floa
 {
     if (ubo.cameraHistoryFrame != frameNumber)
     {
+        ubo.sharcPreviousCameraPosition = ubo.camPosition;
         ubo.previousViewProj = ubo.cameraHistoryFrame == UINT32_MAX ? proj * view : ubo.proj * ubo.view;
         ubo.cameraHistoryFrame = frameNumber;
     }
@@ -120,6 +130,13 @@ struct RendererConfig
     bool forceTextureLOD0{false};
     bool energyCompensation{true};
     bool ptPrimaryLightVisibility{false};
+    bool ptSharc{true};
+    uint32_t ptSharcEntries{1u << 22u};
+    float ptSharcSceneScale{50.0f};
+    uint32_t ptSharcAccumulationFrames{20u};
+    uint32_t ptSharcStaleFrames{60u};
+    float ptSharcRoughnessThreshold{0.4f};
+    uint32_t ptSharcUpdateDownscale{5u};
     bool textureAnisoEnable{true};
     float textureAnisoLevel{16.0f};
     bool textureTrilinear{true};

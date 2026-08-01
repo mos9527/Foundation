@@ -3050,6 +3050,15 @@ void FRunningImGui()
             ImGui::EndDisabled();
             if (!serSupported)
                 ImGui::TextDisabled("SER is not supported by this device.");
+            if (GEditor.rendererMode == ERendererMode::RealtimePT &&
+                ImGui::Checkbox("SHARC", &GEditor.rendererConfig.ptSharc))
+            {
+                if (!GEditor.rendererConfig.ptSharc)
+                    GEditor.rendererConfig.viewFlags &=
+                        ~(ViewFlagsBits::SHARCGrid | ViewFlagsBits::SHARCOccupancy |
+                          ViewFlagsBits::SHARCRadiance);
+                GEditor.state = FERunningEnter;
+            }
             if (ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0))
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
@@ -3206,17 +3215,41 @@ void FRunningImGui()
                 ImGui::SeparatorText(PSI_EYE_OPEN " AOV View");
                 if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
                 {
-                    GEditor.rendererConfig.viewFlags &= ~ViewFlagsBits::TextureLOD;
+                    GEditor.rendererConfig.viewFlags &=
+                        ~(ViewFlagsBits::BaseColor | ViewFlagsBits::Normal | ViewFlagsBits::Position |
+                          ViewFlagsBits::TextureLOD | ViewFlagsBits::SHARCGrid |
+                          ViewFlagsBits::SHARCOccupancy | ViewFlagsBits::SHARCRadiance);
                 }
             }
         }
         {
-            const char* items[] = {"BaseColor", "Normal", "Position", "Texture LOD"};
-            const ViewFlagsBits values[] = {ViewFlagsBits::BaseColor, ViewFlagsBits::Normal, ViewFlagsBits::Position,
-                                            ViewFlagsBits::TextureLOD};
             ImGui::SeparatorText(PSI_BUG " Debug View");
-            if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
+            bool debugViewChanged = false;
+            if (GEditor.rendererMode == ERendererMode::RealtimePT)
             {
+                const char* items[] = {
+                    "BaseColor", "Normal", "Position", "Texture LOD", "SHARC Grid", "SHARC Occupancy",
+                    "SHARC Cached Radiance"};
+                const ViewFlagsBits values[] = {
+                    ViewFlagsBits::BaseColor, ViewFlagsBits::Normal, ViewFlagsBits::Position,
+                    ViewFlagsBits::TextureLOD, ViewFlagsBits::SHARCGrid, ViewFlagsBits::SHARCOccupancy,
+                    ViewFlagsBits::SHARCRadiance};
+                debugViewChanged =
+                    ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
+            }
+            else
+            {
+                const char* items[] = {"BaseColor", "Normal", "Position", "Texture LOD"};
+                const ViewFlagsBits values[] = {
+                    ViewFlagsBits::BaseColor, ViewFlagsBits::Normal, ViewFlagsBits::Position,
+                    ViewFlagsBits::TextureLOD};
+                debugViewChanged =
+                    ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
+            }
+            if (debugViewChanged)
+            {
+                GEditor.rendererConfig.viewFlags &=
+                    ~(ViewFlagsBits::AOVDiffuse | ViewFlagsBits::AOVSpecular | ViewFlagsBits::AOVSampleCount);
                 if (IsRaster(GEditor.rendererMode))
                     changed = true;
                 else if (IsPathTracer(GEditor.rendererMode))

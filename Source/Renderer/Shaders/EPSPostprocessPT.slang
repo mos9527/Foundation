@@ -40,7 +40,8 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     pp.Exposure = globalParams.camEV;
     uint32_t debugViews = uint32_t(ViewFlagsBits.BaseColor) | uint32_t(ViewFlagsBits.Normal) |
                           uint32_t(ViewFlagsBits.Position) | uint32_t(ViewFlagsBits.TextureLOD) |
-                          uint32_t(ViewFlagsBits.AOVSampleCount);
+                          uint32_t(ViewFlagsBits.AOVSampleCount) | uint32_t(ViewFlagsBits.SHARCGrid) |
+                          uint32_t(ViewFlagsBits.SHARCOccupancy);
     if ((globalParams.dbgViewFlags & debugViews) != 0)
         pp.Exposure = 0.0f;
 

@@ -24,11 +24,16 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             # spvShaderInvocationReorderEXT (sigh)
             spvShaderInvocationReorderNV
     )
+    set(ShaderDefines)
+    if (ShaderName STREQUAL "EPathTracingRealtime")
+        list(APPEND ShaderDefines "SHARC_QUERY=1")
+    endif()
     slangc_compile(
             "Shader_${ShaderName}"
             SOURCE          "${SlangFile}"
             OUTPUT_DIR      "${SHADER_BUILD_DIR}"
             CAPABILITIES    ${ShaderCapabilities}
+            DEFINES         ${ShaderDefines}
     )
     # Variants (Yes, in CMake.)
     # SER is a special case since it's always there in the IR - and some drivers (Lavapipe) doesn't understand it.
@@ -40,9 +45,20 @@ foreach(SlangFile IN LISTS SLANG_FILES)
                 OUTPUT_DIR      "${SHADER_BUILD_DIR}"
                 OUTPUT_NAME     "${ShaderName}_SER"
                 CAPABILITIES    ${ShaderCapabilities}
-                DEFINES         "USE_SER=1"
+                DEFINES         ${ShaderDefines} "USE_SER=1"
         )
         add_dependencies(Foundation_Shaders "Shader_${ShaderName}_SER")
+    endif()
+    if (ShaderName STREQUAL "EPathTracingRealtime")
+        slangc_compile(
+                "Shader_${ShaderName}_SHARC_Update"
+                SOURCE          "${SlangFile}"
+                OUTPUT_DIR      "${SHADER_BUILD_DIR}"
+                OUTPUT_NAME     "${ShaderName}_SHARC_Update"
+                CAPABILITIES    ${ShaderCapabilities}
+                DEFINES         "SHARC_UPDATE=1"
+        )
+        add_dependencies(Foundation_Shaders "Shader_${ShaderName}_SHARC_Update")
     endif()
     add_dependencies(Foundation_Shaders "Shader_${ShaderName}")
 endforeach()
