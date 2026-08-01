@@ -74,7 +74,7 @@ struct ExampleTouchState
 struct ExampleInputState
 {
     static constexpr size_t kMaxPressedKeys = 16;
-    static constexpr size_t kMaxHudLines = 32;
+    static constexpr size_t kMaxHudLines = 64;
     static constexpr size_t kMaxClickableRegions = kMaxHudLines;
     // Set to true whenever the window is resized. Clear manually.
     // You can also set this to true to force a resize for e.g. Renderer to be rebuilt.
