@@ -78,7 +78,8 @@ Fragment drawGBuffer(V2F input, float2 fragCoord){
         baseColor *= SampleMaterialTexture(material.baseColorTexture, input.uv);
     if ((materialFlags & uint32_t(MaterialFlagsBits.DbgWhiteBaseColor)) != 0u)
         baseColor = float4(1.0f, 1.0f, 1.0f, baseColor.a);
-    if (baseColor.a < Bayer4x4(uint2(fragCoord)))
+    // TODO basic refraction
+    if (min(baseColor.a, 1.0f - material.transmissionFactor) < Bayer4x4(uint2(fragCoord)))
         discard;
     float4 normalTBN = float4(0,0,1,0);
     if (material.normalTexture != ~0u)
