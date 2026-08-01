@@ -17,6 +17,33 @@ GSLight GetLight(uint lightIndex)
     return gLights[GetUBO().lights.offset + lightIndex];
 }
 
+GSEmissiveCluster GetEmissiveCluster(uint clusterIndex)
+{
+    return gEmissiveClusters[GetUBO().emissiveClusters.offset + clusterIndex];
+}
+
+bool IsClusterSelection(uint selection)
+{
+    return (selection & kLightSelectionClusterBit) != 0u;
+}
+
+uint SelectionIndex(uint selection)
+{
+    return selection & kLightSelectionIndexMask;
+}
+
+float ComputeSelectionProposalWeight(uint selection)
+{
+    return IsClusterSelection(selection)
+        ? GetEmissiveCluster(SelectionIndex(selection)).flux
+        : ComputeLightProposalWeight(GetLight(selection));
+}
+
+uint SelectionEntitySlot(uint selection)
+{
+    return IsClusterSelection(selection) ? GetUBO().lights.count + SelectionIndex(selection) : selection;
+}
+
 public struct GSLightBVHNode
 {
     public uint header;
@@ -242,7 +269,7 @@ bool PickLeafLight(uint leafNodeIndex, float u, out float pdf, out uint lightInd
     for (uint i = 0; i < count; ++i)
     {
         uint idx = lightBVHLightIndices[GetUBO().lightBVHLightIndices.offset + offset + i];
-        total += ComputeLightProposalWeight(GetLight(idx));
+        total += ComputeSelectionProposalWeight(idx);
     }
     if (total <= 0.0f)
         return false;
@@ -252,7 +279,7 @@ bool PickLeafLight(uint leafNodeIndex, float u, out float pdf, out uint lightInd
     for (uint i = 0; i < count; ++i)
     {
         uint idx = lightBVHLightIndices[GetUBO().lightBVHLightIndices.offset + offset + i];
-        float weight = ComputeLightProposalWeight(GetLight(idx));
+        float weight = ComputeSelectionProposalWeight(idx);
         cdf += weight;
         if (uScaled < cdf || i + 1u == count)
         {
@@ -274,7 +301,7 @@ float EvalLeafLightPdf(uint leafNodeIndex, uint lightIndex)
     for (uint i = 0; i < count; ++i)
     {
         uint idx = lightBVHLightIndices[GetUBO().lightBVHLightIndices.offset + offset + i];
-        float weight = ComputeLightProposalWeight(GetLight(idx));
+        float weight = ComputeSelectionProposalWeight(idx);
         total += weight;
         if (idx == lightIndex)
             selected = weight;
@@ -284,7 +311,7 @@ float EvalLeafLightPdf(uint leafNodeIndex, uint lightIndex)
 
 float EvalFiniteTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere, uint lightIndex, out uint leafNodeIndex)
 {
-    uint2 bits2 = lightBVHBitmasks[GetUBO().firstLightBVHBitmask + lightIndex];
+    uint2 bits2 = lightBVHBitmasks[GetUBO().firstLightBVHBitmask + SelectionEntitySlot(lightIndex)];
     uint64_t bitmask = ((uint64_t)bits2.y << 32) | bits2.x;
     float pdf = 1.0f;
     leafNodeIndex = GetUBO().lightBVHNodes.offset;
@@ -344,11 +371,14 @@ float EvalDistantTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere,
 
 public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex, bool useUniform)
 {
-    if (GetUBO().lights.count == 0u || lightIndex >= GetUBO().lights.count)
+    uint index = SelectionIndex(lightIndex);
+    bool isCluster = IsClusterSelection(lightIndex);
+    if ((!isCluster && index >= GetUBO().lights.count) ||
+        (isCluster && index >= GetUBO().emissiveClusters.count))
         return 0.0f;
 
     if (useUniform)
-        return 1.0f / float(GetUBO().lights.count);
+        return 1.0f / float(GetUBO().lights.count + GetUBO().emissiveClusters.count);
 
     float3 posW = ctx.p();
     float3 normalW = ctx.ns;
@@ -359,14 +389,13 @@ public float EvalLightSelectionPMF(LightSampleContext ctx, uint lightIndex, bool
     if (total <= 0.0f)
         return 0.0f;
 
-    GSLight gl = GetLight(lightIndex);
-    uint type = GSLightType(gl);
-    if (type == kGSLightTypeDirectional || type == kGSLightTypeEnvironment)
+    uint type = isCluster ? ~0u : GSLightType(GetLight(index));
+    if (!isCluster && (type == kGSLightTypeDirectional || type == kGSLightTypeEnvironment))
     {
         if (distantWeight <= 0.0f || GetUBO().lightBVHDistantNodes.count == 0u)
             return 0.0f;
         uint leafNodeIndex;
-        float traversalPdf = EvalDistantTraversalPdf(posW, normalW, upperHemisphere, lightIndex, leafNodeIndex);
+        float traversalPdf = EvalDistantTraversalPdf(posW, normalW, upperHemisphere, index, leafNodeIndex);
         return (distantWeight / total) * traversalPdf * EvalLeafLightPdf(leafNodeIndex, lightIndex);
     }
 
@@ -385,13 +414,15 @@ public bool SampleLightSelection(LightSampleContext ctx, float u, out uint light
 {
     lightIndex = ~0u;
     selectionPMF = 0.0f;
-    if (GetUBO().lights.count == 0u)
+    if (GetUBO().lights.count + GetUBO().emissiveClusters.count == 0u)
         return false;
 
     if (useUniform)
     {
-        uint n = GetUBO().lights.count;
-        lightIndex = min(uint(u * float(n)), n - 1u);
+        uint analyticCount = GetUBO().lights.count;
+        uint n = analyticCount + GetUBO().emissiveClusters.count;
+        uint entitySlot = min(uint(u * float(n)), n - 1u);
+        lightIndex = entitySlot < analyticCount ? entitySlot : kLightSelectionClusterBit | (entitySlot - analyticCount);
         selectionPMF = 1.0f / float(n);
         return true;
     }

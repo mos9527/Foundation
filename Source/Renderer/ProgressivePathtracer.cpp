@@ -54,6 +54,7 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
     auto InstanceBuffer = gpu.instanceBuffer;
     auto MaterialBuffer = gpu.materialBuffer;
     auto LightBuffer = gpu.lightBuffer;
+    auto EmissiveClusterBuffer = gpu.emissiveClusterBuffer;
     auto LightBVHNodeBuffer = gpu.lightBVHNodeBuffer;
     auto LightBVHLightIndexBuffer = gpu.lightBVHLightIndexBuffer;
     auto LightBVHBitmaskBuffer = gpu.lightBVHBitmaskBuffer;
@@ -143,6 +144,7 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
             r->BindBufferStorageRead(self, InstanceBuffer, pipelineStage, "gInstances");
             r->BindBufferStorageRead(self, MaterialBuffer, pipelineStage, "gMaterials");
             r->BindBufferStorageRead(self, LightBuffer, pipelineStage, "gLights");
+            r->BindBufferStorageRead(self, EmissiveClusterBuffer, pipelineStage, "gEmissiveClusters");
             // Sampler
             r->BindBufferStorageRead(self, SobolMatricesBuffer, pipelineStage, "gSobolMatrices");
             r->BindTextureSampler(self, TexSampler, "gTexSampler");

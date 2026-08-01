@@ -10,7 +10,8 @@
 #include <bit>
 #include <condition_variable>
 #include <cstddef>
-#include "LightBVH.hpp"
+    #include <numbers>
+    #include "LightBVH.hpp"
 #include "Precompute.hpp"
 #include "Renderer.hpp"
 #include "Tables/GGX.hpp"
@@ -132,6 +133,7 @@ struct GPUSceneImpl
         /* --- */
         GSMesh mesh{};
         GSCurveSet curve{};
+        Vector<FEmissiveMeshlet> emissiveMeshlets{GLOBAL_ALLOC};
         bool dynamic{false};
         bool isGpu{false};
         bool dynamicIsBuilt{false};
@@ -188,6 +190,7 @@ struct GPUSceneImpl
     // Light BVH
     bool mLightBVHNeedsRefit{false};
     UploadGPURingBuffer<GSLight> mLightBuffer;
+    UploadGPURingBuffer<GSEmissiveCluster> mEmissiveClusterBuffer;
     UploadGPURingBuffer<GSLightBVHNode> mLightBVHNodeBuffer;
     Vector<LightBVHRefitLevel> mLightBVHRefitLevels;
     UploadGPURingBuffer<uint32_t> mLightBVHLightIndexBuffer;
@@ -437,7 +440,8 @@ size_t GPUScene::CalculateMeshPrimitiveSize(FSerializedMesh const& src)
 {
     uint64_t lod0Size = src.lods.empty() ? 0 : src.lods[0].indices.decodedSize;
     return sizeof(GSMesh) + src.vertices.decodedSize + lod0Size + src.dagGroups.decodedSize +
-        src.dagMeshlets.decodedSize + src.dagMeshletVtx.decodedSize + src.dagMeshletTri.decodedSize;
+        src.dagMeshlets.decodedSize + src.dagMeshletVtx.decodedSize + src.dagMeshletTri.decodedSize +
+        src.emissiveMeshlets.decodedSize + src.emissiveAliases.decodedSize + src.emissivePrimitiveMap.decodedSize;
 }
 
 size_t GPUScene::CalculateCurvePrimitiveSize(FSerializedCurve const& src)
@@ -465,9 +469,12 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
                            GPUSceneDesc const& desc, AllocatorStack* frameScratch) :
     owner(owner), mDevice(device), mJobs(jobs), mAllocator(allocator), mStackAlloc(frameScratch),
     mInstanceBuffer(device, desc.instanceBudget), mMaterialBuffer(device, desc.materialBudget),
-    mLightBuffer(device, desc.lightBudget), mLightBVHNodeBuffer(device, desc.lightBudget * 2u),
-    mLightBVHLightIndexBuffer(device, desc.lightBudget), mLightBVHBitmaskBuffer(device, desc.lightBudget),
-    mLightBVHGlobalIndexBuffer(device, desc.lightBudget), mLightBVHNodeIndexBuffer(device, desc.lightBudget * 2u),
+    mLightBuffer(device, desc.lightBudget), mEmissiveClusterBuffer(device, desc.emissiveClusterBudget),
+    mLightBVHNodeBuffer(device, (desc.lightBudget + desc.emissiveClusterBudget) * 2u),
+    mLightBVHLightIndexBuffer(device, desc.lightBudget + desc.emissiveClusterBudget),
+    mLightBVHBitmaskBuffer(device, desc.lightBudget + desc.emissiveClusterBudget),
+    mLightBVHGlobalIndexBuffer(device, desc.lightBudget),
+    mLightBVHNodeIndexBuffer(device, (desc.lightBudget + desc.emissiveClusterBudget) * 2u),
     mTexture2DPool(device, allocator, {.maxBindings = desc.texturesBudget}),
     mTexture3DPool(device, allocator,
                    {.maxBindings = kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack}),
@@ -486,6 +493,16 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
     CHECK(mJobs != nullptr);
     CHECK(mAllocator != nullptr);
     static_assert(sizeof(GSLightBVHNode) == 48);
+#ifndef NDEBUG
+    static bool const samplingSelfTestsPassed = [&]
+    {
+        String error;
+        CHECK_MSG(AliasTableRunSelfTests(mAllocator, &error), "Alias table self-test failed: {}", error);
+        CHECK_MSG(LightBVHRunBuilderSelfTests(mAllocator, &error), "Light BVH self-test failed: {}", error);
+        return true;
+    }();
+    (void)samplingSelfTestsPassed;
+#endif
     mGeometry.reserve(desc.geometryBudget);
     mBLASes.reserve(desc.geometryBudget);
     mBLASBuffers.reserve(desc.geometryBudget);
@@ -842,22 +859,70 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
         uint32_t const type = g->type | static_cast<uint32_t>(flags);
         inst.resourceOffset = resourceOffset;
         inst.type = type;
+        inst.emissiveClusterOffset = UINT32_MAX;
+    }
+    Allocator* buildAlloc = mStackAlloc ? static_cast<Allocator*>(mStackAlloc) : mAllocator;
+    Vector<GSEmissiveCluster> emissiveClusters(buildAlloc);
+    for (uint32_t instanceIndex = 0; instanceIndex < tables.instances.size(); ++instanceIndex)
+    {
+        GSInstance& inst = tables.instances[instanceIndex];
+        if ((inst.type & kGSInstanceTypeMask) != kGSInstanceTypeMesh ||
+            (inst.type & to_integer(GSInstanceFlagsBits::Dynamic)) != 0u ||
+            inst.materialIndex >= tables.materials.size())
+            continue;
+        GSMaterial const& material = tables.materials[inst.materialIndex];
+        float emissionWeight =
+            (std::abs(material.emissiveFactor.x) + std::abs(material.emissiveFactor.y) +
+             std::abs(material.emissiveFactor.z)) /
+            3.0f;
+        if (emissionWeight <= 0.0f)
+            continue;
+        Geometry* geometry = ResolveGeometry({inst.resourceIndex, 0u});
+        if (!geometry || geometry->emissiveMeshlets.empty())
+            continue;
+
+        inst.emissiveClusterOffset = static_cast<uint32_t>(emissiveClusters.size());
+        float3 scaleAbs = abs(inst.scale);
+        float areaScale = std::max(scaleAbs.x * scaleAbs.y,
+                                   std::max(scaleAbs.y * scaleAbs.z, scaleAbs.z * scaleAbs.x));
+        for (FEmissiveMeshlet const& emitter : geometry->emissiveMeshlets)
+        {
+            GSEmissiveCluster& cluster = emissiveClusters.emplace_back();
+            cluster.instanceIndex = instanceIndex;
+            cluster.meshletIndex = emitter.meshletIndex;
+            cluster.aliasOffset = geometry->mesh.emissiveAliases.offset + emitter.aliasOffset * sizeof(GSAlias);
+            cluster.triCount = emitter.triCount;
+            cluster.flux = emissionWeight * emitter.area * areaScale * (2.0f * std::numbers::pi_v<float>);
+            float3 center = inst.rotation * emitter.center;
+            cluster.origin = center * inst.scale + inst.transform;
+            cluster.extent = emitter.radius * scaleAbs;
+        }
+    }
+    res.emissiveClustersHash = FNV1a64(Span<GSEmissiveCluster const>(emissiveClusters));
+    if (owner.mLastUpdateResult.emissiveClustersHash == res.emissiveClustersHash)
+        res.emissiveClusters = owner.mLastUpdateResult.emissiveClusters;
+    else if (!emissiveClusters.empty())
+    {
+        auto [ptr, offset] = mEmissiveClusterBuffer.Allocate(static_cast<uint32_t>(emissiveClusters.size()));
+        std::memcpy(ptr, emissiveClusters.data(), emissiveClusters.size() * sizeof(GSEmissiveCluster));
+        res.emissiveClusters = {offset, static_cast<uint32_t>(emissiveClusters.size())};
     }
     owner.mCommittedInstances.assign(tables.instances.begin(), tables.instances.end());
     owner.mCommittedMaterials.assign(tables.materials.begin(), tables.materials.end());
     owner.mCommittedLights.assign(tables.lights.begin(), tables.lights.end());
     // Light BVH update
-    if (owner.mLastUpdateResult.lightsHash == res.lightsHash)
+    if (owner.mLastUpdateResult.lightsHash == res.lightsHash &&
+        owner.mLastUpdateResult.emissiveClustersHash == res.emissiveClustersHash)
         res.lightBVH = owner.mLastUpdateResult.lightBVH, mLightBVHNeedsRefit = false;
     else
     {
-        mLightBVHNeedsRefit = true;
+        mLightBVHNeedsRefit = emissiveClusters.empty();
         LightBVHOptions options{};
-        LightBVHBuild bvh = BuildLightBVH(tables.lights, options, mStackAlloc ? mStackAlloc : mAllocator);
+        LightBVHBuild bvh = BuildLightBVH(tables.lights, emissiveClusters, options, buildAlloc);
 #ifndef NDEBUG
         String validationError;
-        CHECK_MSG(ValidateLightBVH(bvh, tables.lights, &validationError), "Light BVH validation failed: {}",
-                  validationError);
+        CHECK_MSG(ValidateLightBVH(bvh, tables.lights, emissiveClusters, &validationError),
+                  "Light BVH validation failed: {}", validationError);
 #endif
         UpdateResult::LightBVH& lightBVH = res.lightBVH;
         lightBVH.valid = bvh.valid;
@@ -918,6 +983,7 @@ void GPUScene::UpdateUBO(RendererUBO& globals) const
     globals.instances = mLastUpdateResult.instances;
     globals.materials = mLastUpdateResult.materials;
     globals.lights = mLastUpdateResult.lights;
+    globals.emissiveClusters = mLastUpdateResult.emissiveClusters;
     globals.lightBVHNodes = mLastUpdateResult.lightBVH.nodes;
     globals.lightBVHLightIndices = mLastUpdateResult.lightBVH.lightIndices;
     globals.firstLightBVHBitmask = mLastUpdateResult.lightBVH.bitmasks.offset;
@@ -966,6 +1032,7 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     size_t instanceBytes = AddRingBufferSize(mInstanceBuffer);
     size_t materialBytes = AddRingBufferSize(mMaterialBuffer);
     size_t lightBytes = AddRingBufferSize(mLightBuffer);
+    size_t emissiveClusterBytes = AddRingBufferSize(mEmissiveClusterBuffer);
     size_t lightBVHNodeBytes = AddRingBufferSize(mLightBVHNodeBuffer);
     size_t lightBVHIndexBytes = AddRingBufferSize(mLightBVHLightIndexBuffer);
     size_t lightBVHBitmaskBytes = AddRingBufferSize(mLightBVHBitmaskBuffer);
@@ -992,8 +1059,8 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     outStats.push_back({"Instance Buffer (Buffer)", instanceBytes});
     outStats.push_back({"TLAS Instance Buffer (Buffer)", tlasInstanceBytes});
     outStats.push_back({"Dynamic Upload Buffers (Buffer)",
-                        materialBytes + lightBytes + lightBVHNodeBytes + lightBVHIndexBytes + lightBVHBitmaskBytes +
-                            lightBVHGlobalBytes + lightBVHNodeIndexBytes});
+                        materialBytes + lightBytes + emissiveClusterBytes + lightBVHNodeBytes + lightBVHIndexBytes +
+                            lightBVHBitmaskBytes + lightBVHGlobalBytes + lightBVHNodeIndexBytes});
     outStats.push_back({"Mesh BLAS (Buffer)", blasBytes});
     outStats.push_back({"Curve BLAS (Buffer)", curveBLASBytes});
     outStats.push_back({"TLAS (Buffer)", tlasBytes});
@@ -1074,9 +1141,16 @@ GPUScene::Result GPUSceneImpl::ReserveMesh(FSerializedMesh const& src, GSMesh& o
     outData.meshlets.count = src.dagMeshlets.count;
     outData.meshlets.offset = outOffset + Skip(static_cast<size_t>(src.dagMeshlets.decodedSize));
     outData.meshletVtxOffset = outOffset + Skip(static_cast<size_t>(src.dagMeshletVtx.decodedSize));
-    outData.meshletTriOffset = outOffset + Skip(static_cast<size_t>(src.dagMeshletTri.decodedSize));
     outData.meshletGlobalIndex = mMeshletGlobalCounter;
     mMeshletGlobalCounter += outData.meshlets.count;
+    outData.emissiveMeshlets.count = src.emissiveMeshlets.count;
+    outData.emissiveMeshlets.offset = outOffset + Skip(static_cast<size_t>(src.emissiveMeshlets.decodedSize));
+    outData.emissiveAliases.count = src.emissiveAliases.count;
+    outData.emissiveAliases.offset = outOffset + Skip(static_cast<size_t>(src.emissiveAliases.decodedSize));
+    outData.emissivePrimitiveMap.count = src.emissivePrimitiveMap.count;
+    outData.emissivePrimitiveMap.offset =
+        outOffset + Skip(static_cast<size_t>(src.emissivePrimitiveMap.decodedSize));
+    outData.meshletTriOffset = outOffset + Skip(static_cast<size_t>(src.dagMeshletTri.decodedSize));
     CHECK_MSG(cursor == size, "Mesh layout mismatch: expected {} got {}", size, cursor);
     return Result::InProgress;
 }
@@ -1109,6 +1183,9 @@ size_t GPUSceneImpl::StageMesh(ImmediateUpload::UploadBatch* batch, FSerializedM
     AppendBlobWrite(src.dagMeshlets, header.meshlets.offset);
     AppendBlobWrite(src.dagMeshletVtx, header.meshletVtxOffset);
     AppendBlobWrite(src.dagMeshletTri, header.meshletTriOffset);
+    AppendBlobWrite(src.emissiveMeshlets, header.emissiveMeshlets.offset);
+    AppendBlobWrite(src.emissiveAliases, header.emissiveAliases.offset);
+    AppendBlobWrite(src.emissivePrimitiveMap, header.emissivePrimitiveMap.offset);
     return size;
 }
 
@@ -1248,6 +1325,9 @@ static Pair<FSerializedMesh, Vector<unsigned char>> SerializedFromMesh(FImported
     desc.dagMeshlets = serializer.AppendArray(mesh.dag.meshlets);
     desc.dagMeshletTri = serializer.AppendArray(mesh.dag.meshletTri);
     desc.dagMeshletVtx = serializer.AppendArray(mesh.dag.meshletVtx);
+    desc.emissiveMeshlets = serializer.AppendArray(mesh.dag.emissiveMeshlets);
+    desc.emissiveAliases = serializer.AppendArray(mesh.dag.emissiveAliases);
+    desc.emissivePrimitiveMap = serializer.AppendArray(mesh.dag.emissivePrimitiveMap);
     desc.skinBinding = serializer.AppendArray(mesh.skin);
 
     return {desc, std::move(payload)};
@@ -1340,6 +1420,8 @@ GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedMesh 
         g.blas = UINT32_MAX;
         g.offset = offset;
         g.mesh = header;
+        CHECK_MSG(blobs->ReadArray(source.emissiveMeshlets, g.emissiveMeshlets, mAllocator),
+                  "Failed to decode emissive meshlet metadata");
         g.state = ResourceState::Queued;
         g.live = true;
         outHandle = {slot, version};
@@ -1678,6 +1760,9 @@ void GPUSceneImpl::PrepareUploads(UploadBatchState& state)
             IncludeBlob(pending.mesh->dagMeshlets);
             IncludeBlob(pending.mesh->dagMeshletVtx);
             IncludeBlob(pending.mesh->dagMeshletTri);
+            IncludeBlob(pending.mesh->emissiveMeshlets);
+            IncludeBlob(pending.mesh->emissiveAliases);
+            IncludeBlob(pending.mesh->emissivePrimitiveMap);
         }
         else
         {
@@ -3264,6 +3349,7 @@ void GPUSceneImpl::Reset()
     mMaterialBuffer.Reset();
     mInstanceBuffer.Reset();
     mLightBuffer.Reset();
+    mEmissiveClusterBuffer.Reset();
     mLightBVHNodeBuffer.Reset();
     mLightBVHLightIndexBuffer.Reset();
     mLightBVHBitmaskBuffer.Reset();
@@ -3423,6 +3509,7 @@ RHIBuffer* GPUScene::GetDynamicStagingBuffer() const
 RHIBuffer* GPUScene::GetInstanceBuffer() const { return mImpl->mInstanceBuffer.mBuffer.Get(); }
 RHIBuffer* GPUScene::GetMaterialBuffer() const { return mImpl->mMaterialBuffer.mBuffer.Get(); }
 RHIBuffer* GPUScene::GetLightBuffer() const { return mImpl->mLightBuffer.mBuffer.Get(); }
+RHIBuffer* GPUScene::GetEmissiveClusterBuffer() const { return mImpl->mEmissiveClusterBuffer.mBuffer.Get(); }
 RHIBuffer* GPUScene::GetLightBVHNodeBuffer() const { return mImpl->mLightBVHNodeBuffer.mBuffer.Get(); }
 RHIBuffer* GPUScene::GetLightBVHLightIndexBuffer() const { return mImpl->mLightBVHLightIndexBuffer.mBuffer.Get(); }
 RHIBuffer* GPUScene::GetLightBVHBitmaskBuffer() const { return mImpl->mLightBVHBitmaskBuffer.mBuffer.Get(); }

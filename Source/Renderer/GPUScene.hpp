@@ -33,6 +33,8 @@ inline constexpr uint32_t kGSLightTypePoint = 2u;
 inline constexpr uint32_t kGSLightTypeSpot = 3u;
 inline constexpr uint32_t kGSLightTypeDisk = 4u;
 inline constexpr uint32_t kGSLightTypeRect = 5u;
+inline constexpr uint32_t kLightSelectionClusterBit = 1u << 31u;
+inline constexpr uint32_t kLightSelectionIndexMask = ~kLightSelectionClusterBit;
 
 struct GSOffsetCount
 {
@@ -70,6 +72,9 @@ struct GSMesh
     uint32_t meshletVtxOffset;
     uint32_t meshletTriOffset;
     uint32_t meshletGlobalIndex;
+    GSOffsetCount emissiveMeshlets;
+    GSOffsetCount emissiveAliases;
+    GSOffsetCount emissivePrimitiveMap;
 };
 struct GSInstance
 {
@@ -81,6 +86,7 @@ struct GSInstance
     uint32_t materialIndex{0u}; // In Material buffer (offset)
     uint32_t resourceIndex{UINT32_MAX}; // CPU side resource index, see @ref Geometry
     uint32_t type{kGSInstanceTypeMesh};
+    uint32_t emissiveClusterOffset{UINT32_MAX};
 };
 // XXX: Uber. Super, even. Surely this works for all our needs...
 struct GSMaterial
@@ -134,6 +140,16 @@ struct GSLight
     float3 dpdu; // tangent u-axis (Rect: half-extent u)
     float3 dpdv; // tangent v-axis (Rect: half-extent v)
 };
+struct GSEmissiveCluster
+{
+    uint32_t instanceIndex;
+    uint32_t meshletIndex;
+    uint32_t aliasOffset;
+    uint32_t triCount;
+    float flux;
+    float3 origin;
+    float3 extent;
+};
 struct GSCurveSet
 {
     GSOffsetCount vertices; // FCurveDOTSVertex
@@ -141,10 +157,11 @@ struct GSCurveSet
     GSOffsetCount leaves;   // FCurveLeaf
 };
 #pragma pack(pop)
-static_assert(sizeof(GSMesh) == 44);
-static_assert(sizeof(GSInstance) == 56);
+static_assert(sizeof(GSMesh) == 68);
+static_assert(sizeof(GSInstance) == 60);
 static_assert(sizeof(GSMaterial) == 192);
 static_assert(sizeof(GSLight) == 84);
+static_assert(sizeof(GSEmissiveCluster) == 44);
 static_assert(sizeof(GSCurveSet) == 24);
 static_assert(sizeof(FCurveDOTSVertex) == 8);
 static_assert(sizeof(FCurveLeaf) == 40);
@@ -155,6 +172,7 @@ struct GPUSceneDesc
     uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of GSInstance elements (ring)
     uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
     uint32_t lightBudget = static_cast<uint32_t>(1e4); // # of lights (ring)
+    uint32_t emissiveClusterBudget = static_cast<uint32_t>(1e5);
     uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
     uint32_t geometryBudget = static_cast<uint32_t>(1e4); // # of geometry (ring)
     uint32_t tlasInstanceBudget = static_cast<uint32_t>(1e4); // # of TLAS instances (ring)
@@ -228,6 +246,7 @@ public:
         GSOffsetCount instances;
         GSOffsetCount materials;
         GSOffsetCount lights;
+        GSOffsetCount emissiveClusters;
         struct LightBVH
         {
             uint32_t valid{0u};
@@ -242,6 +261,7 @@ public:
         uint64_t instancesHash{0u};
         uint64_t materialsHash{0u};
         uint64_t lightsHash{0u};
+        uint64_t emissiveClustersHash{0u};
     };
 
     struct GPUSceneTables
@@ -367,6 +387,7 @@ public:
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const;
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const;
     [[nodiscard]] RHIBuffer* GetLightBuffer() const;
+    [[nodiscard]] RHIBuffer* GetEmissiveClusterBuffer() const;
     [[nodiscard]] RHIBuffer* GetLightBVHNodeBuffer() const;
     [[nodiscard]] RHIBuffer* GetLightBVHLightIndexBuffer() const;
     [[nodiscard]] RHIBuffer* GetLightBVHBitmaskBuffer() const;

@@ -54,6 +54,7 @@ struct RendererUBO
     uint32_t matcapTextureIndex{UINT32_MAX};
     // Scene lights
     GSOffsetCount lights{};
+    GSOffsetCount emissiveClusters{};
     GSOffsetCount lightBVHNodes{};
     GSOffsetCount lightBVHLightIndices{};
     uint32_t firstLightBVHBitmask{0u};
@@ -163,6 +164,7 @@ struct RendererResources
     ResourceHandle instanceBuffer{kInvalidHandle};
     ResourceHandle materialBuffer{kInvalidHandle};
     ResourceHandle lightBuffer{kInvalidHandle};
+    ResourceHandle emissiveClusterBuffer{kInvalidHandle};
     ResourceHandle lightBVHNodeBuffer{kInvalidHandle};
     ResourceHandle lightBVHLightIndexBuffer{kInvalidHandle};
     ResourceHandle lightBVHBitmaskBuffer{kInvalidHandle};

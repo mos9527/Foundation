@@ -12,6 +12,8 @@ RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* 
         .instanceBuffer = renderer->CreateResource("Instance Buffer", scene->GetInstanceBuffer()),
         .materialBuffer = renderer->CreateResource("Material Buffer", scene->GetMaterialBuffer()),
         .lightBuffer = renderer->CreateResource("Light Buffer", scene->GetLightBuffer()),
+        .emissiveClusterBuffer =
+            renderer->CreateResource("Emissive Cluster Buffer", scene->GetEmissiveClusterBuffer()),
         .lightBVHNodeBuffer = renderer->CreateResource("Light BVH Nodes", scene->GetLightBVHNodeBuffer()),
         .lightBVHLightIndexBuffer =
             renderer->CreateResource("Light BVH Light Indices", scene->GetLightBVHLightIndexBuffer()),

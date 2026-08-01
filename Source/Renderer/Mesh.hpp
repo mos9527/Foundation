@@ -2,6 +2,7 @@
 #include <Core/Container.hpp>
 #include <Math/Math.hpp>
 #include "Metadata.hpp"
+#include "Precompute.hpp"
 #include "Serialization.hpp"
 using namespace Foundation;
 using namespace Core;
@@ -84,6 +85,17 @@ struct FMeshlet // @ref meshopt_Meshlet
 };
 static_assert(sizeof(FMeshlet) == 68);
 
+struct FEmissiveMeshlet
+{
+    uint32_t meshletIndex;
+    uint32_t aliasOffset;
+    uint32_t triCount;
+    float area;
+    float3 center;
+    float radius;
+};
+static_assert(sizeof(FEmissiveMeshlet) == 32);
+
 struct FSerializedMeshLOD
 {
     FBlobRef indices;
@@ -101,6 +113,9 @@ struct FSerializedMesh
     FBlobRef dagMeshlets;
     FBlobRef dagMeshletTri;
     FBlobRef dagMeshletVtx;
+    FBlobRef emissiveMeshlets;
+    FBlobRef emissiveAliases;
+    FBlobRef emissivePrimitiveMap;
     FBlobRef skinBinding; // FSkinBinding per vertex; empty when rigid.
     FUUID skeleton{};     // skin skeleton id; kNilUUID when rigid.
 
@@ -127,7 +142,14 @@ struct FImportedMesh
         Vector<FMeshlet> meshlets; // Meshlets built from all clusters
         Vector<uint8_t> meshletTri; // Meshlet local triangle indices
         Vector<uint32_t> meshletVtx; // Meshlet vertex indices into vertices/verticesQuantized
-        DAG(Allocator* alloc) : groups(alloc), meshlets(alloc), meshletTri(alloc), meshletVtx(alloc) {}
+        Vector<FEmissiveMeshlet> emissiveMeshlets;
+        Vector<GSAlias> emissiveAliases;
+        Vector<uint32_t> emissivePrimitiveMap;
+        DAG(Allocator* alloc) :
+            groups(alloc), meshlets(alloc), meshletTri(alloc), meshletVtx(alloc),
+            emissiveMeshlets(alloc), emissiveAliases(alloc), emissivePrimitiveMap(alloc)
+        {
+        }
     } dag;
 
     FImportedMesh(Allocator* alloc);

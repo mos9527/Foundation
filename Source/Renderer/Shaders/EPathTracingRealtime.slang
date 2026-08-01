@@ -321,6 +321,9 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         PathSample nextSample = PathSample();
         float3 localBeta = beta;
         IBSDF bsdf = material.GetSurface();
+        DirectLightingState previousLighting = lighting;
+        lighting.lastLightCtx =
+            LightSampleContext(hitState.position, hitState.geometryNormal, hitState.normal, !bsdf.HasTransmission());
 
 #if SHARC_QUERY
         if (globalParams.sharcEnabled != 0u && bounce > 0)
@@ -347,8 +350,10 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         if (!bsdf.IsDirac())
             AddLocalDirectLighting(hitState, bsdf, wo, float3(1.0f),
                                    0u, AOVCategory::Undefined, rng, lighting, localRadiance);
-        AddSurfaceEmissive(
-            material, wo, float3(1.0f), 0u, AOVCategory::Undefined, localRadiance);
+        if (!AddEmissiveClusterHitEmission(hit.raw, hitState, material, wo, ray.Direction, float3(1.0f),
+                                           0u, AOVCategory::Undefined, lastSamplePDF, previousLighting, localRadiance))
+            AddSurfaceEmissive(
+                material, wo, float3(1.0f), 0u, AOVCategory::Undefined, localRadiance);
         SharcHitData sharcHit = MakeSharcHitData(hitState, sharcMaterialDemodulation);
         if (!SharcUpdateHit(
                 sharcParameters, sharcState, sharcHit,
@@ -359,7 +364,9 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         if (!bsdf.IsDirac())
             AddLocalDirectLighting(hitState, bsdf, wo, localBeta,
                                 bounce, firstBounceCategory, rng, lighting, radiance);
-        AddSurfaceEmissive(material, wo, localBeta, bounce, firstBounceCategory, radiance);
+        if (!AddEmissiveClusterHitEmission(hit.raw, hitState, material, wo, ray.Direction, localBeta,
+                                           bounce, firstBounceCategory, lastSamplePDF, previousLighting, radiance))
+            AddSurfaceEmissive(material, wo, localBeta, bounce, firstBounceCategory, radiance);
 #endif
 
         AOVCategory sampleCategory;

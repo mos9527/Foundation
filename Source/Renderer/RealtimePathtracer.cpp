@@ -70,6 +70,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
     auto InstanceBuffer = gpu.instanceBuffer;
     auto MaterialBuffer = gpu.materialBuffer;
     auto LightBuffer = gpu.lightBuffer;
+    auto EmissiveClusterBuffer = gpu.emissiveClusterBuffer;
     auto LightBVHNodeBuffer = gpu.lightBVHNodeBuffer;
     auto LightBVHLightIndexBuffer = gpu.lightBVHLightIndexBuffer;
     auto LightBVHBitmaskBuffer = gpu.lightBVHBitmaskBuffer;
@@ -168,6 +169,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                 r->BindBufferStorageRead(self, InstanceBuffer, stage, "gInstances");
                 r->BindBufferStorageRead(self, MaterialBuffer, stage, "gMaterials");
                 r->BindBufferStorageRead(self, LightBuffer, stage, "gLights");
+                r->BindBufferStorageRead(self, EmissiveClusterBuffer, stage, "gEmissiveClusters");
                 r->BindBufferStorageRead(self, LightBVHNodeBuffer, stage, "lightBVHNodes");
                 r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, stage, "lightBVHLightIndices");
                 r->BindBufferStorageRead(self, LightBVHBitmaskBuffer, stage, "lightBVHBitmasks");
@@ -244,6 +246,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
             r->BindBufferStorageRead(self, InstanceBuffer, pipelineStage, "gInstances");
             r->BindBufferStorageRead(self, MaterialBuffer, pipelineStage, "gMaterials");
             r->BindBufferStorageRead(self, LightBuffer, pipelineStage, "gLights");
+            r->BindBufferStorageRead(self, EmissiveClusterBuffer, pipelineStage, "gEmissiveClusters");
             // Sampler
             r->BindTextureSampler(self, TexSampler, "gTexSampler");
             // Light BVH

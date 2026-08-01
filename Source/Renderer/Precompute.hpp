@@ -12,6 +12,7 @@ struct GSAlias
     float prob, select;
     uint alias;
 };
+static_assert(sizeof(GSAlias) == 12);
 
 struct AliasTable
 {
@@ -21,6 +22,7 @@ struct AliasTable
     uint Sample(float u, float& pdf) const;
     float PDF(uint sample) const { return mBins[sample].prob; }
 };
+[[nodiscard]] bool AliasTableRunSelfTests(Allocator* alloc, String* outError = nullptr);
 // https://www.pbr-book.org/4ed/Sampling_Algorithms/Sampling_1D_Functions#eq:piecewise-step-integral
 struct PiecewiseConstant1D
 {
