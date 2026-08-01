@@ -478,6 +478,10 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
         ValidateBlobArray<FEmissiveMeshlet>(header, mesh.emissiveMeshlets, "mesh.emissiveMeshlets");
         ValidateBlobArray<GSAlias>(header, mesh.emissiveAliases, "mesh.emissiveAliases");
         ValidateBlobArray<uint32_t>(header, mesh.emissivePrimitiveMap, "mesh.emissivePrimitiveMap");
+        CHECK_MSG(mesh.emissiveMeshlets.count == 0u
+                      ? mesh.emissivePrimitiveMap.count == 0u
+                      : (!mesh.lods.empty() && mesh.emissivePrimitiveMap.count == mesh.lods[0].indexCount / 3u),
+                  "FScene emissive primitive map does not match emissive meshlets");
         if (mesh.skeleton.IsNil())
         {
             CHECK_MSG(mesh.skinBinding.decodedSize == 0 && mesh.skinBinding.count == 0,

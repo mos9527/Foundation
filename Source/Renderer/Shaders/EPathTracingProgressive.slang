@@ -551,7 +551,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             if (!bsdf.IsDirac())
                 AddLocalDirectLighting(hitState, bsdf, wo, localBeta,
                                    bounce, firstBounceCategory, rng, lighting, radiance);
-            if (!AddEmissiveClusterHitEmission(hit.raw, hitState, material, wo, ray.Direction, localBeta,
+            if (!AddEmissiveClusterHitEmission(hit.raw, hitState, ray.Direction, localBeta,
                                                bounce, firstBounceCategory, lastSamplePDF, previousLighting, radiance))
                 AddSurfaceEmissive(material, wo, localBeta, bounce, firstBounceCategory, radiance);
 

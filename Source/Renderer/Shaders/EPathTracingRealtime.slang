@@ -350,7 +350,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         if (!bsdf.IsDirac())
             AddLocalDirectLighting(hitState, bsdf, wo, float3(1.0f),
                                    0u, AOVCategory::Undefined, rng, lighting, localRadiance);
-        if (!AddEmissiveClusterHitEmission(hit.raw, hitState, material, wo, ray.Direction, float3(1.0f),
+        if (!AddEmissiveClusterHitEmission(hit.raw, hitState, ray.Direction, float3(1.0f),
                                            0u, AOVCategory::Undefined, lastSamplePDF, previousLighting, localRadiance))
             AddSurfaceEmissive(
                 material, wo, float3(1.0f), 0u, AOVCategory::Undefined, localRadiance);
@@ -364,7 +364,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         if (!bsdf.IsDirac())
             AddLocalDirectLighting(hitState, bsdf, wo, localBeta,
                                 bounce, firstBounceCategory, rng, lighting, radiance);
-        if (!AddEmissiveClusterHitEmission(hit.raw, hitState, material, wo, ray.Direction, localBeta,
+        if (!AddEmissiveClusterHitEmission(hit.raw, hitState, ray.Direction, localBeta,
                                            bounce, firstBounceCategory, lastSamplePDF, previousLighting, radiance))
             AddSurfaceEmissive(material, wo, localBeta, bounce, firstBounceCategory, radiance);
 #endif

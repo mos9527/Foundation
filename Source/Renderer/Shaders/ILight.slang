@@ -535,9 +535,9 @@ float RectLightSolidAnglePDF(float3 origin, float3 center, float3 dpdu, float3 d
 }
 
 public struct PointLight : ILight {
-    SampledSpectrum I;
-    float3 position;
-    float radius;
+    public SampledSpectrum I;
+    public float3 position;
+    public float radius;
 
     public __init(SampledSpectrum I, float3 position, float radius = 0.0f) {
         this.I = I;
@@ -599,12 +599,12 @@ public struct PointLight : ILight {
 };
 
 public struct SpotLight : ILight {
-    SampledSpectrum I;
-    float3 position;
-    float3 direction;
-    float cosTotalWidth;
-    float cosFalloffStart;
-    float radius;
+    public SampledSpectrum I;
+    public float3 position;
+    public float3 direction;
+    public float cosTotalWidth;
+    public float cosFalloffStart;
+    public float radius;
 
     public __init(SampledSpectrum I, float3 position, float3 direction, float totalWidth, float falloffStart, float radius = 0.0f) {
         this.I = I;
@@ -684,14 +684,14 @@ public struct SpotLight : ILight {
 
 // https://pbr-book.org/4ed/Light_Sources/Area_Lights
 public struct DiskLight : ILight {
-    SampledSpectrum Lemit;
-    float3 position;
-    float3 normal;
-    float3 dpdu;
-    float3 dpdv;
-    float2 radius;
-    float area;
-    bool twoSided;
+    public SampledSpectrum Lemit;
+    public float3 position;
+    public float3 normal;
+    public float3 dpdu;
+    public float3 dpdv;
+    public float2 radius;
+    public float area;
+    public bool twoSided;
 
     public __init(SampledSpectrum Lemit, float3 position, float3 dpdu, float3 dpdv, float2 radius, bool twoSided = false) {
         this.Lemit = Lemit;
@@ -765,13 +765,13 @@ public struct DiskLight : ILight {
 };
 
 public struct RectLight : ILight {
-    SampledSpectrum Lemit;
-    float3 position;
-    float3 normal;
-    float3 dpdu;
-    float3 dpdv;
-    float area;
-    bool twoSided;
+    public SampledSpectrum Lemit;
+    public float3 position;
+    public float3 normal;
+    public float3 dpdu;
+    public float3 dpdv;
+    public float area;
+    public bool twoSided;
 
     public __init(SampledSpectrum Lemit, float3 position, float3 dpdu, float3 dpdv, bool twoSided = false) {
         this.Lemit = Lemit;
@@ -820,13 +820,13 @@ public struct RectLight : ILight {
 };
 
 public struct TriangleLight : ILight {
-    SampledSpectrum Lemit;
-    float3 v0;
-    float3 edge1;
-    float3 edge2;
-    float3 normal;
-    float area;
-    bool twoSided;
+    public SampledSpectrum Lemit;
+    public float3 v0;
+    public float3 edge1;
+    public float3 edge2;
+    public float3 normal;
+    public float area;
+    public bool twoSided;
 
     public __init(SampledSpectrum Lemit, float3 v0, float3 edge1, float3 edge2, bool twoSided = false) {
         this.Lemit = Lemit;

@@ -1422,6 +1422,21 @@ GPUScene::Result GPUSceneImpl::Upload(FBlobDeserializer* blobs, FSerializedMesh 
         g.mesh = header;
         CHECK_MSG(blobs->ReadArray(source.emissiveMeshlets, g.emissiveMeshlets, mAllocator),
                   "Failed to decode emissive meshlet metadata");
+        uint64_t expectedAliasOffset = 0u;
+        for (FEmissiveMeshlet const& emitter : g.emissiveMeshlets)
+        {
+            CHECK_MSG(emitter.meshletIndex < source.dagMeshlets.count, "Emissive meshlet index out of range");
+            CHECK_MSG(emitter.triCount <= kMeshletMaxTriangles, "Emissive meshlet triangle count out of range");
+            CHECK_MSG(emitter.aliasOffset == expectedAliasOffset, "Emissive meshlet aliases are not contiguous");
+            CHECK_MSG(static_cast<uint64_t>(emitter.aliasOffset) + emitter.triCount <= source.emissiveAliases.count,
+                      "Emissive meshlet alias range out of bounds");
+            expectedAliasOffset += emitter.triCount;
+        }
+        CHECK_MSG(expectedAliasOffset == source.emissiveAliases.count, "Emissive alias count mismatch");
+        CHECK_MSG(source.emissiveMeshlets.count == 0u
+                      ? source.emissivePrimitiveMap.count == 0u
+                      : source.emissivePrimitiveMap.count == source.lods[0].indexCount / 3u,
+                  "Emissive primitive map does not match emissive meshlets");
         g.state = ResourceState::Queued;
         g.live = true;
         outHandle = {slot, version};

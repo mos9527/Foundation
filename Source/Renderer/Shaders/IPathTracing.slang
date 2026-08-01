@@ -818,7 +818,7 @@ uint SampleAliasTable(uint byteOffset, uint count, float u, out float pdf)
     uint binIndex = min(uint(u * float(count)), count - 1u);
     float localU = u * float(count) - float(binIndex);
     GSAlias bin = gPrimBuffer.Load<GSAlias>(byteOffset + binIndex * sizeof(GSAlias));
-    uint selected = localU >= bin.select ? bin.alias : binIndex;
+    uint selected = localU >= bin.select ? min(bin.alias, count - 1u) : binIndex;
     pdf = gPrimBuffer.Load<GSAlias>(byteOffset + selected * sizeof(GSAlias)).prob;
     return selected;
 }
@@ -847,7 +847,7 @@ void LoadEmissiveClusterTriangle(GSEmissiveCluster cluster, uint triangleIndex,
     p2 = inst.rotation.rotate(p2) * inst.scale + inst.transform;
 }
 
-float3 EvaluateClusterEmission(uint instanceIndex, float2 uv)
+float3 EvaluateClusterEmission(uint instanceIndex, float2 uv, float3 wo)
 {
     GSInstance inst = LoadSceneInstance(instanceIndex);
     GSMaterial material = LoadMaterial(inst.materialIndex);
@@ -855,7 +855,17 @@ float3 EvaluateClusterEmission(uint instanceIndex, float2 uv)
     if (material.emissiveTexture != ~0u)
         emission *= gTextures2D[NonUniformResourceIndex(material.emissiveTexture)]
             .SampleLevel(gTexSampler, uv, 0.0f).rgb;
-    return emission;
+    float clearcoat = material.clearcoatFactor;
+    if (material.clearcoatTexture != ~0u)
+        clearcoat *= gTextures2D[NonUniformResourceIndex(material.clearcoatTexture)]
+            .SampleLevel(gTexSampler, uv, 0.0f).r;
+    float clearcoatRoughness = material.clearcoatRoughnessFactor;
+    if (material.clearcoatRoughnessTexture != ~0u)
+        clearcoatRoughness *= gTextures2D[NonUniformResourceIndex(material.clearcoatRoughnessTexture)]
+            .SampleLevel(gTexSampler, uv, 0.0f).g;
+    return emission * CoatEscape(saturate(clearcoat), saturate(clearcoatRoughness), wo,
+                                 globalParams.ggxLutEIndex, globalParams.ggxLutEavgIndex,
+                                 globalParams.energyCompensation != 0u);
 }
 
 LightLiSample SampleEmissiveCluster(uint clusterIndex, LightSampleContext ctx, float aliasU, float2 u)
@@ -875,9 +885,10 @@ LightLiSample SampleEmissiveCluster(uint clusterIndex, LightSampleContext ctx, f
     float b1 = sqrtU * (1.0f - u.y);
     float b2 = sqrtU * u.y;
     float2 uv = uv0 + b1 * (uv1 - uv0) + b2 * (uv2 - uv0);
-    TriangleLight light = TriangleLight(EvaluateClusterEmission(cluster.instanceIndex, uv),
-                                        p0, p1 - p0, p2 - p0, true);
+    TriangleLight light = TriangleLight(float3(1.0f), p0, p1 - p0, p2 - p0, true);
     LightLiSample Li = light.Sample_Li(ctx, u);
+    float3 wo = float3(0.0f, 0.0f, dot(light.normal, -Li.wi));
+    Li.Li = EvaluateClusterEmission(cluster.instanceIndex, uv, wo);
     Li.pdf *= trianglePMF;
     return Li;
 }
@@ -1116,8 +1127,6 @@ void AddSurfaceEmissive(
 bool AddEmissiveClusterHitEmission(
     HitPayload payload,
     HitState hitState,
-    IMaterial material,
-    float3 wo,
     float3 rayDirection,
     float3 beta,
     uint bounce,
@@ -1157,7 +1166,9 @@ bool AddEmissiveClusterHitEmission(
     float mis = (bounce > 0u && lastSamplePDF > EPS)
         ? PowerHeuristic(1, lastSamplePDF, 1, lightPDF)
         : 1.0f;
-    AddRadianceByCategory(radiance, beta * material.Le(wo) * mis,
+    float3 emissionWo = float3(0.0f, 0.0f, dot(light.normal, -rayDirection));
+    float3 emission = EvaluateClusterEmission(payload.instance, hitState.uv, emissionWo);
+    AddRadianceByCategory(radiance, beta * emission * mis,
                           bounce, firstBounceCategory, AOVCategory::Diffuse, bounce == 0u);
     return true;
 }
