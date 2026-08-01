@@ -6,7 +6,21 @@
 using namespace Foundation;
 using namespace Core;
 using namespace Math;
+// https://www.pbr-book.org/4ed/Sampling_Algorithms/The_Alias_Method#AliasTable
+struct GSAlias
+{
+    float prob, select;
+    uint alias;
+};
 
+struct AliasTable
+{
+    Vector<GSAlias> mBins;
+    AliasTable(Span<const float> f, Allocator* alloc);
+    // Index into mBins
+    uint Sample(float u, float& pdf) const;
+    float PDF(uint sample) const { return mBins[sample].prob; }
+};
 // https://www.pbr-book.org/4ed/Sampling_Algorithms/Sampling_1D_Functions#eq:piecewise-step-integral
 struct PiecewiseConstant1D
 {
