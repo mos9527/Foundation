@@ -79,7 +79,8 @@ void Example_BuildExampleRealtimePathtracerRenderGraph(Renderer* renderer, Rende
 void Example_BuildExampleRenderer(ExampleRenderer renderer, Renderer* r, RendererUBO* globals, RendererResources& gpu,
                                   RendererConfig& cfg, RendererOutputs& out);
 
-ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs const& outputs, bool isPresent);
+ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererUBO const* globals,
+                                             RendererOutputs const& outputs, bool isPresent);
 
 FImportedMesh Examples_MakePlaneMesh(float extent, float y = 0.0f, Allocator* alloc = GLOBAL_ALLOC);
 FImportedMesh Examples_MakeBoxMesh(float size, Allocator* alloc = GLOBAL_ALLOC);

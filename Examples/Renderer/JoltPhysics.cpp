@@ -41,7 +41,7 @@ namespace
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);
         Example_BuildExampleRenderer(renderer, ctx.renderer.get(), &ubo, resources, cfg, outputs);
-        Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
+        Examples_BuildTonemappingPass(ctx.renderer.get(), &ubo, outputs, true);
         RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
         ctx.renderer->EndSetup();
     }

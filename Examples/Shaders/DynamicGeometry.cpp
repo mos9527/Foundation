@@ -126,7 +126,7 @@ namespace
             BuildProgressivePathTracerRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
         else
             Example_BuildExampleRasterRenderGraph(ctx.renderer.get(), &ubo, resources, cfg, outputs);
-        Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, true);
+        Examples_BuildTonemappingPass(ctx.renderer.get(), &ubo, outputs, true);
         RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
         ctx.renderer->EndSetup();
     }

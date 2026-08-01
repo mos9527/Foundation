@@ -75,6 +75,12 @@ bool Examples_BitmaskCycleButton(ExampleInputState& input, StringView label, uns
 
 namespace
 {
+    struct ExamplePostprocessPushConstants
+    {
+        uint32_t viewFlags;
+        uint32_t accumulatedFrames;
+    };
+
     constexpr ViewFlagsBits kDebugViewFlags = ViewFlagsBits::BaseColor | ViewFlagsBits::Normal |
         ViewFlagsBits::Position | ViewFlagsBits::TextureLOD | ViewFlagsBits::SHARCGrid |
         ViewFlagsBits::SHARCOccupancy | ViewFlagsBits::SHARCRadiance;
@@ -152,8 +158,10 @@ bool Examples_RendererFlagsControls(ExampleInputState& input, ExampleRenderer re
     return changed;
 }
 
-ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs const& outputs, bool isPresent)
+ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererUBO const* globals,
+                                             RendererOutputs const& outputs, bool isPresent)
 {
+    CHECK(globals);
     constexpr RHIResourceFormat kOutputFormat = RHIResourceFormat::R8G8B8A8Unorm;
     // Debug views (e.g. raster overdraw) bypass lighting and write a display-ready image instead of AOVs.
     bool const isDebugOutput = outputs.debugOutput != kInvalidHandle;
@@ -188,11 +196,22 @@ ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs
             self, outputs.specular, "bufferB", RHIPipelineStageBits::FragmentShader,
             RHITextureViewDesc{.format = outputs.aovFormat, .range = RHITextureSubresourceRange::Create()});
         r->BindTextureSampler(self, linSampler, "sampler");
+        r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(ExamplePostprocessPushConstants));
+    };
+    auto postprocessRecord = [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+    {
+        if (isDebugOutput)
+            return;
+        ExamplePostprocessPushConstants const pc{
+            .viewFlags = globals->dbgViewFlags,
+            .accumulatedFrames = globals->ptAccumulatedFrames,
+        };
+        r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, pc);
     };
     using namespace RenderUtils;
     if (isPresent)
     {
-        createPSFullscreenPass(renderer, "Final Blit To Backbuffer", postprocessSetup);
+        createPSFullscreenPass(renderer, "Final Blit To Backbuffer", postprocessSetup, postprocessRecord);
         return kInvalidHandle;
     }
 
@@ -204,7 +223,8 @@ ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs
                                                                .format = kOutputFormat});
     createPSFullscreenPassRTV(
         renderer, "Final Blit To Image", postprocess,
-        RHITextureViewDesc{.format = kOutputFormat, .range = RHITextureSubresourceRange::Create()}, postprocessSetup);
+        RHITextureViewDesc{.format = kOutputFormat, .range = RHITextureSubresourceRange::Create()}, {w, h},
+        postprocessSetup, postprocessRecord);
     return postprocess;
 }
 

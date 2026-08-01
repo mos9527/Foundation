@@ -78,7 +78,7 @@ ResourceHandle RebuildGraph(ExampleVulkanContext& ctx, RendererUBO& ubo, GPUScen
     }
     auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
     Example_BuildExampleRenderer(renderer, ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
-    ResourceHandle output = Examples_BuildTonemappingPass(ctx.renderer.get(), outputs, !headless);
+    ResourceHandle output = Examples_BuildTonemappingPass(ctx.renderer.get(), &ubo, outputs, !headless);
     if (!headless)
         RenderUtils::createCSDebugTextPassBackBuffer(ctx.renderer.get(), "Debug Text", Examples_HudLines(input));
     ctx.renderer->EndSetup();
