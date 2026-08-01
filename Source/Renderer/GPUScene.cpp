@@ -1554,6 +1554,11 @@ GPUScene::Result GPUSceneImpl::Upload(FTexture const& source, TextureHandle& out
 
 GPUScene::Result GPUSceneImpl::Upload(FImportedMesh const& source, GeometryHandle& outHandle)
 {
+    CHECK_MSG(source.IsQuantized(), "FImportedMesh upload requires quantized vertices");
+    CHECK_MSG(!source.lods.empty() && !source.dag.meshlets.empty(),
+              "FImportedMesh upload requires clustered LOD0 geometry");
+    CHECK_MSG(source.dag.emissivePrimitiveMap.size() == source.lods[0].indices.size() / 3u,
+              "FImportedMesh upload requires emissive meshlet metadata");
     if (source.vertices.empty())
         return Result::InvalidInput;
 

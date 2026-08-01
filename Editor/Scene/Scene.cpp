@@ -1193,9 +1193,11 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             material.normalTexture = assignTextureId(mat->normal_texture);
         if (mat->emissive_texture.texture)
             material.emissiveTexture = assignTextureId(mat->emissive_texture, kTextureInSRGB);
-        material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2], 1.0f};
-        if (mat->emissive_strength.emissive_strength)
-            material.emissiveFactor *= mat->emissive_strength.emissive_strength;
+        float emissiveStrength = mat->has_emissive_strength
+            ? mat->emissive_strength.emissive_strength
+            : 1.0f;
+        material.emissiveFactor = {
+            mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2], emissiveStrength};
         material.transmissionFactor = mat->has_transmission ? mat->transmission.transmission_factor : 0.0f;
         if (mat->has_transmission && mat->transmission.transmission_texture.texture)
             material.transmissionTexture = assignTextureId(mat->transmission.transmission_texture);
