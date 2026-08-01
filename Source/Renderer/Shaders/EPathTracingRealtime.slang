@@ -212,9 +212,9 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             if (bounce == 0) 
                 chitMiss = true;
 #if SHARC_UPDATE
-            SharcUpdateMiss(sharcParameters, sharcState, lighting.env.Le(-view));
+            SharcUpdateMiss(sharcParameters, sharcState, EvaluateInfiniteMissRadiance(-view, lighting.env));
 #else
-            AddEnvironmentMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
+            AddInfiniteMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
 #endif
             break;
         }

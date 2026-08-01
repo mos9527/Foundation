@@ -1107,7 +1107,22 @@ bool AddAnalyticLightHitEmission(
     return true;
 }
 
-void AddEnvironmentMiss(
+float3 EvaluateInfiniteMissRadiance(float3 wi, InfiniteLight env)
+{
+    float3 Le = env.Le(wi);
+    for (uint lightIndex = 1u; lightIndex < globalParams.lights.count; ++lightIndex)
+    {
+        GSLight gl = LoadSceneLight(lightIndex);
+        if (GSLightType(gl) != kGSLightTypeDirectional)
+            break;
+
+        DistantLight light = DistantLight(SampledSpectrum(gl.color * gl.power), gl.direction, gl.params.x);
+        Le += light.Le(wi);
+    }
+    return Le;
+}
+
+void AddInfiniteMiss(
     float3 view,
     float3 beta,
     uint bounce,
@@ -1121,12 +1136,31 @@ void AddEnvironmentMiss(
     float pdf = EvalLightSelectionPMF(lighting.lastLightCtx, 0u, (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u) *
         lighting.env.PDF_Li(lighting.lastLightCtx, wi, true);
 
-    if (!any(Le > 0.0f))
+    if (any(Le > 0.0f))
+    {
+        float mis = (lastSamplePDF > EPS && bounce > 0) ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+        AddRadianceByCategory(radiance, beta * Le * mis, bounce, firstBounceCategory, AOVCategory::Specular, false);
+    }
+
+    if (bounce == 0u && globalParams.ptPrimaryLightVisibility == 0u)
         return;
-    
-    float mis = (lastSamplePDF > EPS && bounce > 0) ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
-    float3 contrib = beta * Le * mis;
-    AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, false);
+
+    for (uint lightIndex = 1u; lightIndex < globalParams.lights.count; ++lightIndex)
+    {
+        GSLight gl = LoadSceneLight(lightIndex);
+        if (GSLightType(gl) != kGSLightTypeDirectional)
+            break;
+
+        DistantLight light = DistantLight(SampledSpectrum(gl.color * gl.power), gl.direction, gl.params.x);
+        Le = light.Le(wi);
+        if (!any(Le > 0.0f))
+            continue;
+
+        pdf = EvalLightSelectionPMF(lighting.lastLightCtx, lightIndex, (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u) *
+            light.PDF_Li(lighting.lastLightCtx, wi, true);
+        float mis = (lastSamplePDF > EPS && bounce > 0) ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+        AddRadianceByCategory(radiance, beta * Le * mis, bounce, firstBounceCategory, AOVCategory::Specular, false);
+    }
 }
 
 bool EvaluateLightIntersection(uint lightType, float3 ro, float3 rd, float rayTMin, float rayTMax, out float hitT, out float2 localPosition)

@@ -452,7 +452,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
 
         if (!hasAnyDebugView && hit.kind == HitKind::None)
         {
-            AddEnvironmentMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
+            AddInfiniteMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
             break;
         }
         if (!IsMaterialSurfaceHit(hit.kind))
