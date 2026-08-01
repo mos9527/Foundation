@@ -363,13 +363,36 @@ VulkanDevice::~VulkanDevice()
 
 void VulkanDevice::WaitIdle() const { mDevice.waitIdle(); }
 
-void VulkanDevice::QueryBudget(size_t& used, size_t& budget) const
+void VulkanDevice::QueryBudget(RHIDeviceHeapType heapType, size_t& used, size_t& budget) const
 {
+    auto memoryProperties = mPhysicalDevice.getMemoryProperties();
+    Bitset<VK_MAX_MEMORY_HEAPS> matchingHeaps{};
+    vk::MemoryPropertyFlags requiredFlags;
+    switch (heapType)
+    {
+    case RHIDeviceHeapType::Local:
+        requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
+        break;
+    case RHIDeviceHeapType::Upload:
+    case RHIDeviceHeapType::Readback:
+        requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible;
+        break;
+    }
+    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i)
+    {
+        auto const& memoryType = memoryProperties.memoryTypes[i];
+        if ((memoryType.propertyFlags & requiredFlags) == requiredFlags)
+            matchingHeaps[memoryType.heapIndex] = true;
+    }
+
     VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
     vmaGetHeapBudgets(mVkAllocator, budgets);
     used = 0, budget = 0;
-    for (const auto& b : budgets)
-        used += b.usage, budget += b.budget;
+    for (uint32_t i = 0; i < memoryProperties.memoryHeapCount; ++i)
+    {
+        if (matchingHeaps[i])
+            used += budgets[i].usage, budget += budgets[i].budget;
+    }
 }
 
 void VulkanDevice::QueryAllocationStats(size_t& blockBytes, size_t& allocationBytes) const

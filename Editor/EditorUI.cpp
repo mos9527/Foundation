@@ -2655,7 +2655,7 @@ void FRunningImGui()
             {
                 {
                     size_t used, budget;
-                    GContext->device->QueryBudget(used, budget);
+                    GContext->device->QueryBudget(RHIDeviceHeapType::Local, used, budget);
                     size_t blockBytes, allocationBytes;
                     GContext->device->QueryAllocationStats(blockBytes, allocationBytes);
                     static String name;

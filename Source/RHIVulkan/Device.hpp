@@ -240,7 +240,7 @@ namespace Foundation::RHI
 
         void WaitIdle() const override;
 
-        void QueryBudget(size_t& used, size_t& budget) const override;
+        void QueryBudget(RHIDeviceHeapType heapType, size_t& used, size_t& budget) const override;
         void QueryAllocationStats(size_t& blockBytes, size_t& allocationBytes) const override;
         void QueryMemoryStats(RHIDeviceMemoryStats& outStats) const override;
         String QueryDeviceString() const override;
