@@ -293,6 +293,11 @@ int main(int argc, char** argv)
         Examples_Text(input, FExampleOrbitCamera::kControlsText);
         if (Examples_RendererSwitchButton(input, renderer))
             input.wantResizeOrRebuild = true;
+        if (Examples_RendererFlagsControls(input, renderer, cfg))
+        {
+            input.wantResizeOrRebuild = true;
+            ubo.ptAccumulatedFrames = 0u;
+        }
         Examples_Slider(input, "Amplitude", amplitude, 0.0f, 2.0f, 0.05f, "x");
         Examples_Slider(input, "Paused", paused, 0.0f, 1.0f, 1.0f, "");
         Examples_NewFrame(window, ctx);

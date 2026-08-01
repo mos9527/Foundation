@@ -18,9 +18,146 @@ bool Examples_RendererSwitchButton(ExampleInputState& input, ExampleRenderer& cu
     return changed;
 }
 
+bool Examples_BitmaskOptionPicker(ExampleInputState& input, unsigned& value, const char* const* labels,
+                                  const unsigned* masks, unsigned count, bool solo)
+{
+    bool any = false;
+    for (unsigned i = 0; i < count; ++i)
+    {
+        bool const selected = (value & masks[i]) != 0u;
+        if (i > 0)
+            Examples_SameLine(input, 8);
+        if (Examples_Button(input, Format("{} {}", selected ? "[x]" : "[ ]", labels[i])))
+        {
+            if (!selected)
+            {
+                value |= masks[i];
+                if (solo)
+                {
+                    for (unsigned j = 0; j < count; ++j)
+                    {
+                        if (j != i)
+                            value &= ~masks[j];
+                    }
+                }
+            }
+            else
+                value &= ~masks[i];
+            any = true;
+        }
+    }
+    return any;
+}
+
+bool Examples_BitmaskCycleButton(ExampleInputState& input, StringView label, unsigned& value,
+                                 const char* const* labels, const unsigned* masks, unsigned count)
+{
+    int selected = -1;
+    for (unsigned i = 0; i < count; ++i)
+    {
+        if ((value & masks[i]) != 0u)
+        {
+            selected = static_cast<int>(i);
+            break;
+        }
+    }
+    char const* name = selected < 0 ? "Off" : labels[selected];
+    if (!Examples_Button(input, Format(">> {}: [{}] <<", label, name)))
+        return false;
+
+    for (unsigned i = 0; i < count; ++i)
+        value &= ~masks[i];
+    int const next = selected + 1;
+    if (next >= 0 && next < static_cast<int>(count))
+        value |= masks[next];
+    return true;
+}
+
+namespace
+{
+    constexpr ViewFlagsBits kDebugViewFlags = ViewFlagsBits::BaseColor | ViewFlagsBits::Normal |
+        ViewFlagsBits::Position | ViewFlagsBits::TextureLOD | ViewFlagsBits::SHARCGrid |
+        ViewFlagsBits::SHARCOccupancy | ViewFlagsBits::SHARCRadiance;
+    constexpr ViewFlagsBits kAovViewFlags =
+        ViewFlagsBits::AOVDiffuse | ViewFlagsBits::AOVSpecular | ViewFlagsBits::AOVSampleCount;
+}
+
+bool Examples_RendererFlagsControls(ExampleInputState& input, ExampleRenderer renderer, RendererConfig& cfg)
+{
+    bool changed = false;
+
+    if (IsRaster(renderer))
+    {
+        {
+            const char* names[] = {"Overdraw", "Meshlet", "Matcap"};
+            const ViewFlagsBits values[] = {ViewFlagsBits::Overdraw, ViewFlagsBits::Meshlet, ViewFlagsBits::Matcap};
+            changed |= Examples_BitmaskCycleButton(input, "Raster Debug", cfg.viewFlags, names, values);
+        }
+        {
+            const char* items[] = {"RT Shadows"};
+            const ViewFlagsBits values[] = {ViewFlagsBits::EnableRasterRTShadows};
+            changed |= Examples_BitmaskOptionPicker(input, cfg.viewFlags, items, values);
+        }
+        {
+            const char* items[] = {"Frustum", "Occlusion"};
+            const CullFlagsBits values[] = {CullFlagsBits::Frustum, CullFlagsBits::Occlusion};
+            changed |= Examples_BitmaskOptionPicker(input, cfg.cullFlags, items, values);
+        }
+    }
+
+    if (IsPathTracer(renderer))
+    {
+        const char* items[] = {"Diffuse", "Specular", "Sample Count"};
+        const ViewFlagsBits values[] = {ViewFlagsBits::AOVDiffuse, ViewFlagsBits::AOVSpecular,
+                                        ViewFlagsBits::AOVSampleCount};
+        if (Examples_BitmaskCycleButton(input, "AOV View", cfg.viewFlags, items, values))
+        {
+            cfg.viewFlags &= ~kDebugViewFlags;
+            changed = true;
+        }
+    }
+
+    {
+        bool debugViewChanged = false;
+        if (IsRealtimePT(renderer))
+        {
+            const char* items[] = {"BaseColor", "Normal", "Position", "Texture LOD", "SHARC Grid",
+                                   "SHARC Occupancy", "SHARC Radiance"};
+            const ViewFlagsBits values[] = {
+                ViewFlagsBits::BaseColor,     ViewFlagsBits::Normal,         ViewFlagsBits::Position,
+                ViewFlagsBits::TextureLOD,    ViewFlagsBits::SHARCGrid,      ViewFlagsBits::SHARCOccupancy,
+                ViewFlagsBits::SHARCRadiance};
+            debugViewChanged = Examples_BitmaskCycleButton(input, "Debug View", cfg.viewFlags, items, values);
+        }
+        else
+        {
+            const char* items[] = {"BaseColor", "Normal", "Position", "Texture LOD"};
+            const ViewFlagsBits values[] = {ViewFlagsBits::BaseColor, ViewFlagsBits::Normal,
+                                            ViewFlagsBits::Position, ViewFlagsBits::TextureLOD};
+            debugViewChanged = Examples_BitmaskCycleButton(input, "Debug View", cfg.viewFlags, items, values);
+        }
+        if (debugViewChanged)
+        {
+            cfg.viewFlags &= ~kAovViewFlags;
+            changed = true;
+        }
+    }
+
+    {
+        const char* items[] = {"White Base Color"};
+        const MaterialFlagsBits values[] = {MaterialFlagsBits::DbgWhiteBaseColor};
+        changed |= Examples_BitmaskCycleButton(input, "Material Debug", cfg.materialFlags, items, values);
+    }
+
+    return changed;
+}
+
 ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs const& outputs, bool isPresent)
 {
-    CHECK_MSG(outputs.diffuse != kInvalidHandle, "Basic tonemap pass missing diffuse output");
+    constexpr RHIResourceFormat kOutputFormat = RHIResourceFormat::R8G8B8A8Unorm;
+    // Debug views (e.g. raster overdraw) bypass lighting and write a display-ready image instead of AOVs.
+    bool const isDebugOutput = outputs.debugOutput != kInvalidHandle;
+    CHECK_MSG(isDebugOutput || outputs.diffuse != kInvalidHandle, "Basic tonemap pass missing diffuse output");
     RHIExtent2D extent = outputs.extent;
     if (extent.x == 0u || extent.y == 0u)
     {
@@ -29,10 +166,19 @@ ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererOutputs
     }
     uint32_t const w = extent.x;
     uint32_t const h = extent.y;
-    constexpr RHIResourceFormat kOutputFormat = RHIResourceFormat::R8G8B8A8Unorm;
     auto linSampler = renderer->CreateSampler({});
     auto postprocessSetup = [=](PassHandle self, Renderer* r)
     {
+        if (isDebugOutput)
+        {
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/PSCopy.spv"));
+            r->BindTextureSRV(
+                self, outputs.debugOutput, "srcTexture", RHIPipelineStageBits::FragmentShader,
+                RHITextureViewDesc{.format = kOutputFormat, .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSampler(self, linSampler, "sampler");
+            return;
+        }
         r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
                       r->GetApplication()->ResolveRelativePathBase("Data/Shaders/PostprocessBasic.spv"));
         r->BindTextureSRV(
@@ -246,6 +392,7 @@ void Example_BuildExampleRealtimePathtracerRenderGraph(Renderer* renderer, Rende
 void Example_BuildExampleRenderer(ExampleRenderer renderer, Renderer* r, RendererUBO* globals, RendererResources& gpu,
     RendererConfig& cfg, RendererOutputs& out)
 {
+    out = RendererOutputs{}; // Handles never outlive their graph; don't leak them into the next build
     switch (renderer)
     {
     case ExampleRenderer::Raster:

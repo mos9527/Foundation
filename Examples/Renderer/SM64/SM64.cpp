@@ -664,6 +664,11 @@ int main(int argc, char** argv)
             Examples_Text(input, Format("{} connected", SDL_GetGamepadNameForID(SDL_GetGamepadID(gGamepad))));
         if (Examples_RendererSwitchButton(input, renderer))
             input.wantResizeOrRebuild = true;
+        if (Examples_RendererFlagsControls(input, renderer, cfg))
+        {
+            input.wantResizeOrRebuild = true;
+            ubo.ptAccumulatedFrames = 0u;
+        }
 
         Examples_NewFrame(window, ctx);
     }

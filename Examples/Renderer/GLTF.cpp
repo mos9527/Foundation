@@ -242,6 +242,12 @@ int main(int argc, char** argv)
                                           scene.GetTextures().size(), fps.Update(), ubo.ptAccumulatedFrames));
                 if (Examples_RendererSwitchButton(input, renderer))
                     input.wantResizeOrRebuild = true;
+                if (Examples_RendererFlagsControls(input, renderer, cfg))
+                {
+                    input.wantResizeOrRebuild = true;
+                    ubo.ptAccumulatedFrames = 0u;
+                    paused = false;
+                }
                 input.wantResizeOrRebuild |=
                     Examples_Slider(input, "Resolution", scaling, 0.10f, 1.0f, 0.05f, "x", false);
                 if (Examples_Slider(input, "Samples", maxSamples, 0.0f, 128.0f, 1.0f))

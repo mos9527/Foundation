@@ -274,6 +274,11 @@ int main(int argc, char** argv)
             Examples_Slider(input, "Paused", paused, 0.0f, 1.0f, 1.0f, "");
             if (Examples_RendererSwitchButton(input, renderer))
                 input.wantResizeOrRebuild = true;
+            if (Examples_RendererFlagsControls(input, renderer, cfg))
+            {
+                input.wantResizeOrRebuild = true;
+                ubo.ptAccumulatedFrames = 0u;
+            }
             Examples_NewFrame(window, ctx);
         }
     }

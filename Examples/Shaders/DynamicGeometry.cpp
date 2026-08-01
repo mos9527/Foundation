@@ -89,7 +89,7 @@ namespace
         tables.materials[0].baseColorFactor = float4(0.05f, 0.25f, 0.35f, 1.0f);
         tables.materials[0].metallicFactor = 0.0f;
         tables.materials[0].roughnessFactor = 1.0f;
-        tables.materials[0].transmissionFactor = 1.0f;
+        tables.materials[0].transmissionFactor = .50f;
         tables.materials[0].ior = 1.5f;
 
         tables.materials[1] = GSMaterial{};
