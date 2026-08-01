@@ -188,8 +188,10 @@ struct LightBVHBuild
 void ComputeAnalyticalLightBounds(GSLight const& light, float3& aabbMin, float3& aabbMax, float3& center,
                                   float3& coneDirection, float& cosConeAngle);
 
-[[nodiscard]] LightBVHBuild BuildLightBVH(Span<GSLight const> lights, LightBVHOptions const& options, Allocator* alloc);
+[[nodiscard]] LightBVHBuild BuildLightBVH(Span<GSLight const> lights, Span<GSEmissiveCluster const> clusters,
+                                          LightBVHOptions const& options, Allocator* alloc);
 
-[[nodiscard]] bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, String* outError = nullptr);
+[[nodiscard]] bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights,
+                                    Span<GSEmissiveCluster const> clusters, String* outError = nullptr);
 
 [[nodiscard]] bool LightBVHRunBuilderSelfTests(Allocator* alloc, String* outError = nullptr);

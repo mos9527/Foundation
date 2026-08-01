@@ -54,6 +54,7 @@ struct RendererUBO
     uint32_t matcapTextureIndex{UINT32_MAX};
     // Scene lights
     GSOffsetCount lights{};
+    GSOffsetCount emissiveClusters{};
     GSOffsetCount lightBVHNodes{};
     GSOffsetCount lightBVHLightIndices{};
     uint32_t firstLightBVHBitmask{0u};
@@ -64,7 +65,7 @@ struct RendererUBO
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
     uint32_t ptMaxBounces{4u};
-    float ptFireflyClamp{2.0f}; // 10^x
+    float ptFireflyClamp{1.0f}; // 10^x
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1.
     uint32_t ptPrimaryLightVisibility{0u}; // Analytic lights + sun disks on bounce 0
     float4 sharcPreviousCameraPosition{};
@@ -163,6 +164,7 @@ struct RendererResources
     ResourceHandle instanceBuffer{kInvalidHandle};
     ResourceHandle materialBuffer{kInvalidHandle};
     ResourceHandle lightBuffer{kInvalidHandle};
+    ResourceHandle emissiveClusterBuffer{kInvalidHandle};
     ResourceHandle lightBVHNodeBuffer{kInvalidHandle};
     ResourceHandle lightBVHLightIndexBuffer{kInvalidHandle};
     ResourceHandle lightBVHBitmaskBuffer{kInvalidHandle};

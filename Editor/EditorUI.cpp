@@ -3010,19 +3010,19 @@ void FRunningImGui()
             if (ImModalButton(PSI_CODE " Direct", 0, 4))
             {
                 GEditor.shaderGlobals.ptMaxBounces = 0;
-                GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
+                GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 1.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton(PSI_BOLT " Fast", 1, 4))
             {
                 GEditor.shaderGlobals.ptMaxBounces = 4;
-                GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
+                GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 1.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton(PSI_FIRE " Full", 2, 4))
             {
                 GEditor.shaderGlobals.ptMaxBounces = 32;
-                GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 2.0
+                GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 1.0
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton(PSI_BEAKER " Über", 3, 4))

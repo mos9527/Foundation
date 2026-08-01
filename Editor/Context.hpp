@@ -56,7 +56,7 @@ struct FContext
     struct RendererSettings
     {
         int defaultRenderer{0}; // 0: Progressive PT, 1: Raster, 2: Realtime PT (RTPT)
-        float energyClampOverride{2.0f}; // Applies to default PT, Fast preset
+        float energyClampOverride{1.0f}; // Applies to default PT, Fast preset
         float renderScale{1.0f}; // 0.25 .. 1.0
     } rendererSettings;
 };

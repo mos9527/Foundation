@@ -474,7 +474,14 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
         ValidateBlobArray<FLODGroup>(header, mesh.dagGroups, "mesh.dagGroups");
         ValidateBlobArray<FMeshlet>(header, mesh.dagMeshlets, "mesh.dagMeshlets");
         ValidateBlobArray<uint8_t>(header, mesh.dagMeshletTri, "mesh.dagMeshletTri");
-        ValidateBlobArray<uint32_t>(header, mesh.dagMeshletVtx, "mesh.dagMeshletVtx");        
+        ValidateBlobArray<uint32_t>(header, mesh.dagMeshletVtx, "mesh.dagMeshletVtx");
+        ValidateBlobArray<FEmissiveMeshlet>(header, mesh.emissiveMeshlets, "mesh.emissiveMeshlets");
+        ValidateBlobArray<GSAlias>(header, mesh.emissiveAliases, "mesh.emissiveAliases");
+        ValidateBlobArray<uint32_t>(header, mesh.emissivePrimitiveMap, "mesh.emissivePrimitiveMap");
+        CHECK_MSG(mesh.emissiveMeshlets.count == 0u
+                      ? mesh.emissivePrimitiveMap.count == 0u
+                      : (!mesh.lods.empty() && mesh.emissivePrimitiveMap.count == mesh.lods[0].indexCount / 3u),
+                  "FScene emissive primitive map does not match emissive meshlets");
         if (mesh.skeleton.IsNil())
         {
             CHECK_MSG(mesh.skinBinding.decodedSize == 0 && mesh.skinBinding.count == 0,
@@ -1186,9 +1193,11 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             material.normalTexture = assignTextureId(mat->normal_texture);
         if (mat->emissive_texture.texture)
             material.emissiveTexture = assignTextureId(mat->emissive_texture, kTextureInSRGB);
-        material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2], 1.0f};
-        if (mat->emissive_strength.emissive_strength)
-            material.emissiveFactor *= mat->emissive_strength.emissive_strength;
+        float emissiveStrength = mat->has_emissive_strength
+            ? mat->emissive_strength.emissive_strength
+            : 1.0f;
+        material.emissiveFactor = {
+            mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2], emissiveStrength};
         material.transmissionFactor = mat->has_transmission ? mat->transmission.transmission_factor : 0.0f;
         if (mat->has_transmission && mat->transmission.transmission_texture.texture)
             material.transmissionTexture = assignTextureId(mat->transmission.transmission_texture);
@@ -1836,6 +1845,9 @@ void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImpor
     desc.dagMeshlets = {};
     desc.dagMeshletTri = {};
     desc.dagMeshletVtx = {};
+    desc.emissiveMeshlets = {};
+    desc.emissiveAliases = {};
+    desc.emissivePrimitiveMap = {};
     desc.skinBinding = {};
     desc.skeleton = skeleton;
 
@@ -1852,6 +1864,9 @@ void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImpor
     AppendArrayBlobJob(blobJobs, mesh.dag.meshlets, FBlobCodec::LZ4, desc.dagMeshlets);
     AppendArrayBlobJob(blobJobs, mesh.dag.meshletTri, FBlobCodec::LZ4, desc.dagMeshletTri);
     AppendArrayBlobJob(blobJobs, mesh.dag.meshletVtx, FBlobCodec::LZ4, desc.dagMeshletVtx);
+    AppendArrayBlobJob(blobJobs, mesh.dag.emissiveMeshlets, FBlobCodec::LZ4, desc.emissiveMeshlets);
+    AppendArrayBlobJob(blobJobs, mesh.dag.emissiveAliases, FBlobCodec::LZ4, desc.emissiveAliases);
+    AppendArrayBlobJob(blobJobs, mesh.dag.emissivePrimitiveMap, FBlobCodec::LZ4, desc.emissivePrimitiveMap);
     AppendArrayBlobJob(blobJobs, mesh.skin, FBlobCodec::LZ4, desc.skinBinding);
 }
 
@@ -1958,6 +1973,7 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     desc.materialBudget = RingGPUSceneBudget(GetMaterials().size());
     desc.lightBudget = RingGPUSceneBudget(GetLights().size());
     size_t skinnedInstanceCount = 0;
+    size_t emissiveClusterCount = 0;
     size_t dynamicBytes = 0;
     for (FInstance const& instance : GetInstances())
     {
@@ -1968,7 +1984,10 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
             continue;
         FSerializedMesh const& mesh = GetMeshes()[static_cast<size_t>(meshIndex)];
         if (mesh.skeleton.IsNil())
+        {
+            emissiveClusterCount += mesh.emissiveMeshlets.count;
             continue;
+        }
         CHECK_MSG(!mesh.lods.empty(), "Skinned mesh has no LOD0");
         uint64_t bytes = sizeof(GSMesh) + static_cast<uint64_t>(mesh.vertexCount) * sizeof(FQVertex) +
             static_cast<uint64_t>(mesh.lods[0].indexCount) * sizeof(uint32_t);
@@ -1976,6 +1995,7 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
         ++skinnedInstanceCount;
     }
     desc.dynamicGeometryBudget = ByteGPUSceneBudget(dynamicBytes, 0, size_t(16));
+    desc.emissiveClusterBudget = RingGPUSceneBudget(emissiveClusterCount);
     desc.geometryBudget =
         CountGPUSceneBudget(rigidMeshCount + GetCurves().size() + skinnedInstanceCount);
     desc.dynamicStagingFramesInFlight = kGPUSceneRingFrameSlack;

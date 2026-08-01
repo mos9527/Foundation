@@ -164,7 +164,7 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 25;
+static constexpr uint32_t kSceneVersion = 26;
 
 // Stringpool entry
 struct FStringEntry
@@ -234,6 +234,9 @@ inline void FSerialize(FWriter& writer, FSerializedMesh const& mesh)
     FSerialize(writer, mesh.dagMeshlets);
     FSerialize(writer, mesh.dagMeshletTri);
     FSerialize(writer, mesh.dagMeshletVtx);
+    FSerialize(writer, mesh.emissiveMeshlets);
+    FSerialize(writer, mesh.emissiveAliases);
+    FSerialize(writer, mesh.emissivePrimitiveMap);
     FSerialize(writer, mesh.skinBinding);
     FSerialize(writer, mesh.skeleton);
 }
@@ -250,6 +253,9 @@ inline void FDeserialize(FReader& reader, FSerializedMesh& mesh)
     FDeserialize(reader, mesh.dagMeshlets);
     FDeserialize(reader, mesh.dagMeshletTri);
     FDeserialize(reader, mesh.dagMeshletVtx);
+    FDeserialize(reader, mesh.emissiveMeshlets);
+    FDeserialize(reader, mesh.emissiveAliases);
+    FDeserialize(reader, mesh.emissivePrimitiveMap);
     FDeserialize(reader, mesh.skinBinding);
     FDeserialize(reader, mesh.skeleton);
 }

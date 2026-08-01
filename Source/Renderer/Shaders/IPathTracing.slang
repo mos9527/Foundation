@@ -40,6 +40,7 @@ StructuredBuffer<GSMaterial> gMaterials;
 // GPUScene sorts these by type (env, directional, ...see kGSLightType*)
 // gLights[0] always exists and is the environment light.
 StructuredBuffer<GSLight> gLights;
+StructuredBuffer<GSEmissiveCluster> gEmissiveClusters;
 #include "ILightBVH.slang"
 SamplerState gTexSampler;
 
@@ -812,21 +813,109 @@ LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
     }
 }
 
-LightLiSample SampleSceneLight(LightSampleContext ctx, float uc, float2 u)
+uint SampleAliasTable(uint byteOffset, uint count, float u, out float pdf)
+{
+    uint binIndex = min(uint(u * float(count)), count - 1u);
+    float localU = u * float(count) - float(binIndex);
+    GSAlias bin = gPrimBuffer.Load<GSAlias>(byteOffset + binIndex * sizeof(GSAlias));
+    uint selected = localU >= bin.select ? min(bin.alias, count - 1u) : binIndex;
+    pdf = gPrimBuffer.Load<GSAlias>(byteOffset + selected * sizeof(GSAlias)).prob;
+    return selected;
+}
+
+void LoadEmissiveClusterTriangle(GSEmissiveCluster cluster, uint triangleIndex,
+                                 out float3 p0, out float3 p1, out float3 p2,
+                                 out float2 uv0, out float2 uv1, out float2 uv2)
+{
+    GSInstance inst = LoadSceneInstance(cluster.instanceIndex);
+    GSMesh mesh = gPrimBuffer.Load<GSMesh>(inst.resourceOffset);
+    FMeshlet meshlet =
+        gPrimBuffer.Load<FMeshlet>(mesh.meshlets.offset + cluster.meshletIndex * sizeof(FMeshlet));
+    uint triBase = mesh.meshletTriOffset + meshlet.triOffset + triangleIndex * sizeof(MIndex);
+    MIndex tri = gPrimBuffer.Load<MIndex>(triBase);
+    uint vtxBase = mesh.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
+    uint i0 = gPrimBuffer.Load<uint32_t>(vtxBase + uint(tri.v0) * sizeof(uint32_t));
+    uint i1 = gPrimBuffer.Load<uint32_t>(vtxBase + uint(tri.v1) * sizeof(uint32_t));
+    uint i2 = gPrimBuffer.Load<uint32_t>(vtxBase + uint(tri.v2) * sizeof(uint32_t));
+    float3 n, t;
+    float sign;
+    FQDecode(gPrimBuffer.Load<FQVertex>(mesh.vertices.offset + i0 * sizeof(FQVertex)), p0, n, t, sign, uv0);
+    FQDecode(gPrimBuffer.Load<FQVertex>(mesh.vertices.offset + i1 * sizeof(FQVertex)), p1, n, t, sign, uv1);
+    FQDecode(gPrimBuffer.Load<FQVertex>(mesh.vertices.offset + i2 * sizeof(FQVertex)), p2, n, t, sign, uv2);
+    p0 = inst.rotation.rotate(p0) * inst.scale + inst.transform;
+    p1 = inst.rotation.rotate(p1) * inst.scale + inst.transform;
+    p2 = inst.rotation.rotate(p2) * inst.scale + inst.transform;
+}
+
+float3 EvaluateClusterEmission(uint instanceIndex, float2 uv, float3 wo)
+{
+    GSInstance inst = LoadSceneInstance(instanceIndex);
+    GSMaterial material = LoadMaterial(inst.materialIndex);
+    float3 emission = material.emissiveFactor;
+    if (material.emissiveTexture != ~0u)
+        emission *= gTextures2D[NonUniformResourceIndex(material.emissiveTexture)]
+            .SampleLevel(gTexSampler, uv, 0.0f).rgb;
+    float clearcoat = material.clearcoatFactor;
+    if (material.clearcoatTexture != ~0u)
+        clearcoat *= gTextures2D[NonUniformResourceIndex(material.clearcoatTexture)]
+            .SampleLevel(gTexSampler, uv, 0.0f).r;
+    float clearcoatRoughness = material.clearcoatRoughnessFactor;
+    if (material.clearcoatRoughnessTexture != ~0u)
+        clearcoatRoughness *= gTextures2D[NonUniformResourceIndex(material.clearcoatRoughnessTexture)]
+            .SampleLevel(gTexSampler, uv, 0.0f).g;
+    return emission * CoatEscape(saturate(clearcoat), saturate(clearcoatRoughness), wo,
+                                 globalParams.ggxLutEIndex, globalParams.ggxLutEavgIndex,
+                                 globalParams.energyCompensation != 0u);
+}
+
+LightLiSample SampleEmissiveCluster(uint clusterIndex, LightSampleContext ctx, float aliasU, float2 u)
+{
+    GSEmissiveCluster cluster = GetEmissiveCluster(clusterIndex);
+    if (cluster.triCount == 0u)
+        return LightLiSample();
+    float trianglePMF;
+    uint triangleIndex = SampleAliasTable(cluster.aliasOffset, cluster.triCount, aliasU, trianglePMF);
+    if (trianglePMF <= 0.0f)
+        return LightLiSample();
+
+    float3 p0, p1, p2;
+    float2 uv0, uv1, uv2;
+    LoadEmissiveClusterTriangle(cluster, triangleIndex, p0, p1, p2, uv0, uv1, uv2);
+    float sqrtU = sqrt(u.x);
+    float b1 = sqrtU * (1.0f - u.y);
+    float b2 = sqrtU * u.y;
+    float2 uv = uv0 + b1 * (uv1 - uv0) + b2 * (uv2 - uv0);
+    TriangleLight light = TriangleLight(float3(1.0f), p0, p1 - p0, p2 - p0, true);
+    LightLiSample Li = light.Sample_Li(ctx, u);
+    float3 wo = float3(0.0f, 0.0f, dot(light.normal, -Li.wi));
+    Li.Li = EvaluateClusterEmission(cluster.instanceIndex, uv, wo);
+    Li.pdf *= trianglePMF;
+    return Li;
+}
+
+LightLiSample SampleSceneLight(LightSampleContext ctx, float uc, float aliasU, float2 u)
 {
     uint lightIndex;
     float selectionPMF;
     if (!SampleLightSelection(ctx, uc, lightIndex, selectionPMF, (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u))
         return LightLiSample();
 
-    GSLight gl = LoadSceneLight(lightIndex);
-    LightLiSample Li = SampleSceneLight(gl, ctx, u);
+    bool isCluster = IsClusterSelection(lightIndex);
+    GSLight gl = {};
+    LightLiSample Li;
+    if (isCluster)
+        Li = SampleEmissiveCluster(SelectionIndex(lightIndex), ctx, aliasU, u);
+    else
+    {
+        gl = LoadSceneLight(lightIndex);
+        Li = SampleSceneLight(gl, ctx, u);
+    }
     if (Li.pdf > 0.0f)
     {
         SampledSpectrum radiance = Li.Li / (Li.pdf * selectionPMF);
         float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * selectionPMF);
         return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist,
-                             GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.UseShadow)));
+                             isCluster || GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.UseShadow)));
     }
     return LightLiSample();
 }
@@ -839,13 +928,16 @@ bool SampleVisibleSceneLight<S : ISampler>(
     out LightLiSample Li)
 {
     ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal, upperHemisphere);
-    Li = SampleSceneLight(ctx, rng.sample(), rng.sample2D());
+    Li = SampleSceneLight(ctx, rng.sample(), rng.sample(), rng.sample2D());
     if (Li.pdf <= EPS)
         return false;
 
     float3 shadowNormalFF = dot(Li.wi, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
     float3 shadowOrigin = OffsetRay(hit.position, shadowNormalFF);
-    if (Li.useShadow && TraceShadowRay(shadowOrigin, Li.wi, Li.dist, rng))
+    float shadowDistance = Li.dist;
+    if (shadowDistance < INF)
+        shadowDistance = max(EPS_TMin, shadowDistance - max(EPS_TMin, shadowDistance * 1e-4f));
+    if (Li.useShadow && TraceShadowRay(shadowOrigin, Li.wi, shadowDistance, rng))
         Li.pdf = 0.0f;
 
     return Li.pdf > EPS;
@@ -1030,6 +1122,55 @@ void AddSurfaceEmissive(
 {
     AddRadianceByCategory(radiance, beta * material.Le(wo),
                           bounce, firstBounceCategory, AOVCategory::Diffuse, bounce == 0);
+}
+
+bool AddEmissiveClusterHitEmission(
+    HitPayload payload,
+    HitState hitState,
+    float3 rayDirection,
+    float3 beta,
+    uint bounce,
+    AOVCategory firstBounceCategory,
+    float lastSamplePDF,
+    DirectLightingState lighting,
+    inout PathRadiance radiance)
+{
+    GSInstance inst = LoadSceneInstance(payload.instance);
+    if (inst.emissiveClusterOffset == ~0u || GSInstanceIsDynamic(inst) || GSInstanceType(inst) != kGSInstanceTypeMesh)
+        return false;
+    GSMesh mesh = gPrimBuffer.Load<GSMesh>(inst.resourceOffset);
+    if (payload.primitive >= mesh.emissivePrimitiveMap.count)
+        return false;
+    uint packed = gPrimBuffer.Load<uint32_t>(mesh.emissivePrimitiveMap.offset + payload.primitive * sizeof(uint32_t));
+    if (packed == ~0u)
+        return false;
+    uint meshletOrdinal = packed >> 8u;
+    uint localTriangle = packed & 0xffu;
+    uint clusterIndex = inst.emissiveClusterOffset + meshletOrdinal;
+    if (clusterIndex >= globalParams.emissiveClusters.count)
+        return false;
+    GSEmissiveCluster cluster = GetEmissiveCluster(clusterIndex);
+    if (localTriangle >= cluster.triCount || cluster.flux <= 0.0f)
+        return false;
+
+    float trianglePMF =
+        gPrimBuffer.Load<GSAlias>(cluster.aliasOffset + localTriangle * sizeof(GSAlias)).prob;
+    float3 p0, p1, p2;
+    float2 uv0, uv1, uv2;
+    LoadEmissiveClusterTriangle(cluster, localTriangle, p0, p1, p2, uv0, uv1, uv2);
+    TriangleLight light = TriangleLight(float3(1.0f), p0, p1 - p0, p2 - p0, true);
+    float lightPDF = EvalLightSelectionPMF(
+        lighting.lastLightCtx, kLightSelectionClusterBit | clusterIndex,
+        (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u);
+    lightPDF *= trianglePMF * light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
+    float mis = (bounce > 0u && lastSamplePDF > EPS)
+        ? PowerHeuristic(1, lastSamplePDF, 1, lightPDF)
+        : 1.0f;
+    float3 emissionWo = float3(0.0f, 0.0f, dot(light.normal, -rayDirection));
+    float3 emission = EvaluateClusterEmission(payload.instance, hitState.uv, emissionWo);
+    AddRadianceByCategory(radiance, beta * emission * mis,
+                          bounce, firstBounceCategory, AOVCategory::Diffuse, bounce == 0u);
+    return true;
 }
 
 void WritePrimaryInstanceID(uint2 pix, uint32_t instanceID)

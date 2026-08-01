@@ -83,6 +83,24 @@ public struct GSMesh
     public uint32_t meshletVtxOffset;
     public uint32_t meshletTriOffset;
     public uint32_t meshletGlobalIndex;
+    public GSOffsetCount emissiveMeshlets;
+    public GSOffsetCount emissiveAliases;
+    public GSOffsetCount emissivePrimitiveMap;
+};
+public struct FEmissiveMeshlet
+{
+    public uint32_t meshletIndex;
+    public uint32_t aliasOffset;
+    public uint32_t triCount;
+    public float area;
+    public float3 center;
+    public float radius;
+};
+public struct GSAlias
+{
+    public float prob;
+    public float select;
+    public uint32_t alias;
 };
 public struct MIndex {
     public uint8_t v0;
@@ -98,6 +116,8 @@ public static const uint32_t kGSLightTypePoint = 2u;
 public static const uint32_t kGSLightTypeSpot = 3u;
 public static const uint32_t kGSLightTypeDisk = 4u;
 public static const uint32_t kGSLightTypeRect = 5u;
+public static const uint32_t kLightSelectionClusterBit = 1u << 31u;
+public static const uint32_t kLightSelectionIndexMask = ~kLightSelectionClusterBit;
 public struct GSInstance
 {
     // TRS
@@ -108,6 +128,7 @@ public struct GSInstance
     public uint32_t materialIndex; // In Material buffer (offset)
     public uint32_t resourceIndex; // Debug use
     public uint32_t type; // [7:0] 0=Mesh, 1=Curve; bit 8 = dynamic
+    public uint32_t emissiveClusterOffset;
 };
 // Geometry kind (mesh/curve), ignoring feature flags.
 public uint32_t GSInstanceType(GSInstance i) { return i.type & kGSInstanceTypeMask; }
@@ -210,6 +231,16 @@ public struct GSLight
     public float3 dpdu;         // tangent u-axis (Rect: half-extent u)
     public float3 dpdv;         // tangent v-axis (Rect: half-extent v)
 };
+public struct GSEmissiveCluster
+{
+    public uint32_t instanceIndex;
+    public uint32_t meshletIndex;
+    public uint32_t aliasOffset;
+    public uint32_t triCount;
+    public float flux;
+    public float3 origin;
+    public float3 extent;
+};
 public uint32_t GSLightType(GSLight light) {
     return light.flags & kGSLightTypeMask;
 }
@@ -287,6 +318,7 @@ public struct UBO
     public uint32_t matcapTextureIndex;
     // Scene lights
     public GSOffsetCount lights;
+    public GSOffsetCount emissiveClusters;
     public GSOffsetCount lightBVHNodes;
     public GSOffsetCount lightBVHLightIndices;
     public uint32_t firstLightBVHBitmask;

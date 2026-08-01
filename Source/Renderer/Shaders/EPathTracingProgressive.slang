@@ -544,11 +544,16 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         {
             float3 localBeta = beta / pSampleSurface;
             IBSDF bsdf = material.GetSurface();
+            DirectLightingState previousLighting = lighting;
+            lighting.lastLightCtx =
+                LightSampleContext(hitState.position, hitState.geometryNormal, hitState.normal, !bsdf.HasTransmission());
             // Dirac surfaces do not get direct light contribution
             if (!bsdf.IsDirac())
                 AddLocalDirectLighting(hitState, bsdf, wo, localBeta,
                                    bounce, firstBounceCategory, rng, lighting, radiance);
-            AddSurfaceEmissive(material, wo, localBeta, bounce, firstBounceCategory, radiance);
+            if (!AddEmissiveClusterHitEmission(hit.raw, hitState, ray.Direction, localBeta,
+                                               bounce, firstBounceCategory, lastSamplePDF, previousLighting, radiance))
+                AddSurfaceEmissive(material, wo, localBeta, bounce, firstBounceCategory, radiance);
 
             AOVCategory sampleCategory;
             BSDFSample sample = BSDF_SampleF(bsdf, wo, rng.sample(), rng.sample2D(),

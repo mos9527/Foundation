@@ -62,6 +62,7 @@ struct LightSortData
     float cosConeAngle = 1.0f;
     float flux = 0.0f;
     uint32_t lightIndex = ~0u;
+    uint32_t entitySlot = ~0u;
 };
 
 struct BuildingData
@@ -512,7 +513,7 @@ uint32_t buildInternal(LightBVHOptions const& options, SplitFn splitHeuristic, u
     {
         uint32_t globalIndex = data.lightsData[i].lightIndex;
         data.lightIndices.push_back(globalIndex);
-        data.lightBitmasks[globalIndex] = bitmask;
+        data.lightBitmasks[data.lightsData[i].entitySlot] = bitmask;
     }
     return nodeIndex;
 }
@@ -689,17 +690,18 @@ void ComputeAnalyticalLightBounds(GSLight const& light, float3& aabbMin, float3&
     center = float3(0.0f);
 }
 
-LightBVHBuild BuildLightBVH(Span<GSLight const> lights, LightBVHOptions const& options, Allocator* alloc)
+LightBVHBuild BuildLightBVH(Span<GSLight const> lights, Span<GSEmissiveCluster const> clusters,
+                            LightBVHOptions const& options, Allocator* alloc)
 {
     CHECK(alloc);
     LightBVHBuild bvh(alloc);
-    bvh.lightBitmasks.assign(lights.size(), std::numeric_limits<uint64_t>::max());
+    bvh.lightBitmasks.assign(lights.size() + clusters.size(), std::numeric_limits<uint64_t>::max());
 
     CHECK_MSG(options.binCount > 1u, "binCount must be > 1");
 
     BuildingData data(bvh.nodes, alloc);
-    data.lightsData.reserve(lights.size());
-    data.lightIndices.reserve(lights.size());
+    data.lightsData.reserve(lights.size() + clusters.size());
+    data.lightIndices.reserve(lights.size() + clusters.size());
     data.lightBitmasks = bvh.lightBitmasks;
     Vector<GSLightBVHNode> distantNodes(alloc);
     BuildingData distantData(distantNodes, alloc);
@@ -725,6 +727,7 @@ LightBVHBuild BuildLightBVH(Span<GSLight const> lights, LightBVHOptions const& o
                                                   sort.coneDirection, sort.cosConeAngle);
                 sort.flux = proposalWeight;
                 sort.lightIndex = i;
+                sort.entitySlot = i;
                 distantData.lightsData.push_back(sort);
             }
             continue;
@@ -737,6 +740,23 @@ LightBVHBuild BuildLightBVH(Span<GSLight const> lights, LightBVHOptions const& o
                                      sort.coneDirection, sort.cosConeAngle);
         sort.flux = proposalWeight;
         sort.lightIndex = i;
+        sort.entitySlot = i;
+        data.lightsData.push_back(sort);
+    }
+    for (uint32_t i = 0; i < clusters.size(); ++i)
+    {
+        GSEmissiveCluster const& cluster = clusters[i];
+        if (cluster.flux <= 0.0f)
+            continue;
+        LightSortData sort{};
+        sort.bounds.minPoint = cluster.origin - cluster.extent;
+        sort.bounds.maxPoint = cluster.origin + cluster.extent;
+        sort.center = cluster.origin;
+        sort.coneDirection = float3(0.0f);
+        sort.cosConeAngle = kLightBVHInvalidCosConeAngle;
+        sort.flux = cluster.flux;
+        sort.lightIndex = kLightSelectionClusterBit | i;
+        sort.entitySlot = static_cast<uint32_t>(lights.size()) + i;
         data.lightsData.push_back(sort);
     }
 
@@ -782,14 +802,15 @@ LightBVHBuild BuildLightBVH(Span<GSLight const> lights, LightBVHOptions const& o
         bvh.lightIndices.insert(bvh.lightIndices.end(), distantData.lightIndices.begin(),
                                 distantData.lightIndices.end());
         for (LightSortData const& light : distantData.lightsData)
-            bvh.lightBitmasks[light.lightIndex] = distantData.lightBitmasks[light.lightIndex];
+            bvh.lightBitmasks[light.entitySlot] = distantData.lightBitmasks[light.entitySlot];
     }
     bvh.stats.byteSize = static_cast<uint32_t>(bvh.nodes.size() * sizeof(GSLightBVHNode));
     bvh.stats.globalLightCount = static_cast<uint32_t>(distantData.lightsData.size());
     return bvh;
 }
 
-bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, String* outError)
+bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights,
+                      Span<GSEmissiveCluster const> clusters, String* outError)
 {
     auto Fail = [&](char const* message)
     {
@@ -798,7 +819,7 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
         return false;
     };
 
-    if (bvh.lightBitmasks.size() != lights.size())
+    if (bvh.lightBitmasks.size() != lights.size() + clusters.size())
         return Fail("lightBitmasks size mismatch");
 
     uint32_t expectedDistant = 0;
@@ -812,6 +833,9 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
         else if (IsFiniteLightType(type) && proposalWeight > 0.0f)
             ++expectedFinite;
     }
+    for (GSEmissiveCluster const& cluster : clusters)
+        if (cluster.flux > 0.0f)
+            ++expectedFinite;
 
     if (!bvh.globalLightIndices.empty())
         return Fail("global light list should be empty");
@@ -825,7 +849,7 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
         bvh.lightIndices.size() != static_cast<size_t>(expectedFinite + expectedDistant))
         return Fail("BVH light membership mismatch");
 
-    std::vector<uint8_t> covered(lights.size(), 0u);
+    std::vector<uint8_t> covered(lights.size() + clusters.size(), 0u);
     std::stack<Pair<uint32_t, uint32_t>> stack;
     if (bvh.valid)
         stack.push({0u, 0u});
@@ -856,21 +880,31 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
             for (uint32_t i = 0; i < count; ++i)
             {
                 uint32_t lightIndex = bvh.lightIndices[offset + i];
-                if (lightIndex >= lights.size() || !IsFiniteLightType(GSLightTypeCPU(lights[lightIndex])))
-                    return Fail("leaf contains non-finite light");
-                if (covered[lightIndex])
+                bool isCluster = (lightIndex & kLightSelectionClusterBit) != 0u;
+                uint32_t index = lightIndex & kLightSelectionIndexMask;
+                uint32_t entitySlot = isCluster ? static_cast<uint32_t>(lights.size()) + index : index;
+                if ((!isCluster && (index >= lights.size() || !IsFiniteLightType(GSLightTypeCPU(lights[index])))) ||
+                    (isCluster && index >= clusters.size()))
+                    return Fail("leaf contains invalid finite entity");
+                if (covered[entitySlot])
                     return Fail("duplicate finite light in leaves");
-                covered[lightIndex] = 1u;
+                covered[entitySlot] = 1u;
 
                 float3 childMin, childMax, center, coneDirection;
                 float cosConeAngle = kLightBVHInvalidCosConeAngle;
-                ComputeAnalyticalLightBounds(lights[lightIndex], childMin, childMax, center, coneDirection,
-                                             cosConeAngle);
+                if (isCluster)
+                {
+                    childMin = clusters[index].origin - clusters[index].extent;
+                    childMax = clusters[index].origin + clusters[index].extent;
+                }
+                else
+                    ComputeAnalyticalLightBounds(lights[index], childMin, childMax, center, coneDirection,
+                                                 cosConeAngle);
                 leafBounds |= AABB{childMin, childMax};
-                leafFlux += ComputeLightProposalWeight(lights[lightIndex]);
+                leafFlux += isCluster ? clusters[index].flux : ComputeLightProposalWeight(lights[index]);
 
                 uint32_t replay = 0u;
-                uint64_t bits = bvh.lightBitmasks[lightIndex];
+                uint64_t bits = bvh.lightBitmasks[entitySlot];
                 for (uint32_t d = 0; d < depth; ++d)
                 {
                     if (GSLightBVHNodeIsLeaf(bvh.nodes[replay]))
@@ -905,6 +939,11 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
         if (IsFiniteLightType(GSLightTypeCPU(lights[i])) && ComputeLightProposalWeight(lights[i]) > 0.0f &&
             !covered[i])
             return Fail("finite light missing from BVH");
+    }
+    for (uint32_t i = 0; i < clusters.size(); ++i)
+    {
+        if (clusters[i].flux > 0.0f && !covered[lights.size() + i])
+            return Fail("emissive cluster missing from BVH");
     }
 
     if (expectedDistant != 0)
@@ -963,4 +1002,26 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights, Stri
         }
     }
     return true;
+}
+
+bool LightBVHRunBuilderSelfTests(Allocator* alloc, String* outError)
+{
+    Array<GSLight, 2> lights{};
+    lights[0].flags = kGSLightTypeEnvironment;
+    lights[1].flags = kGSLightTypePoint;
+    lights[1].color = float3(1.0f);
+    lights[1].power = 1.0f;
+    lights[1].position = float3(2.0f, 1.0f, 0.0f);
+    lights[1].params.x = 0.1f;
+
+    Array<GSEmissiveCluster, 2> clusters{};
+    clusters[0].flux = 2.0f;
+    clusters[0].origin = float3(-2.0f, 0.0f, 0.0f);
+    clusters[0].extent = float3(0.5f);
+    clusters[1].flux = 3.0f;
+    clusters[1].origin = float3(0.0f, 2.0f, 0.0f);
+    clusters[1].extent = float3(0.25f);
+
+    LightBVHBuild bvh = BuildLightBVH(lights, clusters, LightBVHOptions{}, alloc);
+    return ValidateLightBVH(bvh, lights, clusters, outError);
 }

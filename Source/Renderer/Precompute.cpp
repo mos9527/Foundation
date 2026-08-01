@@ -5,6 +5,7 @@
 // Vose
 AliasTable::AliasTable(Span<const float> f, Allocator* alloc) : mBins(f.size(), alloc)
 {
+    CHECK_MSG(!f.empty(), "AliasTable requires at least one weight");
     // Normalize
     const uint n = f.size();
     const double sum = std::accumulate(f.begin(), f.end(), 0.0);
@@ -60,6 +61,43 @@ uint AliasTable::Sample(float u, float& pdf) const
         i = mBins[i].alias;
     pdf = mBins[i].prob;
     return i;
+}
+bool AliasTableRunSelfTests(Allocator* alloc, String* outError)
+{
+    auto Fail = [&](char const* message)
+    {
+        if (outError)
+            *outError = message;
+        return false;
+    };
+    auto Test = [&](Span<const float> values)
+    {
+        AliasTable table(values, alloc);
+        float sum = 0.0f;
+        for (uint32_t i = 0; i < values.size(); ++i)
+            sum += table.PDF(i);
+        if (std::abs(sum - 1.0f) > 1e-5f)
+            return Fail("AliasTable PMF does not sum to one");
+        for (uint32_t i = 0; i < 64u; ++i)
+        {
+            float pdf;
+            uint32_t selected = table.Sample((static_cast<float>(i) + 0.5f) / 64.0f, pdf);
+            if (selected >= values.size() || std::abs(pdf - table.PDF(selected)) > 1e-7f)
+                return false;
+        }
+        return true;
+    };
+    Array<float, 4> uniform{1.0f, 1.0f, 1.0f, 1.0f};
+    Array<float, 4> skewed{1.0f, 2.0f, 4.0f, 8.0f};
+    Array<float, 4> zero{0.0f, 0.0f, 0.0f, 0.0f};
+    if (!Test(uniform) || !Test(skewed) || !Test(zero))
+        return Fail("AliasTable sample/PDF mismatch");
+    Array<float, 1> single{1.0f};
+    AliasTable one(single, alloc);
+    float pdf;
+    if (one.Sample(0.75f, pdf) != 0u || pdf != 1.0f)
+        return Fail("AliasTable single-bin mismatch");
+    return true;
 }
 PiecewiseConstant1D::PiecewiseConstant1D(Span<const float> f, Allocator* alloc) :
     mF(f.begin(), f.end(), alloc), mCDF(f.size(), alloc)

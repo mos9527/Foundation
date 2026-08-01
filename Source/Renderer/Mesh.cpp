@@ -302,6 +302,98 @@ void FImportedMesh::ClusterizeDAG()
         meshlet.coneApex = float3(bounds.cone_apex[0], bounds.cone_apex[1], bounds.cone_apex[2]);
         dag.meshlets.push_back(meshlet);
     }
+
+    struct TriangleKey
+    {
+        uint32_t v[3];
+        bool operator<(TriangleKey const& other) const
+        {
+            if (v[0] != other.v[0])
+                return v[0] < other.v[0];
+            if (v[1] != other.v[1])
+                return v[1] < other.v[1];
+            return v[2] < other.v[2];
+        }
+        bool operator==(TriangleKey const& other) const
+        {
+            return v[0] == other.v[0] && v[1] == other.v[1] && v[2] == other.v[2];
+        }
+    };
+    struct MeshletTriangleRef
+    {
+        TriangleKey key;
+        uint32_t meshletOrdinal;
+        uint32_t localTriangle;
+    };
+    struct PrimitiveRef
+    {
+        TriangleKey key;
+        uint32_t primitive;
+    };
+    auto MakeKey = [](uint32_t a, uint32_t b, uint32_t c)
+    {
+        TriangleKey key{{a, b, c}};
+        std::sort(key.v, key.v + 3);
+        return key;
+    };
+
+    Vector<MeshletTriangleRef> meshletTriangles(vertices.get_allocator().mResource);
+    for (uint32_t meshletIndex = 0; meshletIndex < dag.meshlets.size(); ++meshletIndex)
+    {
+        FMeshlet const& meshlet = dag.meshlets[meshletIndex];
+        if (meshlet.refined != ~0u || meshlet.triCount == 0)
+            continue;
+
+        Vector<float> areas(vertices.get_allocator().mResource);
+        areas.reserve(meshlet.triCount);
+        uint32_t ordinal = static_cast<uint32_t>(dag.emissiveMeshlets.size());
+        float totalArea = 0.0f;
+        for (uint32_t triIndex = 0; triIndex < meshlet.triCount; ++triIndex)
+        {
+            uint32_t localOffset = meshlet.triOffset + triIndex * 3u;
+            uint32_t i0 = dag.meshletVtx[meshlet.vtxOffset + dag.meshletTri[localOffset + 0u]];
+            uint32_t i1 = dag.meshletVtx[meshlet.vtxOffset + dag.meshletTri[localOffset + 1u]];
+            uint32_t i2 = dag.meshletVtx[meshlet.vtxOffset + dag.meshletTri[localOffset + 2u]];
+            float area = 0.5f * length(cross(vertices[i1].position - vertices[i0].position,
+                                             vertices[i2].position - vertices[i0].position));
+            areas.push_back(area);
+            totalArea += area;
+            meshletTriangles.push_back({MakeKey(i0, i1, i2), ordinal, triIndex});
+        }
+
+        AliasTable alias(areas, vertices.get_allocator().mResource);
+        FEmissiveMeshlet& emitter = dag.emissiveMeshlets.emplace_back();
+        emitter.meshletIndex = meshletIndex;
+        emitter.aliasOffset = static_cast<uint32_t>(dag.emissiveAliases.size());
+        emitter.triCount = meshlet.triCount;
+        emitter.area = totalArea;
+        emitter.center = float3(meshlet.centerRadius);
+        emitter.radius = meshlet.centerRadius.w;
+        dag.emissiveAliases.insert(dag.emissiveAliases.end(), alias.mBins.begin(), alias.mBins.end());
+    }
+
+    uint32_t primitiveCount = static_cast<uint32_t>(lods[0].indices.size() / 3u);
+    dag.emissivePrimitiveMap.assign(primitiveCount, ~0u);
+    Vector<PrimitiveRef> primitives(vertices.get_allocator().mResource);
+    primitives.reserve(primitiveCount);
+    for (uint32_t primitive = 0; primitive < primitiveCount; ++primitive)
+    {
+        uint32_t const* tri = lods[0].indices.data() + primitive * 3u;
+        primitives.push_back({MakeKey(tri[0], tri[1], tri[2]), primitive});
+    }
+    std::sort(meshletTriangles.begin(), meshletTriangles.end(),
+              [](MeshletTriangleRef const& a, MeshletTriangleRef const& b) { return a.key < b.key; });
+    std::sort(primitives.begin(), primitives.end(),
+              [](PrimitiveRef const& a, PrimitiveRef const& b) { return a.key < b.key; });
+    CHECK_MSG(meshletTriangles.size() == primitives.size(), "Original meshlets do not cover LOD0 triangles");
+    for (uint32_t i = 0; i < primitives.size(); ++i)
+    {
+        CHECK_MSG(meshletTriangles[i].key == primitives[i].key, "Original meshlet triangle does not match LOD0");
+        CHECK(meshletTriangles[i].meshletOrdinal < (1u << 24u));
+        CHECK(meshletTriangles[i].localTriangle < 256u);
+        dag.emissivePrimitiveMap[primitives[i].primitive] =
+            (meshletTriangles[i].meshletOrdinal << 8u) | meshletTriangles[i].localTriangle;
+    }
     dagClusters = {}; // No longer needed
 }
 size_t FImportedMesh::CalculateQuantizedBound(bool incLod, bool incDag) const
