@@ -1,5 +1,38 @@
 using namespace Foundation;
 using namespace Foundation::RHI;
+static void WarnIfUnexpectedMemoryPlacement(VulkanDevice const& device, VmaAllocation allocation,
+                                            RHIResourceDesc const& desc, const char* resourceType,
+                                            bool allowTransferInstead = false)
+{
+    VmaAllocationInfo info{};
+    vmaGetAllocationInfo(device.GetVkAllocator(), allocation, &info);
+    auto memoryProperties = device.GetVkPhysicalDevice().getMemoryProperties();
+    auto flags = memoryProperties.memoryTypes[info.memoryType].propertyFlags;
+
+    bool matches = false;
+    const char* requestedHeap = nullptr;
+    switch (desc.heap)
+    {
+    case RHIDeviceHeapType::Local:
+        matches = static_cast<bool>(flags & vk::MemoryPropertyFlagBits::eDeviceLocal);
+        requestedHeap = "Local";
+        break;
+    case RHIDeviceHeapType::Upload:
+        matches = allowTransferInstead || static_cast<bool>(flags & vk::MemoryPropertyFlagBits::eHostVisible);
+        requestedHeap = "Upload";
+        break;
+    case RHIDeviceHeapType::Readback:
+        matches = allowTransferInstead || static_cast<bool>(flags & vk::MemoryPropertyFlagBits::eHostVisible);
+        requestedHeap = "Readback";
+        break;
+    }
+
+    if (!matches)
+        LOG(VulkanResource, LogWarn,
+            "{} requested the {} heap, but VMA selected memory type {} with property flags 0x{:x}.",
+            resourceType, requestedHeap, info.memoryType, static_cast<uint32_t>(flags));
+}
+
 VmaMemoryUsage vmaMemoryUsageFlagsFromResource(RHIResourceDesc const& desc)
 {
     switch (desc.heap)
@@ -95,6 +128,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
     auto res = vmaCreateBufferWithAlignment(allocator, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, desc.alignment, &buffer, &mAllocation,
                                             nullptr);
     CHECK(res == VK_SUCCESS && "failed to create Vulkan buffer");
+    WarnIfUnexpectedMemoryPlacement(device, mAllocation, desc.resource, "Buffer", desc.resource.staging);
     mBuffer = vk::raii::Buffer(device.GetVkDevice(), vk::Buffer(buffer), device.GetVkAllocationCallbacks());
 }
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc, vk::raii::Buffer&& buffer,
@@ -177,6 +211,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
     VkImage image;
     auto res = vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &image, &mAllocation, nullptr);
     CHECK_MSG(res == VK_SUCCESS, "failed to create Vulkan image");
+    WarnIfUnexpectedMemoryPlacement(device, mAllocation, desc.resource, "Texture");
     mImage = vk::raii::Image(device.GetVkDevice(), vk::Image(image), device.GetVkAllocationCallbacks());
 }
 
