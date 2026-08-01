@@ -67,7 +67,7 @@ void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
         transmission *= SampleMaterialTexture(material.transmissionTexture, uv, uvDX, uvDY).r;
 }
 
-IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo,
+IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out float3 outBaseColor,
                        out float3 sharcMaterialDemodulation, out float sharcRoughness)
 {
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
@@ -76,6 +76,7 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo,
     GSMaterial material = LoadMaterial(inst.materialIndex);
     SampleMaterials(material, hit.uv, hit.uvDX, hit.uvDY,
                              baseColor4, normalTBN, pbrMetalRough, emissive4, transmission);
+    outBaseColor = baseColor4.xyz;
     SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
 
     sharcRoughness = pbrMetalRough.y;
@@ -89,6 +90,22 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo,
     pbrMetalRough.y = max(globalParams.sharcRoughnessThreshold, pbrMetalRough.y);
 #endif
     return BasicPBRMaterial(baseColor4.xyz, pbrMetalRough.z, pbrMetalRough.y, emissive4.xyz, transmission);
+}
+
+float3 VisualizeTextureLOD(HitPayload payload, float2 uvDX, float2 uvDY)
+{
+    GSInstance inst = LoadSceneInstance(payload.instance);
+    GSMaterial material = LoadMaterial(inst.materialIndex);
+    if (material.baseColorTexture == ~0u)
+        return float3(0.0f);
+
+    if ((kCompileOptions & uint32_t(PTCompileOptionsBits.ForceTextureLOD0)) != 0u)
+        return VisualizeApproximateMipLevel(0.0f);
+
+    uint width, height;
+    gTextures2D[NonUniformResourceIndex(material.baseColorTexture)].GetDimensions(width, height);
+    float mipLevel = ApproximateMipLevelFromUVGradient(uvDX, uvDY, width, height);
+    return VisualizeApproximateMipLevel(mipLevel);
 }
 
 SharcHitData MakeSharcHitData(HitState hit, float3 materialDemodulation)
@@ -114,7 +131,12 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
     SharcState sharcState;
     SharcInit(sharcState);
     float sharcPathRoughness = 0.0f;
+    bool hasAnyDebugView = false;
 #if !SHARC_UPDATE
+    const uint supportedDebugViewFlags =
+        uint32_t(ViewFlagsBits.BaseColor) | uint32_t(ViewFlagsBits.Normal) |
+        uint32_t(ViewFlagsBits.Position) | uint32_t(ViewFlagsBits.TextureLOD);
+    hasAnyDebugView = (globalParams.dbgViewFlags & supportedDebugViewFlags) != 0u;
     if ((globalParams.dbgViewFlags & uint32_t(ViewFlagsBits.SHARCOccupancy)) != 0u)
     {
         uint2 screenSize = uint2(globalParams.fbWidth, globalParams.fbHeight);
@@ -127,7 +149,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
     }
 #endif
     // Raygen
-    CameraRay cameraRay = GenerateCameraRay(pix, rng, false);
+    CameraRay cameraRay = GenerateCameraRay(pix, rng, hasAnyDebugView);
     RayDesc ray = cameraRay.ray;
     RayCone currentRayCone = cameraRay.rayCone;
     HitRecord chit;
@@ -199,7 +221,8 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         HitRecord hit = MakeHitRecord(payload, ray);
 
         float3 hitPoint;
-        if (AddAnalyticLightHitEmission(hit, ray.Direction, view, beta, bounce, firstBounceCategory,
+        if (!hasAnyDebugView &&
+            AddAnalyticLightHitEmission(hit, ray.Direction, view, beta, bounce, firstBounceCategory,
                                         lastSamplePDF, lighting, radiance, hitPoint))
         {
             ray.Origin = hitPoint + ray.Direction * EPS_TMin;
@@ -214,7 +237,8 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
 #if SHARC_UPDATE
             SharcUpdateMiss(sharcParameters, sharcState, EvaluateInfiniteMissRadiance(-view, lighting.env));
 #else
-            AddInfiniteMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
+            if (!hasAnyDebugView)
+                AddInfiniteMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
 #endif
             break;
         }
@@ -238,10 +262,30 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         }
 
         float3 wo = WorldToShadingLocal(hitState, view);
+        float3 baseColorOut;
         float3 sharcMaterialDemodulation;
         float sharcRoughness;
         IMaterial material = MakeMaterial(
-            hit.raw, hitState, wo, sharcMaterialDemodulation, sharcRoughness);
+            hit.raw, hitState, wo, baseColorOut, sharcMaterialDemodulation, sharcRoughness);
+
+#if !SHARC_UPDATE
+        if (hasAnyDebugView && bounce == 0)
+        {
+            specular[pix] = diffuse[pix] = float4(0.0f);
+            uint flags = globalParams.dbgViewFlags;
+            if ((flags & uint32_t(ViewFlagsBits.BaseColor)) != 0u)
+                diffuse[pix] = float4(baseColorOut, 1.0f);
+            if ((flags & uint32_t(ViewFlagsBits.Normal)) != 0u)
+                diffuse[pix] = float4(hitState.normal * 0.5f + 0.5f, 1.0f);
+            if ((flags & uint32_t(ViewFlagsBits.Position)) != 0u)
+                diffuse[pix] = float4(hitState.position, 1.0f);
+            if ((flags & uint32_t(ViewFlagsBits.TextureLOD)) != 0u)
+                diffuse[pix] = float4(VisualizeTextureLOD(hit.raw, hitState.uvDX, hitState.uvDY), 1.0f);
+            WritePrimaryInstanceID(pix, hit.raw.instance);
+            depth[pix] = WorldToNDCDepth(hitState.position);
+            return;
+        }
+#endif
 
         if (bounce == 0)
             chit = hit, chitState = hitState;
@@ -366,7 +410,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
 #endif
     }
 #if !SHARC_UPDATE
-    WritePrimaryInstanceID(pix, chit.raw.instance);
+    WritePrimaryInstanceID(pix, chitMiss ? INSTANCE_NO_HIT : chit.raw.instance);
     diffuse[pix] = float4(radiance.diffuse, 1.0f);
     specular[pix] = float4(radiance.specular, 1.0f);
     depth[pix] = chitMiss ? 0.0f : WorldToNDCDepth(chitState.position);
