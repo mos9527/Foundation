@@ -545,7 +545,7 @@ ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** ar
     {
         for (auto const& d : app->EnumerateDevices())
         {
-            if (d.type == RHIDeviceType::DiscreteGpu)
+            if (d.type == RHIDeviceType::Discrete)
             {
                 gpuId = static_cast<int>(d.id);
                 break;

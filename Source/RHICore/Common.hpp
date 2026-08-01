@@ -163,17 +163,17 @@ namespace Foundation::RHI {
     };
     enum class RHIDeviceType {
         Other,
-        IntegratedGpu,
-        DiscreteGpu,
-        VirtualGpu,
-        Cpu,
+        Integrated,
+        Discrete,
+        Virtual, // e.x. MoltenVK, SwiftShader
+        Software,// e.x. Lavapipe
     };
     ENUM_NAME_CONV_BEGIN(RHIDeviceType)
         ENUM_NAME(Other)
-        ENUM_NAME(IntegratedGpu)
-        ENUM_NAME(DiscreteGpu)
-        ENUM_NAME(VirtualGpu)
-        ENUM_NAME(Cpu)
+        ENUM_NAME(Integrated)
+        ENUM_NAME(Discrete)
+        ENUM_NAME(Virtual)
+        ENUM_NAME(Software)
     ENUM_NAME_CONV_END()
 
     enum class RHIDeviceQueueType : uint32_t {

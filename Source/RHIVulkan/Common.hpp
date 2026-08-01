@@ -180,10 +180,10 @@ namespace Foundation::RHI {
     inline RHIDeviceType rhiDeviceTypeFromVkPhysicalDeviceType(vk::PhysicalDeviceType type) {
         using enum RHIDeviceType;
         switch (type) {
-        case vk::PhysicalDeviceType::eIntegratedGpu: return IntegratedGpu;
-        case vk::PhysicalDeviceType::eDiscreteGpu: return DiscreteGpu;
-        case vk::PhysicalDeviceType::eVirtualGpu: return VirtualGpu;
-        case vk::PhysicalDeviceType::eCpu: return Cpu;
+        case vk::PhysicalDeviceType::eIntegratedGpu: return Integrated;
+        case vk::PhysicalDeviceType::eDiscreteGpu: return Discrete;
+        case vk::PhysicalDeviceType::eVirtualGpu: return Virtual;
+        case vk::PhysicalDeviceType::eCpu: return Software;
         case vk::PhysicalDeviceType::eOther:
         default:
             return Other;

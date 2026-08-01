@@ -340,7 +340,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         .raytracingPipeline = hasRayTracingPipeline,
         .timestampQueries = timestampQueries,
         .integratedGPU =
-            rhiDeviceTypeFromVkPhysicalDeviceType(properties.deviceType) == RHIDeviceType::IntegratedGpu,
+            rhiDeviceTypeFromVkPhysicalDeviceType(properties.deviceType) == RHIDeviceType::Integrated,
         // Hint for ReBAR or UMA architectures
         .deviceLocalHostVisibleBuffers = deviceLocalHostVisibleBuffers,
         .deviceLocalHostVisibleHeapSize = deviceLocalHostVisibleHeapSize,
