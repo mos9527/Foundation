@@ -2063,7 +2063,7 @@ void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const
             state.uncompactedBLASBuffer = std::move(meshBuffer);
         if (curveBuffer)
             mCurveBLASBuffers.push_back(std::move(curveBuffer));
-        RHIBuffer* meshStorage = state.uncompactedBLASBuffer.Get();
+        RHIBuffer* meshStorage = meshBytes ? state.uncompactedBLASBuffer.Get() : nullptr;
         RHIBuffer* curveStorage = curveBytes ? mCurveBLASBuffers.back().Get() : nullptr;
         for (size_t i = 0; i < count; ++i)
         {
