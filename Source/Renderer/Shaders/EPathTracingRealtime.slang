@@ -3,7 +3,9 @@
 //  [] ReSTIR DI
 //  [] Denoiser
 #include "IPathTracing.slang"
+#if SHARC_QUERY || SHARC_UPDATE
 #include "ISharcIntegration.slang"
+#endif
 
 // Raygen
 void RayGenerationImpl(uint2 launchPixel)
@@ -79,6 +81,7 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out fl
     outBaseColor = baseColor4.xyz;
     SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
 
+#if SHARC_QUERY || SHARC_UPDATE
     sharcRoughness = pbrMetalRough.y;
     float3 diffuseAlbedo = baseColor4.xyz * (1.0f - pbrMetalRough.z);
     float3 specularF0 = lerp(float3(transmission > 0.0f ? 0.08f : 0.04f), baseColor4.xyz, pbrMetalRough.z);
@@ -86,6 +89,10 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out fl
     sharcMaterialDemodulation =
         max(diffuseAlbedo, float3(0.05f)) +
         max(specularF0, float3(0.02f)) * dot(specularFAvg, float3(0.2126f, 0.7152f, 0.0722f));
+#else
+    sharcRoughness = 0.0f;
+    sharcMaterialDemodulation = float3(0.0f);
+#endif
 #if SHARC_UPDATE
     pbrMetalRough.y = max(globalParams.sharcRoughnessThreshold, pbrMetalRough.y);
 #endif
@@ -108,6 +115,7 @@ float3 VisualizeTextureLOD(HitPayload payload, float2 uvDX, float2 uvDY)
     return VisualizeApproximateMipLevel(mipLevel);
 }
 
+#if SHARC_QUERY || SHARC_UPDATE
 SharcHitData MakeSharcHitData(HitState hit, float3 materialDemodulation)
 {
     SharcHitData data;
@@ -116,27 +124,35 @@ SharcHitData MakeSharcHitData(HitState hit, float3 materialDemodulation)
     data.materialDemodulation = materialDemodulation;
     return data;
 }
+#endif
 
 void PathTrace<S : ISampler>(uint2 pix, inout S rng)
 {
     float3 beta = float3(1);
+#if !SHARC_UPDATE
+    float etaScale = 1.0f;
+#endif
     PathRadiance radiance = PathRadiance();
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
     float lastSamplePDF = 0.0f;
-    // Serialized scenes keep the environment light as the first scene light.
-    GSLight envLight = LoadSceneLight(0u);
-    InfiniteLight env = MakeEnvironmentLight(envLight);
-    DirectLightingState lighting = DirectLightingState(env);
+    LightSampleContext lastLightCtx = LightSampleContext(float3(0.0f), float3(0.0f));
+#if SHARC_QUERY || SHARC_UPDATE
     SharcParameters sharcParameters = MakeSharcParameters();
+#endif
+#if SHARC_UPDATE
     SharcState sharcState;
     SharcInit(sharcState);
+#endif
+#if SHARC_QUERY
     float sharcPathRoughness = 0.0f;
+#endif
     bool hasAnyDebugView = false;
 #if !SHARC_UPDATE
     const uint supportedDebugViewFlags =
         uint32_t(ViewFlagsBits.BaseColor) | uint32_t(ViewFlagsBits.Normal) |
         uint32_t(ViewFlagsBits.Position) | uint32_t(ViewFlagsBits.TextureLOD);
     hasAnyDebugView = (globalParams.dbgViewFlags & supportedDebugViewFlags) != 0u;
+#if SHARC_QUERY
     if ((globalParams.dbgViewFlags & uint32_t(ViewFlagsBits.SHARCOccupancy)) != 0u)
     {
         uint2 screenSize = uint2(globalParams.fbWidth, globalParams.fbHeight);
@@ -148,14 +164,17 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         return;
     }
 #endif
+#endif
     // Raygen
     CameraRay cameraRay = GenerateCameraRay(pix, rng, hasAnyDebugView);
     RayDesc ray = cameraRay.ray;
     RayCone currentRayCone = cameraRay.rayCone;
-    HitRecord chit;
-    HitState chitState;
-    bool chitMiss = false;
-    for (uint bounce = 0; bounce <= globalParams.ptMaxBounces; bounce++) {
+    uint primaryInstance = INSTANCE_NO_HIT;
+    float primaryDepth = 0.0f;
+    uint bounce = 0u;
+    uint analyticPasses = 0u;
+    while (bounce <= globalParams.ptMaxBounces)
+    {
         HitPayload payload;
 
         RayQuery<RAY_FLAG_NONE> q;
@@ -177,8 +196,11 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
                 {
                     q.CommitNonOpaqueTriangleHit();
                 }
-            } else if (IsLightInstance(q.CandidateInstanceID()))
+            }
+            else if (IsLightInstance(q.CandidateInstanceID()))
             {
+                if (bounce == 0u && globalParams.ptPrimaryLightVisibility == 0u)
+                    continue;
                 uint instance = q.CandidateInstanceID();
                 GSLight gl = LoadSceneLight(GetLightIndex(instance));
                 float3 ro = q.CandidateObjectRayOrigin();
@@ -223,22 +245,24 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         float3 hitPoint;
         if (!hasAnyDebugView &&
             AddAnalyticLightHitEmission(hit, ray.Direction, view, beta, bounce, firstBounceCategory,
-                                        lastSamplePDF, lighting, radiance, hitPoint))
+                                        lastSamplePDF, lastLightCtx, radiance, hitPoint))
         {
+            currentRayCone.width += currentRayCone.spreadAngle * hit.raw.hitT;
+            if (++analyticPasses > 64u)
+                break;
             ray.Origin = hitPoint + ray.Direction * EPS_TMin;
-            bounce--; // Don't count this as a bounce
             continue;
         }
+        analyticPasses = 0u;
 
         if (hit.kind == HitKind::None)
         {
-            if (bounce == 0) 
-                chitMiss = true;
 #if SHARC_UPDATE
-            SharcUpdateMiss(sharcParameters, sharcState, EvaluateInfiniteMissRadiance(-view, lighting.env));
+            InfiniteLight env = MakeEnvironmentLight(LoadSceneLight(0u));
+            SharcUpdateMiss(sharcParameters, sharcState, EvaluateInfiniteMissRadiance(-view, env));
 #else
             if (!hasAnyDebugView)
-                AddInfiniteMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
+                AddInfiniteMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lastLightCtx, radiance);
 #endif
             break;
         }
@@ -287,8 +311,11 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         }
 #endif
 
-        if (bounce == 0)
-            chit = hit, chitState = hitState;
+        if (bounce == 0u)
+        {
+            primaryInstance = hit.raw.instance;
+            primaryDepth = WorldToNDCDepth(hitState.position);
+        }
 
 #if !SHARC_UPDATE
 #if SHARC_QUERY
@@ -304,7 +331,6 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             depth[pix] = WorldToNDCDepth(hitState.position);
             return;
         }
-#endif
         if (bounce == 0 &&
             (globalParams.dbgViewFlags & uint32_t(ViewFlagsBits.SHARCGrid)) != 0u)
         {
@@ -317,13 +343,10 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             return;
         }
 #endif
+#endif
 
-        PathSample nextSample = PathSample();
         float3 localBeta = beta;
         IBSDF bsdf = material.GetSurface();
-        DirectLightingState previousLighting = lighting;
-        lighting.lastLightCtx =
-            LightSampleContext(hitState.position, hitState.geometryNormal, hitState.normal, !bsdf.HasTransmission());
 
 #if SHARC_QUERY
         if (globalParams.sharcEnabled != 0u && bounce > 0)
@@ -345,81 +368,76 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         }
 #endif
 
+        LightSampleContext previousLightCtx = lastLightCtx;
+        LightSampleContext currentLightCtx =
+            LightSampleContext(hitState.position, hitState.normal, !bsdf.HasTransmission());
 #if SHARC_UPDATE
         PathRadiance localRadiance = PathRadiance();
-        if (!bsdf.IsDirac())
-            AddLocalDirectLighting(hitState, bsdf, wo, float3(1.0f),
-                                   0u, AOVCategory::Undefined, rng, lighting, localRadiance);
         if (!AddEmissiveClusterHitEmission(hit.raw, hitState, ray.Direction, float3(1.0f),
-                                           0u, AOVCategory::Undefined, lastSamplePDF, previousLighting, localRadiance))
+                                           0u, AOVCategory::Undefined, lastSamplePDF,
+                                           previousLightCtx, localRadiance))
             AddSurfaceEmissive(
                 material, wo, float3(1.0f), 0u, AOVCategory::Undefined, localRadiance);
+        lastLightCtx = currentLightCtx;
+        if (!bsdf.IsDirac())
+            AddLocalDirectLighting(hitState, bsdf, wo, float3(1.0f),
+                                   0u, AOVCategory::Undefined, rng, currentLightCtx, localRadiance);
         SharcHitData sharcHit = MakeSharcHitData(hitState, sharcMaterialDemodulation);
         if (!SharcUpdateHit(
                 sharcParameters, sharcState, sharcHit,
                 localRadiance.diffuse + localRadiance.specular, rng.sample()))
             break;
 #else
-        // Dirac surfaces do not get direct light contribution
+        if (!AddEmissiveClusterHitEmission(hit.raw, hitState, ray.Direction, localBeta,
+                                           bounce, firstBounceCategory, lastSamplePDF,
+                                           previousLightCtx, radiance))
+            AddSurfaceEmissive(material, wo, localBeta, bounce, firstBounceCategory, radiance);
+        lastLightCtx = currentLightCtx;
         if (!bsdf.IsDirac())
             AddLocalDirectLighting(hitState, bsdf, wo, localBeta,
-                                bounce, firstBounceCategory, rng, lighting, radiance);
-        if (!AddEmissiveClusterHitEmission(hit.raw, hitState, ray.Direction, localBeta,
-                                           bounce, firstBounceCategory, lastSamplePDF, previousLighting, radiance))
-            AddSurfaceEmissive(material, wo, localBeta, bounce, firstBounceCategory, radiance);
+                                   bounce, firstBounceCategory, rng, currentLightCtx, radiance);
 #endif
+
+        if (bounce == globalParams.ptMaxBounces)
+            break;
 
         AOVCategory sampleCategory;
         BSDFSample sample = BSDF_SampleF(bsdf, wo, rng.sample(), rng.sample2D(),
-                                            TransportMode::Radiance, BxDFReflTransFlags::All,
-                                            sampleCategory);
-        if (!sample.IsValid()) {
-            break;
-        }
-
-        nextSample.valid = true;
-        nextSample.beta = localBeta * sample.f * AbsCosTheta(sample.wi) / sample.pdf;
-        nextSample.wi = sample.wi;
-        nextSample.pdf = sample.pdf;
-        nextSample.flags = sample.flags;
-        nextSample.category = sampleCategory;
-        nextSample.hit = hitState;
-
-        if (!nextSample.valid)
+                                         TransportMode::Radiance, BxDFReflTransFlags::All,
+                                         sampleCategory);
+        if (!sample.IsValid())
             break;
 
-        if (bounce == 0)
-            firstBounceCategory = nextSample.category;
+        float3 nextBeta = localBeta * sample.f * AbsCosTheta(sample.wi) / sample.pdf;
+        if (bounce == 0u)
+            firstBounceCategory = sampleCategory;
 
-        lastSamplePDF = nextSample.pdf;
+        lastSamplePDF = sample.pdf;
 #if SHARC_UPDATE
-        SharcSetThroughput(sharcState, nextSample.beta);
+        SharcSetThroughput(sharcState, nextBeta);
         beta = float3(1.0f);
 #else
-        beta = nextSample.beta;
-#endif
-        if (any(isnan(beta)) || any(isinf(beta)))
+        beta = nextBeta;
+        if (IsTransmission(sample.flags))
+            etaScale *= sample.eta * sample.eta;
+        if (!ContinueAfterRussianRoulette(beta, etaScale, bounce, rng))
             break;
-
-        sharcPathRoughness += IsDiffuse(nextSample.flags) ? 1.0f : sharcRoughness;
-        ray.Direction = normalize(ShadingLocalToWorld(nextSample.hit, nextSample.wi));
-        float3 rayNormalFF = dot(ray.Direction, nextSample.hit.geometryNormal) < 0.0f ? -nextSample.hit.geometryNormal : nextSample.hit.geometryNormal;
-        ray.Origin = OffsetRay(nextSample.hit.position, rayNormalFF);
-
-        // Russian Roulette (after 2nd bounce)
-#if !SHARC_UPDATE
-        if (bounce >= 2) {
-            float rrPCount = min(dot(beta, float3(0.2126f, 0.7152f, 0.0722f)) + 0.01f, 0.95f);
-            if (rng.sample() > rrPCount) // Contribution is low, may terminate early
-                break;
-            beta /= rrPCount; // Boost non-terminated paths
-        }
 #endif
+
+#if SHARC_QUERY
+        sharcPathRoughness += IsDiffuse(sample.flags) ? 1.0f : sharcRoughness;
+#endif
+        ray.Direction = normalize(ShadingLocalToWorld(hitState, sample.wi));
+        float3 rayNormalFF = dot(ray.Direction, hitState.geometryNormal) < 0.0f
+            ? -hitState.geometryNormal
+            : hitState.geometryNormal;
+        ray.Origin = OffsetRay(hitState.position, rayNormalFF);
+        ++bounce;
     }
 #if !SHARC_UPDATE
-    WritePrimaryInstanceID(pix, chitMiss ? INSTANCE_NO_HIT : chit.raw.instance);
+    WritePrimaryInstanceID(pix, primaryInstance);
     diffuse[pix] = float4(radiance.diffuse, 1.0f);
     specular[pix] = float4(radiance.specular, 1.0f);
-    depth[pix] = chitMiss ? 0.0f : WorldToNDCDepth(chitState.position);
+    depth[pix] = primaryDepth;
 #endif
 }

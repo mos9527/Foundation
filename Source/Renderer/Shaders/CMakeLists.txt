@@ -51,6 +51,21 @@ foreach(SlangFile IN LISTS SLANG_FILES)
     endif()
     if (ShaderName STREQUAL "EPathTracingRealtime")
         slangc_compile(
+                "Shader_${ShaderName}_NoSHARC"
+                SOURCE          "${SlangFile}"
+                OUTPUT_DIR      "${SHADER_BUILD_DIR}"
+                OUTPUT_NAME     "${ShaderName}_NoSHARC"
+                CAPABILITIES    ${ShaderCapabilities}
+        )
+        slangc_compile(
+                "Shader_${ShaderName}_NoSHARC_SER"
+                SOURCE          "${SlangFile}"
+                OUTPUT_DIR      "${SHADER_BUILD_DIR}"
+                OUTPUT_NAME     "${ShaderName}_NoSHARC_SER"
+                CAPABILITIES    ${ShaderCapabilities}
+                DEFINES         "USE_SER=1"
+        )
+        slangc_compile(
                 "Shader_${ShaderName}_SHARC_Update"
                 SOURCE          "${SlangFile}"
                 OUTPUT_DIR      "${SHADER_BUILD_DIR}"
@@ -58,6 +73,8 @@ foreach(SlangFile IN LISTS SLANG_FILES)
                 CAPABILITIES    ${ShaderCapabilities}
                 DEFINES         "SHARC_UPDATE=1"
         )
+        add_dependencies(Foundation_Shaders "Shader_${ShaderName}_NoSHARC")
+        add_dependencies(Foundation_Shaders "Shader_${ShaderName}_NoSHARC_SER")
         add_dependencies(Foundation_Shaders "Shader_${ShaderName}_SHARC_Update")
     endif()
     add_dependencies(Foundation_Shaders "Shader_${ShaderName}")

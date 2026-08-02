@@ -744,22 +744,8 @@ bool TraceShadowRay<S : ISampler>(float3 origin, float3 direction, float tMax, i
 
             uint primitive = q.CandidatePrimitiveIndex();
             float2 bary = q.CandidateTriangleBarycentrics();
-            
-            GSInstance inst = LoadSceneInstance(instance);
-            GSMaterial material = LoadMaterial(inst.materialIndex);
-            
-            float opacity = 1.0f;
-            if (material.baseColorTexture != ~0u) {
-                float2 uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
-                float4 baseColor = material.baseColorFactor * gTextures2D[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(gTexSampler, uv, 0);
-                opacity = baseColor.a;
-            } else {
-                opacity = material.baseColorFactor.a;
-            }
-
-            if (opacity == 1.0f || rng.sample() >= 1.0f - opacity) {
+            if (!EvaluateOpacityAlphaTest(instance, primitive, bary, rng))
                 q.CommitNonOpaqueTriangleHit();
-            }
         }
     }
     return q.CommittedStatus() != 0;
@@ -901,39 +887,41 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, float uc, float aliasU, f
         return LightLiSample();
 
     bool isCluster = IsClusterSelection(lightIndex);
-    GSLight gl = {};
     LightLiSample Li;
+    bool useShadow;
     if (isCluster)
+    {
         Li = SampleEmissiveCluster(SelectionIndex(lightIndex), ctx, aliasU, u);
+        useShadow = true;
+    }
     else
     {
-        gl = LoadSceneLight(lightIndex);
+        GSLight gl = LoadSceneLight(lightIndex);
         Li = SampleSceneLight(gl, ctx, u);
+        useShadow = GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.UseShadow));
     }
     if (Li.pdf > 0.0f)
     {
         SampledSpectrum radiance = Li.Li / (Li.pdf * selectionPMF);
         float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * selectionPMF);
-        return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist,
-                             isCluster || GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.UseShadow)));
+        return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist, useShadow);
     }
     return LightLiSample();
 }
 
 bool SampleVisibleSceneLight<S : ISampler>(
-    HitState hit,
-    bool upperHemisphere,
+    float3 position,
+    float3 geometryNormal,
+    LightSampleContext ctx,
     inout S rng,
-    out LightSampleContext ctx,
     out LightLiSample Li)
 {
-    ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal, upperHemisphere);
     Li = SampleSceneLight(ctx, rng.sample(), rng.sample(), rng.sample2D());
     if (Li.pdf <= EPS)
         return false;
 
-    float3 shadowNormalFF = dot(Li.wi, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
-    float3 shadowOrigin = OffsetRay(hit.position, shadowNormalFF);
+    float3 shadowNormalFF = dot(Li.wi, geometryNormal) < 0.0f ? -geometryNormal : geometryNormal;
+    float3 shadowOrigin = OffsetRay(position, shadowNormalFF);
     float shadowDistance = Li.dist;
     if (shadowDistance < INF)
         shadowDistance = max(EPS_TMin, shadowDistance - max(EPS_TMin, shadowDistance * 1e-4f));
@@ -965,40 +953,6 @@ BSDFSample BSDF_SampleF(IBSDF bsdf, float3 wo, float uc, float2 u, TransportMode
     return bsdf.Sample_f(wo, uc, u, mode, flags, category);
 }
 
-struct DirectLightingState
-{
-    InfiniteLight env;
-    LightSampleContext lastLightCtx;
-
-    __init(InfiniteLight env)
-    {
-        this.env = env;
-        this.lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
-    }
-};
-
-struct PathSample
-{
-    bool valid;
-    float3 beta;
-    float3 wi;
-    float pdf;
-    BxDFFlags flags;
-    AOVCategory category;
-    HitState hit;
-
-    __init()
-    {
-        this.valid = false;
-        this.beta = float3(0.0f);
-        this.wi = float3(0.0f);
-        this.pdf = 0.0f;
-        this.flags = BxDFFlags::Unset;
-        this.category = AOVCategory::Diffuse;
-        this.hit = {};
-    }
-};
-
 struct PathRadiance
 {
     float3 diffuse;
@@ -1010,6 +964,21 @@ struct PathRadiance
         this.specular = float3(0.0f);
     }
 };
+
+bool ContinueAfterRussianRoulette<S : ISampler>(
+    inout float3 beta, float etaScale, uint bounce, inout S rng)
+{
+    if (any(isnan(beta)) || any(isinf(beta)) || MaxComponent(beta) <= 0.0f)
+        return false;
+    if (bounce < 2u)
+        return true;
+
+    float survival = min(MaxComponent(beta * etaScale), 0.95f);
+    if (survival <= 0.0f || rng.sample() >= survival)
+        return false;
+    beta /= survival;
+    return true;
+}
 
 void AddRadiance(inout float3 L, float3 v, bool direct = false)
 {
@@ -1053,18 +1022,13 @@ void AddLocalDirectLighting<S : ISampler>(
     uint bounce,
     AOVCategory firstBounceCategory,
     inout S rng,
-    inout DirectLightingState lighting,
+    LightSampleContext ctx,
     inout PathRadiance radiance)
 {
-    LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit, !bsdf.HasTransmission(), rng, ctx, Li))
-    {
-        lighting.lastLightCtx = ctx;
+    if (!SampleVisibleSceneLight(hit.position, hit.geometryNormal, ctx, rng, Li))
         return;
-    }
 
-    lighting.lastLightCtx = ctx;
     float3 wi = WorldToShadingLocal(hit, Li.wi);
     float bsdfPdf = BSDF_PDF(bsdf, wo, wi, TransportMode::Radiance, BxDFReflTransFlags::All);
     float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, bsdfPdf);
@@ -1093,18 +1057,13 @@ void AddDiffuseDirectLighting<S : ISampler>(
     AOVCategory firstBounceCategory,
     AOVCategory currentCategory,
     inout S rng,
-    inout DirectLightingState lighting,
+    LightSampleContext ctx,
     inout PathRadiance radiance)
 {
-    LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit, true, rng, ctx, Li))
-    {
-        lighting.lastLightCtx = ctx;
+    if (!SampleVisibleSceneLight(hit.position, hit.geometryNormal, ctx, rng, Li))
         return;
-    }
 
-    lighting.lastLightCtx = ctx;
     float3 wi = WorldToShadingLocal(hit, Li.wi);
     float diffusePdf = CosineHemispherePDF(AbsCosTheta(wi));
     float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, diffusePdf);
@@ -1132,7 +1091,7 @@ bool AddEmissiveClusterHitEmission(
     uint bounce,
     AOVCategory firstBounceCategory,
     float lastSamplePDF,
-    DirectLightingState lighting,
+    LightSampleContext lastLightCtx,
     inout PathRadiance radiance)
 {
     GSInstance inst = LoadSceneInstance(payload.instance);
@@ -1153,6 +1112,15 @@ bool AddEmissiveClusterHitEmission(
     if (localTriangle >= cluster.triCount || cluster.flux <= 0.0f)
         return false;
 
+    float3 emissionWo = float3(0.0f, 0.0f, dot(hitState.geometryNormal, -rayDirection));
+    if (bounce == 0u || lastSamplePDF <= EPS)
+    {
+        float3 emission = EvaluateClusterEmission(payload.instance, hitState.uv, emissionWo);
+        AddRadianceByCategory(radiance, beta * emission, bounce, firstBounceCategory,
+                              AOVCategory::Diffuse, bounce == 0u);
+        return true;
+    }
+
     float trianglePMF =
         gPrimBuffer.Load<GSAlias>(cluster.aliasOffset + localTriangle * sizeof(GSAlias)).prob;
     float3 p0, p1, p2;
@@ -1160,13 +1128,11 @@ bool AddEmissiveClusterHitEmission(
     LoadEmissiveClusterTriangle(cluster, localTriangle, p0, p1, p2, uv0, uv1, uv2);
     TriangleLight light = TriangleLight(float3(1.0f), p0, p1 - p0, p2 - p0, true);
     float lightPDF = EvalLightSelectionPMF(
-        lighting.lastLightCtx, kLightSelectionClusterBit | clusterIndex,
+        lastLightCtx, kLightSelectionClusterBit | clusterIndex,
         (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u);
-    lightPDF *= trianglePMF * light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
-    float mis = (bounce > 0u && lastSamplePDF > EPS)
-        ? PowerHeuristic(1, lastSamplePDF, 1, lightPDF)
-        : 1.0f;
-    float3 emissionWo = float3(0.0f, 0.0f, dot(light.normal, -rayDirection));
+    lightPDF *= trianglePMF * light.PDF_Li(lastLightCtx, rayDirection, true);
+    float mis = PowerHeuristic(1, lastSamplePDF, 1, lightPDF);
+    emissionWo = float3(0.0f, 0.0f, dot(light.normal, -rayDirection));
     float3 emission = EvaluateClusterEmission(payload.instance, hitState.uv, emissionWo);
     AddRadianceByCategory(radiance, beta * emission * mis,
                           bounce, firstBounceCategory, AOVCategory::Diffuse, bounce == 0u);
@@ -1188,7 +1154,7 @@ bool AddAnalyticLightHitEmission(
     uint bounce,
     AOVCategory firstBounceCategory,
     float lastSamplePDF,
-    DirectLightingState lighting,
+    LightSampleContext lastLightCtx,
     inout PathRadiance radiance,
     out float3 hitPoint)
 {
@@ -1201,13 +1167,15 @@ bool AddAnalyticLightHitEmission(
     SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
     SampledSpectrum Le = SampledSpectrum(0.0f);
     float pdfLi = 0.0f;
+    bool needsMIS = bounce > 0u && lastSamplePDF > EPS;
 
     if (hit.kind == HitKind::Point)
     {
         PointLight light = PointLight(Lemit, gl.position, gl.params.x);
         float3 normal = normalize(hitPoint - gl.position);
         Le = light.L(hitPoint, normal, float3(0), view);
-        pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
+        if (needsMIS)
+            pdfLi = light.PDF_Li(lastLightCtx, rayDirection, true);
     }
     else if (hit.kind == HitKind::Spot)
     {
@@ -1215,7 +1183,8 @@ bool AddAnalyticLightHitEmission(
             acos(gl.params.z), acos(gl.params.y), gl.params.x);
         float3 normal = normalize(hitPoint - gl.position);
         Le = light.L(hitPoint, normal, float3(0), view);
-        pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
+        if (needsMIS)
+            pdfLi = light.PDF_Li(lastLightCtx, rayDirection, true);
     }
     else if (hit.kind == HitKind::Disk)
     {
@@ -1223,7 +1192,8 @@ bool AddAnalyticLightHitEmission(
                                     GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.TwoSided)));
         float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
         Le = light.L(hitPoint, normal, float3(0), view);
-        pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
+        if (needsMIS)
+            pdfLi = light.PDF_Li(lastLightCtx, rayDirection, true);
     }
     else if (hit.kind == HitKind::Rect)
     {
@@ -1231,15 +1201,21 @@ bool AddAnalyticLightHitEmission(
             RectLight(Lemit, gl.position, gl.dpdu, gl.dpdv, GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.TwoSided)));
         float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
         Le = light.L(hitPoint, normal, float3(0), view);
-        pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
+        if (needsMIS)
+            pdfLi = light.PDF_Li(lastLightCtx, rayDirection, true);
     }
 
     bool allowPrimary = globalParams.ptPrimaryLightVisibility != 0u;
     if ((bounce > 0 || allowPrimary) && any(Le > 0.0f))
     {
-        float pLightSelection = EvalLightSelectionPMF(lighting.lastLightCtx, hit.lightIndex, (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u);
-        float pdf = pLightSelection * pdfLi;
-        float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+        float mis = 1.0f;
+        if (needsMIS)
+        {
+            float pLightSelection = EvalLightSelectionPMF(
+                lastLightCtx, hit.lightIndex,
+                (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u);
+            mis = BalanceHeuristic(1, lastSamplePDF, 1, pLightSelection * pdfLi);
+        }
         float3 contrib = beta * Le * mis;
         bool direct = bounce == 0;
         AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, direct);
@@ -1269,17 +1245,25 @@ void AddInfiniteMiss(
     uint bounce,
     AOVCategory firstBounceCategory,
     float lastSamplePDF,
-    DirectLightingState lighting,
+    LightSampleContext lastLightCtx,
     inout PathRadiance radiance)
 {
     float3 wi = -view;
-    float3 Le = lighting.env.Le(wi);
-    float pdf = EvalLightSelectionPMF(lighting.lastLightCtx, 0u, (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u) *
-        lighting.env.PDF_Li(lighting.lastLightCtx, wi, true);
+    InfiniteLight env = MakeEnvironmentLight(LoadSceneLight(0u));
+    float3 Le = env.Le(wi);
+    bool needsMIS = bounce > 0u && lastSamplePDF > EPS;
 
     if (any(Le > 0.0f))
     {
-        float mis = (lastSamplePDF > EPS && bounce > 0) ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+        float mis = 1.0f;
+        if (needsMIS)
+        {
+            float pdf = EvalLightSelectionPMF(
+                lastLightCtx, 0u,
+                (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u) *
+                env.PDF_Li(lastLightCtx, wi, true);
+            mis = PowerHeuristic(1, lastSamplePDF, 1, pdf);
+        }
         AddRadianceByCategory(radiance, beta * Le * mis, bounce, firstBounceCategory, AOVCategory::Specular, false);
     }
 
@@ -1297,9 +1281,15 @@ void AddInfiniteMiss(
         if (!any(Le > 0.0f))
             continue;
 
-        pdf = EvalLightSelectionPMF(lighting.lastLightCtx, lightIndex, (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u) *
-            light.PDF_Li(lighting.lastLightCtx, wi, true);
-        float mis = (lastSamplePDF > EPS && bounce > 0) ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+        float mis = 1.0f;
+        if (needsMIS)
+        {
+            float pdf = EvalLightSelectionPMF(
+                lastLightCtx, lightIndex,
+                (kCompileOptions & uint32_t(PTCompileOptionsBits.LightSamplerUniform)) != 0u) *
+                light.PDF_Li(lastLightCtx, wi, true);
+            mis = PowerHeuristic(1, lastSamplePDF, 1, pdf);
+        }
         AddRadianceByCategory(radiance, beta * Le * mis, bounce, firstBounceCategory, AOVCategory::Specular, false);
     }
 }
@@ -1363,14 +1353,12 @@ bool EvaluateOpacityAlphaTest<S : ISampler>(uint instance, uint primitive, float
 
     float opacity = material.baseColorFactor.a;
     bool sampleBaseColor = material.baseColorTexture != ~0u;
-    bool sampleTransmission = material.transmissionTexture != ~0u;
+    if (!sampleBaseColor)
+        return opacity < 1.0f && rng.sample() < 1.0f - opacity;
+
     float2 uv = float2(0.0f);
-    if (sampleBaseColor || sampleTransmission)
-        uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
-    if (sampleBaseColor)
-    {
-        opacity *= gTextures2D[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(gTexSampler, uv, 0).a;
-    }
+    uv = GetHitUV(inst.resourceOffset, primitive, bary, inst);
+    opacity *= gTextures2D[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(gTexSampler, uv, 0).a;
 
     if (opacity == 1.0f) return false;    // opaque, don't ignore
     return rng.sample() < 1.0f - opacity; // true if we should ignore the hit

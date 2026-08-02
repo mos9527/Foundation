@@ -227,9 +227,15 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                                                                  : RHIPipelineStageBits::ComputeShader;
             r->BindBufferUniform(self, GlobalUBO, pipelineStage, "globalParams");
             r->BindAccelerationStructureSRV(self, TLAS, pipelineStage, "TLAS");
+            const char* shaderPath;
+            if (sharcEnabled)
+                shaderPath = shaderExecutionReordering ? "Data/Shaders/EPathTracingRealtime_SER.spv"
+                                                       : "Data/Shaders/EPathTracingRealtime.spv";
+            else
+                shaderPath = shaderExecutionReordering ? "Data/Shaders/EPathTracingRealtime_NoSHARC_SER.spv"
+                                                       : "Data/Shaders/EPathTracingRealtime_NoSHARC.spv";
             const auto shader = r->GetApplication()->ResolveRelativePathBase(
-                !shaderExecutionReordering ? "Data/Shaders/EPathTracingRealtime.spv"
-                                           : "Data/Shaders/EPathTracingRealtime_SER.spv");
+                shaderPath);
             if (shaderExecutionReordering)
             {
                 r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,
@@ -253,8 +259,11 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
             r->BindBufferStorageRead(self, LightBVHNodeBuffer, pipelineStage, "lightBVHNodes");
             r->BindBufferStorageRead(self, LightBVHLightIndexBuffer, pipelineStage, "lightBVHLightIndices");
             r->BindBufferStorageRead(self, LightBVHBitmaskBuffer, pipelineStage, "lightBVHBitmasks");
-            r->BindBufferStorageRead(self, SharcHashEntries, pipelineStage, "sharcHashEntries");
-            r->BindBufferStorageRead(self, SharcResolved, pipelineStage, "sharcResolved");
+            if (sharcEnabled)
+            {
+                r->BindBufferStorageRead(self, SharcHashEntries, pipelineStage, "sharcHashEntries");
+                r->BindBufferStorageRead(self, SharcResolved, pipelineStage, "sharcResolved");
+            }
             r->BindTextureSampler(self, LUTSampler, "gLutSampler");
             // Accumulation UAVs
             r->BindTextureUAV(
