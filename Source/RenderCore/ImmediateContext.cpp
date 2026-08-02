@@ -239,9 +239,12 @@ namespace Foundation::RenderCore
         CHECK(IsValid());
         if (ptr + dataSize > end)
             return nullptr;
+        size_t const offset = static_cast<size_t>(ptr - begin);
+        CHECK_MSG(offset <= UINT32_MAX && dataSize <= UINT32_MAX - offset,
+                  "ImmediateUpload staging range exceeds uint32 copy offset limit");
         UploadLane& state = *mOwner->mLanes[mLane];
         state.ctx->CopyBuffer(state.staging.Get(), dst,
-                              {{{.srcOffset = static_cast<uint32_t>(ptr - begin),
+                              {{{.srcOffset = static_cast<uint32_t>(offset),
                                  .dstOffset = dstOffset,
                                  .size = dataSize}}});
         char* res = ptr;
@@ -264,12 +267,15 @@ namespace Foundation::RenderCore
         CHECK(IsValid());
         if (ptr + dataSize > end)
             return nullptr;
+        size_t const offset = static_cast<size_t>(ptr - begin);
+        CHECK_MSG(offset <= UINT32_MAX && dataSize <= UINT32_MAX - offset,
+                  "ImmediateUpload staging range exceeds uint32 copy offset limit");
         UploadLane& state = *mOwner->mLanes[mLane];
         RHIExtent3D maxExtent = dst->mDesc.extent;
         RHIExtent3D extent{dstExtent.x ? dstExtent.x : maxExtent.x, dstExtent.y ? dstExtent.y : maxExtent.y,
                            dstExtent.z ? dstExtent.z : maxExtent.z};
         state.ctx->CopyBufferToImage(state.staging.Get(), dst, RHITextureLayout::TransferDst,
-                                     {{{.srcBufferOffset = static_cast<uint32_t>(ptr - begin),
+                                     {{{.srcBufferOffset = static_cast<uint32_t>(offset),
                                         .dstLayer = dstLayer,
                                         .dstOffset = dstOffset,
                                         .extent = extent}}});

@@ -20,7 +20,8 @@
 #include "Tables/Sobol.hpp"
 
 static constexpr size_t kUploadBudgetSlack = 1ull * (1ull << 20);
-static constexpr size_t kUploadStagingBuffers = 3u;
+static constexpr size_t kUploadStagingAlignment = 64ull << 10u;
+static constexpr size_t kUploadStagingBuffers = 1u;
 static constexpr size_t kGPUSceneBufferQueueCapacity = 256u;
 static constexpr uint32_t kGPUSceneDynamicRebuildRate = 60u; // frames
 
@@ -44,6 +45,12 @@ static size_t GPUSceneTextureSubresourceFootprint(FTextureHeader const& metadata
     CHECK_MSG(size <= std::numeric_limits<size_t>::max() - (alignment - 1u),
               "Texture subresource staging footprint exceeds addressable range");
     return size + alignment - 1u;
+}
+
+static void GPUSceneAccumulateUploadBudget(size_t& budget, size_t bytes)
+{
+    CHECK_MSG(bytes <= std::numeric_limits<size_t>::max() - budget, "GPUScene upload staging budget overflow");
+    budget += bytes;
 }
 
 static constexpr size_t kMinDirectGeometryUploadHeapSize = 512ull * (1ull << 20);
@@ -1637,23 +1644,27 @@ bool GPUSceneImpl::UploadBatchBegin()
     size_t stagingBudget = 0;
     if (!mDirectGeometryUpload)
         for (PendingGeometryUpload const& pending : state->geometry)
-            stagingBudget += pending.footprint;
+            GPUSceneAccumulateUploadBudget(stagingBudget, pending.footprint);
     for (PendingTextureUpload const& pending : state->textures)
     {
         auto const& metadata = static_cast<FTextureHeader const&>(*pending.source);
         for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
             for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
-                stagingBudget += GPUSceneTextureSubresourceFootprint(metadata, layer, mip) + kUploadBudgetSlack;
+                GPUSceneAccumulateUploadBudget(
+                    stagingBudget, GPUSceneTextureSubresourceFootprint(metadata, layer, mip));
     }
     for (PendingBufferUpload const& pending : state->buffers)
-        stagingBudget += pending.data.size();
+        GPUSceneAccumulateUploadBudget(stagingBudget, pending.data.size());
     stagingBudget = std::max<size_t>(stagingBudget, 1u);
+    CHECK_MSG(stagingBudget <= UINT32_MAX - (kUploadStagingAlignment - 1u),
+              "GPUScene upload staging exceeds uint32 copy offset limit: {} bytes", stagingBudget);
+    size_t const requiredCapacity = AlignUp(stagingBudget, kUploadStagingAlignment);
 
-    if (!mImmediateUpload || mImmediateUploadCapacity < stagingBudget)
+    if (!mImmediateUpload || mImmediateUploadCapacity < requiredCapacity)
     {
         if (mImmediateUpload)
             mImmediateUpload->WaitIdle();
-        mImmediateUploadCapacity = std::bit_ceil(stagingBudget);
+        mImmediateUploadCapacity = requiredCapacity;
         // NOTE: BLAS builds happen on their own cmdlists on Graphics queue.
         mImmediateUpload = ConstructUnique<ImmediateUpload>(mAllocator, mDevice, mImmediateUploadCapacity,
                                                             RHIDeviceQueueType::Transfer, kUploadStagingBuffers);

@@ -403,15 +403,17 @@ static void ApplySceneCamera(FImportedScene const& scene, FArcballCamera& camera
 
 static size_t GPUSceneBudgetBytes(GPUSceneDesc const& desc)
 {
+    size_t const lightBVHBudget = size_t(desc.lightBudget) + desc.emissiveClusterBudget;
     return size_t(desc.primitiveBudget) +
            size_t(desc.instanceBudget) * sizeof(GSInstance) +
            size_t(desc.materialBudget) * sizeof(GSMaterial) +
            size_t(desc.lightBudget) * sizeof(GSLight) +
-           size_t(desc.lightBudget) * 2u * sizeof(GSLightBVHNode) +
+           size_t(desc.emissiveClusterBudget) * sizeof(GSEmissiveCluster) +
+           lightBVHBudget * 2u * sizeof(GSLightBVHNode) +
+           lightBVHBudget * sizeof(uint32_t) +
+           lightBVHBudget * sizeof(uint2) +
            size_t(desc.lightBudget) * sizeof(uint32_t) +
-           size_t(desc.lightBudget) * sizeof(uint2) +
-           size_t(desc.lightBudget) * sizeof(uint32_t) +
-           size_t(desc.lightBudget) * 2u * sizeof(uint32_t) +
+           lightBVHBudget * 2u * sizeof(uint32_t) +
            size_t(desc.tlasInstanceBudget) * GContext->device->WriteAccelerationStructureInstanceData({}, nullptr) +
            size_t(desc.tlasBudget) +
            size_t(desc.tlasScratchBudget) +
@@ -423,13 +425,14 @@ static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBy
 {
     auto estimatedBudget = CalculateSceneGPUDesc(scene, GContext->device->GetCapabilities());
     LOG(Editor, LogDebug,
-        "Estimated GPUScene budget: primitive {} MB, dynamic {} MB, instances {}, TLAS instances {}, materials {}, lights {}, textures {}",
+        "Estimated GPUScene budget: primitive {} MB, dynamic {} MB, instances {}, TLAS instances {}, materials {}, lights {}, emissive clusters {}, textures {}",
         estimatedBudget.primitiveBudget / (1u << 20),
         estimatedBudget.dynamicGeometryBudget / (1u << 20),
         estimatedBudget.instanceBudget,
         estimatedBudget.tlasInstanceBudget,
         estimatedBudget.materialBudget,
         estimatedBudget.lightBudget,
+        estimatedBudget.emissiveClusterBudget,
         estimatedBudget.texturesBudget);
 
     FAnimationRuntimeBudget animationBudget = CalculateAnimationRuntimeBudget(scene);
