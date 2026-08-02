@@ -1,10 +1,6 @@
 import ICommon;
 import ILight;
-
-public static const float kLightBVHInvalidCosConeAngle = -1.0f;
-public static const uint kLightBVHLeafBit = 1u << 31;
-public static const uint kLightBVHLightCountBits = 4u;
-public static const uint kLightBVHLightOffsetBits = 31u - kLightBVHLightCountBits;
+import ILightBVHNode;
 
 // Included after `uniform UBO globalParams` and `StructuredBuffer<GSLight> gLights` are declared.
 UBO GetUBO()
@@ -42,36 +38,6 @@ float ComputeSelectionProposalWeight(uint selection)
 uint SelectionEntitySlot(uint selection)
 {
     return IsClusterSelection(selection) ? GetUBO().lights.count + SelectionIndex(selection) : selection;
-}
-
-public struct GSLightBVHNode
-{
-    public uint header;
-    public float3 origin;
-    public float3 extent;
-    public float flux;
-    public float3 coneDirection;
-    public float cosConeAngle;
-};
-
-public bool LightBVHNodeIsLeaf(GSLightBVHNode node)
-{
-    return (node.header & kLightBVHLeafBit) != 0u;
-}
-
-public uint LightBVHNodeRightChild(GSLightBVHNode node)
-{
-    return node.header;
-}
-
-public uint LightBVHNodeLightCount(GSLightBVHNode node)
-{
-    return (node.header >> kLightBVHLightOffsetBits) & ((1u << kLightBVHLightCountBits) - 1u);
-}
-
-public uint LightBVHNodeLightOffset(GSLightBVHNode node)
-{
-    return node.header & ((1u << kLightBVHLightOffsetBits) - 1u);
 }
 
 StructuredBuffer<GSLightBVHNode> lightBVHNodes;
@@ -117,7 +83,7 @@ float BoundCosineTerm(float3 toCenter, float dist2, float3 normalW, float3 exten
     return saturate(CosSubClamped(sinThetaL, cosThetaL, sinThetaCone, cosThetaCone));
 }
 
-float ComputeNodeImportance(float3 posW, float3 normalW, bool upperHemisphere, GSLightBVHNode node)
+float ComputeNodeImportance(float3 posW, float3 normalW, bool upperHemisphere, LightBVHNodeAttributes node)
 {
     float flux = node.flux;
     float3 toCenter = node.origin - posW;
@@ -152,11 +118,12 @@ float ComputeFiniteRootImportance(float3 posW, float3 normalW, bool upperHemisph
 {
     if (GetUBO().lightBVHValid == 0u || GetUBO().lightBVHNodes.count == 0u)
         return 0.0f;
-    GSLightBVHNode root = lightBVHNodes[GetUBO().lightBVHNodes.offset];
+    LightBVHNodeAttributes root = UnpackLightBVHNode(lightBVHNodes[GetUBO().lightBVHNodes.offset]);
     return ComputeNodeImportance(posW, normalW, upperHemisphere, root);
 }
 
-float ComputeDistantNodeImportance(float3 posW, float3 normalW, bool upperHemisphere, GSLightBVHNode node)
+float ComputeDistantNodeImportance(float3 posW, float3 normalW, bool upperHemisphere,
+                                   LightBVHNodeAttributes node)
 {
     float flux = node.flux;
     float NdotL = 1.0f;
@@ -181,7 +148,7 @@ float ComputeDistantRootImportance(float3 posW, float3 normalW, bool upperHemisp
     if (GetUBO().lightBVHDistantNodes.count == 0u)
         return 0.0f;
     return ComputeDistantNodeImportance(posW, normalW, upperHemisphere,
-                                        lightBVHNodes[GetUBO().lightBVHDistantNodes.offset]);
+        UnpackLightBVHNode(lightBVHNodes[GetUBO().lightBVHDistantNodes.offset]));
 }
 
 float EvalMixtureTotal(float3 posW, float3 normalW, bool upperHemisphere, out float finiteWeight,
@@ -197,13 +164,15 @@ bool TraverseLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout f
 {
     pdf = 1.0f;
     leafNodeIndex = GetUBO().lightBVHNodes.offset;
-    uint header = lightBVHNodes[leafNodeIndex].header;
+    uint header = LightBVHNodeHeader(lightBVHNodes[leafNodeIndex]);
     while ((header & kLightBVHLeafBit) == 0u)
     {
         uint leftIndex = leafNodeIndex + 1u;
         uint rightIndex = GetUBO().lightBVHNodes.offset + header;
-        float leftImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
-        float rightImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
+        float leftImp = ComputeNodeImportance(
+            posW, normalW, upperHemisphere, UnpackLightBVHNode(lightBVHNodes[leftIndex]));
+        float rightImp = ComputeNodeImportance(
+            posW, normalW, upperHemisphere, UnpackLightBVHNode(lightBVHNodes[rightIndex]));
         float sum = leftImp + rightImp;
         if (sum <= 0.0f)
             return false;
@@ -221,7 +190,7 @@ bool TraverseLightBVH(float3 posW, float3 normalW, bool upperHemisphere, inout f
             pdf *= pRight;
             leafNodeIndex = rightIndex;
         }
-        header = lightBVHNodes[leafNodeIndex].header;
+        header = LightBVHNodeHeader(lightBVHNodes[leafNodeIndex]);
     }
     return true;
 }
@@ -230,13 +199,15 @@ bool TraverseDistantLightBVH(float3 posW, float3 normalW, bool upperHemisphere, 
 {
     pdf = 1.0f;
     leafNodeIndex = GetUBO().lightBVHDistantNodes.offset;
-    uint header = lightBVHNodes[leafNodeIndex].header;
+    uint header = LightBVHNodeHeader(lightBVHNodes[leafNodeIndex]);
     while ((header & kLightBVHLeafBit) == 0u)
     {
         uint leftIndex = leafNodeIndex + 1u;
         uint rightIndex = GetUBO().lightBVHNodes.offset + header;
-        float leftImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
-        float rightImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
+        float leftImp = ComputeDistantNodeImportance(
+            posW, normalW, upperHemisphere, UnpackLightBVHNode(lightBVHNodes[leftIndex]));
+        float rightImp = ComputeDistantNodeImportance(
+            posW, normalW, upperHemisphere, UnpackLightBVHNode(lightBVHNodes[rightIndex]));
         float sum = leftImp + rightImp;
         if (sum <= 0.0f)
             return false;
@@ -254,7 +225,7 @@ bool TraverseDistantLightBVH(float3 posW, float3 normalW, bool upperHemisphere, 
             pdf *= pRight;
             leafNodeIndex = rightIndex;
         }
-        header = lightBVHNodes[leafNodeIndex].header;
+        header = LightBVHNodeHeader(lightBVHNodes[leafNodeIndex]);
     }
     return true;
 }
@@ -273,7 +244,7 @@ bool PickLeafLight(uint leafNodeIndex, float u, out float pdf, out uint lightInd
         return true;
     }
 
-    float total = node.flux;
+    float total = UnpackLightBVHNode(node).flux;
     if (total <= 0.0f)
         return false;
 
@@ -323,13 +294,15 @@ float EvalFiniteTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere, 
     uint64_t bitmask = ((uint64_t)bits2.y << 32) | bits2.x;
     float pdf = 1.0f;
     leafNodeIndex = GetUBO().lightBVHNodes.offset;
-    uint header = lightBVHNodes[leafNodeIndex].header;
+    uint header = LightBVHNodeHeader(lightBVHNodes[leafNodeIndex]);
     while ((header & kLightBVHLeafBit) == 0u)
     {
         uint leftIndex = leafNodeIndex + 1u;
         uint rightIndex = GetUBO().lightBVHNodes.offset + header;
-        float leftImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
-        float rightImp = ComputeNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
+        float leftImp = ComputeNodeImportance(
+            posW, normalW, upperHemisphere, UnpackLightBVHNode(lightBVHNodes[leftIndex]));
+        float rightImp = ComputeNodeImportance(
+            posW, normalW, upperHemisphere, UnpackLightBVHNode(lightBVHNodes[rightIndex]));
         float sum = leftImp + rightImp;
         if (sum <= 0.0f)
             return 0.0f;
@@ -346,7 +319,7 @@ float EvalFiniteTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere, 
             leafNodeIndex = rightIndex;
         }
         bitmask >>= 1;
-        header = lightBVHNodes[leafNodeIndex].header;
+        header = LightBVHNodeHeader(lightBVHNodes[leafNodeIndex]);
     }
     return pdf;
 }
@@ -357,13 +330,15 @@ float EvalDistantTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere,
     uint64_t bitmask = ((uint64_t)bits2.y << 32) | bits2.x;
     float pdf = 1.0f;
     leafNodeIndex = GetUBO().lightBVHDistantNodes.offset;
-    uint header = lightBVHNodes[leafNodeIndex].header;
+    uint header = LightBVHNodeHeader(lightBVHNodes[leafNodeIndex]);
     while ((header & kLightBVHLeafBit) == 0u)
     {
         uint leftIndex = leafNodeIndex + 1u;
         uint rightIndex = GetUBO().lightBVHNodes.offset + header;
-        float leftImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[leftIndex]);
-        float rightImp = ComputeDistantNodeImportance(posW, normalW, upperHemisphere, lightBVHNodes[rightIndex]);
+        float leftImp = ComputeDistantNodeImportance(
+            posW, normalW, upperHemisphere, UnpackLightBVHNode(lightBVHNodes[leftIndex]));
+        float rightImp = ComputeDistantNodeImportance(
+            posW, normalW, upperHemisphere, UnpackLightBVHNode(lightBVHNodes[rightIndex]));
         float sum = leftImp + rightImp;
         if (sum <= 0.0f)
             return 0.0f;
@@ -372,7 +347,7 @@ float EvalDistantTraversalPdf(float3 posW, float3 normalW, bool upperHemisphere,
         pdf *= chooseLeft ? pLeft : (1.0f - pLeft);
         leafNodeIndex = chooseLeft ? leftIndex : rightIndex;
         bitmask >>= 1;
-        header = lightBVHNodes[leafNodeIndex].header;
+        header = LightBVHNodeHeader(lightBVHNodes[leafNodeIndex]);
     }
     return pdf;
 }

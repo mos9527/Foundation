@@ -500,7 +500,7 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
     CHECK(mDevice != nullptr);
     CHECK(mJobs != nullptr);
     CHECK(mAllocator != nullptr);
-    static_assert(sizeof(GSLightBVHNode) == 48);
+    static_assert(sizeof(GSLightBVHNode) == 32);
 #ifndef NDEBUG
     static bool const samplingSelfTestsPassed = [&]
     {
@@ -938,10 +938,10 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
 
         if (!bvh.nodes.empty())
         {
-            auto [nodePtr, nodeOff] = mLightBVHNodeBuffer.Allocate(static_cast<uint32_t>(bvh.nodes.size()));
-            std::memcpy(nodePtr, bvh.nodes.data(), bvh.nodes.size() * sizeof(GSLightBVHNode));
+            auto [nodePtr, nodeOff] = mLightBVHNodeBuffer.Allocate(static_cast<uint32_t>(bvh.gpuNodes.size()));
+            std::memcpy(nodePtr, bvh.gpuNodes.data(), bvh.gpuNodes.size() * sizeof(GSLightBVHNode));
             lightBVH.nodes.offset = nodeOff;
-            lightBVH.nodes.count = static_cast<uint32_t>(bvh.nodes.size());
+            lightBVH.nodes.count = static_cast<uint32_t>(bvh.gpuNodes.size());
             if (bvh.distantRootNode != UINT32_MAX)
             {
                 lightBVH.distantNodes.offset = nodeOff + bvh.distantRootNode;

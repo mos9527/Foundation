@@ -3,6 +3,9 @@
 //  [] ReSTIR DI
 //  [] Denoiser
 #include "IPathTracing.slang"
+#ifndef SHARC_QUERY
+#define SHARC_QUERY 0
+#endif
 #if SHARC_QUERY || SHARC_UPDATE
 #include "ISharcIntegration.slang"
 #endif

@@ -1,3 +1,5 @@
+import ILightBVHNode;
+
 struct GizmoUBO
 {
     float4x4 viewProj;
@@ -22,15 +24,6 @@ struct GizmoUBO
 };
 uniform GizmoUBO globalParams;
 
-struct GSLightBVHNode
-{
-    uint header;
-    float3 origin;
-    float3 extent;
-    float flux;
-    float3 coneDirection;
-    float cosConeAngle;
-};
 StructuredBuffer<GSLightBVHNode> lightBVHNodes;
 
 Texture2D<float> sceneDepth;
@@ -67,7 +60,7 @@ uint2 BoxEdge(uint edge)
     }
 }
 
-float3 BoxVertex(GSLightBVHNode node, uint lane)
+float3 BoxVertex(LightBVHNodeAttributes node, uint lane)
 {
     if (lane >= 24u)
         return node.origin;
@@ -124,7 +117,7 @@ float3 ConeWireVertex(float3 axis, float3 tangent, float3 bitangent, float cosAn
     return globalParams.camPosition + distance * (cosAngle * axis + sinAngle * radial);
 }
 
-float3 DistantVertex(GSLightBVHNode node, uint lane)
+float3 DistantVertex(LightBVHNodeAttributes node, uint lane)
 {
     float3 axis = length(node.coneDirection) > 1e-6f ? normalize(node.coneDirection) : float3(0, 0, 1);
     float3 helper = abs(axis.z) < 0.999f ? float3(0, 0, 1) : float3(0, 1, 0);
@@ -149,11 +142,12 @@ VertexOutput vertMain(uint vertexID : SV_VertexID)
     uint nodeOffset = vertexID / 64u;
     uint lane = vertexID % 64u;
     uint nodeIndex = globalParams.firstLightBVHNode + nodeOffset;
-    GSLightBVHNode node = lightBVHNodes[nodeIndex];
+    GSLightBVHNode packedNode = lightBVHNodes[nodeIndex];
+    LightBVHNodeAttributes node = UnpackLightBVHNode(packedNode);
     bool distant = globalParams.numLightBVHDistantNodes != 0u &&
         nodeIndex >= globalParams.firstLightBVHDistantNode;
-    bool leaf = (node.header & (1u << 31u)) != 0u;
-    bool fullSphere = distant && node.cosConeAngle == -1.0f;
+    bool leaf = LightBVHNodeIsLeaf(packedNode);
+    bool fullSphere = distant && node.cosConeAngle == kLightBVHInvalidCosConeAngle;
 
     float3 position = distant ? DistantVertex(node, lane) : BoxVertex(node, lane);
     float4 color = distant

@@ -2,7 +2,9 @@
 #include <Core/Container.hpp>
 #include <Core/Logging.hpp>
 #include <Math/Math.hpp>
+#include <Math/Quantize.hpp>
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
@@ -39,9 +41,7 @@ struct LightBVHOptions
     bool useLightingCones = true;
 };
 
-#pragma pack(push, 1)
-// TODO Pack/compress should emissive triangles also participate in NEE
-struct GSLightBVHNode
+struct LightBVHNode
 {
     uint32_t header;
     float3 origin;
@@ -50,49 +50,131 @@ struct GSLightBVHNode
     float3 coneDirection;
     float cosConeAngle;
 };
-#pragma pack(pop)
-static_assert(sizeof(GSLightBVHNode) == 48);
 
-inline bool GSLightBVHNodeIsLeaf(GSLightBVHNode const& node)
+struct GSLightBVHNode
+{
+    uint32_t data[8]{};
+};
+static_assert(sizeof(GSLightBVHNode) == 32);
+
+inline bool LightBVHNodeIsLeaf(LightBVHNode const& node)
 {
     return (node.header & kLightBVHLeafBit) != 0u;
 }
 
-inline uint32_t GSLightBVHNodeRightChild(GSLightBVHNode const& node)
+inline uint32_t LightBVHNodeRightChild(LightBVHNode const& node)
 {
     return node.header; // MSB clear for internal nodes
 }
 
-inline uint32_t GSLightBVHNodeLightCount(GSLightBVHNode const& node)
+inline uint32_t LightBVHNodeLightCount(LightBVHNode const& node)
 {
     return (node.header >> kLightBVHLightOffsetBits) & ((1u << kLightBVHLightCountBits) - 1u);
 }
 
-inline uint32_t GSLightBVHNodeLightOffset(GSLightBVHNode const& node)
+inline uint32_t LightBVHNodeLightOffset(LightBVHNode const& node)
 {
     return node.header & ((1u << kLightBVHLightOffsetBits) - 1u);
 }
 
-inline void GSLightBVHNodeSetAABB(GSLightBVHNode& node, float3 const& aabbMin, float3 const& aabbMax)
+inline void LightBVHNodeSetAABB(LightBVHNode& node, float3 const& aabbMin, float3 const& aabbMax)
 {
     node.origin = (aabbMax + aabbMin) * 0.5f;
     node.extent = (aabbMax - aabbMin) * 0.5f;
 }
 
-inline void GSLightBVHNodeGetAABB(GSLightBVHNode const& node, float3& aabbMin, float3& aabbMax)
+inline void LightBVHNodeGetAABB(LightBVHNode const& node, float3& aabbMin, float3& aabbMax)
 {
     aabbMin = node.origin - node.extent;
     aabbMax = node.origin + node.extent;
 }
 
-inline void GSLightBVHNodeSetInternal(GSLightBVHNode& node, uint32_t rightChildIdx)
+inline void LightBVHNodeSetInternal(LightBVHNode& node, uint32_t rightChildIdx)
 {
     node.header = rightChildIdx;
 }
 
-inline void GSLightBVHNodeSetLeaf(GSLightBVHNode& node, uint32_t lightCount, uint32_t lightOffset)
+inline void LightBVHNodeSetLeaf(LightBVHNode& node, uint32_t lightCount, uint32_t lightOffset)
 {
     node.header = kLightBVHLeafBit | (lightCount << kLightBVHLightOffsetBits) | lightOffset;
+}
+
+inline uint16_t PackLightBVHExtent(float extent)
+{
+    extent = std::max(extent, 0.0f);
+    uint16_t packed = quantizeFP16(extent);
+    if (dequantizeFP16(packed) < extent && packed < 0x7c00u)
+        ++packed;
+    return packed;
+}
+
+inline uint32_t PackLightBVHConeDirection(float3 direction)
+{
+    if (length(direction) <= 1e-12f)
+        return 0u;
+    direction /= std::abs(direction.x) + std::abs(direction.y) + std::abs(direction.z);
+    float2 oct = direction.z >= 0.0f
+        ? direction.xy()
+        : (float2(1.0f) - abs(direction.yx())) * sign(direction.xy() + float2(1e-6f));
+    uint32_t x = static_cast<uint16_t>(quantizeSnorm(oct.x, 16));
+    uint32_t y = static_cast<uint16_t>(quantizeSnorm(oct.y, 16));
+    return x | (y << 16u);
+}
+
+inline float3 UnpackLightBVHConeDirection(uint32_t packed)
+{
+    int16_t x = static_cast<int16_t>(packed & 0xffffu);
+    int16_t y = static_cast<int16_t>(packed >> 16u);
+    float2 oct = clamp(float2(static_cast<float>(x), static_cast<float>(y)) * (1.0f / 32767.0f),
+                       float2(-1.0f), float2(1.0f));
+    float3 normal(oct, 1.0f - std::abs(oct.x) - std::abs(oct.y));
+    float2 xy = normal.z >= 1e-6f
+        ? oct
+        : (float2(1.0f) - abs(oct.yx())) * sign(oct + float2(1e-6f));
+    return normalize(float3(xy.x, xy.y, normal.z));
+}
+
+inline GSLightBVHNode PackLightBVHNode(LightBVHNode const& node)
+{
+    GSLightBVHNode packed{};
+    packed.data[0] = node.header;
+    packed.data[1] = std::bit_cast<uint32_t>(node.origin.x);
+    packed.data[2] = std::bit_cast<uint32_t>(node.origin.y);
+    packed.data[3] = std::bit_cast<uint32_t>(node.origin.z);
+    uint32_t extentX = PackLightBVHExtent(node.extent.x);
+    uint32_t extentY = PackLightBVHExtent(node.extent.y);
+    uint32_t extentZ = PackLightBVHExtent(node.extent.z);
+    float angle = std::clamp(node.cosConeAngle, -1.0f, 1.0f);
+    uint32_t packedDirection = PackLightBVHConeDirection(node.coneDirection);
+    if (angle > kLightBVHInvalidCosConeAngle && length(node.coneDirection) > 1e-12f)
+    {
+        float3 decodedDirection = UnpackLightBVHConeDirection(packedDirection);
+        float directionError = std::acos(std::clamp(dot(normalize(node.coneDirection), decodedDirection), -1.0f, 1.0f));
+        float widenedAngle = std::min(std::acos(angle) + directionError, std::numbers::pi_v<float>);
+        angle = widenedAngle < std::numbers::pi_v<float> ? std::cos(widenedAngle)
+                                                         : kLightBVHInvalidCosConeAngle;
+    }
+    uint32_t packedAngle = static_cast<uint32_t>((angle + 1.0f) * 32767.0f);
+    packed.data[4] = extentX | (extentY << 16u);
+    packed.data[5] = extentZ | (packedAngle << 16u);
+    packed.data[6] = packedDirection;
+    packed.data[7] = std::bit_cast<uint32_t>(node.flux);
+    return packed;
+}
+
+inline LightBVHNode UnpackLightBVHNode(GSLightBVHNode const& packed)
+{
+    LightBVHNode node{};
+    node.header = packed.data[0];
+    node.origin = float3(std::bit_cast<float>(packed.data[1]), std::bit_cast<float>(packed.data[2]),
+                         std::bit_cast<float>(packed.data[3]));
+    node.extent = float3(dequantizeFP16(static_cast<uint16_t>(packed.data[4])),
+                         dequantizeFP16(static_cast<uint16_t>(packed.data[4] >> 16u)),
+                         dequantizeFP16(static_cast<uint16_t>(packed.data[5])));
+    node.cosConeAngle = static_cast<float>(packed.data[5] >> 16u) * (1.0f / 32767.0f) - 1.0f;
+    node.coneDirection = UnpackLightBVHConeDirection(packed.data[6]);
+    node.flux = std::bit_cast<float>(packed.data[7]);
+    return node;
 }
 
 using LightBVHRefitLevel = GSOffsetCount;
@@ -111,7 +193,8 @@ struct LightBVHStats
 struct LightBVHBuild
 {
     Allocator* allocator = nullptr;
-    Vector<GSLightBVHNode> nodes;
+    Vector<LightBVHNode> nodes;
+    Vector<GSLightBVHNode> gpuNodes;
     Vector<uint32_t> lightIndices;
     Vector<uint64_t> lightBitmasks;
     Vector<uint32_t> globalLightIndices;
@@ -124,8 +207,8 @@ struct LightBVHBuild
     bool valid = false;
 
     explicit LightBVHBuild(Allocator* alloc) :
-        allocator(alloc), nodes(alloc), lightIndices(alloc), lightBitmasks(alloc), globalLightIndices(alloc),
-        nodeIndices(alloc), refitLevels(alloc)
+        allocator(alloc), nodes(alloc), gpuNodes(alloc), lightIndices(alloc), lightBitmasks(alloc),
+        globalLightIndices(alloc), nodeIndices(alloc), refitLevels(alloc)
     {
     }
 };

@@ -68,12 +68,12 @@ struct LightSortData
 struct BuildingData
 {
     Allocator* alloc;
-    Vector<GSLightBVHNode>& nodes;
+    Vector<LightBVHNode>& nodes;
     Vector<LightSortData> lightsData;
     Vector<uint32_t> lightIndices;
     Vector<uint64_t> lightBitmasks;
 
-    BuildingData(Vector<GSLightBVHNode>& bvhNodes, Allocator* allocator) :
+    BuildingData(Vector<LightBVHNode>& bvhNodes, Allocator* allocator) :
         alloc(allocator), nodes(bvhNodes), lightsData(allocator), lightIndices(allocator), lightBitmasks(allocator)
     {
     }
@@ -180,10 +180,10 @@ float3 computeLightingCone(Range const& lightRange, BuildingData const& data, fl
 
 float3 computeLightingConesInternal(uint32_t nodeIndex, BuildingData& data, float& cosConeAngle)
 {
-    if (!GSLightBVHNodeIsLeaf(data.nodes[nodeIndex]))
+    if (!LightBVHNodeIsLeaf(data.nodes[nodeIndex]))
     {
         uint32_t leftIndex = nodeIndex + 1u;
-        uint32_t rightIndex = GSLightBVHNodeRightChild(data.nodes[nodeIndex]);
+        uint32_t rightIndex = LightBVHNodeRightChild(data.nodes[nodeIndex]);
 
         float leftCos = kLightBVHInvalidCosConeAngle;
         float3 leftDir = computeLightingConesInternal(leftIndex, data, leftCos);
@@ -474,8 +474,8 @@ uint32_t buildInternal(LightBVHOptions const& options, SplitFn splitHeuristic, u
 
         uint32_t nodeIndex = static_cast<uint32_t>(data.nodes.size());
         data.nodes.push_back({});
-        GSLightBVHNode& node = data.nodes.back();
-        GSLightBVHNodeSetAABB(node, nodeBounds.minPoint, nodeBounds.maxPoint);
+        LightBVHNode& node = data.nodes.back();
+        LightBVHNodeSetAABB(node, nodeBounds.minPoint, nodeBounds.maxPoint);
         node.flux = nodeFlux;
         node.coneDirection = float3(0.0f);
         node.cosConeAngle = kLightBVHInvalidCosConeAngle;
@@ -489,15 +489,15 @@ uint32_t buildInternal(LightBVHOptions const& options, SplitFn splitHeuristic, u
             buildInternal(options, splitHeuristic, bitmask | (1ull << depth), depth + 1u,
                           Range{splitResult.lightIndex, lightRange.end}, data);
         CHECK(leftIndex == nodeIndex + 1u);
-        GSLightBVHNodeSetInternal(data.nodes[nodeIndex], rightIndex);
+        LightBVHNodeSetInternal(data.nodes[nodeIndex], rightIndex);
         return nodeIndex;
     }
 
     CHECK(lightRange.length() == 1u);
     uint32_t nodeIndex = static_cast<uint32_t>(data.nodes.size());
     data.nodes.push_back({});
-    GSLightBVHNode& node = data.nodes.back();
-    GSLightBVHNodeSetAABB(node, nodeBounds.minPoint, nodeBounds.maxPoint);
+    LightBVHNode& node = data.nodes.back();
+    LightBVHNodeSetAABB(node, nodeBounds.minPoint, nodeBounds.maxPoint);
     node.flux = nodeFlux;
     float cosTheta = kLightBVHInvalidCosConeAngle;
     node.coneDirection = computeLightingCone(lightRange, data, cosTheta);
@@ -507,7 +507,7 @@ uint32_t buildInternal(LightBVHOptions const& options, SplitFn splitHeuristic, u
     uint32_t lightOffset = static_cast<uint32_t>(data.lightIndices.size());
     CHECK(lightCount < kLightBVHMaxLightsPerLeaf);
     CHECK(lightOffset < kLightBVHMaxLightOffset);
-    GSLightBVHNodeSetLeaf(node, lightCount, lightOffset);
+    LightBVHNodeSetLeaf(node, lightCount, lightOffset);
 
     for (uint32_t i = lightRange.begin; i < lightRange.end; ++i)
     {
@@ -541,7 +541,7 @@ void finalizeNodeIndices(LightBVHBuild& bvh)
             nodeCountPerLevel.resize(depth + 1u, 0u);
         ++nodeCountPerLevel[depth];
 
-        if (GSLightBVHNodeIsLeaf(bvh.nodes[nodeIndex]))
+        if (LightBVHNodeIsLeaf(bvh.nodes[nodeIndex]))
         {
             ++bvh.stats.leafNodeCount;
             bvh.stats.treeHeight = std::max(bvh.stats.treeHeight, depth);
@@ -551,7 +551,7 @@ void finalizeNodeIndices(LightBVHBuild& bvh)
         {
             ++bvh.stats.internalNodeCount;
             stack.push({nodeIndex + 1u, depth + 1u});
-            stack.push({GSLightBVHNodeRightChild(bvh.nodes[nodeIndex]), depth + 1u});
+            stack.push({LightBVHNodeRightChild(bvh.nodes[nodeIndex]), depth + 1u});
         }
     }
     (void)nodeCountPerLevel;
@@ -565,11 +565,11 @@ void finalizeNodeIndices(LightBVHBuild& bvh)
     {
         auto [nodeIndex, depth] = stack.top();
         stack.pop();
-        if (!GSLightBVHNodeIsLeaf(bvh.nodes[nodeIndex]))
+        if (!LightBVHNodeIsLeaf(bvh.nodes[nodeIndex]))
         {
             ++bvh.refitLevels[depth].count;
             stack.push({nodeIndex + 1u, depth + 1u});
-            stack.push({GSLightBVHNodeRightChild(bvh.nodes[nodeIndex]), depth + 1u});
+            stack.push({LightBVHNodeRightChild(bvh.nodes[nodeIndex]), depth + 1u});
         }
     }
 
@@ -586,13 +586,13 @@ void finalizeNodeIndices(LightBVHBuild& bvh)
     {
         auto [nodeIndex, depth] = stack.top();
         stack.pop();
-        if (GSLightBVHNodeIsLeaf(bvh.nodes[nodeIndex]))
+        if (LightBVHNodeIsLeaf(bvh.nodes[nodeIndex]))
             bvh.nodeIndices[perDepthOffset.back()++] = nodeIndex;
         else
         {
             bvh.nodeIndices[perDepthOffset[depth]++] = nodeIndex;
             stack.push({nodeIndex + 1u, depth + 1u});
-            stack.push({GSLightBVHNodeRightChild(bvh.nodes[nodeIndex]), depth + 1u});
+            stack.push({LightBVHNodeRightChild(bvh.nodes[nodeIndex]), depth + 1u});
         }
     }
 }
@@ -703,7 +703,7 @@ LightBVHBuild BuildLightBVH(Span<GSLight const> lights, Span<GSEmissiveCluster c
     data.lightsData.reserve(lights.size() + clusters.size());
     data.lightIndices.reserve(lights.size() + clusters.size());
     data.lightBitmasks = bvh.lightBitmasks;
-    Vector<GSLightBVHNode> distantNodes(alloc);
+    Vector<LightBVHNode> distantNodes(alloc);
     BuildingData distantData(distantNodes, alloc);
     distantData.lightsData.reserve(lights.size());
     distantData.lightIndices.reserve(lights.size());
@@ -790,13 +790,13 @@ LightBVHBuild BuildLightBVH(Span<GSLight const> lights, Span<GSEmissiveCluster c
         uint32_t lightBase = static_cast<uint32_t>(bvh.lightIndices.size());
         bvh.distantRootNode = nodeBase;
         bvh.distantNodeCount = static_cast<uint32_t>(distantNodes.size());
-        for (GSLightBVHNode& node : distantNodes)
+        for (LightBVHNode& node : distantNodes)
         {
-            if (GSLightBVHNodeIsLeaf(node))
-                GSLightBVHNodeSetLeaf(node, GSLightBVHNodeLightCount(node),
-                                      lightBase + GSLightBVHNodeLightOffset(node));
+            if (LightBVHNodeIsLeaf(node))
+                LightBVHNodeSetLeaf(node, LightBVHNodeLightCount(node),
+                                    lightBase + LightBVHNodeLightOffset(node));
             else
-                GSLightBVHNodeSetInternal(node, nodeBase + GSLightBVHNodeRightChild(node));
+                LightBVHNodeSetInternal(node, nodeBase + LightBVHNodeRightChild(node));
             bvh.nodes.push_back(node);
         }
         bvh.lightIndices.insert(bvh.lightIndices.end(), distantData.lightIndices.begin(),
@@ -806,6 +806,9 @@ LightBVHBuild BuildLightBVH(Span<GSLight const> lights, Span<GSEmissiveCluster c
     }
     bvh.stats.byteSize = static_cast<uint32_t>(bvh.nodes.size() * sizeof(GSLightBVHNode));
     bvh.stats.globalLightCount = static_cast<uint32_t>(distantData.lightsData.size());
+    bvh.gpuNodes.reserve(bvh.nodes.size());
+    for (LightBVHNode const& node : bvh.nodes)
+        bvh.gpuNodes.push_back(PackLightBVHNode(node));
     return bvh;
 }
 
@@ -848,6 +851,23 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights,
     if (bvh.finiteLightIndexCount != expectedFinite ||
         bvh.lightIndices.size() != static_cast<size_t>(expectedFinite + expectedDistant))
         return Fail("BVH light membership mismatch");
+    if (bvh.gpuNodes.size() != bvh.nodes.size())
+        return Fail("packed node count mismatch");
+    for (size_t i = 0; i < bvh.nodes.size(); ++i)
+    {
+        LightBVHNode const& source = bvh.nodes[i];
+        LightBVHNode packed = UnpackLightBVHNode(bvh.gpuNodes[i]);
+        if (packed.header != source.header || packed.flux != source.flux)
+            return Fail("packed node metadata mismatch");
+        float3 sourceMin, sourceMax, packedMin, packedMax;
+        LightBVHNodeGetAABB(source, sourceMin, sourceMax);
+        LightBVHNodeGetAABB(packed, packedMin, packedMax);
+        if (any(greaterThan(packedMin, sourceMin)) || any(lessThan(packedMax, sourceMax)))
+            return Fail("packed node bounds are not conservative");
+        if (source.cosConeAngle > kLightBVHInvalidCosConeAngle &&
+            packed.cosConeAngle > source.cosConeAngle + 1e-5f)
+            return Fail("packed node cone is not conservative");
+    }
 
     std::vector<uint8_t> covered(lights.size() + clusters.size(), 0u);
     std::stack<Pair<uint32_t, uint32_t>> stack;
@@ -860,18 +880,18 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights,
         if (nodeIndex >= bvh.nodes.size() || depth > kLightBVHMaxDepth)
             return Fail("node index/depth out of range");
 
-        GSLightBVHNode const& node = bvh.nodes[nodeIndex];
+        LightBVHNode const& node = bvh.nodes[nodeIndex];
         float3 aabbMin, aabbMax;
-        GSLightBVHNodeGetAABB(node, aabbMin, aabbMax);
+        LightBVHNodeGetAABB(node, aabbMin, aabbMax);
         if (!all(lessThanEqual(aabbMin, aabbMax)))
             return Fail("invalid node AABB");
         if (!(node.flux >= 0.0f))
             return Fail("negative node flux");
 
-        if (GSLightBVHNodeIsLeaf(node))
+        if (LightBVHNodeIsLeaf(node))
         {
-            uint32_t count = GSLightBVHNodeLightCount(node);
-            uint32_t offset = GSLightBVHNodeLightOffset(node);
+            uint32_t count = LightBVHNodeLightCount(node);
+            uint32_t offset = LightBVHNodeLightOffset(node);
             if (count == 0 || offset + count > bvh.lightIndices.size())
                 return Fail("leaf light range out of bounds");
 
@@ -907,10 +927,10 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights,
                 uint64_t bits = bvh.lightBitmasks[entitySlot];
                 for (uint32_t d = 0; d < depth; ++d)
                 {
-                    if (GSLightBVHNodeIsLeaf(bvh.nodes[replay]))
+                    if (LightBVHNodeIsLeaf(bvh.nodes[replay]))
                         return Fail("path mask reached leaf early");
                     bool goRight = (bits & 1ull) != 0ull;
-                    replay = goRight ? GSLightBVHNodeRightChild(bvh.nodes[replay]) : replay + 1u;
+                    replay = goRight ? LightBVHNodeRightChild(bvh.nodes[replay]) : replay + 1u;
                     bits >>= 1;
                 }
                 if (replay != nodeIndex)
@@ -926,7 +946,7 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights,
         else
         {
             uint32_t left = nodeIndex + 1u;
-            uint32_t right = GSLightBVHNodeRightChild(node);
+            uint32_t right = LightBVHNodeRightChild(node);
             if (left >= bvh.nodes.size() || right >= bvh.nodes.size() || right <= left)
                 return Fail("invalid internal child indices");
             stack.push({left, depth + 1u});
@@ -956,11 +976,11 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights,
             if (nodeIndex >= bvh.nodes.size() || depth > kLightBVHMaxDepth)
                 return Fail("distant node index/depth out of range");
 
-            GSLightBVHNode const& node = bvh.nodes[nodeIndex];
-            if (GSLightBVHNodeIsLeaf(node))
+            LightBVHNode const& node = bvh.nodes[nodeIndex];
+            if (LightBVHNodeIsLeaf(node))
             {
-                uint32_t count = GSLightBVHNodeLightCount(node);
-                uint32_t offset = GSLightBVHNodeLightOffset(node);
+                uint32_t count = LightBVHNodeLightCount(node);
+                uint32_t offset = LightBVHNodeLightOffset(node);
                 if (count == 0 || offset < bvh.finiteLightIndexCount ||
                     offset + count > bvh.lightIndices.size())
                     return Fail("distant leaf light range out of bounds");
@@ -977,7 +997,7 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights,
                     for (uint32_t d = 0; d < depth; ++d)
                     {
                         bool goRight = (bits & 1ull) != 0ull;
-                        replay = goRight ? GSLightBVHNodeRightChild(bvh.nodes[replay]) : replay + 1u;
+                        replay = goRight ? LightBVHNodeRightChild(bvh.nodes[replay]) : replay + 1u;
                         bits >>= 1;
                     }
                     if (replay != nodeIndex)
@@ -987,7 +1007,7 @@ bool ValidateLightBVH(LightBVHBuild const& bvh, Span<GSLight const> lights,
             else
             {
                 uint32_t left = nodeIndex + 1u;
-                uint32_t right = GSLightBVHNodeRightChild(node);
+                uint32_t right = LightBVHNodeRightChild(node);
                 if (left >= bvh.nodes.size() || right >= bvh.nodes.size() || right <= left)
                     return Fail("invalid distant child indices");
                 stack.push({left, depth + 1u});

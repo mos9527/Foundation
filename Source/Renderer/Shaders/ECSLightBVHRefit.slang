@@ -1,39 +1,5 @@
 #include "ICommon.slang"
-
-static const float kLightBVHInvalidCosConeAngle = -1.0f;
-static const uint kLightBVHLeafBit = 1u << 31;
-static const uint kLightBVHLightCountBits = 4u;
-static const uint kLightBVHLightOffsetBits = 31u - kLightBVHLightCountBits;
-
-struct GSLightBVHNode
-{
-    uint header;
-    float3 origin;
-    float3 extent;
-    float flux;
-    float3 coneDirection;
-    float cosConeAngle;
-};
-
-bool LightBVHNodeIsLeaf(GSLightBVHNode node)
-{
-    return (node.header & kLightBVHLeafBit) != 0u;
-}
-
-uint LightBVHNodeRightChild(GSLightBVHNode node)
-{
-    return node.header;
-}
-
-uint LightBVHNodeLightCount(GSLightBVHNode node)
-{
-    return (node.header >> kLightBVHLightOffsetBits) & ((1u << kLightBVHLightCountBits) - 1u);
-}
-
-uint LightBVHNodeLightOffset(GSLightBVHNode node)
-{
-    return node.header & ((1u << kLightBVHLightOffsetBits) - 1u);
-}
+import ILightBVHNode;
 
 struct PushConstant
 {
@@ -181,14 +147,15 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
         flux += ComputeLightProposalWeight(light);
     }
 
-    node.origin = (aabbMax + aabbMin) * 0.5f;
-    node.extent = (aabbMax - aabbMin) * 0.5f;
-    node.flux = flux;
+    LightBVHNodeAttributes attributes;
+    attributes.origin = (aabbMax + aabbMin) * 0.5f;
+    attributes.extent = (aabbMax - aabbMin) * 0.5f;
+    attributes.flux = flux;
     float coneLen = length(normalsSum);
     if (coneLen >= 1e-8f)
     {
-        node.coneDirection = normalsSum / coneLen;
-        node.cosConeAngle = 1.0f;
+        attributes.coneDirection = normalsSum / coneLen;
+        attributes.cosConeAngle = 1.0f;
         for (uint i = 0; i < count; ++i)
         {
             uint lightIndex = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
@@ -196,14 +163,16 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
             float3 cMin, cMax, coneDir;
             float cosCone;
             ComputeLightBounds(light, cMin, cMax, coneDir, cosCone);
-            node.cosConeAngle = ComputeCosConeAngle(node.coneDirection, node.cosConeAngle, coneDir, cosCone);
+            attributes.cosConeAngle =
+                ComputeCosConeAngle(attributes.coneDirection, attributes.cosConeAngle, coneDir, cosCone);
         }
     }
     else
     {
-        node.coneDirection = float3(0, 0, 0);
-        node.cosConeAngle = kLightBVHInvalidCosConeAngle;
+        attributes.coneDirection = float3(0, 0, 0);
+        attributes.cosConeAngle = kLightBVHInvalidCosConeAngle;
     }
+    PackLightBVHNodeAttributes(node, attributes);
     lightBVHNodes[nodeIndex] = node;
 }
 
@@ -218,8 +187,8 @@ void updateInternalNodes(uint3 DTid : SV_DispatchThreadID)
     GSLightBVHNode node = lightBVHNodes[nodeIndex];
     uint leftIndex = nodeIndex + 1u;
     uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
-    GSLightBVHNode left = lightBVHNodes[leftIndex];
-    GSLightBVHNode right = lightBVHNodes[rightIndex];
+    LightBVHNodeAttributes left = UnpackLightBVHNode(lightBVHNodes[leftIndex]);
+    LightBVHNodeAttributes right = UnpackLightBVHNode(lightBVHNodes[rightIndex]);
 
     float3 leftMin = left.origin - left.extent;
     float3 leftMax = left.origin + left.extent;
@@ -227,11 +196,13 @@ void updateInternalNodes(uint3 DTid : SV_DispatchThreadID)
     float3 rightMax = right.origin + right.extent;
     float3 aabbMin = min(leftMin, rightMin);
     float3 aabbMax = max(leftMax, rightMax);
-    node.origin = (aabbMax + aabbMin) * 0.5f;
-    node.extent = (aabbMax - aabbMin) * 0.5f;
-    node.flux = left.flux + right.flux;
-
-    node.coneDirection =
-        ConeUnion(left.coneDirection, left.cosConeAngle, right.coneDirection, right.cosConeAngle, node.cosConeAngle);
+    LightBVHNodeAttributes attributes;
+    attributes.origin = (aabbMax + aabbMin) * 0.5f;
+    attributes.extent = (aabbMax - aabbMin) * 0.5f;
+    attributes.flux = left.flux + right.flux;
+    attributes.coneDirection = ConeUnion(
+        left.coneDirection, left.cosConeAngle, right.coneDirection, right.cosConeAngle,
+        attributes.cosConeAngle);
+    PackLightBVHNodeAttributes(node, attributes);
     lightBVHNodes[nodeIndex] = node;
 }
