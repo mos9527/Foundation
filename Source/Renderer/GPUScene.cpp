@@ -22,6 +22,7 @@
 static constexpr size_t kUploadBudgetSlack = 1ull * (1ull << 20);
 static constexpr size_t kUploadStagingAlignment = 64ull << 10u;
 static constexpr size_t kUploadStagingBuffers = 1u;
+static constexpr size_t kBLASBuildBatchSize = 32u;
 static constexpr size_t kGPUSceneBufferQueueCapacity = 256u;
 static constexpr uint32_t kGPUSceneDynamicRebuildRate = 60u; // frames
 
@@ -1626,9 +1627,9 @@ bool GPUSceneImpl::UploadBatchBegin()
 {
     CHECK(!mActiveUpload);
     auto state = ConstructUnique<UploadBatchState>(mAllocator, mAllocator);
-    // Acquire all pending uploads
+    // Keep BLAS submits bounded to avoid TDR on large scenes.
     PendingGeometryUpload g;
-    while (mUploadGeometryQueue.Pop(g))
+    while (state->geometry.size() < kBLASBuildBatchSize && mUploadGeometryQueue.Pop(g))
         state->geometry.push_back(g);
     PendingTextureUpload t;
     while (mUploadTextureQueue.Pop(t))
@@ -1758,8 +1759,8 @@ GPUScene::Result GPUSceneImpl::Poll(size_t timeout)
         return Result::Ready;
     }
     std::lock_guard<Mutex> lock(mUploadDriveMutex);
-    if (mActiveUpload)
-        UploadBatchMoveNext(timeout);
+    if (mActiveUpload && UploadBatchMoveNext(timeout))
+        mActiveUpload.reset();
     if (!mActiveUpload)
         UploadBatchBegin();
     return Result::InProgress;
