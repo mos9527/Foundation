@@ -81,11 +81,13 @@ int main(int argc, char** argv)
             FImportedMesh groundMesh = Examples_MakePlaneMesh(kGroundExtent, kGroundY, GLOBAL_ALLOC);
             groundMesh.Optimize();
             groundMesh.ClusterizeDAG();
+            groundMesh.Quantize();
             CHECK(scene.Upload(groundMesh, groundGeometry) == GPUScene::Result::Ready);
 
             FImportedMesh boxMesh = Examples_MakeBoxMesh(1.0f, GLOBAL_ALLOC);
             boxMesh.Optimize();
             boxMesh.ClusterizeDAG();
+            boxMesh.Quantize();
             CHECK(scene.Upload(boxMesh, boxGeometry) == GPUScene::Result::Ready);
             scene.Join();
         }
