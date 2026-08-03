@@ -378,7 +378,7 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
         break;
     case ERendererMode::Raster:
         BuildRasterRenderGraph(renderer, &GEditor.shaderGlobals, gpuResources, GEditor.rendererConfig, outOutputs,
-                               sEditorRasterEffects);
+                               Span<RasterFeature>(sEditorRasterEffects, rasterEffectCount));
         break;
     }
     InsertEditorPostprocessPasses(context, renderer, outOutputs, GEditor.rendererConfig.isRendering);
