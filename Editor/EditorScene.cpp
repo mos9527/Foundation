@@ -466,10 +466,14 @@ static String PrepareScenePayloadFile(StringView path)
     // GLTF import would commit to a file first too.
     // In this way we don't need to have the whole scene allocated in memory
     // explicitly - and works the same way as loading from FSCN.
-    String scenePayloadPath = GContext->application->ResolveRelativePathBase(kTempScenePath);
+    auto& app = *GContext->application;
+    String scenePayloadPath = app.ResolveRelativePathBase(kTempScenePath);
     ReleaseScenePayloadFileForRewrite(scenePayloadPath);
-    if (auto const parent = ParentPath(scenePayloadPath); !parent.empty())
-        GContext->application->CreateDirectory(parent);
+    if (auto info = app.QueryFileInfo(scenePayloadPath); info.has_value() && info.Get().isDirectory)
+        CHECK_MSG(app.RemoveDirectory(scenePayloadPath),
+                  "Failed to remove stale scene cache directory {}", scenePayloadPath);
+    if (String const parent{ParentPath(scenePayloadPath)}; !parent.empty())
+        app.CreateDirectory(parent);
     Allocator* importScratch = GLOBAL_ALLOC;
     MemoryMappedFile sceneFile(scenePayloadPath, 64ull * 1024ull * 1024ull /* grows on demand */);
     FImportedScene writeScene(sceneFile, importScratch);
