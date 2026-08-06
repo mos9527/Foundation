@@ -4,6 +4,11 @@
 #include <Core/JobSystem.hpp>
 #include <Math/Decompose.hpp>
 #include <Math/Quantize.hpp>
+#include <RHICore/Application.hpp>
+#include <RHICore/Device.hpp>
+#include <Renderer/GPUScene.hpp>
+#include <Renderer/Mesh.hpp>
+#include <Renderer/Postprocess.hpp>
 #include <algorithm>
 #include <cctype>
 #include <cgltf.h>
@@ -12,549 +17,542 @@
 #include <lz4.h>
 #include <numeric>
 #include <type_traits>
-#include <RHICore/Application.hpp>
-#include <RHICore/Device.hpp>
-#include <Renderer/Postprocess.hpp>
-#include <Renderer/GPUScene.hpp>
-#include <Renderer/Mesh.hpp>
-#include "Curve.hpp"
 #include "../PathUtil.hpp"
+#include "Curve.hpp"
 
 using namespace EditorPathUtil;
 
 namespace
 {
-String DecodeURI(StringView encoded)
-{
-    String uri(encoded);
-    uri.resize(cgltf_decode_uri(uri.data()));
-    return uri;
-}
-
-bool FileExists(RHIApplication const& app, StringView path)
-{
-    auto info = app.QueryFileInfo(path);
-    return info.has_value() && !info.Get().isDirectory;
-}
-
-FSerializedBounds BuildMeshBounds(FImportedMesh const& mesh)
-{
-    if (mesh.vertices.empty())
-        return {};
-
-    FSerializedBounds bounds = FSerializedBounds::Empty();
-    for (FVertex const& vertex : mesh.vertices)
-        bounds += vertex.position;
-    return bounds;
-}
-
-FSerializedBounds BuildCurveBounds(FImportedCurve const& curve)
-{
-    if (curve.segments.empty())
-        return {};
-
-    FSerializedBounds bounds = FSerializedBounds::Empty();
-    for (FImportedCurveSegment const& segment : curve.segments)
+    String DecodeURI(StringView encoded)
     {
-        bounds += segment.p0 - float3(segment.r0);
-        bounds += segment.p0 + float3(segment.r0);
-        bounds += segment.p1 - float3(segment.r1);
-        bounds += segment.p1 + float3(segment.r1);
-    }
-    return bounds;
-}
-
-const cgltf_accessor* FindCustomAttribute(const cgltf_primitive* prim, char const* name)
-{
-    for (size_t i = 0; i < prim->attributes_count; ++i)
-    {
-        cgltf_attribute const& attr = prim->attributes[i];
-        if (attr.type == cgltf_attribute_type_custom && attr.name && std::strcmp(attr.name, name) == 0)
-            return attr.data;
-    }
-    return nullptr;
-}
-
-bool IsLineCurvePrimitive(const cgltf_primitive* prim)
-{
-    if (!prim)
-        return false;
-    if (prim->type != cgltf_primitive_type_lines && prim->type != cgltf_primitive_type_line_strip &&
-        prim->type != cgltf_primitive_type_line_loop)
-        return false;
-    return FindCustomAttribute(prim, "_RADIUS") != nullptr;
-}
-
-// Volume-compensated DOTS radius scale: 1 / (sin(pi/4) / (pi/4)).
-static constexpr float kDOTSRadiusScale = 1.1107207345f;
-
-FCurveDOTSVertex PackDOTSVertex(float3 const& position)
-{
-    return FCurveDOTSVertex{.position = {quantizeFP16(position.x), quantizeFP16(position.y),
-                                        quantizeFP16(position.z), 0u}};
-}
-
-void EmitDOTSLeaf(FImportedCurveSegment const& segment, Vector<FCurveDOTSVertex>& vertices, Vector<uint32_t>& indices,
-                  Vector<FCurveLeaf>& leaves)
-{
-    float3 axis = segment.p1 - segment.p0;
-    float len2 = dot(axis, axis);
-    if (len2 <= 1e-12f || (segment.r0 <= 0.0f && segment.r1 <= 0.0f))
-        return;
-
-    float3 fwd = axis * (1.0f / std::sqrt(len2));
-    float3 s, t;
-    CoordinateSystem(fwd, s, t);
-    float sr0 = segment.r0 * kDOTSRadiusScale;
-    float sr1 = segment.r1 * kDOTSRadiusScale;
-
-    leaves.push_back(FCurveLeaf{.p0 = segment.p0,
-                                .r0 = segment.r0,
-                                .p1 = segment.p1,
-                                .r1 = segment.r1,
-                                .u0 = segment.u0,
-                                .u1 = segment.u1});
-
-    float3 axes[2] = {s, t};
-    for (float3 const& side : axes)
-    {
-        uint32_t base = static_cast<uint32_t>(vertices.size());
-        vertices.push_back(PackDOTSVertex(segment.p0 + side * sr0));
-        vertices.push_back(PackDOTSVertex(segment.p1 + side * sr1));
-        vertices.push_back(PackDOTSVertex(segment.p1 - side * sr1));
-        vertices.push_back(PackDOTSVertex(segment.p0 - side * sr0));
-        indices.push_back(base + 0);
-        indices.push_back(base + 1);
-        indices.push_back(base + 2);
-        indices.push_back(base + 0);
-        indices.push_back(base + 2);
-        indices.push_back(base + 3);
-    }
-}
-
-StringView Trim(StringView value)
-{
-    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
-        value.remove_prefix(1);
-    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())))
-        value.remove_suffix(1);
-    return value;
-}
-
-bool ParseLUTTuple(StringView tuple, StringView expectedKind,
-                          StringView& outView, StringView& outLook)
-{
-    size_t first = tuple.find(" / ");
-    if (first == StringView::npos)
-        return false;
-    size_t second = tuple.find(" / ", first + 3);
-    if (second == StringView::npos)
-        return false;
-
-    StringView kind = Trim(tuple.substr(0, first));
-    if (kind != expectedKind)
-        return false;
-
-    outView = Trim(tuple.substr(first + 3, second - (first + 3)));
-    outLook = Trim(tuple.substr(second + 3));
-    return !outView.empty() && !outLook.empty();
-}
-
-struct FEnvironmentTextureSource
-{
-    Optional<String> path;
-    cgltf_buffer_view const* bufferView{};
-
-    [[nodiscard]] bool HasValue() const
-    {
-        return path.has_value() || bufferView != nullptr;
-    }
-};
-
-void LoadFoundationColorManagementExtension(cgltf_data const* data, FSceneGlobals& result)
-{
-    if (!data->has_foundation_color_management)
-        return;
-
-    cgltf_foundation_color_management const& colorManagement = data->foundation_color_management;
-    if (colorManagement.has_post_exposure)
-        result.postExposure = colorManagement.post_exposure;
-
-    StringView view;
-    StringView look;
-    if (colorManagement.sdr && ParseLUTTuple(colorManagement.sdr, "SDR", view, look))
-        result.viewLutSdrIndex = Postprocess::MatchViewLUTIndex(Postprocess::ViewLUTDomain::SDR, view, look,
-                                                                Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::SDR));
-    if (colorManagement.hdr && ParseLUTTuple(colorManagement.hdr, "HDR", view, look))
-        result.viewLutHdrIndex = Postprocess::MatchViewLUTIndex(Postprocess::ViewLUTDomain::HDR, view, look,
-                                                                Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::HDR));
-}
-
-FEnvironmentTextureSource LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath,
-                                                            FLight& environmentLight)
-{
-    cgltf_scene const* gltfScene = data->scene ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
-    if (!gltfScene || !gltfScene->has_foundation_environment)
-        return {};
-
-    cgltf_foundation_environment const& environment = gltfScene->foundation_environment;
-    if (environment.type == cgltf_foundation_environment_type_color)
-    {
-        environmentLight = MakeDefaultEnvironmentLight();
-        environmentLight.color = {environment.color[0], environment.color[1], environment.color[2]};
-        environmentLight.power = environment.strength;
-        environmentLight.environmentMap = false;
-        return {};
+        String uri(encoded);
+        uri.resize(cgltf_decode_uri(uri.data()));
+        return uri;
     }
 
-    if (environment.type == cgltf_foundation_environment_type_hdri)
+    bool FileExists(RHIApplication const& app, StringView path)
     {
-        CHECK_MSG(environment.projection == cgltf_foundation_environment_projection_longlat,
-                  "EXT_foundation_environment supports only longlat/equirectangular HDRI projection");
-        CHECK_MSG(environment.uri || environment.buffer_view, "EXT_foundation_environment HDRI requires uri or bufferView");
-
-        environmentLight = MakeDefaultEnvironmentLight();
-        environmentLight.power = environment.strength;
-        environmentLight.environmentMap = true;
-        environmentLight.environmentAzimuthOffset = environment.azimuth_offset;
-        if (environment.buffer_view)
-            return FEnvironmentTextureSource{.bufferView = environment.buffer_view};
-
-        String uri = DecodeURI(environment.uri);
-        return FEnvironmentTextureSource{.path = {JoinPath(ParentPath(scenePath), uri)}};
+        auto info = app.QueryFileInfo(path);
+        return info.has_value() && !info.Get().isDirectory;
     }
 
-    CHECK_MSG(false, "EXT_foundation_environment has unsupported type");
-    return {};
-}
-
-void LoadFoundationMaterialExtension(cgltf_material const* src, FMaterial& material)
-{
-    if (!src->has_foundation_materials)
-        return;
-
-    cgltf_foundation_materials const& foundationMaterials = src->foundation_materials;
-    if (foundationMaterials.has_shader_block)
+    FSerializedBounds BuildMeshBounds(FImportedMesh const& mesh)
     {
-        switch (foundationMaterials.shader_block)
+        if (mesh.vertices.empty())
+            return {};
+
+        FSerializedBounds bounds = FSerializedBounds::Empty();
+        for (FVertex const& vertex : mesh.vertices)
+            bounds += vertex.position;
+        return bounds;
+    }
+
+    FSerializedBounds BuildCurveBounds(FImportedCurve const& curve)
+    {
+        if (curve.segments.empty())
+            return {};
+
+        FSerializedBounds bounds = FSerializedBounds::Empty();
+        for (FImportedCurveSegment const& segment : curve.segments)
         {
-        case cgltf_foundation_material_shader_block_principled:
-            material.shaderBlockID = FMaterialShaderBlock::Principled;
-            break;
-        case cgltf_foundation_material_shader_block_hair:
-            material.shaderBlockID = FMaterialShaderBlock::Hair;
-            break;
-        default:
-            CHECK_MSG(false, "EXT_foundation_materials has unsupported shaderBlock");
-            break;
+            bounds += segment.p0 - float3(segment.r0);
+            bounds += segment.p0 + float3(segment.r0);
+            bounds += segment.p1 - float3(segment.r1);
+            bounds += segment.p1 + float3(segment.r1);
         }
+        return bounds;
     }
 
-    if (material.shaderBlockID == FMaterialShaderBlock::Hair)
+    const cgltf_accessor* FindCustomAttribute(const cgltf_primitive* prim, char const* name)
     {
-        CHECK_MSG(foundationMaterials.hair_model == cgltf_foundation_material_hair_model_chiang,
-                  "EXT_foundation_materials hair supports only model 'chiang'");
-
-        if (foundationMaterials.has_hair_beta_m)
-            material.hairBetaM = foundationMaterials.hair_beta_m;
-        if (foundationMaterials.has_hair_beta_n)
-            material.hairBetaN = foundationMaterials.hair_beta_n;
-        if (foundationMaterials.has_hair_alpha)
-            material.hairAlpha = foundationMaterials.hair_alpha;
-        if (foundationMaterials.has_ior)
-            material.ior = foundationMaterials.ior;
-    }
-}
-
-void ValidateSceneHeader(FSceneHeader const& header)
-{
-    CHECK_MSG(header.magic == kSceneMagic, "Unsupported FSCN magic");
-    CHECK_MSG(header.headerSize == sizeof(FSceneHeader), "Unsupported FScene header size");
-    CHECK_MSG(header.metadataSize <= SIZE_MAX, "FScene metadata too large for this platform");
-    CHECK_MSG(header.payloadAlignment != 0, "FScene payload alignment must be non-zero");
-    CHECK_MSG((header.payloadAlignment & (header.payloadAlignment - 1u)) == 0,
-              "FScene payload alignment must be a power of two");
-    CHECK_MSG(header.payloadOffset >= sizeof(FSceneHeader), "Unsupported FScene payload offset");
-    CHECK_MSG(header.payloadOffset % header.payloadAlignment == 0, "Misaligned FScene payload offset");
-    CHECK_MSG(header.metadataOffset >= header.payloadOffset, "Unsupported FScene metadata offset");
-    CHECK_MSG(header.metadataOffset % 16 == 0, "Misaligned FScene metadata offset");
-    CHECK_MSG(header.metadataOffset <= header.fileSize, "FScene metadata offset exceeds file size");
-    CHECK_MSG(header.metadataSize <= header.fileSize - header.metadataOffset, "FScene metadata exceeds file size");
-    CHECK_MSG(header.version == kSceneVersion, "Unsupported FScene version {}", header.version);
-}
-
-void ValidateBlobRef(FSceneHeader const& header, FBlobRef const& blob, const char* name)
-{
-    CHECK_MSG(blob.codec == FBlobCodec::None || blob.codec == FBlobCodec::LZ4,
-              "{} has unsupported blob codec {}", name, static_cast<uint32_t>(blob.codec));
-    CHECK_MSG(blob.count == 0 || blob.stride != 0, "{} has zero stride with non-zero count", name);
-    CHECK_MSG(blob.decodedSize == uint64_t(blob.count) * blob.stride,
-              "{} decoded size mismatch: {} bytes for {} elements with stride {}",
-              name, blob.decodedSize, blob.count, blob.stride);
-    CHECK_MSG(blob.decodedSize <= SIZE_MAX, "{} is too large for this platform", name);
-    if (blob.decodedSize == 0)
-    {
-        CHECK_MSG(blob.storedSize == 0, "{} stores bytes for an empty blob", name);
-        return;
+        for (size_t i = 0; i < prim->attributes_count; ++i)
+        {
+            cgltf_attribute const& attr = prim->attributes[i];
+            if (attr.type == cgltf_attribute_type_custom && attr.name && std::strcmp(attr.name, name) == 0)
+                return attr.data;
+        }
+        return nullptr;
     }
 
-    CHECK_MSG(blob.storedSize != 0, "{} has no stored bytes", name);
-    switch (blob.codec)
+    bool IsLineCurvePrimitive(const cgltf_primitive* prim)
     {
-    case FBlobCodec::None:
-        CHECK_MSG(blob.storedSize == blob.decodedSize, "{} uncompressed blob size mismatch", name);
-        break;
-    case FBlobCodec::LZ4:
-        CHECK_MSG(blob.storedSize <= blob.decodedSize, "{} compressed blob is larger than decoded data", name);
-        break;
-    default:
-        break;
+        if (!prim)
+            return false;
+        if (prim->type != cgltf_primitive_type_lines && prim->type != cgltf_primitive_type_line_strip &&
+            prim->type != cgltf_primitive_type_line_loop)
+            return false;
+        return FindCustomAttribute(prim, "_RADIUS") != nullptr;
     }
 
-    uint64_t payloadSize = header.metadataOffset - header.payloadOffset;
-    CHECK_MSG(blob.offset <= payloadSize, "{} offset exceeds payload size", name);
-    CHECK_MSG(blob.storedSize <= payloadSize - blob.offset, "{} exceeds payload bounds", name);
-}
+    // Volume-compensated DOTS radius scale: 1 / (sin(pi/4) / (pi/4)).
+    static constexpr float kDOTSRadiusScale = 1.1107207345f;
 
-template <typename T>
-void ValidateBlobArray(FSceneHeader const& header, FBlobRef const& blob, const char* name)
-{
-    static_assert(std::is_trivially_copyable_v<T>);
-    ValidateBlobRef(header, blob, name);
-    CHECK_MSG(blob.stride == sizeof(T), "{} stride mismatch: expected {} got {}", name, sizeof(T), blob.stride);
-    CHECK_MSG(blob.count <= SIZE_MAX / sizeof(T), "{} count is too large for this platform", name);
-}
-
-// Builds a membership set of table ids (non-nil, unique).
-template <typename T>
-HashSet<FUUID> BuildIdSet(Vector<T> const& vec, const char* what)
-{
-    HashSet<FUUID> ids(GLOBAL_ALLOC);
-    ids.reserve(vec.size());
-    for (size_t i = 0; i < vec.size(); ++i)
+    FCurveDOTSVertex PackDOTSVertex(float3 const& position)
     {
-        CHECK_MSG(!vec[i].id.IsNil(), "{}[{}] has a nil id", what, i);
-        CHECK_MSG(ids.insert(vec[i].id).second, "{} has a duplicate id at index {}", what, i);
-    }
-    return ids;
-}
-
-void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
-{
-    CHECK_MSG(tables.cameras.size() <= UINT32_MAX, "FScene camera table is too large");
-    CHECK_MSG(tables.lights.size() <= UINT32_MAX, "FScene light table is too large");
-    CHECK_MSG(tables.instances.size() <= UINT32_MAX, "FScene instance table is too large");
-    CHECK_MSG(tables.materials.size() <= UINT32_MAX, "FScene material table is too large");
-    CHECK_MSG(tables.meshes.size() <= UINT32_MAX, "FScene mesh table is too large");
-    CHECK_MSG(tables.curves.size() <= UINT32_MAX, "FScene curve table is too large");
-    CHECK_MSG(tables.textures.size() <= UINT32_MAX, "FScene texture table is too large");
-    CHECK_MSG(tables.skeletons.size() <= UINT32_MAX, "FScene skeleton table is too large");
-    CHECK_MSG(tables.clips.size() <= UINT32_MAX, "FScene animation clip table is too large");
-
-    // String pool: content-addressed ids (id == hash of value).
-    HashSet<FUUID> stringIds(GLOBAL_ALLOC);
-    stringIds.reserve(tables.strings.size());
-    for (size_t i = 0; i < tables.strings.size(); ++i)
-    {
-        FStringEntry const& e = tables.strings[i];
-        CHECK_MSG(!e.id.IsNil(), "FScene string[{}] has a nil id", i);
-        CHECK_MSG(e.id == FUUID::FromString(e.value),
-                  "FScene string[{}] id is not the content hash of its value", i);
-        CHECK_MSG(stringIds.insert(e.id).second, "FScene string has a duplicate id at index {}", i);
+        return FCurveDOTSVertex{
+            .position = {quantizeFP16(position.x), quantizeFP16(position.y), quantizeFP16(position.z), 0u}};
     }
 
-    HashSet<FUUID> const materialIds = BuildIdSet(tables.materials, "FScene material");
-    HashSet<FUUID> const meshIds = BuildIdSet(tables.meshes, "FScene mesh");
-    HashSet<FUUID> const curveIds = BuildIdSet(tables.curves, "FScene curve");
-    HashSet<FUUID> const textureIds = BuildIdSet(tables.textures, "FScene texture");
-    HashSet<FUUID> const skeletonIds = BuildIdSet(tables.skeletons, "FScene skeleton");
-    BuildIdSet(tables.clips, "FScene animation clip");
-    BuildIdSet(tables.instances, "FScene instance");
-    BuildIdSet(tables.cameras, "FScene camera");
-    BuildIdSet(tables.lights, "FScene light");
-    for (FSkeleton const& skeleton : tables.skeletons)
-        for (uint32_t joint = 0; joint < skeleton.Count(); ++joint)
-            CHECK_MSG(skeleton.joints[joint].parent >= -1 &&
-                          skeleton.joints[joint].parent < static_cast<int32_t>(joint),
-                      "Skeleton joints must be topologically sorted");
-
-    auto requireTexture = [&](FUUID id, const char* what)
+    void EmitDOTSLeaf(FImportedCurveSegment const& segment, Vector<FCurveDOTSVertex>& vertices,
+                      Vector<uint32_t>& indices, Vector<FCurveLeaf>& leaves)
     {
-        if (id.IsNil())
+        float3 axis = segment.p1 - segment.p0;
+        float len2 = dot(axis, axis);
+        if (len2 <= 1e-12f || (segment.r0 <= 0.0f && segment.r1 <= 0.0f))
             return;
-        CHECK_MSG(textureIds.contains(id), "{} references unknown texture id", what);
+
+        float3 fwd = axis * (1.0f / std::sqrt(len2));
+        float3 s, t;
+        CoordinateSystem(fwd, s, t);
+        float sr0 = segment.r0 * kDOTSRadiusScale;
+        float sr1 = segment.r1 * kDOTSRadiusScale;
+
+        leaves.push_back(FCurveLeaf{.p0 = segment.p0,
+                                    .r0 = segment.r0,
+                                    .p1 = segment.p1,
+                                    .r1 = segment.r1,
+                                    .u0 = segment.u0,
+                                    .u1 = segment.u1});
+
+        float3 axes[2] = {s, t};
+        for (float3 const& side : axes)
+        {
+            uint32_t base = static_cast<uint32_t>(vertices.size());
+            vertices.push_back(PackDOTSVertex(segment.p0 + side * sr0));
+            vertices.push_back(PackDOTSVertex(segment.p1 + side * sr1));
+            vertices.push_back(PackDOTSVertex(segment.p1 - side * sr1));
+            vertices.push_back(PackDOTSVertex(segment.p0 - side * sr0));
+            indices.push_back(base + 0);
+            indices.push_back(base + 1);
+            indices.push_back(base + 2);
+            indices.push_back(base + 0);
+            indices.push_back(base + 2);
+            indices.push_back(base + 3);
+        }
+    }
+
+    StringView Trim(StringView value)
+    {
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
+            value.remove_prefix(1);
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())))
+            value.remove_suffix(1);
+        return value;
+    }
+
+    bool ParseLUTTuple(StringView tuple, StringView expectedKind, StringView& outView, StringView& outLook)
+    {
+        size_t first = tuple.find(" / ");
+        if (first == StringView::npos)
+            return false;
+        size_t second = tuple.find(" / ", first + 3);
+        if (second == StringView::npos)
+            return false;
+
+        StringView kind = Trim(tuple.substr(0, first));
+        if (kind != expectedKind)
+            return false;
+
+        outView = Trim(tuple.substr(first + 3, second - (first + 3)));
+        outLook = Trim(tuple.substr(second + 3));
+        return !outView.empty() && !outLook.empty();
+    }
+
+    struct FEnvironmentTextureSource
+    {
+        Optional<String> path;
+        cgltf_buffer_view const* bufferView{};
+
+        [[nodiscard]] bool HasValue() const { return path.has_value() || bufferView != nullptr; }
     };
-    auto requireMaterial = [&](FUUID id, const char* what)
-    {
-        CHECK_MSG(materialIds.contains(id), "{} references unknown material id", what);
-    };
 
-    size_t environmentLightCount = 0;
-    for (auto const& light : tables.lights)
+    void LoadFoundationColorManagementExtension(cgltf_data const* data, FSceneGlobals& result)
     {
-        switch (light.type)
+        if (!data->has_foundation_color_management)
+            return;
+
+        cgltf_foundation_color_management const& colorManagement = data->foundation_color_management;
+        if (colorManagement.has_post_exposure)
+            result.postExposure = colorManagement.post_exposure;
+
+        StringView view;
+        StringView look;
+        if (colorManagement.sdr && ParseLUTTuple(colorManagement.sdr, "SDR", view, look))
+            result.viewLutSdrIndex =
+                Postprocess::MatchViewLUTIndex(Postprocess::ViewLUTDomain::SDR, view, look,
+                                               Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::SDR));
+        if (colorManagement.hdr && ParseLUTTuple(colorManagement.hdr, "HDR", view, look))
+            result.viewLutHdrIndex =
+                Postprocess::MatchViewLUTIndex(Postprocess::ViewLUTDomain::HDR, view, look,
+                                               Postprocess::GetDefaultViewLUTIndex(Postprocess::ViewLUTDomain::HDR));
+    }
+
+    FEnvironmentTextureSource LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath,
+                                                                 FLight& environmentLight)
+    {
+        cgltf_scene const* gltfScene =
+            data->scene ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
+        if (!gltfScene || !gltfScene->has_foundation_environment)
+            return {};
+
+        cgltf_foundation_environment const& environment = gltfScene->foundation_environment;
+        if (environment.type == cgltf_foundation_environment_type_color)
         {
-        case FLightType::Directional:
-        case FLightType::Point:
-        case FLightType::Spot:
-        case FLightType::Disk:
-        case FLightType::Rect:
-            break;
-        case FLightType::Environment:
-            environmentLightCount++;
-            if (light.environmentMap)
+            environmentLight = MakeDefaultEnvironmentLight();
+            environmentLight.color = {environment.color[0], environment.color[1], environment.color[2]};
+            environmentLight.power = environment.strength;
+            environmentLight.environmentMap = false;
+            return {};
+        }
+
+        if (environment.type == cgltf_foundation_environment_type_hdri)
+        {
+            CHECK_MSG(environment.projection == cgltf_foundation_environment_projection_longlat,
+                      "EXT_foundation_environment supports only longlat/equirectangular HDRI projection");
+            CHECK_MSG(environment.uri || environment.buffer_view,
+                      "EXT_foundation_environment HDRI requires uri or bufferView");
+
+            environmentLight = MakeDefaultEnvironmentLight();
+            environmentLight.power = environment.strength;
+            environmentLight.environmentMap = true;
+            environmentLight.environmentAzimuthOffset = environment.azimuth_offset;
+            if (environment.buffer_view)
+                return FEnvironmentTextureSource{.bufferView = environment.buffer_view};
+
+            String uri = DecodeURI(environment.uri);
+            return FEnvironmentTextureSource{.path = {JoinPath(ParentPath(scenePath), uri)}};
+        }
+
+        CHECK_MSG(false, "EXT_foundation_environment has unsupported type");
+        return {};
+    }
+
+    void LoadFoundationMaterialExtension(cgltf_material const* src, FMaterial& material)
+    {
+        if (!src->has_foundation_materials)
+            return;
+
+        cgltf_foundation_materials const& foundationMaterials = src->foundation_materials;
+        if (foundationMaterials.has_shader_block)
+        {
+            switch (foundationMaterials.shader_block)
             {
-                CHECK_MSG(!light.environmentTexture.IsNil(),
-                          "FScene EnvMap environment light requires environmentTexture");
-                requireTexture(light.environmentTexture, "light.environmentTexture");
-            }
-            break;
-        default:
-            CHECK_MSG(false, "FScene light has unsupported type {}", static_cast<uint32_t>(light.type));
-            break;
-        }
-    }
-    CHECK_MSG(environmentLightCount == 1, "FScene must have exactly one environment light, got {}",
-              environmentLightCount);
-    CHECK_MSG(!tables.lights.empty() && tables.lights.front().type == FLightType::Environment,
-              "FScene environment light must be the first light");
-
-    for (auto const& material : tables.materials)
-    {
-        switch (material.shaderBlockID)
-        {
-        case FMaterialShaderBlock::Principled:
-        case FMaterialShaderBlock::Hair:
-            break;
-        default:
-            CHECK_MSG(false, "FScene material has unsupported shader block {}",
-                      static_cast<uint32_t>(material.shaderBlockID));
-            break;
-        }
-        requireTexture(material.baseColorTexture, "material.baseColorTexture");
-        requireTexture(material.emissiveTexture, "material.emissiveTexture");
-        requireTexture(material.metallicRoughnessTexture, "material.metallicRoughnessTexture");
-        requireTexture(material.normalTexture, "material.normalTexture");
-        requireTexture(material.transmissionTexture, "material.transmissionTexture");
-        requireTexture(material.specularTexture, "material.specularTexture");
-        requireTexture(material.specularColorTexture, "material.specularColorTexture");
-        requireTexture(material.anisotropyTexture, "material.anisotropyTexture");
-        requireTexture(material.clearcoatTexture, "material.clearcoatTexture");
-        requireTexture(material.clearcoatRoughnessTexture, "material.clearcoatRoughnessTexture");
-    }
-
-    for (auto const& instance : tables.instances)
-    {
-        requireMaterial(instance.material, "FScene instance material");
-        switch (instance.type)
-        {
-        case FInstanceType::Mesh:
-            CHECK_MSG(meshIds.contains(instance.resource), "FScene instance references unknown mesh id");
-            break;
-        case FInstanceType::Curve:
-            CHECK_MSG(curveIds.contains(instance.resource), "FScene instance references unknown curve id");
-            break;
-        default:
-            CHECK_MSG(false, "FScene instance has unsupported type {}", static_cast<uint32_t>(instance.type));
-            break;
-        }
-    }
-
-    for (auto const& mesh : tables.meshes)
-    {
-        CHECK_MSG(!mesh.lods.empty(), "FScene mesh has no LODs");
-        ValidateBlobArray<FQVertex>(header, mesh.vertices, "mesh.vertices");
-        CHECK_MSG(mesh.vertexCount == mesh.vertices.count, "FScene mesh vertex count mismatch");
-        for (auto const& lod : mesh.lods)
-        {
-            ValidateBlobArray<uint32_t>(header, lod.indices, "mesh.lod.indices");
-            CHECK_MSG(lod.indexCount == lod.indices.count, "FScene mesh LOD index count mismatch");
-            CHECK_MSG(lod.indexCount % 3 == 0, "FScene mesh LOD index count must be triangle-aligned");
-        }
-        ValidateBlobArray<FLODGroup>(header, mesh.dagGroups, "mesh.dagGroups");
-        ValidateBlobArray<FMeshlet>(header, mesh.dagMeshlets, "mesh.dagMeshlets");
-        ValidateBlobArray<uint8_t>(header, mesh.dagMeshletTri, "mesh.dagMeshletTri");
-        ValidateBlobArray<uint32_t>(header, mesh.dagMeshletVtx, "mesh.dagMeshletVtx");
-        ValidateBlobArray<FEmissiveMeshlet>(header, mesh.emissiveMeshlets, "mesh.emissiveMeshlets");
-        ValidateBlobArray<GSAlias>(header, mesh.emissiveAliases, "mesh.emissiveAliases");
-        ValidateBlobArray<uint32_t>(header, mesh.emissivePrimitiveMap, "mesh.emissivePrimitiveMap");
-        CHECK_MSG(mesh.emissiveMeshlets.count == 0u
-                      ? mesh.emissivePrimitiveMap.count == 0u
-                      : (!mesh.lods.empty() && mesh.emissivePrimitiveMap.count == mesh.lods[0].indexCount / 3u),
-                  "FScene emissive primitive map does not match emissive meshlets");
-        if (mesh.skeleton.IsNil())
-        {
-            CHECK_MSG(mesh.skinBinding.decodedSize == 0 && mesh.skinBinding.count == 0,
-                      "Rigid mesh must not carry skin bindings");
-        }
-        else
-        {
-            CHECK_MSG(skeletonIds.contains(mesh.skeleton), "Skinned mesh references unknown skeleton id");
-            ValidateBlobArray<FSkinBinding>(header, mesh.skinBinding, "mesh.skinBinding");
-            CHECK_MSG(mesh.skinBinding.count == mesh.vertexCount, "Skinned mesh binding count mismatch");
-        }
-    }
-
-    for (auto const& clip : tables.clips)
-    {
-        CHECK_MSG(skeletonIds.contains(clip.skeleton), "Animation clip references unknown skeleton id");
-        CHECK_MSG(clip.duration >= 0.0f, "Animation clip has a negative duration");
-        auto skeleton = std::find_if(tables.skeletons.begin(), tables.skeletons.end(),
-                                     [&](FSkeleton const& value) { return value.id == clip.skeleton; });
-        CHECK(skeleton != tables.skeletons.end());
-        for (FAnimChannel const& channel : clip.channels)
-        {
-            CHECK_MSG(channel.joint < skeleton->Count(), "Animation channel references an invalid joint");
-            uint32_t components = channel.path == FAnimPath::Rotation ? 4u : 3u;
-            uint32_t multiplier = channel.interp == FAnimInterp::CubicSpline ? 3u : 1u;
-            CHECK_MSG(channel.values.size() == channel.times.size() * components * multiplier,
-                      "Animation channel key/value count mismatch");
-            CHECK_MSG(std::is_sorted(channel.times.begin(), channel.times.end()),
-                      "Animation channel times must be sorted");
-        }
-    }
-
-    for (auto const& curve : tables.curves)
-    {
-        ValidateBlobArray<FCurveDOTSVertex>(header, curve.vertices, "curve.vertices");
-        ValidateBlobArray<uint32_t>(header, curve.indices, "curve.indices");
-        ValidateBlobArray<FCurveLeaf>(header, curve.leaves, "curve.leaves");
-        CHECK_MSG(curve.indices.count % 3 == 0, "FScene curve index count must be a multiple of 3");
-        CHECK_MSG(curve.indices.count == curve.leaves.count * 12,
-                  "FScene curve DOTS index/leaf count mismatch: {} indices for {} leaves", curve.indices.count,
-                  curve.leaves.count);
-    }
-
-    for (auto const& texture : tables.textures)
-    {
-        if (!static_cast<FTextureHeader const&>(texture).IsValid())
-        {
-            CHECK_MSG(texture.subresources.empty(), "Invalid FScene texture must not carry subresource blobs");
-            continue;
-        }
-
-        CHECK_MSG(texture.subresources.size() == texture.GetSubresourceCount(),
-                  "FScene texture subresource count mismatch: {} blobs for {} expected subresources",
-                  texture.subresources.size(), texture.GetSubresourceCount());
-        for (uint32_t layer = 0; layer < texture.GetNumLayers(); ++layer)
-        {
-            for (uint32_t mip = 0; mip < texture.GetNumMips(); ++mip)
-            {
-                FBlobRef const& blob = texture.GetSubresourceBlob(layer, mip);
-                ValidateBlobArray<unsigned char>(header, blob, "texture.subresources");
-                size_t const expectedSize = texture.GetSubresourceSize(layer, mip);
-                CHECK_MSG(blob.decodedSize == expectedSize,
-                          "FScene texture subresource blob size mismatch: layer {}, mip {}, blob {}, expected {}",
-                          layer, mip, blob.decodedSize, expectedSize);
+            case cgltf_foundation_material_shader_block_principled:
+                material.shaderBlockID = FMaterialShaderBlock::Principled;
+                break;
+            case cgltf_foundation_material_shader_block_hair:
+                material.shaderBlockID = FMaterialShaderBlock::Hair;
+                break;
+            default:
+                CHECK_MSG(false, "EXT_foundation_materials has unsupported shaderBlock");
+                break;
             }
         }
+
+        if (material.shaderBlockID == FMaterialShaderBlock::Hair)
+        {
+            CHECK_MSG(foundationMaterials.hair_model == cgltf_foundation_material_hair_model_chiang,
+                      "EXT_foundation_materials hair supports only model 'chiang'");
+
+            if (foundationMaterials.has_hair_beta_m)
+                material.hairBetaM = foundationMaterials.hair_beta_m;
+            if (foundationMaterials.has_hair_beta_n)
+                material.hairBetaN = foundationMaterials.hair_beta_n;
+            if (foundationMaterials.has_hair_alpha)
+                material.hairAlpha = foundationMaterials.hair_alpha;
+            if (foundationMaterials.has_ior)
+                material.ior = foundationMaterials.ior;
+        }
     }
-}
-}
+
+    void ValidateSceneHeader(FSceneHeader const& header)
+    {
+        CHECK_MSG(header.magic == kSceneMagic, "Unsupported FSCN magic");
+        CHECK_MSG(header.headerSize == sizeof(FSceneHeader), "Unsupported FScene header size");
+        CHECK_MSG(header.metadataSize <= SIZE_MAX, "FScene metadata too large for this platform");
+        CHECK_MSG(header.payloadAlignment != 0, "FScene payload alignment must be non-zero");
+        CHECK_MSG((header.payloadAlignment & (header.payloadAlignment - 1u)) == 0,
+                  "FScene payload alignment must be a power of two");
+        CHECK_MSG(header.payloadOffset >= sizeof(FSceneHeader), "Unsupported FScene payload offset");
+        CHECK_MSG(header.payloadOffset % header.payloadAlignment == 0, "Misaligned FScene payload offset");
+        CHECK_MSG(header.metadataOffset >= header.payloadOffset, "Unsupported FScene metadata offset");
+        CHECK_MSG(header.metadataOffset % 16 == 0, "Misaligned FScene metadata offset");
+        CHECK_MSG(header.metadataOffset <= header.fileSize, "FScene metadata offset exceeds file size");
+        CHECK_MSG(header.metadataSize <= header.fileSize - header.metadataOffset, "FScene metadata exceeds file size");
+        CHECK_MSG(header.version == kSceneVersion, "Unsupported FScene version {}", header.version);
+    }
+
+    void ValidateBlobRef(FSceneHeader const& header, FBlobRef const& blob, const char* name)
+    {
+        CHECK_MSG(blob.codec == FBlobCodec::None || blob.codec == FBlobCodec::LZ4, "{} has unsupported blob codec {}",
+                  name, static_cast<uint32_t>(blob.codec));
+        CHECK_MSG(blob.count == 0 || blob.stride != 0, "{} has zero stride with non-zero count", name);
+        CHECK_MSG(blob.decodedSize == uint64_t(blob.count) * blob.stride,
+                  "{} decoded size mismatch: {} bytes for {} elements with stride {}", name, blob.decodedSize,
+                  blob.count, blob.stride);
+        CHECK_MSG(blob.decodedSize <= SIZE_MAX, "{} is too large for this platform", name);
+        if (blob.decodedSize == 0)
+        {
+            CHECK_MSG(blob.storedSize == 0, "{} stores bytes for an empty blob", name);
+            return;
+        }
+
+        CHECK_MSG(blob.storedSize != 0, "{} has no stored bytes", name);
+        switch (blob.codec)
+        {
+        case FBlobCodec::None:
+            CHECK_MSG(blob.storedSize == blob.decodedSize, "{} uncompressed blob size mismatch", name);
+            break;
+        case FBlobCodec::LZ4:
+            CHECK_MSG(blob.storedSize <= blob.decodedSize, "{} compressed blob is larger than decoded data", name);
+            break;
+        default:
+            break;
+        }
+
+        uint64_t payloadSize = header.metadataOffset - header.payloadOffset;
+        CHECK_MSG(blob.offset <= payloadSize, "{} offset exceeds payload size", name);
+        CHECK_MSG(blob.storedSize <= payloadSize - blob.offset, "{} exceeds payload bounds", name);
+    }
+
+    template <typename T>
+    void ValidateBlobArray(FSceneHeader const& header, FBlobRef const& blob, const char* name)
+    {
+        static_assert(std::is_trivially_copyable_v<T>);
+        ValidateBlobRef(header, blob, name);
+        CHECK_MSG(blob.stride == sizeof(T), "{} stride mismatch: expected {} got {}", name, sizeof(T), blob.stride);
+        CHECK_MSG(blob.count <= SIZE_MAX / sizeof(T), "{} count is too large for this platform", name);
+    }
+
+    // Builds a membership set of table ids (non-nil, unique).
+    template <typename T>
+    HashSet<FUUID> BuildIdSet(Vector<T> const& vec, const char* what)
+    {
+        HashSet<FUUID> ids(GLOBAL_ALLOC);
+        ids.reserve(vec.size());
+        for (size_t i = 0; i < vec.size(); ++i)
+        {
+            CHECK_MSG(!vec[i].id.IsNil(), "{}[{}] has a nil id", what, i);
+            CHECK_MSG(ids.insert(vec[i].id).second, "{} has a duplicate id at index {}", what, i);
+        }
+        return ids;
+    }
+
+    void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
+    {
+        CHECK_MSG(tables.cameras.size() <= UINT32_MAX, "FScene camera table is too large");
+        CHECK_MSG(tables.lights.size() <= UINT32_MAX, "FScene light table is too large");
+        CHECK_MSG(tables.instances.size() <= UINT32_MAX, "FScene instance table is too large");
+        CHECK_MSG(tables.materials.size() <= UINT32_MAX, "FScene material table is too large");
+        CHECK_MSG(tables.meshes.size() <= UINT32_MAX, "FScene mesh table is too large");
+        CHECK_MSG(tables.curves.size() <= UINT32_MAX, "FScene curve table is too large");
+        CHECK_MSG(tables.textures.size() <= UINT32_MAX, "FScene texture table is too large");
+        CHECK_MSG(tables.skeletons.size() <= UINT32_MAX, "FScene skeleton table is too large");
+        CHECK_MSG(tables.clips.size() <= UINT32_MAX, "FScene animation clip table is too large");
+
+        // String pool: content-addressed ids (id == hash of value).
+        HashSet<FUUID> stringIds(GLOBAL_ALLOC);
+        stringIds.reserve(tables.strings.size());
+        for (size_t i = 0; i < tables.strings.size(); ++i)
+        {
+            FStringEntry const& e = tables.strings[i];
+            CHECK_MSG(!e.id.IsNil(), "FScene string[{}] has a nil id", i);
+            CHECK_MSG(e.id == FUUID::FromString(e.value), "FScene string[{}] id is not the content hash of its value",
+                      i);
+            CHECK_MSG(stringIds.insert(e.id).second, "FScene string has a duplicate id at index {}", i);
+        }
+
+        HashSet<FUUID> const materialIds = BuildIdSet(tables.materials, "FScene material");
+        HashSet<FUUID> const meshIds = BuildIdSet(tables.meshes, "FScene mesh");
+        HashSet<FUUID> const curveIds = BuildIdSet(tables.curves, "FScene curve");
+        HashSet<FUUID> const textureIds = BuildIdSet(tables.textures, "FScene texture");
+        HashSet<FUUID> const skeletonIds = BuildIdSet(tables.skeletons, "FScene skeleton");
+        BuildIdSet(tables.clips, "FScene animation clip");
+        BuildIdSet(tables.instances, "FScene instance");
+        BuildIdSet(tables.cameras, "FScene camera");
+        BuildIdSet(tables.lights, "FScene light");
+        for (FSkeleton const& skeleton : tables.skeletons)
+            for (uint32_t joint = 0; joint < skeleton.Count(); ++joint)
+                CHECK_MSG(skeleton.joints[joint].parent >= -1 &&
+                              skeleton.joints[joint].parent < static_cast<int32_t>(joint),
+                          "Skeleton joints must be topologically sorted");
+
+        auto requireTexture = [&](FUUID id, const char* what)
+        {
+            if (id.IsNil())
+                return;
+            CHECK_MSG(textureIds.contains(id), "{} references unknown texture id", what);
+        };
+        auto requireMaterial = [&](FUUID id, const char* what)
+        { CHECK_MSG(materialIds.contains(id), "{} references unknown material id", what); };
+
+        size_t environmentLightCount = 0;
+        for (auto const& light : tables.lights)
+        {
+            switch (light.type)
+            {
+            case FLightType::Directional:
+            case FLightType::Point:
+            case FLightType::Spot:
+            case FLightType::Disk:
+            case FLightType::Rect:
+                break;
+            case FLightType::Environment:
+                environmentLightCount++;
+                if (light.environmentMap)
+                {
+                    CHECK_MSG(!light.environmentTexture.IsNil(),
+                              "FScene EnvMap environment light requires environmentTexture");
+                    requireTexture(light.environmentTexture, "light.environmentTexture");
+                }
+                break;
+            default:
+                CHECK_MSG(false, "FScene light has unsupported type {}", static_cast<uint32_t>(light.type));
+                break;
+            }
+        }
+        CHECK_MSG(environmentLightCount == 1, "FScene must have exactly one environment light, got {}",
+                  environmentLightCount);
+        CHECK_MSG(!tables.lights.empty() && tables.lights.front().type == FLightType::Environment,
+                  "FScene environment light must be the first light");
+
+        for (auto const& material : tables.materials)
+        {
+            switch (material.shaderBlockID)
+            {
+            case FMaterialShaderBlock::Principled:
+            case FMaterialShaderBlock::Hair:
+                break;
+            default:
+                CHECK_MSG(false, "FScene material has unsupported shader block {}",
+                          static_cast<uint32_t>(material.shaderBlockID));
+                break;
+            }
+            requireTexture(material.baseColorTexture, "material.baseColorTexture");
+            requireTexture(material.emissiveTexture, "material.emissiveTexture");
+            requireTexture(material.metallicRoughnessTexture, "material.metallicRoughnessTexture");
+            requireTexture(material.normalTexture, "material.normalTexture");
+            requireTexture(material.transmissionTexture, "material.transmissionTexture");
+            requireTexture(material.specularTexture, "material.specularTexture");
+            requireTexture(material.specularColorTexture, "material.specularColorTexture");
+            requireTexture(material.anisotropyTexture, "material.anisotropyTexture");
+            requireTexture(material.clearcoatTexture, "material.clearcoatTexture");
+            requireTexture(material.clearcoatRoughnessTexture, "material.clearcoatRoughnessTexture");
+        }
+
+        for (auto const& instance : tables.instances)
+        {
+            requireMaterial(instance.material, "FScene instance material");
+            switch (instance.type)
+            {
+            case FInstanceType::Mesh:
+                CHECK_MSG(meshIds.contains(instance.resource), "FScene instance references unknown mesh id");
+                break;
+            case FInstanceType::Curve:
+                CHECK_MSG(curveIds.contains(instance.resource), "FScene instance references unknown curve id");
+                break;
+            default:
+                CHECK_MSG(false, "FScene instance has unsupported type {}", static_cast<uint32_t>(instance.type));
+                break;
+            }
+        }
+
+        for (auto const& mesh : tables.meshes)
+        {
+            CHECK_MSG(!mesh.lods.empty(), "FScene mesh has no LODs");
+            ValidateBlobArray<FQVertex>(header, mesh.vertices, "mesh.vertices");
+            CHECK_MSG(mesh.vertexCount == mesh.vertices.count, "FScene mesh vertex count mismatch");
+            for (auto const& lod : mesh.lods)
+            {
+                ValidateBlobArray<uint32_t>(header, lod.indices, "mesh.lod.indices");
+                CHECK_MSG(lod.indexCount == lod.indices.count, "FScene mesh LOD index count mismatch");
+                CHECK_MSG(lod.indexCount % 3 == 0, "FScene mesh LOD index count must be triangle-aligned");
+            }
+            ValidateBlobArray<FLODGroup>(header, mesh.dagGroups, "mesh.dagGroups");
+            ValidateBlobArray<FMeshlet>(header, mesh.dagMeshlets, "mesh.dagMeshlets");
+            ValidateBlobArray<uint8_t>(header, mesh.dagMeshletTri, "mesh.dagMeshletTri");
+            ValidateBlobArray<uint32_t>(header, mesh.dagMeshletVtx, "mesh.dagMeshletVtx");
+            ValidateBlobArray<FEmissiveMeshlet>(header, mesh.emissiveMeshlets, "mesh.emissiveMeshlets");
+            ValidateBlobArray<GSAlias>(header, mesh.emissiveAliases, "mesh.emissiveAliases");
+            ValidateBlobArray<uint32_t>(header, mesh.emissivePrimitiveMap, "mesh.emissivePrimitiveMap");
+            CHECK_MSG(mesh.emissiveMeshlets.count == 0u
+                          ? mesh.emissivePrimitiveMap.count == 0u
+                          : (!mesh.lods.empty() && mesh.emissivePrimitiveMap.count == mesh.lods[0].indexCount / 3u),
+                      "FScene emissive primitive map does not match emissive meshlets");
+            if (mesh.skeleton.IsNil())
+            {
+                CHECK_MSG(mesh.skinBinding.decodedSize == 0 && mesh.skinBinding.count == 0,
+                          "Rigid mesh must not carry skin bindings");
+            }
+            else
+            {
+                CHECK_MSG(skeletonIds.contains(mesh.skeleton), "Skinned mesh references unknown skeleton id");
+                ValidateBlobArray<FSkinBinding>(header, mesh.skinBinding, "mesh.skinBinding");
+                CHECK_MSG(mesh.skinBinding.count == mesh.vertexCount, "Skinned mesh binding count mismatch");
+            }
+        }
+
+        for (auto const& clip : tables.clips)
+        {
+            CHECK_MSG(skeletonIds.contains(clip.skeleton), "Animation clip references unknown skeleton id");
+            CHECK_MSG(clip.duration >= 0.0f, "Animation clip has a negative duration");
+            auto skeleton = std::find_if(tables.skeletons.begin(), tables.skeletons.end(),
+                                         [&](FSkeleton const& value) { return value.id == clip.skeleton; });
+            CHECK(skeleton != tables.skeletons.end());
+            for (FAnimChannel const& channel : clip.channels)
+            {
+                CHECK_MSG(channel.joint < skeleton->Count(), "Animation channel references an invalid joint");
+                uint32_t components = channel.path == FAnimPath::Rotation ? 4u : 3u;
+                uint32_t multiplier = channel.interp == FAnimInterp::CubicSpline ? 3u : 1u;
+                CHECK_MSG(channel.values.size() == channel.times.size() * components * multiplier,
+                          "Animation channel key/value count mismatch");
+                CHECK_MSG(std::is_sorted(channel.times.begin(), channel.times.end()),
+                          "Animation channel times must be sorted");
+            }
+        }
+
+        for (auto const& curve : tables.curves)
+        {
+            ValidateBlobArray<FCurveDOTSVertex>(header, curve.vertices, "curve.vertices");
+            ValidateBlobArray<uint32_t>(header, curve.indices, "curve.indices");
+            ValidateBlobArray<FCurveLeaf>(header, curve.leaves, "curve.leaves");
+            CHECK_MSG(curve.indices.count % 3 == 0, "FScene curve index count must be a multiple of 3");
+            CHECK_MSG(curve.indices.count == curve.leaves.count * 12,
+                      "FScene curve DOTS index/leaf count mismatch: {} indices for {} leaves", curve.indices.count,
+                      curve.leaves.count);
+        }
+
+        for (auto const& texture : tables.textures)
+        {
+            if (!static_cast<FTextureHeader const&>(texture).IsValid())
+            {
+                CHECK_MSG(texture.subresources.empty(), "Invalid FScene texture must not carry subresource blobs");
+                continue;
+            }
+
+            CHECK_MSG(texture.subresources.size() == texture.GetSubresourceCount(),
+                      "FScene texture subresource count mismatch: {} blobs for {} expected subresources",
+                      texture.subresources.size(), texture.GetSubresourceCount());
+            for (uint32_t layer = 0; layer < texture.GetNumLayers(); ++layer)
+            {
+                for (uint32_t mip = 0; mip < texture.GetNumMips(); ++mip)
+                {
+                    FBlobRef const& blob = texture.GetSubresourceBlob(layer, mip);
+                    ValidateBlobArray<unsigned char>(header, blob, "texture.subresources");
+                    size_t const expectedSize = texture.GetSubresourceSize(layer, mip);
+                    CHECK_MSG(blob.decodedSize == expectedSize,
+                              "FScene texture subresource blob size mismatch: layer {}, mip {}, blob {}, expected {}",
+                              layer, mip, blob.decodedSize, expectedSize);
+                }
+            }
+        }
+    }
+} // namespace
 
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes
 FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratchAlloc,
-                             Vector<uint16_t> const* jointRemap = nullptr)
+                              Vector<uint16_t> const* jointRemap = nullptr)
 {
     CHECK(submesh->type == cgltf_primitive_type_triangles);
     CHECK(scratchAlloc != nullptr);
@@ -618,8 +616,7 @@ FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratch
         // drawArrays(count = vertexCount). Synthesize a trivial 0..N-1 index buffer so the
         // rest of the pipeline (LOD blobs, meshlet builder, FSCN validation) stays uniform.
         size_t numVertices = submesh->attributes[0].data->count;
-        CHECK_MSG(numVertices % 3 == 0,
-                  "Non-indexed glTF triangle primitive vertex count is not a multiple of 3");
+        CHECK_MSG(numVertices % 3 == 0, "Non-indexed glTF triangle primitive vertex count is not a multiple of 3");
         m0.indices.resize(numVertices);
         std::iota(m0.indices.begin(), m0.indices.end(), 0u);
     }
@@ -639,23 +636,25 @@ FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratch
     if (const cgltf_accessor* jointsAcc = cgltf_find_accessor(submesh, cgltf_attribute_type_joints, 0))
     {
         const cgltf_accessor* weightsAcc = cgltf_find_accessor(submesh, cgltf_attribute_type_weights, 0);
-        CHECK_MSG(weightsAcc, "JOINTS_0 present without WEIGHTS_0");
-        size_t numVertices = submesh->attributes[0].data->count;
-        mesh.skin.resize(numVertices);
-        for (size_t i = 0; i < numVertices; i++)
+        if (weightsAcc)
         {
-            cgltf_uint j[4] = {0, 0, 0, 0};
-            float w[4] = {0, 0, 0, 0};
-            cgltf_accessor_read_uint(jointsAcc, i, j, 4);
-            cgltf_accessor_read_float(weightsAcc, i, w, 4);
-            FSkinBinding& bind = mesh.skin[i];
-            for (int k = 0; k < 4; k++)
+            size_t numVertices = submesh->attributes[0].data->count;
+            mesh.skin.resize(numVertices);
+            for (size_t i = 0; i < numVertices; i++)
             {
-                uint32_t joint = j[k];
-                if (jointRemap && joint < jointRemap->size())
-                    joint = (*jointRemap)[joint];
-                bind.joints[k] = static_cast<uint16_t>(joint);
-                bind.weights[k] = w[k];
+                cgltf_uint j[4] = {0, 0, 0, 0};
+                float w[4] = {0, 0, 0, 0};
+                cgltf_accessor_read_uint(jointsAcc, i, j, 4);
+                cgltf_accessor_read_float(weightsAcc, i, w, 4);
+                FSkinBinding& bind = mesh.skin[i];
+                for (int k = 0; k < 4; k++)
+                {
+                    uint32_t joint = j[k];
+                    if (jointRemap && joint < jointRemap->size())
+                        joint = (*jointRemap)[joint];
+                    bind.joints[k] = static_cast<uint16_t>(joint);
+                    bind.weights[k] = w[k];
+                }
             }
         }
     }
@@ -703,7 +702,7 @@ Optional<FTexture> LoadTexture(RHIApplication const& app, StringView path, Alloc
     }
     return {};
 }
-    // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#images
+// https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#images
 Optional<FTexture> LoadGLTFTexture(RHIApplication const& app, cgltf_texture* texture, StringView scenePath,
                                    Allocator* scratchAlloc, bool gamma = false)
 {
@@ -713,7 +712,8 @@ Optional<FTexture> LoadGLTFTexture(RHIApplication const& app, cgltf_texture* tex
         if (auto* buf = texture->image->buffer_view)
         {
             FTexture res(scratchAlloc);
-            Span<const unsigned char> imgData = {static_cast<const unsigned char*>(buf->buffer->data) + buf->offset, buf->size};
+            Span<const unsigned char> imgData = {static_cast<const unsigned char*>(buf->buffer->data) + buf->offset,
+                                                 buf->size};
             return LoadRGBA8(res, imgData, gamma), res;
         }
         // cgltf only decodes percent-encoding on paths it opens itself (buffer files);
@@ -832,10 +832,7 @@ struct FBlobJob
     FBlobCodec requestedCodec{FBlobCodec::None};
     FBlobRef* outRef{nullptr};
 
-    explicit FBlobJob(Allocator* alloc = GLOBAL_ALLOC)
-        : bytes(alloc)
-    {
-    }
+    explicit FBlobJob(Allocator* alloc = GLOBAL_ALLOC) : bytes(alloc) {}
 };
 
 struct FPreparedBlob
@@ -849,20 +846,14 @@ struct FPreparedBlob
     FBlobRef* outRef{nullptr};
     Vector<unsigned char> ownedStorage;
 
-    explicit FPreparedBlob(Allocator* alloc = GLOBAL_ALLOC)
-        : ownedStorage(alloc)
-    {
-    }
+    explicit FPreparedBlob(Allocator* alloc = GLOBAL_ALLOC) : ownedStorage(alloc) {}
 };
 
 struct FResourceBlobJobs
 {
     Vector<FBlobJob> jobs;
 
-    explicit FResourceBlobJobs(Allocator* alloc = GLOBAL_ALLOC)
-        : jobs(alloc)
-    {
-    }
+    explicit FResourceBlobJobs(Allocator* alloc = GLOBAL_ALLOC) : jobs(alloc) {}
 };
 
 void AppendBytesBlobJob(Vector<FBlobJob>& jobs, Vector<unsigned char>&& bytes, uint32_t count, uint32_t stride,
@@ -870,8 +861,8 @@ void AppendBytesBlobJob(Vector<FBlobJob>& jobs, Vector<unsigned char>&& bytes, u
 {
     CHECK(stride != 0);
     uint64_t decodedSize = uint64_t(count) * stride;
-    CHECK_MSG(decodedSize == bytes.size(), "Blob size mismatch: {} bytes for {} elements with stride {}",
-              bytes.size(), count, stride);
+    CHECK_MSG(decodedSize == bytes.size(), "Blob size mismatch: {} bytes for {} elements with stride {}", bytes.size(),
+              count, stride);
 
     FBlobJob job(jobs.get_allocator().mResource);
     job.bytes = std::move(bytes);
@@ -917,8 +908,8 @@ void PrepareBlobJob(FBlobJob const& job, FPreparedBlob& prepared)
     prepared.codec = FBlobCodec::None;
     prepared.outRef = job.outRef;
     prepared.ownedStorage.clear();
-    CHECK_MSG(prepared.decodedSize == job.bytes.size(),
-              "Blob size mismatch: {} bytes for {} elements with stride {}", job.bytes.size(), job.count, job.stride);
+    CHECK_MSG(prepared.decodedSize == job.bytes.size(), "Blob size mismatch: {} bytes for {} elements with stride {}",
+              job.bytes.size(), job.count, job.stride);
 
     if (job.requestedCodec == FBlobCodec::None || job.bytes.empty())
         return;
@@ -987,8 +978,7 @@ void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImp
 
 // Flat, topologically sorted skeleton from a glTF skin. outRemap maps skin-local joint indices
 // (as stored in JOINTS_0) to the sorted order; parents above the skin are treated as identity.
-FSkeleton BuildSkeletonFromSkin(cgltf_data* data, cgltf_skin const* skin, Vector<uint16_t>& outRemap,
-                                Allocator* alloc)
+FSkeleton BuildSkeletonFromSkin(cgltf_data* data, cgltf_skin const* skin, Vector<uint16_t>& outRemap, Allocator* alloc)
 {
     FSkeleton skel(alloc);
     size_t n = skin->joints_count;
@@ -1048,9 +1038,12 @@ FAnimInterp MapAnimInterp(cgltf_interpolation_type interp)
 {
     switch (interp)
     {
-    case cgltf_interpolation_type_step: return FAnimInterp::Step;
-    case cgltf_interpolation_type_cubic_spline: return FAnimInterp::CubicSpline;
-    default: return FAnimInterp::Linear;
+    case cgltf_interpolation_type_step:
+        return FAnimInterp::Step;
+    case cgltf_interpolation_type_cubic_spline:
+        return FAnimInterp::CubicSpline;
+    default:
+        return FAnimInterp::Linear;
     }
 }
 
@@ -1058,10 +1051,17 @@ bool MapAnimPath(cgltf_animation_path_type path, FAnimPath& out)
 {
     switch (path)
     {
-    case cgltf_animation_path_type_translation: out = FAnimPath::Translation; return true;
-    case cgltf_animation_path_type_rotation: out = FAnimPath::Rotation; return true;
-    case cgltf_animation_path_type_scale: out = FAnimPath::Scale; return true;
-    default: return false; // morph weights unsupported
+    case cgltf_animation_path_type_translation:
+        out = FAnimPath::Translation;
+        return true;
+    case cgltf_animation_path_type_rotation:
+        out = FAnimPath::Rotation;
+        return true;
+    case cgltf_animation_path_type_scale:
+        out = FAnimPath::Scale;
+        return true;
+    default:
+        return false; // morph weights unsupported
     }
 }
 
@@ -1110,16 +1110,16 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
     LoadFoundationColorManagementExtension(data, globals);
     scene.Set(globals);
     FLight environmentLight = MakeDefaultEnvironmentLight();
-    FEnvironmentTextureSource environmentTextureSource = LoadFoundationEnvironmentExtension(data, path, environmentLight);
+    FEnvironmentTextureSource environmentTextureSource =
+        LoadFoundationEnvironmentExtension(data, path, environmentLight);
 
     /* Texture ids are reserved up front so materials can reference textures before payloads load. */
     CHECK_MSG(data->textures_count <= UINT32_MAX, "glTF texture count exceeds uint32_t");
     CHECK_MSG(!environmentTextureSource.HasValue() || data->textures_count < UINT32_MAX,
               "glTF texture count leaves no room for environment texture");
     size_t const sceneTextureCount = data->textures_count + (environmentTextureSource.HasValue() ? 1u : 0u);
-    uint32_t const environmentTextureIndex = environmentTextureSource.HasValue()
-        ? static_cast<uint32_t>(data->textures_count)
-        : kInvalidTexture;
+    uint32_t const environmentTextureIndex =
+        environmentTextureSource.HasValue() ? static_cast<uint32_t>(data->textures_count) : kInvalidTexture;
     scene.mTables.textures.clear();
     scene.mTables.textures.reserve(sceneTextureCount);
     for (size_t i = 0; i < sceneTextureCount; ++i)
@@ -1173,14 +1173,17 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             material.metallicFactor = mat->pbr_metallic_roughness.metallic_factor;
             material.roughnessFactor = mat->pbr_metallic_roughness.roughness_factor;
             if (mat->pbr_metallic_roughness.base_color_texture.texture)
-                material.baseColorTexture = assignTextureId(mat->pbr_metallic_roughness.base_color_texture, kTextureInSRGB);
+                material.baseColorTexture =
+                    assignTextureId(mat->pbr_metallic_roughness.base_color_texture, kTextureInSRGB);
             if (mat->pbr_metallic_roughness.metallic_roughness_texture.texture)
-                material.metallicRoughnessTexture = assignTextureId(mat->pbr_metallic_roughness.metallic_roughness_texture);
+                material.metallicRoughnessTexture =
+                    assignTextureId(mat->pbr_metallic_roughness.metallic_roughness_texture);
         }
         if (mat->has_pbr_specular_glossiness)
         {
             const auto& sg = mat->pbr_specular_glossiness;
-            material.baseColorFactor = {sg.diffuse_factor[0], sg.diffuse_factor[1], sg.diffuse_factor[2], sg.diffuse_factor[3]};
+            material.baseColorFactor = {sg.diffuse_factor[0], sg.diffuse_factor[1], sg.diffuse_factor[2],
+                                        sg.diffuse_factor[3]};
             material.roughnessFactor = 1.0f - sg.glossiness_factor;
             float specLuminance = max(sg.specular_factor[0], max(sg.specular_factor[1], sg.specular_factor[2]));
             constexpr float kDielectricF0 = 0.04f;
@@ -1193,11 +1196,9 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             material.normalTexture = assignTextureId(mat->normal_texture);
         if (mat->emissive_texture.texture)
             material.emissiveTexture = assignTextureId(mat->emissive_texture, kTextureInSRGB);
-        float emissiveStrength = mat->has_emissive_strength
-            ? mat->emissive_strength.emissive_strength
-            : 1.0f;
-        material.emissiveFactor = {
-            mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2], emissiveStrength};
+        float emissiveStrength = mat->has_emissive_strength ? mat->emissive_strength.emissive_strength : 1.0f;
+        material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2],
+                                   emissiveStrength};
         material.transmissionFactor = mat->has_transmission ? mat->transmission.transmission_factor : 0.0f;
         if (mat->has_transmission && mat->transmission.transmission_texture.texture)
             material.transmissionTexture = assignTextureId(mat->transmission.transmission_texture);
@@ -1205,11 +1206,9 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         material.specularFactor = mat->has_specular ? mat->specular.specular_factor : 1.0f;
         if (mat->has_specular)
         {
-            material.specularColorFactor = {
-                mat->specular.specular_color_factor[0],
-                mat->specular.specular_color_factor[1],
-                mat->specular.specular_color_factor[2]
-            };
+            material.specularColorFactor = {mat->specular.specular_color_factor[0],
+                                            mat->specular.specular_color_factor[1],
+                                            mat->specular.specular_color_factor[2]};
             if (mat->specular.specular_texture.texture)
                 material.specularTexture = assignTextureId(mat->specular.specular_texture);
             if (mat->specular.specular_color_texture.texture)
@@ -1224,11 +1223,8 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         }
         if (mat->has_sheen)
         {
-            material.sheenColorFactor = {
-                mat->sheen.sheen_color_factor[0],
-                mat->sheen.sheen_color_factor[1],
-                mat->sheen.sheen_color_factor[2]
-            };
+            material.sheenColorFactor = {mat->sheen.sheen_color_factor[0], mat->sheen.sheen_color_factor[1],
+                                         mat->sheen.sheen_color_factor[2]};
             material.sheenRoughnessFactor = std::clamp(mat->sheen.sheen_roughness_factor, 0.0f, 1.0f);
             if (mat->sheen.sheen_color_texture.texture)
                 material.sheenColorTexture = assignTextureId(mat->sheen.sheen_color_texture, kTextureInSRGB);
@@ -1251,11 +1247,8 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         if (mat->has_subsurface)
         {
             material.subsurfaceFactor = std::clamp(mat->subsurface.subsurface_weight, 0.0f, 1.0f);
-            material.subsurfaceRadius = {
-                mat->subsurface.subsurface_radius[0],
-                mat->subsurface.subsurface_radius[1],
-                mat->subsurface.subsurface_radius[2]
-            };
+            material.subsurfaceRadius = {mat->subsurface.subsurface_radius[0], mat->subsurface.subsurface_radius[1],
+                                         mat->subsurface.subsurface_radius[2]};
             material.subsurfaceScale = mat->subsurface.subsurface_scale;
         }
         LoadFoundationMaterialExtension(mat, material);
@@ -1277,8 +1270,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             scene.mTables.textures[i].name = internString(data->textures[i].name);
 
         textureJobs = jobs->ParallelFor(
-            "SceneTexture", data->textures_count,
-            GetSceneJobGrain(*jobs, data->textures_count),
+            "SceneTexture", data->textures_count, GetSceneJobGrain(*jobs, data->textures_count),
             [&](size_t begin, size_t end, JobContext&)
             {
                 for (size_t i = begin; i < end; ++i)
@@ -1324,9 +1316,8 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             CHECK_MSG(view->offset <= view->buffer->size && view->size <= view->buffer->size - view->offset,
                       "Embedded environment HDRI bufferView is out of range");
             LOG(Scene, LogInfo, "Loading embedded environment HDRI ({} bytes)", view->size);
-            Span<const unsigned char> imgData{
-                static_cast<const unsigned char*>(view->buffer->data) + view->offset,
-                view->size};
+            Span<const unsigned char> imgData{static_cast<const unsigned char*>(view->buffer->data) + view->offset,
+                                              view->size};
             LoadHDR(environmentTexture, imgData);
         }
         else
@@ -1448,8 +1439,8 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
                     uint32_t meshIndex = nextSubmesh++;
                     meshPrimitiveResources[i].push_back(
                         MeshPrimitiveResource{.type = FInstanceType::Mesh, .index = meshIndex});
-                    geometryTasks.push_back({.source = sub, .remap = remap, .skeleton = skeletonId,
-                                     .index = meshIndex, .mesh = true});
+                    geometryTasks.push_back(
+                        {.source = sub, .remap = remap, .skeleton = skeletonId, .index = meshIndex, .mesh = true});
                 }
                 else
                 {
@@ -1566,13 +1557,12 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         preparedBlobs.emplace_back(scratchAlloc);
     if (!blobJobs.empty())
     {
-        jobs->Wait(jobs->ParallelFor(
-            "SceneBlob", blobJobs.size(), GetSceneJobGrain(*jobs, blobJobs.size()),
-            [&](size_t begin, size_t end, JobContext&)
-            {
-                for (size_t i = begin; i < end; ++i)
-                    PrepareBlobJob(blobJobs[i], preparedBlobs[i]);
-            }));
+        jobs->Wait(jobs->ParallelFor("SceneBlob", blobJobs.size(), GetSceneJobGrain(*jobs, blobJobs.size()),
+                                     [&](size_t begin, size_t end, JobContext&)
+                                     {
+                                         for (size_t i = begin; i < end; ++i)
+                                             PrepareBlobJob(blobJobs[i], preparedBlobs[i]);
+                                     }));
         CommitPreparedBlobJobs(blobSerializer, preparedBlobs);
     }
 
@@ -1605,10 +1595,14 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
                 for (size_t k = 0; k < gi.attributes_count; ++k)
                 {
                     const cgltf_attribute& attr = gi.attributes[k];
-                    if (attr.name == nullptr) continue;
-                    if (std::strcmp(attr.name, "TRANSLATION") == 0) tAcc = attr.data;
-                    else if (std::strcmp(attr.name, "ROTATION") == 0) rAcc = attr.data;
-                    else if (std::strcmp(attr.name, "SCALE") == 0) sAcc = attr.data;
+                    if (attr.name == nullptr)
+                        continue;
+                    if (std::strcmp(attr.name, "TRANSLATION") == 0)
+                        tAcc = attr.data;
+                    else if (std::strcmp(attr.name, "ROTATION") == 0)
+                        rAcc = attr.data;
+                    else if (std::strcmp(attr.name, "SCALE") == 0)
+                        sAcc = attr.data;
                     // Other custom attributes (e.g. "_ID") are ignored for now.
                 }
             }
@@ -1627,7 +1621,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
                 else
                 {
                     float3 t{0.0f, 0.0f, 0.0f};
-                    quat   r{1.0f, 0.0f, 0.0f, 0.0f}; // (w, x, y, z) identity
+                    quat r{1.0f, 0.0f, 0.0f, 0.0f}; // (w, x, y, z) identity
                     float3 s{1.0f, 1.0f, 1.0f};
                     if (tAcc)
                     {
@@ -1664,7 +1658,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
                     else
                         instance.resource = scene.mTables.meshes[resource.index].id;
                     instance.material = sub->material ? gltfMaterialIds[cgltf_material_index(data, sub->material)]
-                                                       : kDefaultMaterialUUID;
+                                                      : kDefaultMaterialUUID;
                     scene.Add(instance);
                 }
             }
@@ -1773,10 +1767,7 @@ uint32_t CountGPUSceneBudget(size_t count)
     return static_cast<uint32_t>(count);
 }
 
-uint32_t RingGPUSceneBudget(size_t count)
-{
-    return CountGPUSceneBudget(count * kGPUSceneRingFrameSlack);
-}
+uint32_t RingGPUSceneBudget(size_t count) { return CountGPUSceneBudget(count * kGPUSceneRingFrameSlack); }
 
 uint32_t ByteGPUSceneBudget(size_t bytes, size_t minBytes, size_t alignment, size_t maxBytes = UINT32_MAX)
 {
@@ -1886,8 +1877,8 @@ void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImp
     AppendArrayBlobJob(blobJobs, leaves, FBlobCodec::LZ4, desc.leaves);
 }
 
-FImportedScene::FImportedScene(MemoryMappedFile& file, Allocator* scratchAlloc)
-    : mTables(scratchAlloc), mFile(&file), mScratchAlloc(scratchAlloc), mWriting(file.IsWritable())
+FImportedScene::FImportedScene(MemoryMappedFile& file, Allocator* scratchAlloc) :
+    mTables(scratchAlloc), mFile(&file), mScratchAlloc(scratchAlloc), mWriting(file.IsWritable())
 {
     CHECK(scratchAlloc != nullptr);
     if (mWriting)
@@ -1898,7 +1889,8 @@ FImportedScene::FImportedScene(MemoryMappedFile& file, Allocator* scratchAlloc)
         EnsureMappedFileSize(file, mWriteOffset);
         std::memcpy(file.MutableData(), &mHeader, sizeof(mHeader));
         if (mHeader.payloadOffset > sizeof(mHeader))
-            std::memset(file.MutableData() + sizeof(mHeader), 0, static_cast<size_t>(mHeader.payloadOffset - sizeof(mHeader)));
+            std::memset(file.MutableData() + sizeof(mHeader), 0,
+                        static_cast<size_t>(mHeader.payloadOffset - sizeof(mHeader)));
     }
 }
 
@@ -1929,10 +1921,7 @@ Span<const unsigned char> FImportedScene::GetPayloadBytes() const
     return {mFile->Data() + mHeader.payloadOffset, static_cast<size_t>(mHeader.metadataOffset - mHeader.payloadOffset)};
 }
 
-FBlobDeserializer FImportedScene::GetBlobDeserializer() const
-{
-    return FBlobDeserializer(GetPayloadBytes());
-}
+FBlobDeserializer FImportedScene::GetBlobDeserializer() const { return FBlobDeserializer(GetPayloadBytes()); }
 
 bool FImportedScene::ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const
 {
@@ -1996,12 +1985,11 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     }
     desc.dynamicGeometryBudget = ByteGPUSceneBudget(dynamicBytes, 0, size_t(16));
     desc.emissiveClusterBudget = RingGPUSceneBudget(emissiveClusterCount);
-    desc.geometryBudget =
-        CountGPUSceneBudget(rigidMeshCount + GetCurves().size() + skinnedInstanceCount);
+    desc.geometryBudget = CountGPUSceneBudget(rigidMeshCount + GetCurves().size() + skinnedInstanceCount);
     desc.dynamicStagingFramesInFlight = kGPUSceneRingFrameSlack;
 
-    size_t textureBindings = kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings +
-        kGPUSceneTextureBindingSlack;
+    size_t textureBindings =
+        kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings + kGPUSceneTextureBindingSlack;
     FLight const* environmentLight = GetEnvironmentLight();
     for (size_t textureIndex = 0; textureIndex < GetTextures().size(); ++textureIndex)
     {
