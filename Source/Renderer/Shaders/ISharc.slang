@@ -142,7 +142,7 @@
 #endif
 
 #if SHARC_USE_FP16
-#define SharcSampleWeight float16_t3
+#define SharcSampleWeight half3
 #else // !SHARC_USE_FP16
 #define SharcSampleWeight float3
 #endif // SHARC_USE_FP16

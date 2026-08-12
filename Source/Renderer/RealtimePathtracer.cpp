@@ -7,11 +7,11 @@
 
 namespace
 {
-constexpr size_t kSharcHashEntrySize = sizeof(uint32_t);
-constexpr size_t kSharcAccumulationEntrySize = sizeof(uint32_t) * 4u;
-constexpr size_t kSharcResolvedEntrySize = sizeof(uint32_t) * 4u;
-constexpr uint32_t kSharcMinimumEntries = 16u;
-}
+    constexpr size_t kSharcHashEntrySize = sizeof(uint32_t);
+    constexpr size_t kSharcAccumulationEntrySize = sizeof(uint32_t) * 4u;
+    constexpr size_t kSharcResolvedEntrySize = sizeof(uint32_t) * 4u;
+    constexpr uint32_t kSharcMinimumEntries = 16u;
+} // namespace
 
 uint32_t PackCompileOptions(PTSampler sampler, bool forceTextureLOD0, LightSampler lightSamplerMode)
 {
@@ -131,8 +131,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                                                }});
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
-    const uint32_t compileOptions =
-        PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode);
+    const uint32_t compileOptions = PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode);
     renderer->CreatePass(
         "SHARC Initialize", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -161,8 +160,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                 r->BindAccelerationStructureSRV(self, TLAS, stage, "TLAS");
                 r->BindShader(
                     self, RHIShaderStageBits::Compute, "ComputeMain",
-                    r->GetApplication()->ResolveRelativePathBase(
-                        "Data/Shaders/EPathTracingRealtime_SHARC_Update.spv"),
+                    r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPathTracingRealtime_SHARC_Update.spv"),
                     AsBytes(AsSpan(compileOptions)));
                 r->BindBufferStorageRead(self, PrimitiveBuffer, stage, "gPrimBuffer");
                 r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, stage, "gDynamicPrimBuffer");
@@ -201,9 +199,8 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                 r->BindBufferUnordered(self, SharcHashEntries, stage, "sharcHashEntries");
                 r->BindBufferUnordered(self, SharcAccumulation, stage, "sharcAccumulation");
                 r->BindBufferUnordered(self, SharcResolved, stage, "sharcResolved");
-                r->BindShader(
-                    self, RHIShaderStageBits::Compute, "ComputeMain",
-                    r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ESharcResolve.spv"));
+                r->BindShader(self, RHIShaderStageBits::Compute, "ComputeMain",
+                              r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ESharcResolve.spv"));
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
@@ -218,7 +215,8 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
         renderer, "Trace Clear Depth", DepthUAV,
         RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat, .range = RHITextureSubresourceRange::Create()},
         float4{0.0f, 0.0f, 0.0f, 0.0f});
-    String tracePassName = Format("Trace {}", shaderExecutionReordering ? "SER" : "Compute");
+    String tracePassName =
+        Format("{} {}", sharcEnabled ? "SHaRC Query" : "Trace", shaderExecutionReordering ? "SER" : "Compute");
     renderer->CreatePass(
         tracePassName.c_str(), RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -234,8 +232,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
             else
                 shaderPath = shaderExecutionReordering ? "Data/Shaders/EPathTracingRealtime_NoSHARC_SER.spv"
                                                        : "Data/Shaders/EPathTracingRealtime_NoSHARC.spv";
-            const auto shader = r->GetApplication()->ResolveRelativePathBase(
-                shaderPath);
+            const auto shader = r->GetApplication()->ResolveRelativePathBase(shaderPath);
             if (shaderExecutionReordering)
             {
                 r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", shader,
@@ -265,7 +262,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                 r->BindBufferStorageRead(self, SharcResolved, pipelineStage, "sharcResolved");
             }
             r->BindTextureSampler(self, LUTSampler, "gLutSampler");
-            // Accumulation UAVs
+            // AOVs
             r->BindTextureUAV(
                 self, Diffuse, "diffuse", pipelineStage,
                 RHITextureViewDesc{.format = kPathTracerAOVFormat, .range = RHITextureSubresourceRange::Create()});

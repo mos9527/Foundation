@@ -12,7 +12,7 @@ struct RendererUBO
     uint32_t frameNumber;
     GSOffsetCount instances;
     GSOffsetCount materials;
-    float lodThreshold{0.005f};
+    float lodThreshold{1e-5f};
     float zNear;
     float4x4 view;
     float4x4 proj;
@@ -75,7 +75,7 @@ struct RendererUBO
     uint32_t sharcAccumulationFrames{20u};
     uint32_t sharcStaleFrames{60u};
     float sharcRoughnessThreshold{0.4f};
-    uint32_t sharcEnabled{0u};
+    uint32_t sharcEnabled{1u};
     uint32_t sharcUpdateDownscale{5u};
     // -- Debug
     uint32_t dbgShowOutline{0u};
