@@ -3,8 +3,10 @@ Foundation {#mainpage}
 
 [Foundation](https://github.com/mos9527/Foundation/) is a work-in-progress cross-platform rendering framework/renderer.
 
-Foundation includes three bespoke renderers - The Progressive Path Tracer `PPT` *based* on [Physically Based Rendering:From Theory To Implementation](https://www.pbr-book.org/), a Continuous LOD Meshlet (Nanite-like) Rasterizer `RASTER`,
-and a Real-time Pathtracer `RTPT`
+Foundation includes three bespoke renderers:
+- The Progressive Path Tracer `PPT` *based* on [Physically Based Rendering:From Theory To Implementation](https://www.pbr-book.org/)
+- The Continuous LOD Meshlet (Nanite-like) Rasterizer `RASTER`
+- And the Real-time Pathtracer `RTPT` providing dynamic path-traced global illumination in real-time.
 
 Please note that the Path Tracer is not a faithful recreation of PBRT - however heavily referenced against, with outputs extensively verified against results from [Blender Cycles](https://projects.blender.org/blender/cycles/) et al. `PT` outputs can be considered reference in this context.
 
@@ -40,7 +42,8 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 - Anamorphic physical lens
 - Area, point, spot, and directional lights
 - Context-dependent Light BVH sampling for analytical lights
-
+- LightBVH for spatially aware light sampling
+- Next Event Estimation for Emissive Triangles 
 
 ### Rasterizer
 - GPU-driven mesh shader pipeline with hierarchical continuous LOD
@@ -48,13 +51,13 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 - Optional RT Shadows
 
 ### Realtime Path Tracer
+- Very much WIP. For now.
 - Basic PBR material support
 - [SHARC](https://github.com/NVIDIA-RTX/SHARC) integration
 
 ### Scene
 - Extended glTF support & Blender data exchange via https://github.com/mos9527/Foundation-Blender-IO/tree/main
 - Custom binary scene format `FSCN` with excellent serialization/loading (memory-mapped) performance
-- Animation (Skinning, BlendShapes, Articulated rigid bodies)
 
 Examples
 ---
@@ -62,7 +65,8 @@ Smaller examples, using the framework as a library (therefore excluding the rend
 
 These be found in <a href="examples.html">The Examples</a> directory.
 
-TODO SCREENSHOTS
+Other sister projects include:
+- https://github.com/mos9527/Foundation-SM64
 
 Building
 ---
@@ -186,8 +190,13 @@ We use Vulkan exclusively, so portability wise:
     - Bash et al: `export VK_DRIVER_FILES="/path/to/lvp_icd.x86_64.json"`
   - Run stuff from the same shell.
 
-Editor
+
+Progressive Path Tracer
 ---
+Sorted by priority (high to low), also w/ future blog post series update on:
+- [ ] Tracing from surfaces (for baking lightmaps, probe generation, etc)
+
+Done:
 - [x] **Correct** SDR&HDR Color Pipeline
   - Linear BT709 Scene Space (D65), converted to D60 via [Bradford CAT](http://www.brucelindbloom.com/index.html?Eqn_ChromAdapt.html) and encoded as [AP1](https://docs.acescentral.com/encodings/aces2065-1/#transfer-function)
   - Transform then encodes as [ACEScct](https://docs.acescentral.com/encodings/acescct/#encoding-function)
@@ -195,20 +204,6 @@ Editor
   - Blender OCIO Config used to generated LUTs for SDR/HDR ACES1.3/2.0/AgX/Standard (sRGB. v. PQ) transforms
     - See also https://docs.blender.org/manual/en/latest/render/color_management/
     - Obtains 1-to-1 matching output :)
-
-- [ ] Coroutines in place of...whatever this is.
-Good to have, not necessary.
-- [ ] Scene Graph, instead of AoS to represent instances.
-Done
-- [x] Animation (Skinning, BlendShapes, Articulated rigid bodies, camera & lights. Contribution by Claude)
-
-Progressive Path Tracer
----
-Sorted by priority (high to low), also w/ future blog post series update on:
-- [ ] Emissive triangles in NEE
-- [ ] Tracing from surfaces (for baking lightmaps, probe generation, etc)
-
-Done, awaiting Blog Update:
 - [x] Adaptive Sampling (https://jo.dreggn.org/home/2009_stopping.pdf)
   - Per-pixel then dialated with a box filter. Same as Cycles.
   - Kills the warps to skip converged pixels, not regenerating paths as discussed in [Megakernels Considered Harmful: Wavefront Path Tracing on GPUs](https://research.nvidia.com/sites/default/files/pubs/2013-07_Megakernels-Considered-Harmful/laine2013hpg_paper.pdf)
@@ -222,8 +217,6 @@ Done, awaiting Blog Update:
   - Import bakes Disjoint Orthogonal Triangle Strips (DOTS)    
     - See also [Path-Traced Hair Rendering in Indiana Jones and the Great Circle](https://vulkan.org/user/pages/09.events/vulkanised-2026/1145-Jiho-Choi-NVIDIA%201.pdf)
     - https://github.com/NVIDIA-RTX/RTXCR is used as a reference implementation
-  - [ ] TODO Possiblity to bind strands to mesh - therefore texturing it?
-  - [ ] TODO Support NV [LSS](https://developer.nvidia.com/blog/render-path-traced-hair-in-real-time-with-nvidia-geforce-rtx-50-series-gpus/)?
 - [x] Path Traced Skin BSSRDF
   - Disney BSSRDF from [PBRTv3](https://github.com/mmp/pbrt-v3/blob/master/src/materials/disney.cpp)
   - Uniformly selects exitance point on scattered path via AnyHit + reservoir sampling
@@ -234,13 +227,6 @@ Done, awaiting Blog Update:
   - Not done for analytical lights (Point/Directional) as they are delta distributions and cannot be hit by BSDF rays.
     - Conversion to small disk lights is feasible, or another O(N) loop to evaluate all of those inline w/o going through scene BVH
     - Not worth it nonetheless. This is merely brute-forcing.
-- [x] Light BVH sampling for scene lights
-  - https://github.com/mos9527/Foundation/pull/14
-  - https://fileadmin.cs.lth.se/graphics/research/papers/2019/dyn_manylight/MPC19_presentation.pdf, implementation referencing https://github.com/NVIDIAGameWorks/Falcor
-  - Also PBRTv4's implementation in https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
-- [x] Importance sampling Infinite Image Lights
-
-Done:
 - [Revisiting Physically Based Shading at Imageworks - Kulla & Conty 2017](https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_slides_v2.pdf)
   - [x] *Complete* Multiscatter Energy Compensation
     - See also `Scripts/LUTPrecomputeGGX.ipynb`
@@ -261,6 +247,13 @@ Done:
   - LTC Sheen "Practical Multiple-Scattering Sheen Using Linearly Transformed Cosines" https://github.com/tizian/ltc-sheen
   - ~~https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_sheen.pdf~~
 - [x] PCG (Independent), Sobol Samplers
+- [x] Importance sampling Infinite Image Lights
+- [x] Light BVH sampling for scene lights
+  - https://github.com/mos9527/Foundation/pull/14
+  - https://fileadmin.cs.lth.se/graphics/research/papers/2019/dyn_manylight/MPC19_presentation.pdf, implementation referencing https://github.com/NVIDIAGameWorks/Falcor
+  - Also PBRTv4's implementation in https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
+- [x] Emissive triangles in NEE
+  - https://github.com/mos9527/Foundation/pull/17
 
 Raster
 ---
@@ -271,11 +264,17 @@ Unfortunately not the favourite child. Maybe one day.
     - Dollar store version. Doesn't even bother with denoising. Taken from Unity HDRP.
 - [ ] Screen Space Reflections
 - [ ] Screen Space Diffuse GI
-- [ ] Light Probe Volumes
 - [ ] _Really_ Speed up meshlet continuous LOD selection.
   - We're O(N). Nanite does it O (log N) via BVH
+- [ ] Light Probe Volumes Baking
+  - Some kind of probe volume, generated by our PT.
+- [ ] Lightmap Baking
+  - Same as above.  
+- [ ] Surface Cache RTGI
+  - Realtime PT, but only for diffuse contribution.
 
 Realtime Path Tracer
 ---
-- [ ] (Light sampler uses Progressive PT ones - TODOs omitted here)
-- [ ] ReSTIR PT/DI
+- [ ] ReSTIR DI
+- [ ] Basic temporal denoiser
+- [ ] Integrate vendor-specific denoisers (NVIDIA DLSS-G, AMD FSR-RR)
