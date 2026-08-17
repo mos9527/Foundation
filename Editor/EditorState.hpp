@@ -154,9 +154,6 @@ inline float ApertureRadiusFromFStop(float fStop, float sensorHeight, float fovY
 
 struct EditorState
 {
-    // GPUScene owns all scene-data residency (geometry, textures) and the committed
-    // instance/material/light tables. The editor keeps the bindings needed to refill
-    // those tables from the FSCN scene (resident geometry handles, texture remap).
     FSceneGPUResources resources;
     Optional<FAnimationRuntime> animation;
     Optional<MemoryMappedFile> sceneFile;
@@ -201,7 +198,7 @@ struct EditorState
     float           renderResolutionScale = 1.0f; // 0.25 .. 1.0
     bool            rasterGTAO = true;
     GTAOConfig rasterGTAOConfig{};
-
+    
     [[nodiscard]] bool HasScene() const { return scene.has_value(); }
     FImportedScene& Scene()
     {

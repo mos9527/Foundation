@@ -25,4 +25,4 @@ void UploadSceneEnvironment(FImportedScene const& scene, FLight const& environme
 
 // NOTE: For scene it's Instances, Materials and Lights only.
 GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources const& resources,
-                                        RendererUBO& globals, uint32_t frameNumber = UINT32_MAX);
+                                        RendererUBO& globals, GPUSceneUpdateFlags flag = kDefaultGPUSceneUpdateFlags);

@@ -2197,6 +2197,32 @@ void FLightingPanel()
             }
             if (!canAddLight)
                 ImGui::EndDisabled();
+
+            // ---- Punctual light unit conversion ----
+            auto convertPunctual = [&](float factor)
+            {
+                bool changed = false;
+                for (auto& l : lights)
+                {
+                    if (l.type == FLightType::Point || l.type == FLightType::Spot ||
+                        l.type == FLightType::Directional)
+                    {
+                        l.power *= factor;
+                        changed = true;
+                    }
+                }
+                return changed;
+            };
+            if (ImModalButton("Punc. To SI", 0, 2))
+            {
+                if (convertPunctual(683.0f))
+                    anyChanged = true;
+            }
+            if (ImModalButton("Punc. To Unitless", 1, 2))
+            {
+                if (convertPunctual(1.0f / 683.0f))
+                    anyChanged = true;
+            }
             ImGui::Separator();
             static constexpr float kLightHighlightDuration = 1.2f;
 
@@ -3072,6 +3098,10 @@ void FRunningImGui()
             if (ImGui::Checkbox("Primary Light Visibility", &GEditor.rendererConfig.ptPrimaryLightVisibility))
             {
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
+            if (ImGui::Checkbox("Emissive Triangle LBVH NEE", &GEditor.rendererConfig.ptLightBVHIncludeEmissiveClusters))
+            {
+                CommitSceneToGPU(true);
             }
             ImGui::SeparatorText(PSI_RANDOM " Sampling");
             const char* lightSamplerItems[] = {"Light BVH", "Uniform (Reference)"};

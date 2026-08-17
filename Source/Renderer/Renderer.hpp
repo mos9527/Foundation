@@ -131,6 +131,7 @@ struct RendererConfig
     bool forceTextureLOD0{false};
     bool energyCompensation{true};
     bool ptPrimaryLightVisibility{false};
+    bool ptLightBVHIncludeEmissiveClusters = true;
     bool ptSharc{true};
     uint32_t ptSharcEntries{1u << 22u};
     float ptSharcSceneScale{50.0f};

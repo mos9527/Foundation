@@ -404,7 +404,7 @@ struct GPUSceneImpl
     [[nodiscard]] Result Poll(size_t timeout);
 
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
-    UpdateResult EndScene(GPUSceneTables& tables);
+    UpdateResult EndScene(GPUSceneTables& tables, GPUSceneUpdateFlags flag);
 
     void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
     [[nodiscard]] String DbgGetBufferStatistics() const;
@@ -838,7 +838,7 @@ GPUScene::GPUSceneTables GPUSceneImpl::BeginScene(uint32_t instanceCount, uint32
     return tables;
 }
 
-GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
+GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUpdateFlags flag)
 {
     UpdateResult res{};
     res.instances = tables.instanceRange;
@@ -871,39 +871,42 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables)
     }
     Allocator* buildAlloc = mStackAlloc ? static_cast<Allocator*>(mStackAlloc) : mAllocator;
     Vector<GSEmissiveCluster> emissiveClusters(buildAlloc);
-    for (uint32_t instanceIndex = 0; instanceIndex < tables.instances.size(); ++instanceIndex)
+    // Emissive Triangles in NEE
+    if (flag & GPUSceneUpdateFlagsBits::LBVH_IncludeEmissiveClusters)
     {
-        GSInstance& inst = tables.instances[instanceIndex];
-        if ((inst.type & kGSInstanceTypeMask) != kGSInstanceTypeMesh ||
-            (inst.type & to_integer(GSInstanceFlagsBits::Dynamic)) != 0u ||
-            inst.materialIndex >= tables.materials.size())
-            continue;
-        GSMaterial const& material = tables.materials[inst.materialIndex];
-        float emissionWeight =
-            (std::abs(material.emissiveFactor.x) + std::abs(material.emissiveFactor.y) +
-             std::abs(material.emissiveFactor.z)) /
-            3.0f;
-        if (emissionWeight <= 0.0f)
-            continue;
-        Geometry* geometry = ResolveGeometry({inst.resourceIndex, 0u});
-        if (!geometry || geometry->emissiveMeshlets.empty())
-            continue;
-
-        inst.emissiveClusterOffset = static_cast<uint32_t>(emissiveClusters.size());
-        float3 scaleAbs = abs(inst.scale);
-        float areaScale = std::max(scaleAbs.x * scaleAbs.y,
-                                   std::max(scaleAbs.y * scaleAbs.z, scaleAbs.z * scaleAbs.x));
-        for (FEmissiveMeshlet const& emitter : geometry->emissiveMeshlets)
+        for (uint32_t instanceIndex = 0; instanceIndex < tables.instances.size(); ++instanceIndex)
         {
-            GSEmissiveCluster& cluster = emissiveClusters.emplace_back();
-            cluster.instanceIndex = instanceIndex;
-            cluster.meshletIndex = emitter.meshletIndex;
-            cluster.aliasOffset = geometry->mesh.emissiveAliases.offset + emitter.aliasOffset * sizeof(GSAlias);
-            cluster.triCount = emitter.triCount;
-            cluster.flux = emissionWeight * emitter.area * areaScale * (2.0f * std::numbers::pi_v<float>);
-            float3 center = inst.rotation * emitter.center;
-            cluster.origin = center * inst.scale + inst.transform;
-            cluster.extent = emitter.radius * scaleAbs;
+            GSInstance& inst = tables.instances[instanceIndex];
+            if ((inst.type & kGSInstanceTypeMask) != kGSInstanceTypeMesh ||
+                (inst.type & to_integer(GSInstanceFlagsBits::Dynamic)) != 0u ||
+                inst.materialIndex >= tables.materials.size())
+                continue;
+            GSMaterial const& material = tables.materials[inst.materialIndex];
+            float emissionWeight = (std::abs(material.emissiveFactor.x) + std::abs(material.emissiveFactor.y) +
+                                    std::abs(material.emissiveFactor.z)) /
+                3.0f;
+            if (emissionWeight <= 0.0f)
+                continue;
+            Geometry* geometry = ResolveGeometry({inst.resourceIndex, 0u});
+            if (!geometry || geometry->emissiveMeshlets.empty())
+                continue;
+
+            inst.emissiveClusterOffset = static_cast<uint32_t>(emissiveClusters.size());
+            float3 scaleAbs = abs(inst.scale);
+            float areaScale =
+                std::max(scaleAbs.x * scaleAbs.y, std::max(scaleAbs.y * scaleAbs.z, scaleAbs.z * scaleAbs.x));
+            for (FEmissiveMeshlet const& emitter : geometry->emissiveMeshlets)
+            {
+                GSEmissiveCluster& cluster = emissiveClusters.emplace_back();
+                cluster.instanceIndex = instanceIndex;
+                cluster.meshletIndex = emitter.meshletIndex;
+                cluster.aliasOffset = geometry->mesh.emissiveAliases.offset + emitter.aliasOffset * sizeof(GSAlias);
+                cluster.triCount = emitter.triCount;
+                cluster.flux = emissionWeight * emitter.area * areaScale * (2.0f * std::numbers::pi_v<float>);
+                float3 center = inst.rotation * emitter.center;
+                cluster.origin = center * inst.scale + inst.transform;
+                cluster.extent = emitter.radius * scaleAbs;
+            }
         }
     }
     res.emissiveClustersHash = FNV1a64(Span<GSEmissiveCluster const>(emissiveClusters));
@@ -3467,7 +3470,7 @@ void GPUScene::ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffs
     outPrimitiveType = g->type;
     outPrimitiveFlags = g->dynamic ? GSInstanceFlagsBits::Dynamic : GSInstanceFlagsBits{};
 }
-GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables) { return mImpl->EndScene(tables); }
+GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables, GPUSceneUpdateFlags flag) { return mImpl->EndScene(tables, flag); }
 void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const { mImpl->DbgGetMemoryStatistics(outStats); }
 String GPUScene::DbgGetBufferStatistics() const { return mImpl->DbgGetBufferStatistics(); }
 GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update)

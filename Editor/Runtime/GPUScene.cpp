@@ -247,7 +247,7 @@ void FillGSMaterial(GSMaterial& dst, FMaterial const& src, FSceneGPUResources co
 } // namespace
 
 GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources const& resources,
-                                        RendererUBO& globals, uint32_t frameNumber)
+                                        RendererUBO& globals, GPUSceneUpdateFlags flag)
 {
     auto instances = scene.GetInstances();
     auto materials = scene.GetMaterials();
@@ -297,7 +297,7 @@ GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FS
     for (size_t i = 0; i < lights.size(); ++i)
         FLightToGSLight(lights[i], tables.lights[i], gpu);
 
-    GPUScene::UpdateResult result = gpu.EndScene(tables);
+    GPUScene::UpdateResult result = gpu.EndScene(tables, flag);
     gpu.UpdateUBO(globals);
     return result;
 }

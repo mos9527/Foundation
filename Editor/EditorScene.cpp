@@ -59,7 +59,10 @@ void CommitSceneToGPU(bool resetAccumulation)
         return;
     if (resetAccumulation)
         GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-    ::CommitSceneToGPU(GEditor.Scene(), *GContext->gpuScene, GEditor.resources, GEditor.shaderGlobals);
+    GPUSceneUpdateFlags flags{};
+    if (GEditor.rendererConfig.ptLightBVHIncludeEmissiveClusters)
+        flags |= GPUSceneUpdateFlagsBits::LBVH_IncludeEmissiveClusters;
+    ::CommitSceneToGPU(GEditor.Scene(), *GContext->gpuScene, GEditor.resources, GEditor.shaderGlobals, flags);
 }
 
 static FTexture LoadViewLUT(StringView path, Allocator* alloc = GLOBAL_ALLOC)

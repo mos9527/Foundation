@@ -183,6 +183,13 @@ struct GPUSceneDesc
     uint32_t dynamicStagingFramesInFlight = 1; // CPU staging frames in flight
 };
 
+BITMASK_ENUM_BEGIN(GPUSceneUpdateFlags, uint32_t)
+LBVH_IncludeEmissiveClusters = 1 << 0,
+BITMASK_ENUM_END()
+
+constexpr GPUSceneUpdateFlagsBits kDefaultGPUSceneUpdateFlags =
+            GPUSceneUpdateFlagsBits::LBVH_IncludeEmissiveClusters;
+
 class GPUScene
 {
 public:
@@ -277,7 +284,7 @@ public:
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
     void ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffset, uint32_t& outPrimitiveType,
                          GSInstanceFlags& outPrimitiveFlags) const;
-    UpdateResult EndScene(GPUSceneTables& tables);
+    UpdateResult EndScene(GPUSceneTables& tables, GPUSceneUpdateFlags flag = kDefaultGPUSceneUpdateFlags);
 
     struct MemoryStat
     {
