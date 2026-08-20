@@ -598,5 +598,5 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     }
     WritePrimaryInstanceID(pix, primaryInstance);
     AccumulatePathRadiance(pix, radiance, sampleCount);
-    depth[pix] = max(depth[pix], primaryDepth);
+    depth[pix] = primaryDepth;
 }
