@@ -108,10 +108,6 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
                                                    .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                    .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                }});
-    RenderUtils::createCSClearTexture(
-        renderer, "Trace Clear Depth", DepthUAV,
-        RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat, .range = RHITextureSubresourceRange::Create()},
-        float4{0.0f, 0.0f, 0.0f, 0.0f});
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
     String tracePassName = Format("Trace {}", shaderExecutionReordering ? "SER" : "Compute");
