@@ -1339,7 +1339,6 @@ static Pair<FSerializedMesh, Vector<unsigned char>> SerializedFromMesh(FImported
     desc.emissiveMeshlets = serializer.AppendArray(mesh.dag.emissiveMeshlets);
     desc.emissiveAliases = serializer.AppendArray(mesh.dag.emissiveAliases);
     desc.emissivePrimitiveMap = serializer.AppendArray(mesh.dag.emissivePrimitiveMap);
-    desc.skinBinding = serializer.AppendArray(mesh.skin);
 
     return {desc, std::move(payload)};
 }

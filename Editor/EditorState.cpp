@@ -366,8 +366,6 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
     auto gpuResources = CreateGPUSceneRendererResources(renderer, context->gpuScene);
     BuildGPUSceneHostUpdatePass(renderer, gpuResources);
-    if (GEditor.animation && GEditor.animation->HasSkinning())
-        GEditor.animation->BuildGraph(renderer, gpuResources);
     switch (GEditor.rendererMode)
     {
     case ERendererMode::ProgressivePT:
@@ -502,10 +500,6 @@ static void FRunning()
     GEditor.shaderGlobals.dbgMaterialFlags = GEditor.rendererConfig.materialFlags;
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
     GEditor.shaderGlobals.ptPrimaryLightVisibility = GEditor.rendererConfig.ptPrimaryLightVisibility ? 1u : 0u;
-
-    bool animationChanged = GEditor.animation && GEditor.animation->Tick(dt, renderer->GetFrame());
-    if (animationChanged)
-        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
 
     static uint32_t sPrevPTAccumulatedFrames = 0u;
     bool ptAccumWasReset = GEditor.shaderGlobals.ptAccumulatedFrames < sPrevPTAccumulatedFrames;
@@ -832,5 +826,4 @@ bool EditorOnFrame(FContext* context)
 void EditorCleanup()
 {
     DestroyEditorRenderer();
-    GEditor.animation.reset();
 }

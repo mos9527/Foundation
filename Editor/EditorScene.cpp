@@ -366,8 +366,6 @@ void DeleteSelectedInstance()
     if (idx < 0 || idx >= static_cast<int>(sceneInstances.size()))
         return;
 
-    if (GEditor.animation)
-        GEditor.animation->RemoveInstance(static_cast<uint32_t>(idx), GEditor.resources);
     sceneInstances.erase(sceneInstances.begin() + idx);
     GEditor.Scene().RebuildIndex();
     ClearSelection();
@@ -438,12 +436,7 @@ static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBy
         estimatedBudget.emissiveClusterBudget,
         estimatedBudget.texturesBudget);
 
-    FAnimationRuntimeBudget animationBudget = CalculateAnimationRuntimeBudget(scene);
-    outBudgetBytes = GPUSceneBudgetBytes(estimatedBudget) + animationBudget.TotalBytes();
-    if (animationBudget.TotalBytes() != 0)
-        LOG(Editor, LogDebug, "Animation buffers: {:.2f} MB input/staging, {:.2f} MB palettes",
-            animationBudget.inputBytes * 2u / static_cast<float>(1u << 20),
-            animationBudget.paletteBytes / static_cast<float>(1u << 20));
+    outBudgetBytes = GPUSceneBudgetBytes(estimatedBudget);
 
     auto* gpu = Construct<GPUScene>(GContext->allocator, GContext->device.Get(), GContext->jobs.get(), GContext->allocator,
                                     estimatedBudget, GContext->editorFrameScratch.get());
@@ -554,13 +547,10 @@ static void InstallLoadedScene(String const& scenePayloadPath, GPUScene*& newGPU
 {
     GContext->device->WaitIdle();
     DestroyEditorRenderer(GContext);
-    GEditor.animation.reset();
     DestroyGPUScene(GContext->gpuScene);
     GContext->gpuScene = newGPUScene;
     newGPUScene = nullptr;
     GEditor.OpenSceneFile(scenePayloadPath);
-    GEditor.animation.emplace(GContext->allocator);
-    GEditor.animation->Initialize(GEditor.Scene(), *GContext->gpuScene, GContext->device.Get(), GEditor.resources);
     ClearSelection();
     GEditor.cameraUpdated = true;
     GEditor.state = FERunningEnter;

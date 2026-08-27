@@ -438,6 +438,6 @@ bool FImportedMesh::EnsureRaw()
 
 void FImportedMesh::Optimize() { OptimizeVertexIndex(vertices, lods[0].indices); }
 FImportedMesh::FImportedMesh(Allocator* alloc) :
-    vertices(alloc), verticesQuantized(alloc), skin(alloc), lods(alloc), dag(alloc)
+    vertices(alloc), verticesQuantized(alloc), lods(alloc), dag(alloc)
 {
 }

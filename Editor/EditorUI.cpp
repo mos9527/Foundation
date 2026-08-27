@@ -1645,7 +1645,6 @@ void EditorDockSpaceAndMenuBar()
         ImGui::DockBuilderDockWindow("Lighting", dockRight);
         ImGui::DockBuilderDockWindow("Rendering", dockRight);
         ImGui::DockBuilderDockWindow("Profiler", dockRight);
-        ImGui::DockBuilderDockWindow("Animation", dockBottom);
         ImGui::DockBuilderFinish(dockspaceID);
     }
 
@@ -2510,69 +2509,7 @@ void FLightingPanel()
     DrawLightGizmos();
 }
 
-static void FAnimationPanel()
-{
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
-    if (ImGui::Begin("Animation"))
-    {
-        if (!GEditor.animation || !GEditor.animation->HasSkinning())
-        {
-            ImGui::TextDisabled("No skinned animation");
-        }
-        else
-        {
-            auto playbacks = GEditor.animation->GetPlaybacks();
-            auto skeletons = GEditor.Scene().GetSkeletons();
-            auto clips = GEditor.Scene().GetClips();
-            static int selectedSkeleton = 0;
-            selectedSkeleton = std::clamp(selectedSkeleton, 0, static_cast<int>(playbacks.size()) - 1);
-            char const* skeletonName = GEditor.Scene().GetName(skeletons[selectedSkeleton].id);
-            String skeletonFallback = Format("Skeleton {}", selectedSkeleton);
-            if (ImGui::BeginCombo("Skeleton", skeletonName ? skeletonName : skeletonFallback.c_str()))
-            {
-                for (int i = 0; i < static_cast<int>(playbacks.size()); ++i)
-                {
-                    char const* name = GEditor.Scene().GetName(skeletons[i].id);
-                    String fallback = Format("Skeleton {}", i);
-                    if (ImGui::Selectable(name ? name : fallback.c_str(), selectedSkeleton == i))
-                        selectedSkeleton = i;
-                }
-                ImGui::EndCombo();
-            }
 
-            FAnimationPlayback& playback = playbacks[selectedSkeleton];
-            Span<const uint32_t> skeletonClips =
-                GEditor.animation->GetSkeletonClips(static_cast<uint32_t>(selectedSkeleton));
-            char const* clipName = playback.clipIndex < clips.size()
-                ? GEditor.Scene().GetName(clips[playback.clipIndex].name)
-                : nullptr;
-            if (ImGui::BeginCombo("Clip", clipName ? clipName : "Rest pose"))
-            {
-                for (uint32_t clipIndex : skeletonClips)
-                {
-                    char const* name = GEditor.Scene().GetName(clips[clipIndex].name);
-                    String fallback = Format("Clip {}", clipIndex);
-                    if (ImGui::Selectable(name ? name : fallback.c_str(), playback.clipIndex == clipIndex))
-                    {
-                        playback.clipIndex = clipIndex;
-                        playback.time = 0.0f;
-                        playback.dirty = true;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-            ImGui::Checkbox("Play", &playback.playing);
-            ImGui::SameLine();
-            ImGui::Checkbox("Loop", &playback.loop);
-            ImGui::DragFloat("Speed", &playback.speed, 0.05f, -8.0f, 8.0f, "%.2fx");
-            float duration = playback.clipIndex < clips.size() ? clips[playback.clipIndex].duration : 0.0f;
-            if (ImGui::SliderFloat("Time", &playback.time, 0.0f, std::max(duration, 0.0f), "%.3f s"))
-                playback.dirty = true;
-        }
-    }
-    ImGui::End();
-    ImGui::PopStyleColor();
-}
 
 void FRunningImGui()
 {
@@ -2831,7 +2768,6 @@ void FRunningImGui()
     }
     ImGui::End();
     ImGui::PopStyleColor();
-    FAnimationPanel();
     FLightingPanel();
     DrawInstanceGizmos();
     DrawViewportSelectionContextMenu();

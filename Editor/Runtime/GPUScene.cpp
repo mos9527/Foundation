@@ -36,12 +36,9 @@ void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResourc
     for (FSerializedMesh const& mesh : scene.GetMeshes())
     {
         GeometryHandle handle{};
-        if (mesh.skeleton.IsNil())
-        {
-            GPUScene::Result r = gpu.Upload(&blobs, mesh, handle);
-            CHECK_MSG(r == GPUScene::Result::InProgress || r == GPUScene::Result::Ready, "Mesh upload rejected ({})",
-                      static_cast<int>(r));
-        }
+        GPUScene::Result r = gpu.Upload(&blobs, mesh, handle);
+        CHECK_MSG(r == GPUScene::Result::InProgress || r == GPUScene::Result::Ready, "Mesh upload rejected ({})",
+                  static_cast<int>(r));
         outResources.meshGeometry.push_back(handle);
         outResources.meshById.emplace(mesh.id, static_cast<uint32_t>(outResources.meshGeometry.size() - 1));
     }

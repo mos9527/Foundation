@@ -11,7 +11,6 @@
 #include "Camera.hpp"
 #include "Editor.hpp"
 #include "Runtime/GPUScene.hpp"
-#include "Runtime/Animation.hpp"
 #include "Scene/Scene.hpp"
 #include <RHICore/Swapchain.hpp>
 
@@ -155,7 +154,6 @@ inline float ApertureRadiusFromFStop(float fStop, float sensorHeight, float fovY
 struct EditorState
 {
     FSceneGPUResources resources;
-    Optional<FAnimationRuntime> animation;
     Optional<MemoryMappedFile> sceneFile;
     Optional<FImportedScene>     scene;
     String             currentSavePath;

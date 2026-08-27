@@ -348,8 +348,6 @@ namespace
         CHECK_MSG(tables.meshes.size() <= UINT32_MAX, "FScene mesh table is too large");
         CHECK_MSG(tables.curves.size() <= UINT32_MAX, "FScene curve table is too large");
         CHECK_MSG(tables.textures.size() <= UINT32_MAX, "FScene texture table is too large");
-        CHECK_MSG(tables.skeletons.size() <= UINT32_MAX, "FScene skeleton table is too large");
-        CHECK_MSG(tables.clips.size() <= UINT32_MAX, "FScene animation clip table is too large");
 
         // String pool: content-addressed ids (id == hash of value).
         HashSet<FUUID> stringIds(GLOBAL_ALLOC);
@@ -367,16 +365,9 @@ namespace
         HashSet<FUUID> const meshIds = BuildIdSet(tables.meshes, "FScene mesh");
         HashSet<FUUID> const curveIds = BuildIdSet(tables.curves, "FScene curve");
         HashSet<FUUID> const textureIds = BuildIdSet(tables.textures, "FScene texture");
-        HashSet<FUUID> const skeletonIds = BuildIdSet(tables.skeletons, "FScene skeleton");
-        BuildIdSet(tables.clips, "FScene animation clip");
         BuildIdSet(tables.instances, "FScene instance");
         BuildIdSet(tables.cameras, "FScene camera");
         BuildIdSet(tables.lights, "FScene light");
-        for (FSkeleton const& skeleton : tables.skeletons)
-            for (uint32_t joint = 0; joint < skeleton.Count(); ++joint)
-                CHECK_MSG(skeleton.joints[joint].parent >= -1 &&
-                              skeleton.joints[joint].parent < static_cast<int32_t>(joint),
-                          "Skeleton joints must be topologically sorted");
 
         auto requireTexture = [&](FUUID id, const char* what)
         {
@@ -480,36 +471,6 @@ namespace
                           ? mesh.emissivePrimitiveMap.count == 0u
                           : (!mesh.lods.empty() && mesh.emissivePrimitiveMap.count == mesh.lods[0].indexCount / 3u),
                       "FScene emissive primitive map does not match emissive meshlets");
-            if (mesh.skeleton.IsNil())
-            {
-                CHECK_MSG(mesh.skinBinding.decodedSize == 0 && mesh.skinBinding.count == 0,
-                          "Rigid mesh must not carry skin bindings");
-            }
-            else
-            {
-                CHECK_MSG(skeletonIds.contains(mesh.skeleton), "Skinned mesh references unknown skeleton id");
-                ValidateBlobArray<FSkinBinding>(header, mesh.skinBinding, "mesh.skinBinding");
-                CHECK_MSG(mesh.skinBinding.count == mesh.vertexCount, "Skinned mesh binding count mismatch");
-            }
-        }
-
-        for (auto const& clip : tables.clips)
-        {
-            CHECK_MSG(skeletonIds.contains(clip.skeleton), "Animation clip references unknown skeleton id");
-            CHECK_MSG(clip.duration >= 0.0f, "Animation clip has a negative duration");
-            auto skeleton = std::find_if(tables.skeletons.begin(), tables.skeletons.end(),
-                                         [&](FSkeleton const& value) { return value.id == clip.skeleton; });
-            CHECK(skeleton != tables.skeletons.end());
-            for (FAnimChannel const& channel : clip.channels)
-            {
-                CHECK_MSG(channel.joint < skeleton->Count(), "Animation channel references an invalid joint");
-                uint32_t components = channel.path == FAnimPath::Rotation ? 4u : 3u;
-                uint32_t multiplier = channel.interp == FAnimInterp::CubicSpline ? 3u : 1u;
-                CHECK_MSG(channel.values.size() == channel.times.size() * components * multiplier,
-                          "Animation channel key/value count mismatch");
-                CHECK_MSG(std::is_sorted(channel.times.begin(), channel.times.end()),
-                          "Animation channel times must be sorted");
-            }
         }
 
         for (auto const& curve : tables.curves)
@@ -551,8 +512,7 @@ namespace
 } // namespace
 
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes
-FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratchAlloc,
-                              Vector<uint16_t> const* jointRemap = nullptr)
+FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratchAlloc)
 {
     CHECK(submesh->type == cgltf_primitive_type_triangles);
     CHECK(scratchAlloc != nullptr);
@@ -631,33 +591,6 @@ FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratch
                          Span<const uint32_t>(m0.indices.data(), m0.indices.size()));
     }
 
-    // Skin binding (JOINTS_0/WEIGHTS_0). Joint indices are remapped into the skeleton's
-    // topological order; vertices are left unoptimized so binding stays parallel to @ref vertices.
-    if (const cgltf_accessor* jointsAcc = cgltf_find_accessor(submesh, cgltf_attribute_type_joints, 0))
-    {
-        const cgltf_accessor* weightsAcc = cgltf_find_accessor(submesh, cgltf_attribute_type_weights, 0);
-        if (weightsAcc)
-        {
-            size_t numVertices = submesh->attributes[0].data->count;
-            mesh.skin.resize(numVertices);
-            for (size_t i = 0; i < numVertices; i++)
-            {
-                cgltf_uint j[4] = {0, 0, 0, 0};
-                float w[4] = {0, 0, 0, 0};
-                cgltf_accessor_read_uint(jointsAcc, i, j, 4);
-                cgltf_accessor_read_float(weightsAcc, i, w, 4);
-                FSkinBinding& bind = mesh.skin[i];
-                for (int k = 0; k < 4; k++)
-                {
-                    uint32_t joint = j[k];
-                    if (jointRemap && joint < jointRemap->size())
-                        joint = (*jointRemap)[joint];
-                    bind.joints[k] = static_cast<uint16_t>(joint);
-                    bind.weights[k] = w[k];
-                }
-            }
-        }
-    }
     return mesh;
 }
 
@@ -972,120 +905,9 @@ void AppendResourceBlobJobs(Vector<FBlobJob>& blobJobs, FResourceBlobJobs& resou
 }
 
 void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, FTexture&& texture);
-void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh,
-                       FUUID skeleton = kNilUUID);
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh);
 void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImportedCurve const& curve);
 
-// Flat, topologically sorted skeleton from a glTF skin. outRemap maps skin-local joint indices
-// (as stored in JOINTS_0) to the sorted order; parents above the skin are treated as identity.
-FSkeleton BuildSkeletonFromSkin(cgltf_data* data, cgltf_skin const* skin, Vector<uint16_t>& outRemap, Allocator* alloc)
-{
-    FSkeleton skel(alloc);
-    size_t n = skin->joints_count;
-    outRemap.assign(n, 0);
-    if (n == 0)
-        return skel;
-
-    Vector<int32_t> parentLocal(n, -1, alloc);
-    for (size_t k = 0; k < n; k++)
-    {
-        if (cgltf_node* parent = skin->joints[k]->parent)
-            for (size_t m = 0; m < n; m++)
-                if (skin->joints[m] == parent)
-                {
-                    parentLocal[k] = static_cast<int32_t>(m);
-                    break;
-                }
-    }
-    Vector<uint32_t> depth(n, 0, alloc);
-    for (size_t k = 0; k < n; k++)
-    {
-        uint32_t d = 0;
-        int32_t c = static_cast<int32_t>(k);
-        while (parentLocal[c] >= 0 && d <= n)
-        {
-            d++;
-            c = parentLocal[c];
-        }
-        depth[k] = d;
-    }
-    Vector<uint32_t> order(n, 0, alloc);
-    for (size_t k = 0; k < n; k++)
-        order[k] = static_cast<uint32_t>(k);
-    std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) { return depth[a] < depth[b]; });
-    for (uint32_t newIdx = 0; newIdx < n; newIdx++)
-        outRemap[order[newIdx]] = static_cast<uint16_t>(newIdx);
-
-    Vector<mat4> inverseBind(n, mat4(1.0f), alloc);
-    if (skin->inverse_bind_matrices)
-        cgltf_accessor_unpack_floats(skin->inverse_bind_matrices, reinterpret_cast<float*>(inverseBind.data()), n * 16);
-
-    skel.joints.resize(n);
-    for (uint32_t newIdx = 0; newIdx < n; newIdx++)
-    {
-        uint32_t oldIdx = order[newIdx];
-        FJoint& joint = skel.joints[newIdx];
-        joint.parent = parentLocal[oldIdx] >= 0 ? static_cast<int32_t>(outRemap[parentLocal[oldIdx]]) : -1;
-        mat4 local;
-        cgltf_node_transform_local(skin->joints[oldIdx], reinterpret_cast<float*>(&local));
-        decompose(local, joint.restScale, joint.restRotation, joint.restTranslation);
-        joint.inverseBind = inverseBind[oldIdx];
-    }
-    return skel;
-}
-
-FAnimInterp MapAnimInterp(cgltf_interpolation_type interp)
-{
-    switch (interp)
-    {
-    case cgltf_interpolation_type_step:
-        return FAnimInterp::Step;
-    case cgltf_interpolation_type_cubic_spline:
-        return FAnimInterp::CubicSpline;
-    default:
-        return FAnimInterp::Linear;
-    }
-}
-
-bool MapAnimPath(cgltf_animation_path_type path, FAnimPath& out)
-{
-    switch (path)
-    {
-    case cgltf_animation_path_type_translation:
-        out = FAnimPath::Translation;
-        return true;
-    case cgltf_animation_path_type_rotation:
-        out = FAnimPath::Rotation;
-        return true;
-    case cgltf_animation_path_type_scale:
-        out = FAnimPath::Scale;
-        return true;
-    default:
-        return false; // morph weights unsupported
-    }
-}
-
-bool BuildAnimChannel(cgltf_animation_channel const* ch, uint32_t joint, FAnimChannel& out, float& duration)
-{
-    FAnimPath path;
-    if (!ch->target_node || !ch->sampler || !MapAnimPath(ch->target_path, path))
-        return false;
-    const cgltf_accessor* input = ch->sampler->input;
-    const cgltf_accessor* output = ch->sampler->output;
-    if (!input || !output)
-        return false;
-    out.joint = joint;
-    out.path = path;
-    out.interp = MapAnimInterp(ch->sampler->interpolation);
-    out.times.resize(input->count);
-    cgltf_accessor_unpack_floats(input, out.times.data(), input->count);
-    size_t outFloats = output->count * cgltf_num_components(output->type);
-    out.values.resize(outFloats);
-    cgltf_accessor_unpack_floats(output, out.values.data(), outFloats);
-    if (input->count > 0)
-        duration = std::max(duration, out.times[input->count - 1]);
-    return true;
-}
 
 void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, StringView path, FImportedScene& scene,
                               Allocator* scratchAlloc, FSceneBuildOptions const& buildOptions)
@@ -1132,16 +954,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
     Vector<FUUID> gltfMaterialIds(data->materials_count, kNilUUID, scratchAlloc);
     // Main-thread only: worker jobs below must not touch the string pool.
     auto internString = [&](const char* s) -> FUUID { return scene.InternString(s); };
-    // A glTF animation's display name; a stable fallback keeps its skin + rigid clips grouped and
-    // gives the UI something to select even when the source animation is unnamed.
-    auto animName = [&](const cgltf_animation* anim, size_t index) -> FUUID
-    {
-        if (anim->name && *anim->name)
-            return scene.InternString(anim->name);
-        return scene.InternString(Format("Animation {}", index).c_str());
-    };
-    // glTF animation pointer -> interned name id, for resolving EXT_foundation_animation strips.
-    HashMap<cgltf_animation const*, FUUID> animationName(scratchAlloc);
+
     scene.Add(FMaterial{
         .id = kDefaultMaterialUUID,
         .baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f},
@@ -1384,28 +1197,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
     for (size_t i = 0; i < data->meshes_count; ++i)
         meshPrimitiveResources.push_back(Vector<MeshPrimitiveResource>(scratchAlloc));
 
-    // Skinning: one topologically sorted skeleton per glTF skin, plus a joint remap and a
-    // mesh->skin map so each skinned submesh can carry its skeleton id and remapped bindings.
-    Vector<Vector<uint16_t>> skinRemap(scratchAlloc);
-    skinRemap.reserve(data->skins_count);
-    scene.mTables.skeletons.reserve(data->skins_count);
-    Vector<FUUID> skinSkeletonIds(data->skins_count, kNilUUID, scratchAlloc);
-    for (size_t s = 0; s < data->skins_count; s++)
-    {
-        Vector<uint16_t> remap(scratchAlloc);
-        FSkeleton skel = BuildSkeletonFromSkin(data, &data->skins[s], remap, scratchAlloc);
-        skel.id = FUUID::Generate();
-        skinSkeletonIds[s] = skel.id;
-        scene.mTables.skeletons.push_back(std::move(skel));
-        skinRemap.push_back(std::move(remap));
-    }
-    Vector<int32_t> meshToSkin(data->meshes_count, -1, scratchAlloc);
-    for (size_t i = 0; i < data->nodes_count; i++)
-    {
-        cgltf_node const* node = &data->nodes[i];
-        if (node->mesh && node->skin)
-            meshToSkin[cgltf_mesh_index(data, node->mesh)] = static_cast<int32_t>(cgltf_skin_index(data, node->skin));
-    }
+
 
     uint32_t nextSubmesh = 0;
     uint32_t nextCurve = 0;
@@ -1414,8 +1206,6 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
     struct PrimitiveTask
     {
         cgltf_primitive* source{};
-        Vector<uint16_t> const* remap{};
-        FUUID skeleton{};
         FUUID curve{};
         uint32_t index{};
         bool mesh{};
@@ -1427,9 +1217,6 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         for (size_t i = 0; i < data->meshes_count; i++)
         {
             auto& mesh = data->meshes[i];
-            int32_t const skinIndex = meshToSkin[i];
-            Vector<uint16_t> const* const remap = skinIndex >= 0 ? &skinRemap[skinIndex] : nullptr;
-            FUUID const skeletonId = skinIndex >= 0 ? skinSkeletonIds[skinIndex] : kNilUUID;
             meshPrimitiveResources[i].reserve(mesh.primitives_count);
             for (size_t p = 0; p < mesh.primitives_count; p++)
             {
@@ -1439,8 +1226,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
                     uint32_t meshIndex = nextSubmesh++;
                     meshPrimitiveResources[i].push_back(
                         MeshPrimitiveResource{.type = FInstanceType::Mesh, .index = meshIndex});
-                    geometryTasks.push_back(
-                        {.source = sub, .remap = remap, .skeleton = skeletonId, .index = meshIndex, .mesh = true});
+                    geometryTasks.push_back({.source = sub, .index = meshIndex, .mesh = true});
                 }
                 else
                 {
@@ -1461,8 +1247,8 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
                     PrimitiveTask const& task = geometryTasks[i];
                     if (task.mesh)
                     {
-                        FImportedMesh submesh = LoadGLTFSubmesh(task.source, scratchAlloc, task.remap);
-                        if (submesh.skin.empty() && buildOptions.optimizeMeshes)
+                        FImportedMesh submesh = LoadGLTFSubmesh(task.source, scratchAlloc);
+                        if (buildOptions.optimizeMeshes)
                         {
                             LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", task.index,
                                 submesh.vertices.size(), submesh.lods[0].indices.size());
@@ -1475,8 +1261,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
                             submesh.ClusterizeDAG();
                         }
                         submesh.Quantize();
-                        BuildMeshBlobJobs(scene.mTables.meshes[task.index], meshBlobJobs[task.index].jobs, submesh,
-                                          submesh.skin.empty() ? kNilUUID : task.skeleton);
+                        BuildMeshBlobJobs(scene.mTables.meshes[task.index], meshBlobJobs[task.index].jobs, submesh);
                     }
                     else
                     {
@@ -1491,54 +1276,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
     CHECK_MSG(nextSubmesh == numTrianglePrimitives, "Serialized mesh count mismatch");
     CHECK_MSG(nextCurve == numCurvePrimitives, "Serialized curve count mismatch");
 
-    /* Skin clips: one per glTF animation that targets a skinned joint, bound to the first skin a
-     * channel targets. Channels for other skins or unsupported paths (morph weights) are dropped. */
-    auto findSkinJoint = [&](cgltf_node* node, int32_t& outSkin, uint32_t& outJoint) -> bool
-    {
-        for (size_t s = 0; s < data->skins_count; s++)
-            for (size_t l = 0; l < data->skins[s].joints_count; l++)
-                if (data->skins[s].joints[l] == node)
-                {
-                    outSkin = static_cast<int32_t>(s);
-                    outJoint = skinRemap[s][l];
-                    return true;
-                }
-        return false;
-    };
-    for (size_t a = 0; a < data->animations_count; a++)
-    {
-        cgltf_animation const* anim = &data->animations[a];
-        int32_t clipSkin = -1;
-        for (size_t c = 0; c < anim->channels_count && clipSkin < 0; c++)
-        {
-            int32_t s;
-            uint32_t j;
-            if (anim->channels[c].target_node && findSkinJoint(anim->channels[c].target_node, s, j))
-                clipSkin = s;
-        }
-        if (clipSkin < 0)
-            continue;
 
-        FAnimationClip clip(scratchAlloc);
-        clip.id = FUUID::Generate();
-        clip.name = animName(anim, a);
-        animationName[anim] = clip.name;
-        clip.skeleton = skinSkeletonIds[clipSkin];
-        for (size_t c = 0; c < anim->channels_count; c++)
-        {
-            cgltf_animation_channel const* ch = &anim->channels[c];
-            int32_t s;
-            uint32_t j;
-            if (!ch->target_node || !findSkinJoint(ch->target_node, s, j) || s != clipSkin)
-                continue;
-            FAnimChannel channel(scratchAlloc);
-            if (!BuildAnimChannel(ch, j, channel, clip.duration))
-                continue;
-            clip.channels.push_back(std::move(channel));
-        }
-        if (!clip.channels.empty())
-            scene.mTables.clips.push_back(std::move(clip));
-    }
 
     /* Blob compression and commit */
     if (!textureJobs.IsEmpty())
@@ -1825,7 +1563,7 @@ void BuildDOTSGeometry(FImportedCurve const& curve, Vector<FCurveDOTSVertex>& ve
     CHECK_MSG(indices.size() == leaves.size() * 12, "DOTS index/leaf count mismatch");
 }
 
-void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh, FUUID skeleton)
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh)
 {
     CHECK_MSG(!mesh.verticesQuantized.empty(), "FScene mesh is not quantized");
     desc.bounds = BuildMeshBounds(mesh);
@@ -1839,8 +1577,6 @@ void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImpor
     desc.emissiveMeshlets = {};
     desc.emissiveAliases = {};
     desc.emissivePrimitiveMap = {};
-    desc.skinBinding = {};
-    desc.skeleton = skeleton;
 
     AppendArrayBlobJob(blobJobs, mesh.verticesQuantized, FBlobCodec::LZ4, desc.vertices);
     desc.lods.reserve(mesh.lods.size());
@@ -1858,7 +1594,6 @@ void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImpor
     AppendArrayBlobJob(blobJobs, mesh.dag.emissiveMeshlets, FBlobCodec::LZ4, desc.emissiveMeshlets);
     AppendArrayBlobJob(blobJobs, mesh.dag.emissiveAliases, FBlobCodec::LZ4, desc.emissiveAliases);
     AppendArrayBlobJob(blobJobs, mesh.dag.emissivePrimitiveMap, FBlobCodec::LZ4, desc.emissivePrimitiveMap);
-    AppendArrayBlobJob(blobJobs, mesh.skin, FBlobCodec::LZ4, desc.skinBinding);
 }
 
 void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImportedCurve const& curve)
@@ -1910,7 +1645,6 @@ void FImportedScene::RebuildIndex()
     fill(mIndex.textures, mTables.textures);
     fill(mIndex.meshes, mTables.meshes);
     fill(mIndex.curves, mTables.curves);
-    fill(mIndex.skeletons, mTables.skeletons);
 }
 
 Span<const unsigned char> FImportedScene::GetPayloadBytes() const
@@ -1935,8 +1669,6 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     size_t rigidMeshCount = 0;
     for (auto const& mesh : GetMeshes())
     {
-        if (!mesh.skeleton.IsNil())
-            continue;
         primitiveBytes = AlignUp(primitiveBytes, size_t(4));
         primitiveBytes += GPUScene::CalculateMeshPrimitiveSize(mesh);
         ++rigidMeshCount;
@@ -1961,7 +1693,6 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     desc.tlasInstanceBudget = RingGPUSceneBudget(tlasInstanceCount);
     desc.materialBudget = RingGPUSceneBudget(GetMaterials().size());
     desc.lightBudget = RingGPUSceneBudget(GetLights().size());
-    size_t skinnedInstanceCount = 0;
     size_t emissiveClusterCount = 0;
     size_t dynamicBytes = 0;
     for (FInstance const& instance : GetInstances())
@@ -1972,20 +1703,11 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
         if (meshIndex < 0)
             continue;
         FSerializedMesh const& mesh = GetMeshes()[static_cast<size_t>(meshIndex)];
-        if (mesh.skeleton.IsNil())
-        {
-            emissiveClusterCount += mesh.emissiveMeshlets.count;
-            continue;
-        }
-        CHECK_MSG(!mesh.lods.empty(), "Skinned mesh has no LOD0");
-        uint64_t bytes = sizeof(GSMesh) + static_cast<uint64_t>(mesh.vertexCount) * sizeof(FQVertex) +
-            static_cast<uint64_t>(mesh.lods[0].indexCount) * sizeof(uint32_t);
-        dynamicBytes += static_cast<size_t>(AlignUp(bytes, 16ull));
-        ++skinnedInstanceCount;
+        emissiveClusterCount += mesh.emissiveMeshlets.count;
     }
     desc.dynamicGeometryBudget = ByteGPUSceneBudget(dynamicBytes, 0, size_t(16));
     desc.emissiveClusterBudget = RingGPUSceneBudget(emissiveClusterCount);
-    desc.geometryBudget = CountGPUSceneBudget(rigidMeshCount + GetCurves().size() + skinnedInstanceCount);
+    desc.geometryBudget = CountGPUSceneBudget(rigidMeshCount + GetCurves().size());
     desc.dynamicStagingFramesInFlight = kGPUSceneRingFrameSlack;
 
     size_t textureBindings =

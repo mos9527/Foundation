@@ -37,13 +37,7 @@ struct FQVertex
 static_assert(sizeof(FQVertex) == 16);
 #pragma pack(pop)
 
-// Per-vertex binding stored separately from the render vertex format.
-struct FSkinBinding
-{
-    uint16_t joints[4]{0, 0, 0, 0};
-    float weights[4]{1, 0, 0, 0};
-};
-static_assert(sizeof(FSkinBinding) == 24);
+
 
 struct FLODGroup // @ref clodGroup
 {
@@ -116,8 +110,6 @@ struct FSerializedMesh
     FBlobRef emissiveMeshlets;
     FBlobRef emissiveAliases;
     FBlobRef emissivePrimitiveMap;
-    FBlobRef skinBinding; // FSkinBinding per vertex; empty when rigid.
-    FUUID skeleton{};     // skin skeleton id; kNilUUID when rigid.
 
     explicit FSerializedMesh(Allocator* alloc = GLOBAL_ALLOC)
         : lods(alloc)
@@ -129,7 +121,6 @@ struct FImportedMesh
 {
     Vector<FVertex> vertices; // Full precision, raw vertices. Used by importers.
     Vector<FQVertex> verticesQuantized; // Quantized vertex data for GPU upload.
-    Vector<FSkinBinding> skin; // Per-vertex skin binding; empty when rigid. Parallel to @ref vertices.
     struct LOD
     {
         Vector<uint32_t> indices; // Full precision triangle indices
