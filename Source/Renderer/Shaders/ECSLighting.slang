@@ -191,17 +191,19 @@ void main(uint2 tid: SV_DispatchThreadID) {
         }
 
         float3 envTint = EnvLightTint();
+        bool envHasEnvMap = globalParams.hasEnvMap != 0u &&
+            GSLightHasFlag(lights[globalParams.lights.offset], uint32_t(GSLightFlagsBits.EnvironmentMap));
         float3 diffuseAlbedo = baseColor * (1.0f - metallic);
         float ao = (flags & uint32_t(ViewFlagsBits.EnableRasterAmbientOcclusion)) != 0
                      ? ambientOcclusion.Load(uint3(tid, 0))
                      : 1.0f;
-        Ld += ao * diffuseAlbedo * (globalParams.hasEnvMap != 0u ? SHIrradiance(globalParams.envSHCoeffs, normalWS) * envTint : envTint);
+        Ld += ao * diffuseAlbedo * (envHasEnvMap ? SHIrradiance(globalParams.envSHCoeffs, normalWS) * envTint : envTint);
 
         float NoV = clamp(dot(normalWS, v), 0.0f, 1.0f);
         float3 F0 = lerp(float3(F0FromIor(1.5f)), baseColor, metallic);
         float2 lutE = SampleGGXLutE(globalParams.ggxLutEIndex, NoV, roughness);
         float3 F = F0 * lutE.x + (1.0f - F0) * lutE.y;
-        if (globalParams.hasEnvMap != 0u) {
+        if (envHasEnvMap) {
             float3 R = 2.0f * NoV * normalWS - v;
             float mip = ReflectionMipFromRoughness(roughness, globalParams.envMapPrefilteredMips);
             float azimuth = EnvLightAzimuth();
