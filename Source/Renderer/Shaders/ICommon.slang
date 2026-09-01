@@ -293,6 +293,7 @@ public struct UBO
     public float apertureRotation;
     public float apertureRatio;
     public uint32_t cameraProjection;
+    public float2 cameraTanHalfFov;
     public float fbWidth;
     public float fbHeight;
     public uint32_t hizLevels;

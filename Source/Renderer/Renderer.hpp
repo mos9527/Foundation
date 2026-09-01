@@ -27,6 +27,7 @@ struct RendererUBO
     float apertureRotation{0.0f};
     float apertureRatio{1.0f};
     uint32_t cameraProjection{0u};
+    float2 cameraTanHalfFov{1.0f};
     // -- Framebuffers
     // Note: ALWAYS updated by Renderers themselves (PT/RASTER)
     float fbWidth;
@@ -115,6 +116,7 @@ inline void UpdateRendererCameraUBO(RendererUBO& ubo, uint32_t frameNumber, floa
     ubo.proj = proj;
     ubo.inverseView = inverse(view);
     ubo.inverseViewProj = inverse(proj * view);
+    ubo.cameraTanHalfFov = float2{1.0f / proj[0][0], 1.0f / proj[1][1]};
 }
 
 

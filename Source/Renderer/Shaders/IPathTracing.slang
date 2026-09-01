@@ -57,7 +57,7 @@ RWTexture2D<uint32_t> instanceIDBuffer;
 struct RayCone
 {
     float width;
-    float spreadAngle;
+    float spreadSlope;
 };
 
 struct CameraRay
@@ -168,18 +168,22 @@ void ApplyRayConeAnisotropy(inout HitState hit, GSInstance inst,
                             float3 rayDirection,
                             float rayConeWidth)
 {
-    float3 rayConeDir = rayDirection;
     float rayConeRadiusAtIntersection = rayConeWidth * 0.5f;
+    float normalDotRay = dot(hit.geometryNormal, rayDirection);
+    float3 majorDirection = rayDirection - normalDotRay * hit.geometryNormal;
+    float3 minorDirection;
+    if (LengthSquared(majorDirection) > 1e-8f)
+    {
+        majorDirection = normalize(majorDirection);
+        minorDirection = normalize(cross(hit.geometryNormal, majorDirection));
+    }
+    else
+    {
+        CoordinateSystem(hit.geometryNormal, majorDirection, minorDirection);
+    }
 
-    float3 ellipseAxis0 = rayConeDir - dot(hit.geometryNormal, rayConeDir) * hit.geometryNormal;
-    float3 rayDirPlaneProjection0 = ellipseAxis0 - dot(rayConeDir, ellipseAxis0) * rayConeDir;
-    float len0 = length(rayDirPlaneProjection0);
-    ellipseAxis0 *= rayConeRadiusAtIntersection / max(0.0001f, len0);
-
-    float3 ellipseAxis1 = cross(hit.geometryNormal, ellipseAxis0);
-    float3 rayDirPlaneProjection1 = ellipseAxis1 - dot(rayConeDir, ellipseAxis1) * rayConeDir;
-    float len1 = length(rayDirPlaneProjection1);
-    ellipseAxis1 *= rayConeRadiusAtIntersection / max(0.0001f, len1);
+    float3 ellipseAxis0 = majorDirection * (rayConeRadiusAtIntersection / max(abs(normalDotRay), 1e-4f));
+    float3 ellipseAxis1 = minorDirection * rayConeRadiusAtIntersection;
 
     // Transform points to world space
     float3 wp0 = inst.transform + inst.rotation.rotate(p0 * inst.scale);
@@ -543,12 +547,10 @@ float3 GeneratePrimaryRayDirection(float2 pixelSample)
     if (IsPanoramicCamera())
         return GeneratePanoramicRayDirection(pixelSample);
 
-    float2 uv = pixelSample / float2(globalParams.fbWidth, globalParams.fbHeight);
-    float4 ndcPosition = float4(uv, 1.0f, 1.0f);
-    ndcPosition.y = 1 - ndcPosition.y;
-    ndcPosition.xy = ndcPosition.xy * 2.0f - 1.0f;
-    float4 wsPosition = mul(globalParams.inverseViewProj, ndcPosition);
-    return normalize(wsPosition.xyz / wsPosition.w - globalParams.camPosition.xyz);
+    float2 ndc = pixelSample / float2(globalParams.fbWidth, globalParams.fbHeight) * 2.0f - 1.0f;
+    ndc.y = -ndc.y;
+    float3 viewDirection = normalize(float3(ndc * globalParams.cameraTanHalfFov, -1.0f));
+    return normalize(mul(globalParams.inverseView, float4(viewDirection, 0.0f)).xyz);
 }
 
 float WorldToNDCDepth(float3 worldPosition)
@@ -588,8 +590,8 @@ RayDesc MakeCameraRay(float3 direction, float2 lensSample)
     if (!IsPanoramicCamera() && globalParams.aperture > EPS)
     {
         float3 focalPoint = globalParams.focalDistance * ray.Direction;
-        float3 T = mul(globalParams.inverseViewProj, float4(1, 0, 0, 0)).xyz;
-        float3 B = mul(globalParams.inverseViewProj, float4(0, 1, 0, 0)).xyz;
+        float3 T = normalize(mul(globalParams.inverseView, float4(1, 0, 0, 0)).xyz);
+        float3 B = normalize(mul(globalParams.inverseView, float4(0, 1, 0, 0)).xyz);
         float3 lensPoint = lensSample.x * T + lensSample.y * B;
         ray.Origin += lensPoint;
         ray.Direction = normalize(focalPoint - lensPoint);
@@ -613,11 +615,11 @@ CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng, bool debugVi
     cameraRay.rayCone.width = 0.0f;
     float3 p0 = GeneratePrimaryRayDirection(pixelSample);
     float3 p1 = GeneratePrimaryRayDirection(pixelSample + float2(1.0f, 0.0f));
-    cameraRay.rayCone.spreadAngle = acos(clamp(dot(p0, p1), -1.0f, 1.0f));
+    cameraRay.rayCone.spreadSlope = 2.0f * length(p1 - p0) / max(length(p1 + p0), EPS);
 
     if ((kCompileOptions & uint32_t(PTCompileOptionsBits.ForceTextureLOD0)) != 0)
     {
-        cameraRay.rayCone.spreadAngle = 0.0f;
+        cameraRay.rayCone.spreadSlope = 0.0f;
     }
     return cameraRay;
 }

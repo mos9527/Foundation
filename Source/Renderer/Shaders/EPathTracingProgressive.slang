@@ -442,7 +442,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         if (!hasAnyDebugView && AddAnalyticLightHitEmission(hit, ray.Direction, view, beta, bounce, firstBounceCategory,
                                         lastSamplePDF, lastLightCtx, radiance, hitPoint))
         {
-            currentRayCone.width += currentRayCone.spreadAngle * hit.raw.hitT;
+            currentRayCone.width += currentRayCone.spreadSlope * hit.raw.hitT;
             if (++analyticPasses > 64u)
                 break;
             ray.Origin = hitPoint + ray.Direction * EPS_TMin;
@@ -458,7 +458,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         if (!IsMaterialSurfaceHit(hit.kind))
             break;
 
-        currentRayCone.width += currentRayCone.spreadAngle * hit.raw.hitT;
+        currentRayCone.width += currentRayCone.spreadSlope * hit.raw.hitT;
 
         HitState hitState;
         if (hit.kind == HitKind::Curve)
