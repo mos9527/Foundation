@@ -75,6 +75,8 @@ struct GSMesh
     GSOffsetCount emissiveMeshlets;
     GSOffsetCount emissiveAliases;
     GSOffsetCount emissivePrimitiveMap;
+    float3 boundsCenter;
+    float3 boundsExtent;
 };
 struct GSInstance
 {
@@ -157,7 +159,7 @@ struct GSCurveSet
     GSOffsetCount leaves;   // FCurveLeaf
 };
 #pragma pack(pop)
-static_assert(sizeof(GSMesh) == 68);
+static_assert(sizeof(GSMesh) == 92);
 static_assert(sizeof(GSInstance) == 60);
 static_assert(sizeof(GSMaterial) == 192);
 static_assert(sizeof(GSLight) == 84);

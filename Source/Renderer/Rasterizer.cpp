@@ -37,6 +37,7 @@ struct DrawIndexedIndirectCommand
 constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
+constexpr size_t kMaxInstanceCount = 65536;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
 constexpr size_t kMaxCurveDraws = 4096; // curve (DOTS) instances drawn per frame (raster)
 const ViewFlags kDisableRTBuildFlags = ViewFlagsBits::Overdraw | ViewFlagsBits::Meshlet | ViewFlagsBits::BaseColor |
@@ -119,6 +120,16 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         renderer->CreateResource("Visibility Buffer",
                                  RHIBufferDesc{.usage = StorageBuffer | TransferDestination,
                                                .size = AlignUp(kMaxMeshletCount, 32) / 32 * sizeof(uint32_t)});
+    auto OccludedInstances =
+        renderer->CreateResource("Occluded Instances",
+                                 RHIBufferDesc{.usage = StorageBuffer, .size = sizeof(uint32_t) * kMaxInstanceCount});
+    auto OccludedInstanceCounter = renderer->CreateResource(
+        "Occluded Instance Counter",
+        RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
+    auto OccludedInstanceDispatch =
+        renderer->CreateResource("Occluded Instance Dispatch",
+                                 RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                                               .size = sizeof(MeshletTaskDispatch)});
 
     // NOTE: Lambda captures
     // NONE of the handle values outlive the renderer. Therefore, ALWAYS capture by value.
@@ -146,32 +157,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
     if (cfg.forceTextureLOD0)
         gbufferViewFlags |= ViewFlagsBits::ForceTextureLOD0;
     uint32_t gbufferFlags = gbufferViewFlags;
-    renderer->CreatePass(
-        "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r) { r->BindBufferCopyDst(self, IndirectTaskDispatch); },
-        [=](PassHandle, Renderer* r, RHICommandList* cmd)
-        {
-            auto* taskDispatch = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
-            cmd->FillBuffer(taskDispatch, 0u);
-        });
-    renderer->CreatePass(
-        "Indirect Meshlet Cull Generation", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSCullInstances.spv"));
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
-            r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
-            r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "outTasks");
-            r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "outTasksCounter");
-            r->BindBufferUnordered(self, IndirectTaskDispatch, RHIPipelineStageBits::ComputeShader, "outTasksDispatch");
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            r->CmdSetPipeline(self, cmd);
-            // TODO: This limits us to 65536 instances
-            r->CmdDispatch(self, cmd, {globals->instances.count, 1, 1});
-        });
     /* Meshlet Drawing */
     uint32_t w = std::max(renderExtent.x, 16u);
     uint32_t h = std::max(renderExtent.y, 16u);
@@ -208,6 +193,54 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                        .extent = {HIZWidth, HIZHeight, 1},
                        .format = RHIResourceFormat::R32SignedFloat,
                        .mipLevels = HIZMips});
+    renderer->CreatePass(
+        "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindBufferCopyDst(self, IndirectTaskDispatch);
+            r->BindBufferCopyDst(self, OccludedInstanceCounter);
+            r->BindBufferCopyDst(self, OccludedInstanceDispatch);
+        },
+        [=](PassHandle, Renderer* r, RHICommandList* cmd)
+        {
+            cmd->FillBuffer(r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>(), 0u);
+            cmd->FillBuffer(r->DerefResource(OccludedInstanceCounter).Get<RHIBuffer*>(), 0u);
+            cmd->FillBuffer(r->DerefResource(OccludedInstanceDispatch).Get<RHIBuffer*>(), 0u);
+        });
+    renderer->CreatePass(
+        "Indirect Meshlet Cull Generation", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            uint32_t flags = cfg.cullFlags;
+            r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSCullInstances.spv"),
+                          AsBytes(AsSpan(flags)));
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+            r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
+            r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
+            r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "outTasks");
+            r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "outTasksCounter");
+            r->BindBufferUnordered(self, IndirectTaskDispatch, RHIPipelineStageBits::ComputeShader, "outTasksDispatch");
+            r->BindBufferUnordered(self, OccludedInstanceCounter, RHIPipelineStageBits::ComputeShader,
+                                   "occludedInstancesCounter");
+            r->BindBufferUnordered(self, OccludedInstances, RHIPipelineStageBits::ComputeShader,
+                                   "occludedInstances");
+            r->BindBufferUnordered(self, OccludedInstanceDispatch, RHIPipelineStageBits::ComputeShader,
+                                   "occludedInstancesDispatch");
+            r->BindBufferUnordered(self, Visibility, RHIPipelineStageBits::ComputeShader, "visibility");
+            r->BindTextureSampler(self, HIZSampler, "hizSampler");
+            r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create(
+                                                     RHITextureAspectFlagBits::Color, 0, HIZMips)});
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            CHECK_MSG(globals->instances.count <= kMaxInstanceCount,
+                      "Raster instance culling supports at most {} instances", kMaxInstanceCount);
+            r->CmdSetPipeline(self, cmd);
+            r->CmdDispatch(self, cmd, {globals->instances.count, 1, 1});
+        });
     auto OverdrawBuffer = renderer->CreateResource("Overdraw Buffer",
                                                    RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
                                                                       RHITextureUsageBits::StorageImage |
@@ -420,9 +453,48 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                                 HIZSampler, HIZMips);
             }
         };
+        auto AddInstancePostPass = [=]()
+        {
+            renderer->CreatePass(
+                "Indirect Meshlet Cull Generation [Stage 2]", RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    uint32_t flags = cfg.cullFlags;
+                    r->BindShader(self, RHIShaderStageBits::Compute, "post",
+                                  r->GetApplication()->ResolveRelativePathBase(
+                                      "Data/Shaders/ECSCullInstances.spv"),
+                                  AsBytes(AsSpan(flags)));
+                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
+                    r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
+                    r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "outTasks");
+                    r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader,
+                                           "outTasksCounter");
+                    r->BindBufferUnordered(self, IndirectTaskDispatch, RHIPipelineStageBits::ComputeShader,
+                                           "outTasksDispatch");
+                    r->BindBufferUnordered(self, OccludedInstanceCounter, RHIPipelineStageBits::ComputeShader,
+                                           "occludedInstancesCounter");
+                    r->BindBufferUnordered(self, OccludedInstances, RHIPipelineStageBits::ComputeShader,
+                                           "occludedInstances");
+                    r->BindBufferUnordered(self, OccludedInstanceDispatch, RHIPipelineStageBits::ComputeShader,
+                                           "occludedInstancesDispatch");
+                    r->BindBufferUnordered(self, Visibility, RHIPipelineStageBits::ComputeShader, "visibility");
+                    r->BindBufferIndirectRead(self, OccludedInstanceDispatch);
+                    r->BindTextureSampler(self, HIZSampler, "hizSampler");
+                    r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                         .range = RHITextureSubresourceRange::Create(
+                                                             RHITextureAspectFlagBits::Color, 0, HIZMips)});
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    r->CmdSetPipeline(self, cmd);
+                    cmd->DispatchIndirect(r->DerefResource(OccludedInstanceDispatch).Get<RHIBuffer*>(), 0);
+                });
+        };
         AddCullPass(true), AddMainPass(true);
         if (cfg.cullFlags & CullFlagsBits::Occlusion)
-            AddCullPass(false), AddMainPass(false);
+            AddInstancePostPass(), AddCullPass(false), AddMainPass(false);
         ResourceHandle DynamicMotionDrawCmds = kInvalidHandle;
         ResourceHandle DynamicMotionDrawCount = kInvalidHandle;
         ResourceHandle DynamicMotionDrawInstanceIDs = kInvalidHandle;
@@ -648,6 +720,11 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     cmd->EndGraphics();
                 });
         }
+        if (cfg.cullFlags & CullFlagsBits::Occlusion)
+            createCSMipGenerationSinglePass(renderer, "Final HiZ Mip Gen", RHIDeviceQueueType::Graphics, Depth, HIZ,
+                                            RHIResourceFormat::D32SignedFloat, RHIResourceFormat::R32SignedFloat,
+                                            RHITextureAspectFlagBits::Depth, RHITextureAspectFlagBits::Color,
+                                            HIZSampler, HIZMips, 1, HIZSamplerDesc.reduction);
         if (cfg.viewFlags & ViewFlagsBits::Overdraw)
         {
             renderer->CreatePass(

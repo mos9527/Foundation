@@ -1118,7 +1118,7 @@ String GPUSceneImpl::DbgGetBufferStatistics() const
 
 GPUScene::Result GPUSceneImpl::ReserveMesh(FSerializedMesh const& src, GSMesh& outData, uint32_t& outOffset)
 {
-    if (src.lods.empty())
+    if (src.lods.empty() || !src.bounds.IsValid())
         return Result::InvalidInput;
     auto const& lod0 = src.lods[0];
     const size_t size = GPUScene::CalculateMeshPrimitiveSize(src);
@@ -1162,6 +1162,8 @@ GPUScene::Result GPUSceneImpl::ReserveMesh(FSerializedMesh const& src, GSMesh& o
     outData.emissivePrimitiveMap.offset =
         outOffset + Skip(static_cast<size_t>(src.emissivePrimitiveMap.decodedSize));
     outData.meshletTriOffset = outOffset + Skip(static_cast<size_t>(src.dagMeshletTri.decodedSize));
+    outData.boundsCenter = (src.bounds.min + src.bounds.max) * 0.5f;
+    outData.boundsExtent = (src.bounds.max - src.bounds.min) * 0.5f;
     CHECK_MSG(cursor == size, "Mesh layout mismatch: expected {} got {}", size, cursor);
     return Result::InProgress;
 }

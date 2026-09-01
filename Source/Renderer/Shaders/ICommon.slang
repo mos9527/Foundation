@@ -86,6 +86,8 @@ public struct GSMesh
     public GSOffsetCount emissiveMeshlets;
     public GSOffsetCount emissiveAliases;
     public GSOffsetCount emissivePrimitiveMap;
+    public float3 boundsCenter;
+    public float3 boundsExtent;
 };
 public struct FEmissiveMeshlet
 {

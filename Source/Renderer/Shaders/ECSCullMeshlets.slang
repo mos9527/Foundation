@@ -1,5 +1,6 @@
 import ICommon;
 import IFlags;
+import IHiZ;
 import IMath;
 [[SpecializationConstant]] int cullFlags;
 uniform UBO globalParams;
@@ -139,21 +140,16 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     //  Late:  visible or occluded by early?
     if (cullOcclusion && draw) {
         float4 aabb; // x1, y1, x2, y2 in UV
-        const float hizWidth = globalParams.hizWidth;
-        const float hizHeight = globalParams.hizHeight;
         bool occluded = false;
         if (projSphereAABB(viewCenter, radius, globalParams.proj[0][0], globalParams.proj[1][1], globalParams.zNear, aabb)) {
             // ^^^ Lets anything clipping the near plane pass
-            float width = hizWidth * (aabb.z - aabb.x);
-            float height = hizHeight * (aabb.w - aabb.y);
-            float l = max(width, height);
-            float lambda = ceil(log2(max(l, 1.0f)));
-            float2 texel = (aabb.xy + aabb.zw) * 0.5f;
-            float dMax = hiz.SampleLevel(hizSampler, texel, lambda);
+            float dMax = SampleHiZConservative(hiz, hizSampler, aabb,
+                                               uint2(globalParams.hizWidth, globalParams.hizHeight),
+                                               globalParams.hizLevels);
             // View space depth *decreases* with distance
             float viewDepth = viewCenter.z + radius;
             float d = globalParams.zNear / -viewDepth;
-            occluded = d <= dMax;
+            occluded = d < dMax;
         }
          if (early)
              if (occluded) draw = false;
