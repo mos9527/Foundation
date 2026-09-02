@@ -869,8 +869,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
         inst.type = type;
         inst.emissiveClusterOffset = UINT32_MAX;
     }
-    Allocator* buildAlloc = mStackAlloc ? static_cast<Allocator*>(mStackAlloc) : mAllocator;
-    Vector<GSEmissiveCluster> emissiveClusters(buildAlloc);
+    Vector<GSEmissiveCluster> emissiveClusters(mAllocator);
     // Emissive Triangles in NEE
     if (flag & GPUSceneUpdateFlagsBits::LBVH_IncludeEmissiveClusters)
     {
@@ -929,7 +928,7 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
     {
         mLightBVHNeedsRefit = emissiveClusters.empty();
         LightBVHOptions options{};
-        LightBVHBuild bvh = BuildLightBVH(tables.lights, emissiveClusters, options, buildAlloc);
+        LightBVHBuild bvh = BuildLightBVH(tables.lights, emissiveClusters, options, mAllocator);
 #ifndef NDEBUG
         String validationError;
         CHECK_MSG(ValidateLightBVH(bvh, tables.lights, emissiveClusters, &validationError),
