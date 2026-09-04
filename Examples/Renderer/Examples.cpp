@@ -174,7 +174,10 @@ ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererUBO con
     }
     uint32_t const w = extent.x;
     uint32_t const h = extent.y;
-    auto linSampler = renderer->CreateSampler({});
+    auto linSampler =
+        renderer->CreateSampler({.addressMode = {.u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                                                 .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                                                 .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge}});
     auto postprocessSetup = [=](PassHandle self, Renderer* r)
     {
         if (isDebugOutput)
