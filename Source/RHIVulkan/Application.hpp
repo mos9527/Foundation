@@ -43,5 +43,6 @@ namespace Foundation::RHI {
         [[nodiscard]] VkAllocationCallbacks const* GetVkAllocationCallbacksNative() const { return mVkAllocationCallbacks.GetNative(); }
     private:
         bool mHeadless{false};
+        String mBasePath;
     };
 }
