@@ -60,7 +60,7 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDe
         .imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eStorage,
         // ^^ AMD uses CS to clear themselves - not sure about NV drivers
         .imageSharingMode = vk::SharingMode::eExclusive, // Exclusive mode by default
-        .preTransform = surface_caps.currentTransform,
+        .preTransform = vk::SurfaceTransformFlagBitsKHR::eIdentity, // No pre-transform
         .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque, // Opaque composite alpha
         .presentMode = vkPresentModeFromSwapchainDesc(desc.presentMode),
         .clipped = VK_TRUE, // Clipped presentation
