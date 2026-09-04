@@ -499,6 +499,28 @@ void Examples_UpdateCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbi
     ubo.dbgMaterialFlags = config.materialFlags;
 }
 
+float Examples_MaxRenderScale(RHIExtent2D presentExtent)
+{
+#if defined(__ANDROID__)
+    // Capped for sanity
+    constexpr uint32_t kMobileShortAxisCap = 480u;
+    uint32_t const shortAxis = std::min(presentExtent.x, presentExtent.y);
+    if (shortAxis <= kMobileShortAxisCap)
+        return 1.0f;
+    return static_cast<float>(kMobileShortAxisCap) / static_cast<float>(shortAxis);
+#else
+    (void)presentExtent;
+    return 1.0f;
+#endif
+}
+
+RHIExtent2D Examples_RenderExtent(RHIExtent2D presentExtent, float scale)
+{
+    scale = std::clamp(scale, 0.0f, Examples_MaxRenderScale(presentExtent));
+    return RHIExtent2D{std::max(1u, static_cast<uint32_t>(static_cast<float>(presentExtent.x) * scale)),
+                       std::max(1u, static_cast<uint32_t>(static_cast<float>(presentExtent.y) * scale))};
+}
+
 ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc)
 {
     argh::parser cmdl(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);

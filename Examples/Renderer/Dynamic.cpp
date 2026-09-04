@@ -175,7 +175,7 @@ namespace
     {
         Examples_ResetRenderer(ctx, RendererDesc{});
         ctx.renderer->BeginSetup();
-        cfg.renderExtent = ctx.renderer->GetSwapchainExtent();
+        cfg.renderExtent = Examples_RenderExtent(ctx.renderer->GetSwapchainExtent());
         ubo.ptMaxBounces = 2u;
         auto resources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
         BuildGPUSceneHostUpdatePass(ctx.renderer.get(), resources);

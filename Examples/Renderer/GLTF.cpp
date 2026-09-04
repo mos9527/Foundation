@@ -73,8 +73,7 @@ ResourceHandle RebuildGraph(ExampleVulkanContext& ctx, RendererUBO& ubo, GPUScen
     ctx.renderer->BeginSetup();
     if (!headless)
     {
-        auto const swapExtent = ctx.renderer->GetSwapchainExtent();
-        cfg.renderExtent = RHIExtent2D{float2(swapExtent.x, swapExtent.y) * scaling};
+        cfg.renderExtent = Examples_RenderExtent(ctx.renderer->GetSwapchainExtent(), scaling);
     }
     auto gpuResources = CreateGPUSceneRendererResources(ctx.renderer.get(), &gpu);
     Example_BuildExampleRenderer(renderer, ctx.renderer.get(), &ubo, gpuResources, cfg, outputs);
@@ -206,12 +205,7 @@ int main(int argc, char** argv)
         {
             ExampleFpsCounter fps;
             uint64_t t0 = SDL_GetTicksNS();
-#if defined(__ANDROID__)
-            // TDRs are...expected otherwise
-            float scaling = 0.10f;
-#else
             float scaling = 1.00f;
-#endif
             float maxSamples = 0u;
             bool paused = false;
             cfg.ptRenderPaused = &paused;
@@ -248,8 +242,9 @@ int main(int argc, char** argv)
                     ubo.ptAccumulatedFrames = 0u;
                     paused = false;
                 }
+                float const maxScaling = Examples_MaxRenderScale(ctx.renderer->GetSwapchainExtent());
                 input.wantResizeOrRebuild |=
-                    Examples_Slider(input, "Resolution", scaling, 0.10f, 1.0f, 0.05f, "x", false);
+                    Examples_Slider(input, "Resolution", scaling, 0.10f, maxScaling, 0.05f, "x", false);
                 if (Examples_Slider(input, "Samples", maxSamples, 0.0f, 128.0f, 1.0f))
                 {
                     ubo.ptAccumulatedFrames = 0u;

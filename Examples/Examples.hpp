@@ -162,6 +162,11 @@ struct FExampleOrbitCamera
 void Examples_UpdateCameraUBO(RendererUBO& ubo, Renderer* renderer, FExampleOrbitCamera& camera,
                               RendererConfig const& config);
 
+// Largest render scale allowed for the given present extent. Mobile is capped at 480p on the short axis.
+float Examples_MaxRenderScale(RHIExtent2D presentExtent);
+// Render extent for a requested scale, clamped by Examples_MaxRenderScale.
+RHIExtent2D Examples_RenderExtent(RHIExtent2D presentExtent, float scale = 1.0f);
+
 ExampleVulkanContext Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc desc = {});
 bool Examples_PollEvents(SDL_Window* window, ExampleVulkanContext& ctx, ExampleInputState& input, SDL_Event* outLastEvent = nullptr,
                          void (*processEvent)(SDL_Event*) = nullptr);
