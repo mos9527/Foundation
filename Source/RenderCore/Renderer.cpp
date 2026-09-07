@@ -684,38 +684,27 @@ void Renderer::CullPasses(PassHandle epilogue) const
     }
     auto& groups = mSetup->executionGroups;
     // Grouping heuristics:
-    // 1: Group contains only passes of same queue types
-    // 2: Graphics passes that don't depend on prior Compute separates ones that do while satisfying (1)
-    Set<ResourceHandle> produced(mAllocator); // Coarse, ignores sub resources
-    auto noDependenciesProduced = [&](PassHandle pass)
+    // 1: Groups contain only passes of the same queue type
+    // 2: Passes without cross-queue dependencies are separated from ones that have them
+    auto hasCrossQueueDependency = [&](PassHandle pass)
     {
-        auto const& tpass = mSetup->trackedPasses[pass];
-        return Ranges::none_of(tpass.resources, [&](auto const& r) { return produced.contains(r); });
-    };
-    auto pushDependenciesProduced = [&](PassHandle pass)
-    {
-        auto const& tpass = mSetup->trackedPasses[pass];
-        auto textureProduces = std::views::all(tpass.textureUsages) |
-            std::views::filter([](auto const& t) { return (std::get<1>(t) & kAllShaderWrites); }) | std::views::keys;
-        auto bufferProduces = std::views::all(tpass.bufferUsages) |
-            std::views::filter([](auto const& b) { return (std::get<1>(b) & kAllShaderWrites); }) | std::views::keys;
-        produced.insert(textureProduces.begin(), textureProduces.end());
-        produced.insert(bufferProduces.begin(), bufferProduces.end());
+        if (pass >= mSetup->graph.size())
+            return false;
+        auto queue = mSetup->trackedPasses[pass].queue;
+        return Ranges::any_of(mSetup->graph[pass], [&](auto const& edge)
+                              { return mSetup->trackedPasses[edge.first].queue != queue; });
     };
     for (PassHandle i = 0, j = 0; i < exec.size(); i = j)
     {
         while (j < exec.size() && mSetup->trackedPasses[exec[j]].queue == mSetup->trackedPasses[exec[i]].queue)
         {
-            auto queue = mSetup->trackedPasses[exec[j]].queue;
-            if (queue == RHIDeviceQueueType::Compute)
-                pushDependenciesProduced(exec[j]);
             PassHandle next = (j + 1) < exec.size() ? exec[j + 1] : kInvalidHandle;
-            bool nextProducedByCompute = next != kInvalidHandle && !noDependenciesProduced(next);
-            bool currentProducedByCompute = !noDependenciesProduced(exec[j]);
+            bool nextHasCrossQueueDependency = next != kInvalidHandle && hasCrossQueueDependency(next);
+            bool currentHasCrossQueueDependency = hasCrossQueueDependency(exec[j]);
             j++;
-            if (queue == RHIDeviceQueueType::Graphics && nextProducedByCompute && !currentProducedByCompute)
+            if (nextHasCrossQueueDependency && !currentHasCrossQueueDependency)
                 break; // Start new group
-            if (queue == RHIDeviceQueueType::Graphics && currentProducedByCompute)
+            if (currentHasCrossQueueDependency)
                 break; // Start new group
         }
         auto& group =
@@ -1919,10 +1908,18 @@ void Renderer::ExecuteFrame()
         // Graphics then Compute - some resources (e.g. depth) needs to be transitioned on
         // and only on the most capable queue.
         size_t groupIndex = group.groupIndex;
-        size_t nextGroupIndex = (groupIndex + 1) %
-            groups.size(); // Next group. Would be the first group if current groupIndex is the last group
-        bool needPostTransition = groups[groupIndex].queue == RHIDeviceQueueType::Graphics &&
-            groups[nextGroupIndex].queue != RHIDeviceQueueType::Graphics;
+        size_t postTransitionGroupCount = 0;
+        if (group.queue == RHIDeviceQueueType::Graphics)
+        {
+            while (postTransitionGroupCount + 1 < groups.size())
+            {
+                size_t nextGroupIndex = (groupIndex + postTransitionGroupCount + 1) % groups.size();
+                if (groups[nextGroupIndex].queue == RHIDeviceQueueType::Graphics)
+                    break;
+                postTransitionGroupCount++;
+            }
+        }
+        bool needPostTransition = postTransitionGroupCount != 0;
         // Next - we do all the passes in parallel - with transitions starting before the passes
         auto passBarriers = ConstructSpan<ExecuteBarrierList>(mExecuteAlloc.Ptr(), active.size(), mExecuteAlloc.Ptr());
         auto passCmds =
@@ -1999,57 +1996,66 @@ void Renderer::ExecuteFrame()
             if (needPostTransition)
             {
                 // Declare that the first pass from the next group handled the transition
+                size_t nextGroupIndex = (groupIndex + 1) % groups.size();
                 PassHandle executorPass = groups[nextGroupIndex].passes.front();
                 auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
                 cmd->Begin(mExecuteAlloc.Ptr());
                 cmd->DebugBegin("Graphics Pre Compute");
                 cmd->BeginTransition();
-                for (PassHandle pass : groups[nextGroupIndex].passes)
+                for (size_t groupOffset = 1; groupOffset <= postTransitionGroupCount; groupOffset++)
                 {
-                    auto& tracked = mSetup->trackedPasses[pass];
-                    for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
+                    auto& transitionGroup = groups[(groupIndex + groupOffset) % groups.size()];
+                    for (PassHandle pass : transitionGroup.passes)
                     {
-                        auto& tres = mSetup->trackedResources[hdl];
-                        RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
-                        for (auto& sta : tres.GetLastSubresourceStateOf(range))
+                        auto& tracked = mSetup->trackedPasses[pass];
+                        for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
                         {
-                            // Only deal with resources currently owned by us _once_
-                            // This implies that the states (stages) _could_ be one
-                            // of ours (e.g. Fragment) and cannot be transitioned by the subsequent (Compute)
-                            // group.
-                            // Releasing this state SHOULD imply that all queues - no matter capability
-                            // can transition it.
-                            if (sta.executeTempTransitionFlag)
-                                continue; // Only transition once - so the *first* usages of the next group are valid
-                            // Subsequent intra-group transitions should always be valid by themselves
-                            ExecuteBarrierSubresourceState(executorPass, res, sta, access, stage, layout, cmd);
-                            sta.executeTempTransitionFlag = true;
+                            auto& tres = mSetup->trackedResources[hdl];
+                            RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
+                            for (auto& sta : tres.GetLastSubresourceStateOf(range))
+                            {
+                                // Only deal with resources currently owned by us _once_
+                                // This implies that the states (stages) _could_ be one
+                                // of ours (e.g. Fragment) and cannot be transitioned by the subsequent (Compute)
+                                // group.
+                                // Releasing this state SHOULD imply that all queues - no matter capability
+                                // can transition it.
+                                if (sta.executeTempTransitionFlag)
+                                    continue; // Only transition once - so the *first* usages of the next group are valid
+                                // Subsequent intra-group transitions should always be valid by themselves
+                                ExecuteBarrierSubresourceState(executorPass, res, sta, access, stage, layout, cmd);
+                                sta.executeTempTransitionFlag = true;
+                            }
+                        }
+                        for (auto [hdl, access, stage] : tracked.bufferUsages)
+                        {
+                            auto& tres = mSetup->trackedResources[hdl];
+                            // Same as above
+                            if (tres.lastBufferState.executeTempTransitionFlag)
+                                continue;
+                            ExecuteBarrierBuffer(executorPass, tres, access, stage, cmd);
+                            tres.lastBufferState.executeTempTransitionFlag = true;
                         }
                     }
-                    for (auto [hdl, access, stage] : tracked.bufferUsages)
-                    {
-                        auto& tres = mSetup->trackedResources[hdl];
-                        // Same as above
-                        if (tres.lastBufferState.executeTempTransitionFlag)
-                            continue;
-                        ExecuteBarrierBuffer(executorPass, tres, access, stage, cmd);
-                        tres.lastBufferState.executeTempTransitionFlag = true;
-                    }
                 }
-                for (PassHandle pass : groups[nextGroupIndex].passes)
+                for (size_t groupOffset = 1; groupOffset <= postTransitionGroupCount; groupOffset++)
                 {
-                    auto& tracked = mSetup->trackedPasses[pass];
-                    // Reset the flags
-                    for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
+                    auto& transitionGroup = groups[(groupIndex + groupOffset) % groups.size()];
+                    for (PassHandle pass : transitionGroup.passes)
                     {
-                        auto& tres = mSetup->trackedResources[hdl];
-                        for (auto& sta : tres.GetLastSubresourceStateOf(range))
-                            sta.executeTempTransitionFlag = false;
-                    }
-                    for (auto [hdl, access, stage] : tracked.bufferUsages)
-                    {
-                        auto& tres = mSetup->trackedResources[hdl];
-                        tres.lastBufferState.executeTempTransitionFlag = false;
+                        auto& tracked = mSetup->trackedPasses[pass];
+                        // Reset the flags
+                        for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
+                        {
+                            auto& tres = mSetup->trackedResources[hdl];
+                            for (auto& sta : tres.GetLastSubresourceStateOf(range))
+                                sta.executeTempTransitionFlag = false;
+                        }
+                        for (auto [hdl, access, stage] : tracked.bufferUsages)
+                        {
+                            auto& tres = mSetup->trackedResources[hdl];
+                            tres.lastBufferState.executeTempTransitionFlag = false;
+                        }
                     }
                 }
                 cmd->EndTransition();

@@ -69,7 +69,7 @@ void BuildGPUSceneAccelerationStructureUpdatePass(Renderer* renderer, RendererRe
     CHECK(renderer);
     CHECK(resources.scene);
     renderer->CreatePass(
-        "GPUScene Acceleration Structure Update", RHIDeviceQueueType::Graphics, 0u,
+        "GPUScene Acceleration Structure Update", RHIDeviceQueueType::Compute, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindAccelerationStructureWrite(self, resources.tlas);
@@ -94,7 +94,7 @@ void BuildGPUSceneLightBVHRefitPasses(Renderer* renderer, RendererResources& res
     };
     auto* scene = resources.scene;    
     renderer->CreatePass(
-        "GPUScene Light BVH Refit Leaves", RHIDeviceQueueType::Graphics, 0u,
+        "GPUScene Light BVH Refit Leaves", RHIDeviceQueueType::Compute, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindBufferUniform(self, ubo, RHIPipelineStageBits::ComputeShader, "globalParams");
@@ -127,7 +127,7 @@ void BuildGPUSceneLightBVHRefitPasses(Renderer* renderer, RendererResources& res
             cmd->Dispatch((count + 255u) / 256u, 1, 1);
         });
     renderer->CreatePass(
-        "Light BVH Refit Internals", RHIDeviceQueueType::Graphics, 0u,
+        "Light BVH Refit Internals", RHIDeviceQueueType::Compute, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindBufferUniform(self, ubo, RHIPipelineStageBits::ComputeShader, "globalParams");

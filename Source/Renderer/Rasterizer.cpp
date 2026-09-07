@@ -161,9 +161,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         });
     bool disableRT = cfg.viewFlags & kDisableRTBuildFlags;
     bool useRTShadows = (cfg.viewFlags & ViewFlagsBits::EnableRasterRTShadows) && !disableRT && hasTLAS;
-    // Shadows require AS updates
-    if (useRTShadows)
-        BuildGPUSceneAccelerationStructureUpdatePass(renderer, gpu);
     uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~ViewFlagsBits::EnableRasterRTShadows);
     ViewFlags gbufferViewFlags = cfg.viewFlags;
     if (cfg.forceTextureLOD0)
@@ -897,6 +894,9 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                         r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
                     });
             }
+            // Shadows require AS updates
+            if (useRTShadows)
+                BuildGPUSceneAccelerationStructureUpdatePass(renderer, gpu);
             renderer->CreatePass(
                 "Lighting", RHIDeviceQueueType::Graphics, 0u,
                 [=](PassHandle self, Renderer* r)
