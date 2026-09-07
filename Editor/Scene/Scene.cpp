@@ -1693,6 +1693,8 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     desc.tlasInstanceBudget = RingGPUSceneBudget(tlasInstanceCount);
     desc.materialBudget = RingGPUSceneBudget(GetMaterials().size());
     desc.lightBudget = RingGPUSceneBudget(GetLights().size());
+    desc.instanceBudget += desc.lightBudget;
+    desc.tlasInstanceBudget += desc.lightBudget;
     size_t emissiveClusterCount = 0;
     size_t dynamicBytes = 0;
     for (FInstance const& instance : GetInstances())
