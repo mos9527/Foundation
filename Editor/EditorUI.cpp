@@ -2186,6 +2186,7 @@ void FLightingPanel()
                 light.transform.rotation = GEditor.camera.rot;
                 light.color = float3{1.0f, 0.92f, 0.78f};
                 light.power = 10.0f;
+                light.radius = 0.05f;
                 size_t const insertIndex = !lights.empty() && lights.front().type == FLightType::Environment ? 1u : 0u;
                 lights.insert(lights.begin() + static_cast<std::ptrdiff_t>(insertIndex), light);
                 GEditor.Scene().RebuildIndex();
