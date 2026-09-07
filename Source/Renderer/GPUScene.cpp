@@ -25,6 +25,9 @@ static constexpr size_t kUploadStagingBuffers = 1u;
 static constexpr size_t kBLASBuildBatchSize = 32u;
 static constexpr size_t kGPUSceneBufferQueueCapacity = 256u;
 static constexpr uint32_t kGPUSceneDynamicRebuildRate = 60u; // frames
+static const RHIAccelerationStructureBuildFlags kTLASBuildFlags =
+    RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
+    RHIAccelerationStructureBuildFlagsBits::AllowUpdate;
 
 static bool IsIntersectableLight(GSLight const& light)
 {
@@ -581,6 +584,7 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
     });
     CHECK_MSG(mTLASBuffer->mDesc.size <= UINT32_MAX, "TLAS budget {} exceeds uint32_t range", mTLASBuffer->mDesc.size);
     RHIAccelerationStructureDesc tlasDesc{.type = RHIAccelerationStructureType::TopLevel,
+                                          .flags = kTLASBuildFlags,
                                           .buffer = mTLASBuffer.Get(),
                                           .size = static_cast<uint32_t>(mTLASBuffer->mDesc.size)};
     owner.mTLAS = mDevice->CreateAccelerationStructure(tlasDesc);
@@ -3083,9 +3087,7 @@ void GPUSceneImpl::EnsureTLASCapacity(uint32_t totalInstances)
                                                   .instanceData = instance};
     RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = totalInstances};
     RHIAccelerationStructureBuildDesc desc{.type = RHIAccelerationStructureType::TopLevel,
-                                           .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
-                                               RHIAccelerationStructureBuildFlagsBits::AllowUpdate |
-                                               RHIAccelerationStructureBuildFlagsBits::AllowCompaction,
+                                           .flags = kTLASBuildFlags,
                                            .operation = RHIAccelerationStructureBuildOp::Build,
                                            .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geometry, 1},
                                            .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}};
@@ -3239,10 +3241,8 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
     RHIAccelerationStructureGeometryInfo geometry{.type = RHIAccelerationGeometryType::Instances,
                                                   .instanceData = instance};
     RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = totalInstances};
-    RHIAccelerationStructureBuildFlags buildFlags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
-        RHIAccelerationStructureBuildFlagsBits::AllowUpdate | RHIAccelerationStructureBuildFlagsBits::AllowCompaction;
     RHIAccelerationStructureBuildDesc desc{.type = RHIAccelerationStructureType::TopLevel,
-                                           .flags = buildFlags,
+                                           .flags = kTLASBuildFlags,
                                            .operation = update ? RHIAccelerationStructureBuildOp::Update
                                                                : RHIAccelerationStructureBuildOp::Build,
                                            .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geometry, 1},
