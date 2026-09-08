@@ -14,6 +14,7 @@ struct GTAOPushConstants
     float bias;
     uint directionCount;
     uint stepCount;
+    uint historyValid;
 };
 
 [[vk::push_constant]] GTAOPushConstants pc;
@@ -30,10 +31,17 @@ float3 ReconstructWorldPosition(uint2 pixel, float ndcDepth)
 [numthreads(8, 8, 1)]
 void main(uint2 tid : SV_DispatchThreadID)
 {
-    uint2 fullExtent = uint2(uint(globalParams.fbWidth), uint(globalParams.fbHeight));
+    uint width, height;
+    depth.GetDimensions(width, height);
+    uint2 fullExtent = uint2(width, height);
     uint2 halfExtent = (fullExtent + 1u) / 2u;
     if (tid.x >= halfExtent.x || tid.y >= halfExtent.y)
         return;
+    if (pc.historyValid == 0)
+    {
+        aoOutput[tid] = 1.0f;
+        return;
+    }
 
     uint2 pixel = min(tid * 2u, fullExtent - 1u);
     float centerDepth = depth.Load(uint3(pixel, 0));

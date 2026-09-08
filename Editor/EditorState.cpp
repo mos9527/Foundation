@@ -136,7 +136,7 @@ static Renderer* BeginEditorRendererSetup(FContext* context, uint32_t threadCoun
     DestroyEditorRenderer(context);
 
     RendererDesc desc{};
-    desc.asyncCompute = true;
+    desc.asyncCompute = GEditor.asyncComputeEnabled;
     desc.threadCount = threadCount;
     desc.pipelineCache = context->psoCache.Get();
     auto* renderer = context->renderer =
@@ -336,7 +336,7 @@ static void InsertEditorPostprocessPasses(FContext* context, Renderer* renderer,
         { r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, sPickingPixel); });
     auto [screenWidth, screenHeight] = renderer->GetSwapchainExtent();
     if (!isRendering)
-        EditorGizmos::InsertPass(renderer, outputs.depth, {screenWidth, screenHeight});
+        EditorGizmos::InsertPass(renderer, outputs.depth.Current(), {screenWidth, screenHeight});
 }
 
 static void EndEditorRendererSetup(Renderer* renderer)

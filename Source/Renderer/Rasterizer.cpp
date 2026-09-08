@@ -77,7 +77,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
     globals->fbWidth = static_cast<float>(renderExtent.x);
     globals->fbHeight = static_cast<float>(renderExtent.y);
     /* UBO for everyone */
-    auto GlobalUBO = renderer->CreateResource(
+    auto GlobalUBO = renderer->CreateTemporalResource(
         "Global UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
                       .size = sizeof(RendererUBO)});
@@ -148,13 +148,13 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         "UBO Update & Init", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindBufferCopyDst(self, GlobalUBO);
+            r->BindBufferCopyDst(self, GlobalUBO.Current());
             if (hasMeshShaders)
                 r->BindBufferCopyDst(self, IndirectTaskCounter);
         },
         [=](PassHandle, Renderer* r, RHICommandList* cmd)
         {
-            auto* ubo = r->DerefResource(GlobalUBO).Get<RHIBuffer*>();
+            auto* ubo = r->DerefResource(GlobalUBO.Current()).Get<RHIBuffer*>();
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*globals)));
             if (hasMeshShaders)
                 cmd->FillBuffer(r->DerefResource(IndirectTaskCounter).Get<RHIBuffer*>(), 0u);
@@ -169,7 +169,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
     /* Meshlet Drawing */
     uint32_t w = std::max(renderExtent.x, 16u);
     uint32_t h = std::max(renderExtent.y, 16u);
-    auto Depth = renderer->CreateResource(
+    auto Depth = renderer->CreateTemporalResource(
         "Depth",
         RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
@@ -196,7 +196,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         .reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min};
     auto HIZSampler = renderer->CreateSampler(HIZSamplerDesc);
     auto TexSampler = renderer->CreateSampler(MakeTextureSamplerDesc(cfg));
-    auto HIZ = renderer->CreateResource(
+    auto HIZ = renderer->CreateTemporalResource(
         "HIZ",
         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
                        .extent = {HIZWidth, HIZHeight, 1},
@@ -226,7 +226,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 r->BindShader(self, RHIShaderStageBits::Compute, "main",
                               r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSCullInstances.spv"),
                               AsBytes(AsSpan(flags)));
-                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::ComputeShader, "globalParams");
                 r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                 r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
                 r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "outTasks");
@@ -240,7 +240,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                        "occludedInstancesDispatch");
                 r->BindBufferUnordered(self, Visibility, RHIPipelineStageBits::ComputeShader, "visibility");
                 r->BindTextureSampler(self, HIZSampler, "hizSampler");
-                r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::ComputeShader,
+                r->BindTextureSRV(self, HIZ.Previous(), "hiz", RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create(
                                                          RHITextureAspectFlagBits::Color, 0, HIZMips)});
@@ -265,12 +265,12 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                                                   RHITextureUsageBits::SampledImage,
                                                               .extent = {w, h, 1},
                                                               .format = RHIResourceFormat::R8G8B8A8Unorm});
-    auto GBufferRT1 = renderer->CreateResource("GBuffer 1",
-                                               RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                                                  RHITextureUsageBits::StorageImage |
-                                                                  RHITextureUsageBits::SampledImage,
-                                                              .extent = {w, h, 1},
-                                                              .format = kGBufferNormalFormat});
+    auto GBufferRT1 = renderer->CreateTemporalResource(
+        "GBuffer 1",
+        RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::StorageImage |
+                           RHITextureUsageBits::SampledImage,
+                       .extent = {w, h, 1},
+                       .format = kGBufferNormalFormat});
     auto GBufferRT2 = renderer->CreateResource("GBuffer 2",
                                                RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
                                                                   RHITextureUsageBits::StorageImage |
@@ -355,7 +355,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                         flags |= to_integer(CullFlagsBits::StageLate);
                     r->BindShader(self, RHIShaderStageBits::Compute, "main",
                                   r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSCullMeshlets.spv"), AsBytes(AsSpan(flags)));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                    r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferIndirectRead(self, IndirectTaskDispatch);
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
@@ -370,7 +370,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferUnordered(self, IndirectMeshletDispatch, RHIPipelineStageBits::ComputeShader,
                                            "outMeshletDispatches");
                     r->BindTextureSampler(self, HIZSampler, "hizSampler");
-                    r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::ComputeShader,
+                    r->BindTextureSRV(self, early ? HIZ.Previous() : HIZ.Current(), "hiz",
+                                      RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create(
                                                              RHITextureAspectFlagBits::Color, 0, HIZMips)});
@@ -395,7 +396,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindShader(self, RHIShaderStageBits::Mesh, "main", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EMSBasic.spv"));
                     r->BindShader(self, RHIShaderStageBits::Fragment, "main",
                                   r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
+                    r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::AllGraphics, "globalParams");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
                     r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
@@ -406,7 +407,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindTextureRTV(self, GBufferRT0,
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureRTV(self, GBufferRT1,
+                    r->BindTextureRTV(self, GBufferRT1.Current(),
                                       {.format = kGBufferNormalFormat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureRTV(self, GBufferRT2,
@@ -418,7 +419,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                                       {.format = RHIResourceFormat::R32Uint,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureDSV(self, Depth,
+                    r->BindTextureDSV(self, Depth.Current(),
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                     r->BindBufferIndirectRead(self, IndirectMeshletDispatch);
@@ -455,13 +456,14 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 // TODO: Single pass currently present higher register pressure than expected (72 VGPRs?)
                 //       Figure out where I messed up.
                 if (true)
-                    createCSMipGenerationSinglePass(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, Depth,
-                                                    HIZ, RHIResourceFormat::D32SignedFloat,
+                    createCSMipGenerationSinglePass(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics,
+                                                    Depth.Current(), HIZ.Current(), RHIResourceFormat::D32SignedFloat,
                                                     RHIResourceFormat::R32SignedFloat, RHITextureAspectFlagBits::Depth,
                                                     RHITextureAspectFlagBits::Color, HIZSampler, HIZMips, 1,
                                                     HIZSamplerDesc.reduction);
                 else
-                    createCSMipGenerationPasses(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, Depth, HIZ,
+                    createCSMipGenerationPasses(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics,
+                                                Depth.Current(), HIZ.Current(),
                                                 RHIResourceFormat::D32SignedFloat, RHIResourceFormat::R32SignedFloat,
                                                 RHITextureAspectFlagBits::Depth, RHITextureAspectFlagBits::Color,
                                                 HIZSampler, HIZMips);
@@ -478,7 +480,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                   r->GetApplication()->ResolveRelativePathBase(
                                       "Data/Shaders/ECSCullInstances.spv"),
                                   AsBytes(AsSpan(flags)));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                    r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
                     r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "outTasks");
@@ -495,7 +497,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferUnordered(self, Visibility, RHIPipelineStageBits::ComputeShader, "visibility");
                     r->BindBufferIndirectRead(self, OccludedInstanceDispatch);
                     r->BindTextureSampler(self, HIZSampler, "hizSampler");
-                    r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::ComputeShader,
+                    r->BindTextureSRV(self, HIZ.Current(), "hiz", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create(
                                                              RHITextureAspectFlagBits::Color, 0, HIZMips)});
@@ -519,7 +521,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindTextureRTV(self, GBufferRT0,
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureRTV(self, GBufferRT1,
+                    r->BindTextureRTV(self, GBufferRT1.Current(),
                                       {.format = kGBufferNormalFormat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureRTV(self, GBufferRT2,
@@ -528,7 +530,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindTextureRTV(self, InstanceIDBuffer,
                                       {.format = RHIResourceFormat::R32Uint,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureDSV(self, Depth,
+                    r->BindTextureDSV(self, Depth.Current(),
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                 },
@@ -579,7 +581,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferCopyDst(self, DynamicMotionDrawCount);
                     r->BindShader(self, RHIShaderStageBits::Compute, "main",
                                   r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSIndirectDraw.spv"));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                    r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::ComputeShader,
                                              "dynamicPrimitives");
@@ -609,7 +611,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                   r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EVSIndirectDraw.spv"));
                     r->BindShader(self, RHIShaderStageBits::Fragment, "main",
                                   r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
+                    r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::AllGraphics, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
                     r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::AllGraphics,
                                              "dynamicPrimitives");
@@ -619,7 +621,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindTextureRTV(self, GBufferRT0,
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureRTV(self, GBufferRT1,
+                    r->BindTextureRTV(self, GBufferRT1.Current(),
                                       {.format = kGBufferNormalFormat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureRTV(self, GBufferRT2,
@@ -631,7 +633,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                                       {.format = RHIResourceFormat::R32Uint,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureDSV(self, Depth,
+                    r->BindTextureDSV(self, Depth.Current(),
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                     r->BindBufferIndirectRead(self, DynamicDrawCmds);
@@ -694,7 +696,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferCopyDst(self, CurveMotionDrawCount);
                     r->BindShader(self, RHIShaderStageBits::Compute, "main",
                                   r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSCurveIndirectDraw.spv"));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                    r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
                     r->BindBufferUnordered(self, CurveDrawCmds, RHIPipelineStageBits::ComputeShader, "outDrawCmds");
@@ -719,7 +721,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                   r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EVSCurveDraw.spv"));
                     r->BindShader(self, RHIShaderStageBits::Fragment, "main",
                                   r->GetApplication()->ResolveRelativePathBase("Data/Shaders/EPSGBuffer.spv"), AsBytes(AsSpan(gbufferFlags)));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
+                    r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::AllGraphics, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
                     r->BindBufferStorageRead(self, CurveDrawInstanceIDs, RHIPipelineStageBits::AllGraphics,
@@ -728,7 +730,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindTextureRTV(self, GBufferRT0,
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureRTV(self, GBufferRT1,
+                    r->BindTextureRTV(self, GBufferRT1.Current(),
                                       {.format = kGBufferNormalFormat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureRTV(self, GBufferRT2,
@@ -740,7 +742,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                                       {.format = RHIResourceFormat::R32Uint,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindTextureDSV(self, Depth,
+                    r->BindTextureDSV(self, Depth.Current(),
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                     r->BindBufferIndirectRead(self, CurveDrawCmds);
@@ -770,8 +772,9 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 });
         }
         if (cfg.cullFlags & CullFlagsBits::Occlusion)
-            createCSMipGenerationSinglePass(renderer, "Final HiZ Mip Gen", RHIDeviceQueueType::Graphics, Depth, HIZ,
-                                            RHIResourceFormat::D32SignedFloat, RHIResourceFormat::R32SignedFloat,
+            createCSMipGenerationSinglePass(renderer, "Final HiZ Mip Gen", RHIDeviceQueueType::Graphics,
+                                            Depth.Current(), HIZ.Current(), RHIResourceFormat::D32SignedFloat,
+                                            RHIResourceFormat::R32SignedFloat,
                                             RHITextureAspectFlagBits::Depth, RHITextureAspectFlagBits::Color,
                                             HIZSampler, HIZMips, 1, HIZSamplerDesc.reduction);
         if (cfg.viewFlags & ViewFlagsBits::Overdraw)
@@ -905,17 +908,17 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                         (hasAmbientOcclusion ? to_integer(ViewFlagsBits::EnableRasterAmbientOcclusion) : 0u);
                     r->BindShader(self, RHIShaderStageBits::Compute, "main",
                                   r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSLighting.spv"), AsBytes(AsSpan(lightingFlags)));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                    r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
                                                          .range = RHITextureSubresourceRange::Create()});
-                    r->BindTextureSRV(self, GBufferRT1, "RT1", RHIPipelineStageBits::ComputeShader,
+                    r->BindTextureSRV(self, GBufferRT1.Current(), "RT1", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = kGBufferNormalFormat,
                                                          .range = RHITextureSubresourceRange::Create()});
                     r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                          .range = RHITextureSubresourceRange::Create()});
-                    r->BindTextureSRV(self, Depth, "depth", RHIPipelineStageBits::ComputeShader,
+                    r->BindTextureSRV(self, Depth.Current(), "depth", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create(
                                                              RHITextureAspectFlagBits::Depth)});

@@ -316,7 +316,7 @@ struct RendererOutputs
     // Unified pre-postprocess outputs.
     ResourceHandle diffuse{kInvalidHandle};
     ResourceHandle specular{kInvalidHandle};
-    ResourceHandle depth{kInvalidHandle};
+    TemporalResourceHandle depth{};
     ResourceHandle instanceID{kInvalidHandle};
     ResourceHandle debugOutput{kInvalidHandle};
 };

@@ -53,7 +53,8 @@ TrackedPass::TrackedPass(Allocator* alloc, const PassHandle handle, StringView n
     bufferBindings(alloc), asBindings(alloc), externalBindings(alloc), samplers(alloc), pushConstants(alloc),
     specializationConstants(alloc), rtvs(alloc), vertexInputBindings(alloc), vertexInputAttributes(alloc),
     pass(std::move(renderPass)), descriptorLayouts(alloc), pDescriptorLayouts(alloc), descriptorSets(alloc),
-    pDescriptorSets(alloc), pExternalDescriptorSets(alloc)
+    alternateDescriptorSets(alloc), pDescriptorSets(alloc), pAlternateDescriptorSets(alloc),
+    pExternalDescriptorSets(alloc)
 {
 }
 void TrackedPass::ResetPipeline()
@@ -61,7 +62,9 @@ void TrackedPass::ResetPipeline()
     piplineStages = {};
     // Sets
     descriptorSets.clear();
+    alternateDescriptorSets.clear();
     pDescriptorSets.clear();
+    pAlternateDescriptorSets.clear();
     pExternalDescriptorSets.clear();
     // Layouts
     descriptorLayouts.clear();
@@ -150,6 +153,48 @@ ResourceHandle Renderer::CreateTextureView(PassHandle pass, ResourceHandle handl
     return hdl;
 }
 
+ResourceHandle Renderer::ResolveResourceHandle(ResourceHandle handle, uint64_t frame) const
+{
+    CHECK(mSetup && handle < mSetup->trackedResources.size());
+    auto const& tracked = mSetup->trackedResources[handle];
+    if (tracked.temporalFamily == kInvalidHandle)
+        return handle;
+
+    CHECK(tracked.temporalFamily < mSetup->temporalResources.size());
+    auto const& temporal = mSetup->temporalResources[tracked.temporalFamily];
+    uint32_t slot = static_cast<uint32_t>((frame + 2u - tracked.temporalFramesAgo) & 1u);
+    return temporal.slots[slot];
+}
+
+Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>
+Renderer::DerefPhysicalResource(ResourceHandle handle) const
+{
+    CHECK(mResources);
+    CHECK(handle < mResources->resources.size());
+    using Tv = Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>;
+    auto& res = mResources->resources[handle];
+    CHECK_MSG(!res.valueless_by_exception(), "Resource handle {} is valueless", handle);
+    auto ptr = res.Visit([](auto* ptr) -> Tv { return ptr; }, [](auto& hdl) -> Tv { return hdl.Get(); });
+    CHECK_MSG(!ptr.valueless_by_exception(), "Resource handle {} is null", handle);
+    return ptr;
+}
+
+Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>
+Renderer::DerefResourceAtFrame(ResourceHandle handle, uint64_t frame) const
+{
+    return DerefPhysicalResource(ResolveResourceHandle(handle, frame));
+}
+
+RHITextureView* Renderer::DerefTextureViewAtFrame(ResourceHandle handle, uint64_t frame) const
+{
+    CHECK(mResources && mSetup && handle < mResources->views.size() && handle < mSetup->trackedViews.size());
+    auto& views = mResources->views[handle];
+    size_t slot = views.temporal ? static_cast<size_t>(frame & 1u) : 0u;
+    auto& view = views.slots[slot];
+    CHECK_MSG(!view.valueless_by_exception(), "Texture view handle {} is valueless", handle);
+    return view.Visit([](auto& hdl) -> RHITextureView* { return hdl.Get(); });
+}
+
 ResourceHandle Renderer::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) const
 {
     CHECK(mState == State::Setup);
@@ -172,6 +217,10 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
 {
     CHECK(mState == State::Setup);
     auto& resource = mSetup->trackedResources[handle];
+    if (resource.temporalFamily != kInvalidHandle && (access & kAllShaderWrites))
+    {
+        CHECK_MSG(resource.temporalFramesAgo == 0, "Cannot write through a temporal Previous() handle");
+    }
     // Merge accesses if the buffer is already declared in this pass
     for (auto& [h, _access, _stage] : mSetup->trackedPasses[pass].bufferUsages)
     {
@@ -202,6 +251,10 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
 {
     CHECK(mState == State::Setup);
     auto& resource = mSetup->trackedResources[handle];
+    if (resource.temporalFamily != kInvalidHandle && (access & kAllShaderWrites))
+    {
+        CHECK_MSG(resource.temporalFramesAgo == 0, "Cannot write through a temporal Previous() handle");
+    }
     // Do this for all sub resources in range
     for (auto& sta : resource.GetLastSubresourceStateOf(range))
     {
@@ -553,6 +606,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
 
     auto addRoot = [&](PassHandle pass)
     {
+        if (pass == kInvalidHandle)
+            return;
         if (!live.contains(pass))
         {
             q.push_back(pass);
@@ -564,6 +619,13 @@ void Renderer::CullPasses(PassHandle epilogue) const
     {
         if (mSetup->trackedPasses[i].unCullable)
             addRoot(i);
+    }
+    for (auto const& temporal : mSetup->temporalResources)
+    {
+        auto const& current = mSetup->trackedResources[temporal.slots[0]];
+        addRoot(current.lastBufferState.producer);
+        for (auto const& state : current.lastSubresourceStates)
+            addRoot(state.producer);
     }
 
     size_t head = 0;
@@ -665,6 +727,22 @@ void Renderer::CullPasses(PassHandle epilogue) const
                 t_max = std::max(t_max, ord);
             }
         }
+    }
+    // Both physical slots are required whenever either temporal handle is active.
+    for (auto const& temporal : mSetup->temporalResources)
+    {
+        auto current = mSetup->activeResources.find(temporal.slots[0]);
+        auto previous = mSetup->activeResources.find(temporal.slots[1]);
+        if (current == mSetup->activeResources.end() && previous == mSetup->activeResources.end())
+            continue;
+        auto lifetime = current != mSetup->activeResources.end() ? current->second : previous->second;
+        if (current != mSetup->activeResources.end() && previous != mSetup->activeResources.end())
+        {
+            lifetime.first = std::min(current->second.first, previous->second.first);
+            lifetime.second = std::max(current->second.second, previous->second.second);
+        }
+        mSetup->activeResources[temporal.slots[0]] = lifetime;
+        mSetup->activeResources[temporal.slots[1]] = lifetime;
     }
     // Reorder passes within the same depth level to their relative insertion order (i.e. handle values)
     for (PassHandle i = 0, j = 0; i < exec.size(); i = j)
@@ -952,6 +1030,21 @@ void Renderer::BuildPipelineState(PassHandle pass)
             p->second.emplace_back(hdl);
         }
     }
+    bool hasTemporalBindings = Ranges::any_of(
+        tracked.bufferBindings,
+        [&](auto const& binding)
+        {
+            auto handle = std::get<0>(binding);
+            return mSetup->trackedResources[handle].temporalFamily != kInvalidHandle;
+        });
+    hasTemporalBindings |= Ranges::any_of(
+        tracked.textureBindings,
+        [&](auto const& binding)
+        {
+            auto view = std::get<0>(binding);
+            auto resource = mSetup->trackedViews[view].first;
+            return mSetup->trackedResources[resource].temporalFamily != kInvalidHandle;
+        });
     // ...for Samplers
     for (auto& [sampler_handle, binding] : tracked.samplers)
     {
@@ -1055,85 +1148,113 @@ void Renderer::BuildPipelineState(PassHandle pass)
         {
             std::unique_lock lock(mDescPoolMutex);
             tracked.descriptorSets.push_back(mDescPool->CreateDescriptorSet(tracked.descriptorLayouts.back()));
+            if (hasTemporalBindings)
+                tracked.alternateDescriptorSets.push_back(
+                    mDescPool->CreateDescriptorSet(tracked.descriptorLayouts.back()));
         }
-        auto& ds = tracked.descriptorSets.back();
+        auto* ds = tracked.descriptorSets.back().Get();
         ds->DebugSetObjectName(Format("Descriptor Set {} of {} [{}]", set, tracked.name, pass).c_str());
-        tracked.pDescriptorSets.push_back(ds.Get());
-        // Update bindings
-        for (size_t k = i; k < j; k++)
+        tracked.pDescriptorSets.push_back(ds);
+        RHIDeviceDescriptorSet* alternate = ds;
+        if (hasTemporalBindings)
         {
-            auto const& [bind, name] = bindings[k];
-            auto const& [binding_set, binding] = bind;
-            CHECK_MSG(var_types.contains(name),
-                      "Binding {} is undefined in pass {}, but referenced by one of its shaders", name, tracked.name);
-            auto const& type = var_types[name];
-            using enum RHIDescriptorType;
-            switch (type)
-            {
-            case Sampler:
-                {
-                    CHECK_MSG(var_samplers.contains(name),
-                              "Shader expects a Sampler at {}, but it's not bound by pass {}", name, tracked.name);
-                    auto samplers = var_samplers.find(name)->second;
-                    for (uint e = 0; e < samplers.size(); e++)
-                    {
-                        ds->Update({.binding = binding,
-                                    .startIndex = e,
-                                    .type = type,
-                                    .images = {{{.sampler = DerefSampler(samplers[e])}}}});
-                    }
-                    break;
-                }
-            case SampledImage:
-            case StorageImage:
-                {
-                    CHECK_MSG(var_handles.contains(name),
-                              "Shader expects an Image at {}, but it's not bound by pass {}", name, tracked.name);
-                    auto images = var_handles.find(name)->second;
-                    for (uint e = 0; e < images.size(); e++)
-                    {
-                        auto* view = DerefTextureView(images[e]);
-                        ds->Update({.binding = binding,
-                                    .startIndex = e,
-                                    .type = type,
-                                    .images = {{{.imageView = view,
-                                                 .layout = type == SampledImage ? RHITextureLayout::ShaderReadOnly
-                                                                                : RHITextureLayout::General}}}});
-                    }
-                    break;
-                }
-            case UniformBuffer:
-            case StorageBuffer:
-                {
-                    CHECK_MSG(var_handles.contains(name),
-                              "Shader expects an Buffer at {}, but it's not bound by pass {}", name, tracked.name);
-                    auto buffers = var_handles.find(name)->second;
-                    for (uint e = 0; e < buffers.size(); e++)
-                    {
-                        auto* buf = DerefResource(buffers[e]).Get<RHIBuffer*>();
-                        ds->Update({.binding = binding, .startIndex = e, .type = type, .buffers = {{{.buffer = buf}}}});
-                    }
-                    break;
-                }
-            case AccelerationStructure:
-                {
-                    CHECK_MSG(var_handles.contains(name),
-                              "Shader expects an Acceleration Structure at {}, but it's not bound by pass {}", name,
-                              tracked.name);
-                    auto asses = var_handles.find(name)->second;
-                    for (uint e = 0; e < asses.size(); e++)
-                    {
-                        auto* as = DerefResource(asses[e]).Get<RHIAccelerationStructure*>();
-                        ds->Update({.binding = binding,
-                                    .startIndex = e,
-                                    .type = type,
-                                    .accelerationStructures = {{{.as = as}}}});
-                    }
-                }
-            default:
-                break;
-            }
+            alternate = tracked.alternateDescriptorSets.back().Get();
+            alternate->DebugSetObjectName(
+                Format("Descriptor Set {} Alternate of {} [{}]", set, tracked.name, pass).c_str());
+            tracked.pAlternateDescriptorSets.push_back(alternate);
         }
+        auto updateBindings = [&](RHIDeviceDescriptorSet* target, uint64_t frame)
+        {
+            for (size_t k = i; k < j; k++)
+            {
+                auto const& [bind, name] = bindings[k];
+                auto const& [binding_set, binding] = bind;
+                CHECK_MSG(var_types.contains(name),
+                          "Binding {} is undefined in pass {}, but referenced by one of its shaders", name,
+                          tracked.name);
+                auto const& type = var_types[name];
+                using enum RHIDescriptorType;
+                switch (type)
+                {
+                    case Sampler:
+                        {
+                            CHECK_MSG(var_samplers.contains(name),
+                                      "Shader expects a Sampler at {}, but it's not bound by pass {}", name,
+                                      tracked.name);
+                            auto samplers = var_samplers.find(name)->second;
+                            for (uint e = 0; e < samplers.size(); e++)
+                            {
+                                target->Update({.binding = binding,
+                                                .startIndex = e,
+                                                .type = type,
+                                                .images = {{{.sampler = DerefSampler(samplers[e])}}}});
+                            }
+                            break;
+                        }
+                    case SampledImage:
+                    case StorageImage:
+                        {
+                            CHECK_MSG(var_handles.contains(name),
+                                      "Shader expects an Image at {}, but it's not bound by pass {}", name,
+                                      tracked.name);
+                            auto images = var_handles.find(name)->second;
+                            for (uint e = 0; e < images.size(); e++)
+                            {
+                                auto* view = DerefTextureViewAtFrame(images[e], frame);
+                                target->Update(
+                                    {.binding = binding,
+                                     .startIndex = e,
+                                     .type = type,
+                                     .images = {{{.imageView = view,
+                                                  .layout = type == SampledImage
+                                                      ? RHITextureLayout::ShaderReadOnly
+                                                      : RHITextureLayout::General}}}});
+                            }
+                            break;
+                        }
+                    case UniformBuffer:
+                    case StorageBuffer:
+                        {
+                            CHECK_MSG(var_handles.contains(name),
+                                      "Shader expects an Buffer at {}, but it's not bound by pass {}", name,
+                                      tracked.name);
+                            auto buffers = var_handles.find(name)->second;
+                            for (uint e = 0; e < buffers.size(); e++)
+                            {
+                                auto* buf = DerefResourceAtFrame(buffers[e], frame).Get<RHIBuffer*>();
+                                target->Update(
+                                    {.binding = binding,
+                                     .startIndex = e,
+                                     .type = type,
+                                     .buffers = {{{.buffer = buf}}}});
+                            }
+                            break;
+                        }
+                    case AccelerationStructure:
+                        {
+                            CHECK_MSG(var_handles.contains(name),
+                                      "Shader expects an Acceleration Structure at {}, but it's not bound by pass {}",
+                                      name, tracked.name);
+                            auto asses = var_handles.find(name)->second;
+                            for (uint e = 0; e < asses.size(); e++)
+                            {
+                                auto* as =
+                                    DerefResourceAtFrame(asses[e], frame).Get<RHIAccelerationStructure*>();
+                                target->Update({.binding = binding,
+                                                .startIndex = e,
+                                                .type = type,
+                                                .accelerationStructures = {{{.as = as}}}});
+                            }
+                            break;
+                        }
+                    default:
+                        break;
+                }
+            }
+        };
+        updateBindings(ds, 0);
+        if (hasTemporalBindings)
+            updateBindings(alternate, 1);
     }
     // Add external sets
     // We've already established that these would not conflict with our own sets, and has already been sorted
@@ -1248,8 +1369,9 @@ void Renderer::FinalizePasses()
         LOG(Renderer, LogDebug, "** Descriptor Pool **");
         for (auto& [type, count] : mSetup->bindingCounts)
         {
-            LOG(Renderer, LogDebug, "\t{}: {}", type, count);
-            bindings.push_back({.type = type, .maxCount = count});
+            uint32_t capacity = count * (mSetup->temporalResources.empty() ? 1u : 2u);
+            LOG(Renderer, LogDebug, "\t{}: {}", type, capacity);
+            bindings.push_back({.type = type, .maxCount = capacity});
         }
         mDescPool = mDevice->CreateDescriptorPool({bindings});
         mDescPool->DebugSetObjectName("Renderer Descriptor Pool");
@@ -1326,8 +1448,16 @@ void Renderer::FinalizeResources()
     for (auto hdl : activeViews)
     {
         auto [rhdl, desc] = mSetup->trackedViews[hdl];
-        auto res = DerefResource(rhdl).Get<RHITexture*>();
-        mResources->views[hdl] = res->CreateTextureView(desc);
+        auto& views = mResources->views[hdl];
+        auto const& tracked = mSetup->trackedResources[rhdl];
+        views.temporal = tracked.temporalFamily != kInvalidHandle;
+        auto* first = DerefResourceAtFrame(rhdl, 0).Get<RHITexture*>();
+        views.slots[0] = first->CreateTextureView(desc);
+        if (views.temporal)
+        {
+            auto* second = DerefResourceAtFrame(rhdl, 1).Get<RHITexture*>();
+            views.slots[1] = second->CreateTextureView(desc);
+        }
     }
     // Instantiate samplers
     Ranges::sort(activeSamplers);
@@ -1401,7 +1531,9 @@ void Renderer::DbgGetTexturePreviews(Vector<TexturePreviewStat>& outStats) const
         if (resourceHandle >= mSetup->trackedResources.size())
             continue;
 
-        RHITextureView* view = mResources->views[viewHandle].Visit(
+        auto& executeView = mResources->views[viewHandle];
+        auto& physicalView = executeView.slots[executeView.temporal ? static_cast<size_t>(mFrameSwapped & 1u) : 0u];
+        RHITextureView* view = physicalView.Visit(
             [](auto const& handle) -> RHITextureView* { return handle.IsValid() ? handle.Get() : nullptr; });
         if (!view)
             continue;
@@ -1494,6 +1626,24 @@ RHIDeviceHandle<RHIDeviceSemaphore> Renderer::GetRenderCompleteSemaphore() const
     CHECK_MSG(mCurrentSwap < mSwaps.size() && mSwaps[mCurrentSwap].render.IsValid(),
               "Render complete semaphore not initialized");
     return mSwaps[mCurrentSwap].render.View();
+}
+
+bool Renderer::IsPreviousValid(TemporalResourceHandle resource) const
+{
+    CHECK(resource.IsValid() && mSetup && resource.Current() < mSetup->trackedResources.size());
+    auto family = mSetup->trackedResources[resource.Current()].temporalFamily;
+    CHECK(family != kInvalidHandle && family < mSetup->temporalResources.size());
+    return mFrameSwapped > mSetup->temporalResources[family].invalidatedFrame;
+}
+
+void Renderer::InvalidateTemporalResource(TemporalResourceHandle resource)
+{
+    CHECK_MSG(mState == State::PostSetup,
+              "InvalidateTemporalResource() must be called after setup and outside frame execution");
+    CHECK(resource.IsValid() && resource.Current() < mSetup->trackedResources.size());
+    auto family = mSetup->trackedResources[resource.Current()].temporalFamily;
+    CHECK(family != kInvalidHandle && family < mSetup->temporalResources.size());
+    mSetup->temporalResources[family].invalidatedFrame = mFrameSwapped;
 }
 
 void Renderer::WaitForFrame()
@@ -1644,7 +1794,7 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
                                          ExecuteBarrierPCmdOrPBarrierList cmd)
 {
     ZoneScoped;
-    RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
+    RHITexture* res = DerefPhysicalResource(tres.handle).Get<RHITexture*>();
     bool any_range = false;
     for (auto& sta : tres.GetLastSubresourceStateOf(range))
     {
@@ -1663,7 +1813,7 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
         tres.lastBufferState.lastProducer = pass;
         tres.lastBufferState.lastProducedFrame = mFrameSwapped;
     }
-    RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
+    RHIBuffer* res = DerefPhysicalResource(tres.handle).Get<RHIBuffer*>();
     /* Same as textures */
     if ((tres.lastBufferState.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
     {
@@ -1693,7 +1843,7 @@ void Renderer::ExecuteBarrierAccelerationStructure(PassHandle pass, TrackedResou
         tres.lastASState.lastProducer = pass;
         tres.lastASState.lastProducedFrame = mFrameSwapped;
     }
-    RHIAccelerationStructure* res = DerefResource(tres.handle).Get<RHIAccelerationStructure*>();
+    RHIAccelerationStructure* res = DerefPhysicalResource(tres.handle).Get<RHIAccelerationStructure*>();
     /* Same as textures */
     if ((tres.lastASState.access & kASWrites) != 0 || (access & kASWrites) != 0)
     {
@@ -1723,7 +1873,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierLi
     // These are always disjoint ranges
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
     {
-        auto& tres = mSetup->trackedResources[hdl];
+        auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
         ExecuteBarrierSubresource(pass.handle, tres, range, access, stage, layout, cmd);
     }
     /* -- Backbuffer -- */
@@ -1751,13 +1901,13 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierLi
     // These are always global i.e. at most one per buffer per pass.
     for (auto [hdl, access, stage] : pass.bufferUsages)
     {
-        auto& tres = mSetup->trackedResources[hdl];
+        auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
         ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd);
     }
     /* -- Acceleration Structures -- */
     for (auto [hdl, access, stage] : pass.asUsages)
     {
-        auto& tres = mSetup->trackedResources[hdl];
+        auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
         ExecuteBarrierAccelerationStructure(pass.handle, tres, access, stage, cmd);
     }
 }
@@ -1871,20 +2021,20 @@ void Renderer::ExecuteFrame()
             // Textures
             for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
             {
-                auto& tres = mSetup->trackedResources[hdl];
+                auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
                 for (auto const& sta : tres.GetLastSubresourceStateOf(range))
                     UpdateSyncGroup(sta.lastProducer, sta.lastProducedFrame);
             }
             // Buffers
             for (auto [hdl, access, stage] : pass.bufferUsages)
             {
-                auto& tres = mSetup->trackedResources[hdl];
+                auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
                 UpdateSyncGroup(tres.lastBufferState.lastProducer, tres.lastBufferState.lastProducedFrame);
             }
             // Acceleration Structures
             for (auto [hdl, access, stage] : pass.asUsages)
             {
-                auto& tres = mSetup->trackedResources[hdl];
+                auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
                 UpdateSyncGroup(tres.lastASState.lastProducer, tres.lastASState.lastProducedFrame);
             }
             // Backbuffer
@@ -2010,8 +2160,8 @@ void Renderer::ExecuteFrame()
                         auto& tracked = mSetup->trackedPasses[pass];
                         for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
                         {
-                            auto& tres = mSetup->trackedResources[hdl];
-                            RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
+                            auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
+                            RHITexture* res = DerefPhysicalResource(tres.handle).Get<RHITexture*>();
                             for (auto& sta : tres.GetLastSubresourceStateOf(range))
                             {
                                 // Only deal with resources currently owned by us _once_
@@ -2029,7 +2179,7 @@ void Renderer::ExecuteFrame()
                         }
                         for (auto [hdl, access, stage] : tracked.bufferUsages)
                         {
-                            auto& tres = mSetup->trackedResources[hdl];
+                            auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
                             // Same as above
                             if (tres.lastBufferState.executeTempTransitionFlag)
                                 continue;
@@ -2047,13 +2197,13 @@ void Renderer::ExecuteFrame()
                         // Reset the flags
                         for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
                         {
-                            auto& tres = mSetup->trackedResources[hdl];
+                            auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
                             for (auto& sta : tres.GetLastSubresourceStateOf(range))
                                 sta.executeTempTransitionFlag = false;
                         }
                         for (auto [hdl, access, stage] : tracked.bufferUsages)
                         {
-                            auto& tres = mSetup->trackedResources[hdl];
+                            auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
                             tres.lastBufferState.executeTempTransitionFlag = false;
                         }
                     }
@@ -2183,8 +2333,12 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
     auto& tpass = mSetup->trackedPasses[pass];
     CHECK_MSG(tpass.pso.IsValid(), "Current pass {} has no Pipeline state.", tpass.name);
     cmd->SetPipeline({.pipeline = tpass.pso.Get(), .type = tpass.GetPipelineType()});
-    if (!tpass.pDescriptorSets.empty())
-        cmd->BindDescriptorSet(tpass.GetPipelineType(), tpass.pso.Get(), tpass.pDescriptorSets, 0);
+    auto const& descriptorSets =
+        (mFrameSwapped & 1u) && !tpass.pAlternateDescriptorSets.empty()
+            ? tpass.pAlternateDescriptorSets
+            : tpass.pDescriptorSets;
+    if (!descriptorSets.empty())
+        cmd->BindDescriptorSet(tpass.GetPipelineType(), tpass.pso.Get(), descriptorSets, 0);
     if (tpass.backbufferUAV)
         CmdBindDescriptorSet(pass, cmd, tpass.backbufferUAV.Get(), mSwaps[GetSwap()].viewSet.Get());
 }

@@ -193,6 +193,7 @@ struct EditorState
     bool            showImGui = false;
     FEditorState    state = FEInitEnter;
     bool            cameraUpdated = true;
+    bool            asyncComputeEnabled = true;
     float           renderResolutionScale = 1.0f; // 0.25 .. 1.0
     bool            rasterGTAO = true;
     GTAOConfig rasterGTAOConfig{};

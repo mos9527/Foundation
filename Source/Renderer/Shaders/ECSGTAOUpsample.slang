@@ -1,10 +1,16 @@
 import ICommon;
 import IMath;
 
-uniform UBO globalParams;
 RWTexture2D<float> halfAO;
 Texture2D<float> depth;
 RWTexture2D<float> aoOutput;
+
+struct GTAOUpsamplePushConstants
+{
+    uint historyValid;
+};
+
+[[vk::push_constant]] GTAOUpsamplePushConstants pc;
 
 float WeightForDepth(float centerDepth, float sampleDepth)
 {
@@ -17,9 +23,16 @@ float WeightForDepth(float centerDepth, float sampleDepth)
 [numthreads(8, 8, 1)]
 void main(uint2 tid : SV_DispatchThreadID)
 {
-    uint2 fullExtent = uint2(uint(globalParams.fbWidth), uint(globalParams.fbHeight));
+    uint width, height;
+    depth.GetDimensions(width, height);
+    uint2 fullExtent = uint2(width, height);
     if (tid.x >= fullExtent.x || tid.y >= fullExtent.y)
         return;
+    if (pc.historyValid == 0)
+    {
+        aoOutput[tid] = 1.0f;
+        return;
+    }
 
     uint2 halfExtent = (fullExtent + 1u) / 2u;
     uint2 basePixel = tid / 2u;

@@ -1009,6 +1009,13 @@ static void DrawUUIDRow(FUUID id)
         ImGui::SetClipboardText(buf);
 }
 
+static void CopyRenderGraphGraphviz(Renderer const* renderer)
+{
+    CHECK(renderer);
+    String graphviz = renderer->DbgDumpGraphviz();
+    ImGui::SetClipboardText(graphviz.c_str());
+}
+
 static void SetUUIDTooltip(FUUID id)
 {
     char buf[40];
@@ -2667,6 +2674,10 @@ void FRunningImGui()
             {
                 if (GContext->renderer)
                 {
+                    if (ImGui::Button(PSI_COPY " Copy GraphViz"))
+                        CopyRenderGraphGraphviz(GContext->renderer);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Copy the current Render Graph GraphViz source");
                     Allocator* scratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
                     Vector<Renderer::MemoryStat> stats(scratch);
                     GContext->renderer->DbgGetMemoryStatistics(stats);
@@ -2870,6 +2881,21 @@ void FRunningImGui()
         {
             ImGui::TextDisabled("SDL HDR window properties unavailable");
         }
+        ImGui::SeparatorText(PSI_DASHBOARD " Performance");
+        const bool asyncComputeSupported =
+            GContext->device->GetDeviceQueue(RHIDeviceQueueType::Graphics) !=
+            GContext->device->GetDeviceQueue(RHIDeviceQueueType::Compute);
+        bool asyncComputeEnabled = asyncComputeSupported && GEditor.asyncComputeEnabled;
+        ImGui::BeginDisabled(!asyncComputeSupported);
+        if (ImGui::Checkbox("Async Compute", &asyncComputeEnabled))
+        {
+            GEditor.asyncComputeEnabled = asyncComputeEnabled;
+            GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            changed = true;
+        }
+        ImGui::EndDisabled();
+        if (!asyncComputeSupported)
+            ImGui::TextDisabled("A separate compute queue is not available.");
         ImGui::SeparatorText(PSI_PICTURE " Texture Sampling");
         if (ImGui::Checkbox("Anisotropic Filtering", &GEditor.rendererConfig.textureAnisoEnable))
         {

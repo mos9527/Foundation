@@ -110,7 +110,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::R32SignedFloat});
-    auto Depth = renderer->CreateResource(
+    auto Depth = renderer->CreateTemporalResource(
         "Depth",
         RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
@@ -291,7 +291,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                     cmd->Dispatch((w - 1) / 8 + 1, (h - 1) / 8 + 1, 1);
             }
         });
-    RenderUtils::createPSDepthCopyPass(renderer, "Copy Depth UAV to DSV", DepthUAV, Depth, {w, h});
+    RenderUtils::createPSDepthCopyPass(renderer, "Copy Depth UAV to DSV", DepthUAV, Depth.Current(), {w, h});
     out.extent = {w, h};
     out.aovFormat = kPathTracerAOVFormat;
     out.diffuse = Diffuse;

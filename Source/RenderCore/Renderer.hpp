@@ -20,6 +20,26 @@ namespace Foundation::RenderCore
     class Renderer;
     using PassHandle = Handle; // Index in the pass definitions vector
     using ResourceHandle = Handle; // Index in the resource definitions vector
+    class TemporalResourceHandle
+    {
+        friend class Renderer;
+        ResourceHandle mCurrent{kInvalidHandle};
+        ResourceHandle mPrevious{kInvalidHandle};
+
+        TemporalResourceHandle(ResourceHandle current, ResourceHandle previous) :
+            mCurrent(current), mPrevious(previous)
+        {
+        }
+
+    public:
+        TemporalResourceHandle() = default;
+        [[nodiscard]] ResourceHandle Current() const { return mCurrent; }
+        [[nodiscard]] ResourceHandle Previous() const { return mPrevious; }
+        [[nodiscard]] bool IsValid() const
+        {
+            return mCurrent != kInvalidHandle && mPrevious != kInvalidHandle;
+        }
+    };
     /**
      * @brief Parameters for @ref Renderer creation
      */
@@ -92,6 +112,8 @@ namespace Foundation::RenderCore
         ResourceHandle handle; // Index to tracked resources
         String name;
         ResourceDefinition desc;
+        ResourceHandle temporalFamily{kInvalidHandle};
+        uint8_t temporalFramesAgo{0};
         bool hasComputeUsage{false}; // Used in a compute pass?
         bool hasGraphicsUsage{false}; // Used in a graphics pass?
         /* --- states --- */
@@ -190,10 +212,16 @@ namespace Foundation::RenderCore
      */
     struct ExecuteResources
     {
+        using TextureViewHandle = Variant<RHITextureScopedHandle<RHITextureView>, RHITextureHandle<RHITextureView>>;
+        struct TextureViews
+        {
+            TextureViewHandle slots[2];
+            bool temporal{false};
+        };
         Vector<Variant<RHIBuffer*, RHIDeviceScopedHandle<RHIBuffer>, RHITexture*, RHIDeviceScopedHandle<RHITexture>,
                        RHIAccelerationStructure*>>
             resources;
-        Vector<Variant<RHITextureScopedHandle<RHITextureView>, RHITextureHandle<RHITextureView>>> views;
+        Vector<TextureViews> views;
         Vector<RHIDeviceScopedHandle<RHIDeviceSampler>> samplers;
         explicit ExecuteResources(Allocator* allocator) : resources(allocator), views(allocator), samplers(allocator) {}
         void fit(ResourceHandle handle)
@@ -346,10 +374,9 @@ namespace Foundation::RenderCore
         Vector<RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout>> descriptorLayouts;
         // Pointers. Can also contain external sets
         Vector<RHIDeviceDescriptorSetLayout*> pDescriptorLayouts;
-        // Sets created by ourselves
-        Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> descriptorSets;
-        // Pointers. Can also contain external sets
-        Vector<RHIDeviceDescriptorSet*> pDescriptorSets;
+        // Sets created by ourselves, with an alternate mapping for temporal resources
+        Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> descriptorSets, alternateDescriptorSets;
+        Vector<RHIDeviceDescriptorSet*> pDescriptorSets, pAlternateDescriptorSets;
         // [Set Index, Set, Layout], correspond to externalBindings
         Vector<Tuple<size_t, RHIDeviceDescriptorSetLayout*>> pExternalDescriptorSets;
 
@@ -384,6 +411,12 @@ namespace Foundation::RenderCore
             Vector<PassHandle> in;
             Vector<TrackedPass> trackedPasses;
             Vector<TrackedResource> trackedResources;
+            struct TemporalResourceFamily
+            {
+                ResourceHandle slots[2];
+                uint64_t invalidatedFrame{0};
+            };
+            Vector<TemporalResourceFamily> temporalResources;
             // Backbuffer specializations
             PassHandle lastBackbufferProducer{kInvalidHandle};
             // [resource, view desc]
@@ -429,7 +462,7 @@ namespace Foundation::RenderCore
             }
             explicit RendererSetup(Allocator* allocator) :
                 graph(allocator), in(allocator), trackedPasses(allocator), trackedResources(allocator),
-                trackedViews(allocator), trackedSamplers(allocator), activeResources(allocator),
+                temporalResources(allocator), trackedViews(allocator), trackedSamplers(allocator), activeResources(allocator),
                 descriptorSetWriters(allocator), execution(allocator), bindingCounts(allocator), executionGroups(allocator)
             {
             }
@@ -573,6 +606,12 @@ namespace Foundation::RenderCore
          */
         void ExecuteBarrierAccelerationStructure(PassHandle pass, TrackedResource& res, RHIResourceAccess access,
                                                  RHIPipelineStage stage, ExecuteBarrierPCmdOrPBarrierList cmd);
+        [[nodiscard]] ResourceHandle ResolveResourceHandle(ResourceHandle handle, uint64_t frame) const;
+        [[nodiscard]] Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>
+        DerefPhysicalResource(ResourceHandle handle) const;
+        [[nodiscard]] Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>
+        DerefResourceAtFrame(ResourceHandle handle, uint64_t frame) const;
+        [[nodiscard]] RHITextureView* DerefTextureViewAtFrame(ResourceHandle handle, uint64_t frame) const;
         /**
          * @brief Executes all barriers for a pass
          */
@@ -710,6 +749,29 @@ namespace Foundation::RenderCore
             ResourceHandle index = mSetup->trackedResources.size();
             mSetup->trackedResources.emplace_back(index, name, desc, mAllocator);
             return mSetup->trackedResources.size() - 1;
+        }
+        /**
+         * @brief Creates a double-buffered resource with frame-relative handles.
+         *
+         * Current() resolves to the resource written this frame and Previous() resolves to
+         * the resource written one frame earlier.
+         */
+        template <typename T>
+        [[nodiscard]] TemporalResourceHandle CreateTemporalResource(StringView name, T const& desc)
+        {
+            static_assert(std::is_same_v<T, RHIBufferDesc> || std::is_same_v<T, RHITextureDesc>,
+                          "Temporal resources currently support owned buffers and textures only");
+            CHECK(mState == State::Setup);
+
+            ResourceHandle current = CreateResource(Format("{} [0]", name), desc);
+            ResourceHandle previous = CreateResource(Format("{} [1]", name), desc);
+            ResourceHandle family = mSetup->temporalResources.size();
+            mSetup->temporalResources.push_back({{current, previous}, mFrameSwapped});
+            mSetup->trackedResources[current].temporalFamily = family;
+            mSetup->trackedResources[current].temporalFramesAgo = 0;
+            mSetup->trackedResources[previous].temporalFamily = family;
+            mSetup->trackedResources[previous].temporalFramesAgo = 1;
+            return TemporalResourceHandle(current, previous);
         }
         /**
          * @brief Creates a sampler with the specified name and descriptor.
@@ -1067,13 +1129,7 @@ namespace Foundation::RenderCore
         [[nodiscard]] Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>
         DerefResource(const ResourceHandle handle) const
         {
-            CHECK(mResources && handle < mResources->resources.size());
-            using Tv = Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>;
-            auto& res = mResources->resources[handle];
-            CHECK_MSG(!res.valueless_by_exception(), "Resource handle {} is valueless", handle);
-            auto ptr = res.Visit([](auto* ptr) -> Tv { return ptr; }, [](auto& hdl) -> Tv { return hdl.Get(); });
-            CHECK_MSG(!ptr.valueless_by_exception(), "Resource handle {} is null", handle);
-            return ptr;
+            return DerefResourceAtFrame(handle, mFrameSwapped);
         }
         /**
          * @brief Dereference a texture view handle to its underlying RHI texture view.
@@ -1082,11 +1138,7 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] RHITextureView* DerefTextureView(const ResourceHandle handle) const
         {
-            CHECK(mResources && handle < mResources->views.size());
-            using Tv = RHITextureView*;
-            auto& view = mResources->views[handle];
-            CHECK_MSG(!view.valueless_by_exception(), "Texture view handle {} is valueless", handle);
-            return view.Visit([](auto& hdl) -> Tv { return hdl.Get(); });
+            return DerefTextureViewAtFrame(handle, mFrameSwapped);
         }
         /**
          * @brief Dereference a sampler handle to its underlying RHI sampler.
@@ -1206,6 +1258,16 @@ namespace Foundation::RenderCore
          * to be monotonic.
          */
         [[nodiscard]] uint64_t GetFrame() const { return mFrameSwapped; }
+        /**
+         * @brief Returns whether Previous() contains a frame produced since the last invalidation.
+         */
+        [[nodiscard]] bool IsPreviousValid(TemporalResourceHandle resource) const;
+        /**
+         * @brief Invalidates Previous() until the current frame has produced a replacement.
+         *
+         * Must be called outside frame execution.
+         */
+        void InvalidateTemporalResource(TemporalResourceHandle resource);
         /**
          * @brief Retrieves the current swap index at the time of @ref ExecuteFrame().
          *

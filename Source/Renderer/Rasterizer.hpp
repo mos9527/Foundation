@@ -15,7 +15,7 @@ struct RasterFeatureContext
     GPUScene* gpu{nullptr};
     RendererConfig const* cfg{nullptr};
     RHIExtent2D extent{0u, 0u};
-    ResourceHandle globalUBO{kInvalidHandle};
+    TemporalResourceHandle globalUBO{};
     ResourceHandle primitiveBuffer{kInvalidHandle};
     ResourceHandle dynamicPrimitiveBuffer{kInvalidHandle};
     ResourceHandle instanceBuffer{kInvalidHandle};
@@ -23,11 +23,11 @@ struct RasterFeatureContext
     ResourceHandle lightBuffer{kInvalidHandle};
     ResourceHandle tlas{kInvalidHandle};
     ResourceHandle gbuffer0{kInvalidHandle};
-    ResourceHandle gbuffer1{kInvalidHandle};
+    TemporalResourceHandle gbuffer1{};
     ResourceHandle gbuffer2{kInvalidHandle};
-    ResourceHandle depth{kInvalidHandle};
+    TemporalResourceHandle depth{};
     ResourceHandle instanceID{kInvalidHandle};
-    ResourceHandle hiz{kInvalidHandle};
+    TemporalResourceHandle hiz{};
     ResourceHandle hizSampler{kInvalidHandle};
     ResourceHandle diffuse{kInvalidHandle};
     ResourceHandle specular{kInvalidHandle};

@@ -83,7 +83,7 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::R32SignedFloat});
-    auto Depth = renderer->CreateResource(
+    auto Depth = renderer->CreateTemporalResource(
         "Depth",
         RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
@@ -184,7 +184,7 @@ void BuildProgressivePathTracerRenderGraph(Renderer* renderer, RendererUBO* glob
             }
         });
 
-    RenderUtils::createPSDepthCopyPass(renderer, "Copy Depth UAV to DSV", DepthUAV, Depth, {w, h});
+    RenderUtils::createPSDepthCopyPass(renderer, "Copy Depth UAV to DSV", DepthUAV, Depth.Current(), {w, h});
 
     renderer->CreatePass(
         "Adaptive Filter X", RHIDeviceQueueType::Graphics, 0u,

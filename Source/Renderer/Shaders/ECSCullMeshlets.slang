@@ -138,7 +138,7 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     // Kill when:
     //  Early: occluded by last frame?
     //  Late:  visible or occluded by early?
-    if (cullOcclusion && draw) {
+    if (cullOcclusion && draw && (!early || globalParams.frameNumber != 0)) {
         float4 aabb; // x1, y1, x2, y2 in UV
         bool occluded = false;
         if (projSphereAABB(viewCenter, radius, globalParams.proj[0][0], globalParams.proj[1][1], globalParams.zNear, aabb)) {
