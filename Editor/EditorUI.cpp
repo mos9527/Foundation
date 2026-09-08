@@ -2194,6 +2194,7 @@ void FLightingPanel()
                 light.color = float3{1.0f, 0.92f, 0.78f};
                 light.power = 10.0f;
                 light.radius = 0.05f;
+                light.range = 10.0f;
                 size_t const insertIndex = !lights.empty() && lights.front().type == FLightType::Environment ? 1u : 0u;
                 lights.insert(lights.begin() + static_cast<std::ptrdiff_t>(insertIndex), light);
                 GEditor.Scene().RebuildIndex();
@@ -2463,6 +2464,7 @@ void FLightingPanel()
                 if (light.type == FLightType::Point || light.type == FLightType::Spot)
                 {
                     lightChanged |= ImGui::DragFloat("Radius", &light.radius, 0.01f, 0.0f, 100.0f, "%.3f");
+                    lightChanged |= ImGui::DragFloat("Range", &light.range, 0.1f, 0.0f, 10000.0f, "%.2f");
                 }
 
                 // Spot cone angles
@@ -3107,8 +3109,9 @@ void FRunningImGui()
             ImGui::SeparatorText(PSI_DASHBOARD " Performance");
             changed |= ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0);
             {
-                const char* names[] = {"Overdraw", "Meshlet", "Matcap"};
-                const ViewFlagsBits values[] = {ViewFlagsBits::Overdraw, ViewFlagsBits::Meshlet, ViewFlagsBits::Matcap};
+                const char* names[] = {"Overdraw", "Meshlet", "Matcap", "Light Tiles"};
+                const ViewFlagsBits values[] = {ViewFlagsBits::Overdraw, ViewFlagsBits::Meshlet,
+                                                ViewFlagsBits::Matcap, ViewFlagsBits::LightTiles};
                 ImGui::SeparatorText(PSI_EYE_OPEN " Raster Debug View");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, names, values, true /* solo */);
             }

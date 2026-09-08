@@ -1437,10 +1437,12 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             case cgltf_light_type_point:
                 light.type = FLightType::Point;
                 light.radius = node->light->has_foundation_lights ? std::max(node->light->radius, 0.0f) : 0.0f;
+                light.range = std::max(node->light->range, 0.0f);
                 break;
             case cgltf_light_type_spot:
                 light.type = FLightType::Spot;
                 light.radius = node->light->has_foundation_lights ? std::max(node->light->radius, 0.0f) : 0.0f;
+                light.range = std::max(node->light->range, 0.0f);
                 light.spotInnerConeAngle = node->light->spot_inner_cone_angle;
                 light.spotOuterConeAngle = node->light->spot_outer_cone_angle;
                 break;

@@ -128,6 +128,7 @@ struct FLight
     float power{1.0f};              // Radiant power (type-dependent unit, linear)
     float angularDiameter{0.0f};    // For directional lights, the apparent size of the light source disk (radians). 0 = punctual. 
     float radius{0.0f};             // Point/Spot emitter sphere radius. 0 = punctual.
+    float range{0.0f};              // Point/Spot influence range. 0 = infinite.
     float spotInnerConeAngle{0.0f}; // radians
     float spotOuterConeAngle{0.7853981f}; // radians, default ~45 deg
     bool useShadow{true};
@@ -163,7 +164,7 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 26;
+static constexpr uint32_t kSceneVersion = 27;
 
 // Stringpool entry
 struct FStringEntry

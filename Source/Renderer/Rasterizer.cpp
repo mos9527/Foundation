@@ -41,7 +41,7 @@ constexpr size_t kMaxInstanceCount = 65536;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
 constexpr size_t kMaxCurveDraws = 4096; // curve (DOTS) instances drawn per frame (raster)
 const ViewFlags kDisableRTBuildFlags = ViewFlagsBits::Overdraw | ViewFlagsBits::Meshlet | ViewFlagsBits::BaseColor |
-    ViewFlagsBits::Normal | ViewFlagsBits::Position | ViewFlagsBits::Matcap;
+    ViewFlagsBits::Normal | ViewFlagsBits::Position | ViewFlagsBits::Matcap | ViewFlagsBits::LightTiles;
 const RHIResourceFormat kGBufferNormalFormat = RHIResourceFormat::A2B10G10R10Unorm;
 
 static void BuildRasterFeature(RasterFeatureContext& ctx, RasterInjectionPoint point,

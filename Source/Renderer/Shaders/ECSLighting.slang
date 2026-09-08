@@ -19,6 +19,27 @@ RaytracingAccelerationStructure AS;
 
 static const uint kMeshMask = 0x01;
 static const uint kCurveMask = 0x04;
+static const uint kTileWidth = 16;
+static const uint kTileThreadCount = kTileWidth * kTileWidth;
+static const uint kTileLightCapacity = 256;
+
+struct TileBounds
+{
+    float3 minPosition;
+    float3 maxPosition;
+};
+
+groupshared TileBounds tileBounds[kTileThreadCount];
+groupshared uint tileLightCount;
+groupshared uint tileLightOverflow;
+groupshared uint tileLightIndices[kTileLightCapacity];
+
+bool SphereIntersectsAABB(float3 center, float radius, TileBounds bounds)
+{
+    float3 closest = clamp(center, bounds.minPosition, bounds.maxPosition);
+    float3 delta = center - closest;
+    return dot(delta, delta) <= radius * radius;
+}
 
 bool shadow(float3 p, float3 l, float tMax = INF)
 {
@@ -57,17 +78,96 @@ float ReflectionMipFromRoughness(float roughness, uint32_t numMips)
 }
 
 [shader("compute")]
-[numthreads(16, 16, 1)]
-void main(uint2 tid: SV_DispatchThreadID) {
-    if (tid.x >= globalParams.fbWidth || tid.y >= globalParams.fbHeight) return;
-    float4 color0 = RT0.Load(uint3(tid,0));
-    float4 color1 = RT1.Load(uint3(tid,0));
-    float4 color2 = RT2.Load(uint3(tid,0));
+[numthreads(kTileWidth, kTileWidth, 1)]
+void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
+    bool validPixel = tid.x < globalParams.fbWidth && tid.y < globalParams.fbHeight;
+    float4 color0 = 0.0f;
+    float4 color1 = 0.0f;
+    float4 color2 = 0.0f;
+    float ndcDepth = 0.0f;
+    if (validPixel) {
+        color0 = RT0.Load(uint3(tid,0));
+        color1 = RT1.Load(uint3(tid,0));
+        color2 = RT2.Load(uint3(tid,0));
+        ndcDepth = depth.Load(uint3(tid,0));
+    }
 
+    bool hasSurface = validPixel && ndcDepth > EPS;
+    float3 p = 0.0f;
+    if (hasSurface) {
+        float4 ndcPosition = float4(tid.xy / float2(globalParams.fbWidth, globalParams.fbHeight), ndcDepth, 1.0f);
+        ndcPosition.y = 1 - ndcPosition.y;
+        ndcPosition.xy = ndcPosition.xy * 2.0f - 1.0f;
+        float4 wsPosition = mul(globalParams.inverseViewProj, ndcPosition);
+        p = wsPosition.xyz / wsPosition.w;
+    }
+
+    const uint bypassLightingFlags = uint32_t(ViewFlagsBits.BaseColor) | uint32_t(ViewFlagsBits.Meshlet) |
+                                     uint32_t(ViewFlagsBits.TextureLOD) | uint32_t(ViewFlagsBits.Normal) |
+                                     uint32_t(ViewFlagsBits.Matcap) | uint32_t(ViewFlagsBits.Position);
+    bool showLightTiles = (flags & uint32_t(ViewFlagsBits.LightTiles)) != 0;
+    if (showLightTiles || (flags & bypassLightingFlags) == 0) {
+        if (groupIndex == 0u) {
+            tileLightCount = 0u;
+            tileLightOverflow = 0u;
+        }
+        tileBounds[groupIndex].minPosition = hasSurface ? p : float3(INF);
+        tileBounds[groupIndex].maxPosition = hasSurface ? p : float3(-INF);
+        GroupMemoryBarrierWithGroupSync();
+
+        for (uint stride = kTileThreadCount / 2u; stride > 0u; stride >>= 1u) {
+            if (groupIndex < stride) {
+                tileBounds[groupIndex].minPosition =
+                    min(tileBounds[groupIndex].minPosition, tileBounds[groupIndex + stride].minPosition);
+                tileBounds[groupIndex].maxPosition =
+                    max(tileBounds[groupIndex].maxPosition, tileBounds[groupIndex + stride].maxPosition);
+            }
+            GroupMemoryBarrierWithGroupSync();
+        }
+
+        TileBounds bounds = tileBounds[0];
+        bool tileHasSurface = bounds.minPosition.x <= bounds.maxPosition.x;
+        for (uint lightIndex = groupIndex; lightIndex < globalParams.lights.count;
+             lightIndex += kTileThreadCount) {
+            GSLight light = lights[globalParams.lights.offset + lightIndex];
+            uint lightType = GSLightType(light);
+            if (lightType == kGSLightTypeEnvironment || !any(light.color * light.power > 0.0f))
+                continue;
+
+            bool intersects = tileHasSurface;
+            if (intersects && lightType != kGSLightTypeDirectional && light.params.w > 0.0f)
+                intersects = SphereIntersectsAABB(light.position, light.params.w, bounds);
+            if (!intersects)
+                continue;
+
+            uint slot;
+            InterlockedAdd(tileLightCount, 1u, slot);
+            if (slot < kTileLightCapacity)
+                tileLightIndices[slot] = lightIndex;
+            else
+                InterlockedOr(tileLightOverflow, 1u);
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    if (!validPixel)
+        return;
+
+    if (showLightTiles) {
+        float load = saturate(log2(float(tileLightCount) + 1.0f) / log2(float(kTileLightCapacity) + 1.0f));
+        float3 tileColor = lerp(float3(0.0f, 0.08f, 0.35f), float3(0.0f, 1.0f, 0.15f),
+                                saturate(load * 2.0f));
+        tileColor = lerp(tileColor, float3(1.0f, 0.05f, 0.0f), saturate(load * 2.0f - 1.0f));
+        if (tileLightOverflow != 0u)
+            tileColor = float3(1.0f, 0.0f, 1.0f);
+        if ((tid.x & (kTileWidth - 1u)) == 0u || (tid.y & (kTileWidth - 1u)) == 0u)
+            tileColor *= 0.2f;
+        diffuseOutput[tid] = float4(tileColor, 1.0f);
+        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        return;
+    }
 
     float3 baseColor = color0.xyz;
-
-    float ndcDepth = depth.Load(uint3(tid,0));
     if (ndcDepth <= EPS) {
         diffuseOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         float3 envLight = EnvLightTint();
@@ -86,12 +186,6 @@ void main(uint2 tid: SV_DispatchThreadID) {
         return;
     }
 
-    float4 ndcPosition = float4(tid.xy / float2(globalParams.fbWidth, globalParams.fbHeight), ndcDepth, 1.0f);
-    ndcPosition.y = 1 - ndcPosition.y;
-    ndcPosition.xy = ndcPosition.xy * 2.0f - 1.0f;
-    float4 wsPosition = mul(globalParams.inverseViewProj, ndcPosition);
-
-    float3 p = wsPosition.xyz / wsPosition.w;
     float3 eye = globalParams.camPosition.xyz;
 
     float3 normalWS = unpackUnitOctahedralSnorm(color1.xy * 2.0f - 1.0f);
@@ -137,9 +231,12 @@ void main(uint2 tid: SV_DispatchThreadID) {
 
         BasicPBRBSDF bsdf = BasicPBRBSDF(baseColor, metallic, roughness);
 
+        bool useFullLightList = tileLightOverflow != 0u;
+        uint lightCount = useFullLightList ? globalParams.lights.count : min(tileLightCount, kTileLightCapacity);
         // TODO: Area lights. That's probably going to be ReSTIR DI if we'd want soft shadows from those...
-        for (uint li = 0; li < globalParams.lights.count; li++) {
-            GSLight gl = lights[globalParams.lights.offset + li];
+        for (uint li = 0; li < lightCount; li++) {
+            uint lightIndex = useFullLightList ? li : tileLightIndices[li];
+            GSLight gl = lights[globalParams.lights.offset + lightIndex];
             uint32_t lightType = GSLightType(gl);
             float3 lightColor = gl.color * gl.power;
             if (!any(lightColor > 0.0f)) continue;
@@ -159,6 +256,13 @@ void main(uint2 tid: SV_DispatchThreadID) {
                 l = toLight / dist;
                 lightDist = dist;
                 atten = 1.0f / dist2;
+                if (gl.params.w > 0.0f) {
+                    float normalizedDist2 = dist2 / (gl.params.w * gl.params.w);
+                    if (normalizedDist2 >= 1.0f)
+                        continue;
+                    float rangeFalloff = 1.0f - normalizedDist2 * normalizedDist2;
+                    atten *= rangeFalloff * rangeFalloff;
+                }
                 if (lightType == kGSLightTypeSpot) { // Spot
                     float cosTheta = dot(gl.direction, -l);
                     if (cosTheta < gl.params.z) continue;
@@ -170,6 +274,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
             }
 
             float3 wi = toLocal.rotate(l);
+            if (!SameHemisphere(wo, wi))
+                continue;
             float3 fd;
             float3 fs;
             bsdf.f(wo, wi, TransportMode::Radiance, fd, fs);

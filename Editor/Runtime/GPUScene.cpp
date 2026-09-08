@@ -145,10 +145,10 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu)
     if (src.type == FLightType::Directional)
         dst.params.x = src.angularDiameter;
     else if (src.type == FLightType::Point)
-        dst.params.x = std::max(src.radius, 0.0f);
+        dst.params = float4(std::max(src.radius, 0.0f), 0.0f, 0.0f, std::max(src.range, 0.0f));
     else if (src.type == FLightType::Spot)
         dst.params = float4(std::max(src.radius, 0.0f), std::cos(src.spotInnerConeAngle),
-                            std::cos(src.spotOuterConeAngle), 0.0f);
+                            std::cos(src.spotOuterConeAngle), std::max(src.range, 0.0f));
     else if (src.type == FLightType::Disk)
         dst.params = float4(areaWidth, areaHeight, 0.0f, 0.0f);
     if (src.type == FLightType::Disk || src.type == FLightType::Rect)

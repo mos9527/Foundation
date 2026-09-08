@@ -136,7 +136,7 @@ struct GSLight
     float power; // Radiant power (type-dependent unit)
     float3 position;
     float3 direction;
-    // Directional: x=angularDiameter. Point: x=radius. Spot: x=radius, y=innerCos, z=outerCos.
+    // Directional: x=angularDiameter. Point: x=radius, w=range. Spot: x=radius, y=innerCos, z=outerCos, w=range.
     // Disk: xy=radius. Environment: x=azimuthOffset, y=averageRadiance, 0 when solid color
     float4 params;
     float3 dpdu; // tangent u-axis (Rect: half-extent u)
