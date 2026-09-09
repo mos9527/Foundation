@@ -2447,6 +2447,7 @@ void FLightingPanel()
                 light.color = float3{1.0f, 0.92f, 0.78f};
                 light.power = 10.0f;
                 light.radius = 0.05f;
+                light.angularDiameter = radians(2.00f);
                 light.range = 10.0f;
                 size_t const insertIndex = !lights.empty() && lights.front().type == FLightType::Environment ? 1u : 0u;
                 lights.insert(lights.begin() + static_cast<std::ptrdiff_t>(insertIndex), light);
