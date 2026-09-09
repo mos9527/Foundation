@@ -3359,7 +3359,7 @@ void FRunningImGui()
         if (IsRaster(GEditor.rendererMode))
         {
             ImGui::SeparatorText(PSI_EYE_OPEN " Rasterizer");
-            static float lodLogThreshold = 5;
+            static float lodLogThreshold = 3;
             ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
             GEditor.shaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
             ImGui::SeparatorText(PSI_DASHBOARD " Performance");

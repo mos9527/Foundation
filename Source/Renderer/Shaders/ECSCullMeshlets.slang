@@ -106,14 +106,14 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             // View-dependent culling
             group = primitive.Load<FLODGroup>(mesh.groups.offset + meshlet.group * sizeof(FLODGroup));
             viewCenter = pointToView(group.center, inst, globalParams.view);
-            float selfError = projErrorSimple(group.error, viewCenter, group.radius * scale, globalParams.proj[1][1], globalParams.zNear);
+            float selfError = projErrorSimple(group.error * scale, viewCenter, group.radius * scale, globalParams.proj[1][1], globalParams.zNear);
             // Remember - we take the upper_bound of the acceptable clusters
             // where it's the *first* LOD that exceeds the error threshold
             valid = selfError > globalParams.lodThreshold;
             if (meshlet.refined != ~0u){
                 group = primitive.Load<FLODGroup>(mesh.groups.offset + meshlet.refined * sizeof(FLODGroup));
                 viewCenter = pointToView(group.center, inst, globalParams.view);
-                float refError = projErrorSimple(group.error, viewCenter, group.radius * scale, globalParams.proj[1][1], globalParams.zNear);
+                float refError = projErrorSimple(group.error * scale, viewCenter, group.radius * scale, globalParams.proj[1][1], globalParams.zNear);
                 // The refined ones exceeds it too - impossible unless it's closer to
                 // the actual upper bound. So cull ourselves.
                 valid &= refError <= globalParams.lodThreshold;

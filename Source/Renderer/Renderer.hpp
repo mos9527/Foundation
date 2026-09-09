@@ -12,7 +12,7 @@ struct RendererUBO
     uint32_t frameNumber;
     GSOffsetCount instances;
     GSOffsetCount materials;
-    float lodThreshold{1e-5f};
+    float lodThreshold{1e-3f};
     float zNear;
     float4x4 view;
     float4x4 proj;
