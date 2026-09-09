@@ -2438,6 +2438,38 @@ void Renderer::CmdDispatch(const PassHandle pass, RHICommandList* cmd, const RHI
 }
 
 /* -- Debug -- */
+void Renderer::DbgGetGraph(Vector<DebugGraphNode>& outNodes, Vector<DebugGraphEdge>& outEdges) const
+{
+    if (!mSetup)
+        return;
+
+    outNodes.reserve(outNodes.size() + mSetup->trackedPasses.size());
+    for (auto const& pass : mSetup->trackedPasses)
+    {
+        outNodes.push_back({
+            .name = pass.name,
+            .handle = pass.handle,
+            .queue = pass.queue,
+            .used = pass.used,
+            .epilogue = pass.handle == mSetup->epilogue,
+            .depth = pass.depth,
+            .ord = pass.ord,
+            .groupIndex = pass.groupIndex,
+        });
+    }
+
+    for (PassHandle consumer = 0; consumer < mSetup->graph.size(); consumer++)
+    {
+        for (auto const& [producer, resource] : mSetup->graph[consumer])
+        {
+            StringView resourceName = "<Backbuffer or Reserved>";
+            if (resource != kInvalidHandle && resource < mSetup->trackedResources.size())
+                resourceName = mSetup->trackedResources[resource].name;
+            outEdges.push_back({consumer, producer, resourceName});
+        }
+    }
+}
+
 String Renderer::DbgDumpGraphviz() const
 {
     String out;

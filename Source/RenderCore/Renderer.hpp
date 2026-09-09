@@ -1401,6 +1401,24 @@ namespace Foundation::RenderCore
         void EndExecute();
 #pragma endregion
 #pragma region Debugging
+        struct DebugGraphNode
+        {
+            StringView name;
+            PassHandle handle{kInvalidHandle};
+            RHIDeviceQueueType queue{RHIDeviceQueueType::Undefined};
+            bool used{};
+            bool epilogue{};
+            size_t depth{};
+            size_t ord{};
+            int groupIndex{};
+        };
+        struct DebugGraphEdge
+        {
+            PassHandle consumer{kInvalidHandle};
+            PassHandle producer{kInvalidHandle};
+            StringView resourceName;
+        };
+        void DbgGetGraph(Vector<DebugGraphNode>& outNodes, Vector<DebugGraphEdge>& outEdges) const;
         [[nodiscard]] String DbgDumpGraphviz() const;
         [[nodiscard]] String DbgDumpActivePasses() const;
         [[nodiscard]] String DbgDumpExecutionGroups() const;

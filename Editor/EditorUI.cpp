@@ -1016,6 +1016,259 @@ static void CopyRenderGraphGraphviz(Renderer const* renderer)
     ImGui::SetClipboardText(graphviz.c_str());
 }
 
+struct RenderGraphModalState
+{
+    bool pendingOpen{};
+    bool fitPending{};
+    float zoom{1.0f};
+    ImVec2 pan{};
+};
+
+static constexpr char const* kRenderGraphModalName = "Render Graph Visualization";
+
+static RenderGraphModalState& RenderGraphModal()
+{
+    static RenderGraphModalState state;
+    return state;
+}
+
+static void OpenRenderGraphModal()
+{
+    auto& state = RenderGraphModal();
+    state.pendingOpen = true;
+    state.fitPending = true;
+    state.zoom = 1.0f;
+    state.pan = {};
+}
+
+static void DrawRenderGraphModal()
+{
+    auto& state = RenderGraphModal();
+    if (state.pendingOpen)
+    {
+        ImGui::OpenPopup(kRenderGraphModalName);
+        state.pendingOpen = false;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(1000.0f, 700.0f), ImGuiCond_FirstUseEver);
+    bool modalOpen = true;
+    if (!ImGui::BeginPopupModal(kRenderGraphModalName, &modalOpen,
+                                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+        return;
+
+    if (!modalOpen)
+    {
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+
+    Renderer* renderer = GContext ? GContext->renderer : nullptr;
+    if (!renderer)
+    {
+        ImGui::TextUnformatted("Render Graph is unavailable.");
+        ImGui::EndPopup();
+        return;
+    }
+
+    Allocator* scratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
+    Vector<Renderer::DebugGraphNode> nodes(scratch);
+    Vector<Renderer::DebugGraphEdge> edges(scratch);
+    renderer->DbgGetGraph(nodes, edges);
+    Ranges::sort(nodes, [](auto const& a, auto const& b) { return a.ord < b.ord; });
+
+    size_t activeCount = 0;
+    size_t maxDepth = 0;
+    PassHandle maxHandle = 0;
+    for (auto const& node : nodes)
+    {
+        maxHandle = std::max(maxHandle, node.handle);
+        if (!node.used)
+            continue;
+        activeCount++;
+        maxDepth = std::max(maxDepth, node.depth);
+    }
+
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SliderFloat("Zoom", &state.zoom, 0.1f, 3.0f, "%.2fx");
+    ImGui::SameLine();
+    if (ImGui::Button(PSI_REFRESH " Fit"))
+        state.fitPending = true;
+    ImGui::SameLine();
+    if (ImGui::Button(PSI_REMOVE " Close"))
+    {
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu passes, %zu dependencies | Wheel: zoom, drag: pan", activeCount, edges.size());
+
+    if (activeCount == 0)
+    {
+        ImGui::TextUnformatted("No active passes.");
+        ImGui::EndPopup();
+        return;
+    }
+
+    constexpr float nodeWidth = 180.0f;
+    constexpr float nodeHeight = 44.0f;
+    constexpr float horizontalSpacing = 260.0f;
+    constexpr float verticalSpacing = 72.0f;
+
+    Vector<size_t> layerCounts(maxDepth + 1, 0, scratch);
+    for (auto const& node : nodes)
+        if (node.used)
+            layerCounts[node.depth]++;
+    size_t maxRows = *Ranges::max_element(layerCounts);
+
+    Vector<size_t> layerRows(maxDepth + 1, 0, scratch);
+    Vector<ImVec2> positions(static_cast<size_t>(maxHandle) + 1, ImVec2{}, scratch);
+    Vector<uint8_t> visible(static_cast<size_t>(maxHandle) + 1, 0, scratch);
+    for (auto const& node : nodes)
+    {
+        if (!node.used)
+            continue;
+        float x = static_cast<float>(maxDepth - node.depth) * horizontalSpacing;
+        float rowOffset = static_cast<float>(maxRows - layerCounts[node.depth]) * 0.5f;
+        float y = (rowOffset + static_cast<float>(layerRows[node.depth]++)) * verticalSpacing;
+        positions[node.handle] = {x, y};
+        visible[node.handle] = 1;
+    }
+
+    float graphWidth = static_cast<float>(maxDepth) * horizontalSpacing + nodeWidth;
+    float graphHeight = static_cast<float>(maxRows - 1) * verticalSpacing + nodeHeight;
+    ImVec2 graphCenter{graphWidth * 0.5f, graphHeight * 0.5f};
+
+    ImVec2 canvasSize = ImGui::GetContentRegionAvail();
+    canvasSize.x = std::max(canvasSize.x, 1.0f);
+    canvasSize.y = std::max(canvasSize.y, 1.0f);
+    ImGui::BeginChild("RenderGraphCanvas", canvasSize, true,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+    ImVec2 innerSize = ImGui::GetContentRegionAvail();
+    innerSize.x = std::max(innerSize.x, 1.0f);
+    innerSize.y = std::max(innerSize.y, 1.0f);
+    ImGui::InvisibleButton("RenderGraphDragSurface", innerSize,
+                           ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
+
+    bool hovered = ImGui::IsItemHovered();
+    ImGuiIO& io = ImGui::GetIO();
+    ImVec2 canvasCenter{canvasPos.x + innerSize.x * 0.5f, canvasPos.y + innerSize.y * 0.5f};
+    if (state.fitPending)
+    {
+        float fitX = std::max(innerSize.x - 60.0f, 1.0f) / graphWidth;
+        float fitY = std::max(innerSize.y - 60.0f, 1.0f) / graphHeight;
+        state.zoom = std::clamp(std::min(fitX, fitY), 0.1f, 1.5f);
+        state.pan = {};
+        state.fitPending = false;
+    }
+    if (hovered && io.MouseWheel != 0.0f)
+    {
+        float oldZoom = state.zoom;
+        float newZoom = std::clamp(oldZoom * (io.MouseWheel > 0.0f ? 1.1f : 1.0f / 1.1f), 0.1f, 3.0f);
+        float zoomRatio = newZoom / oldZoom;
+        ImVec2 mouseFromCenter{io.MousePos.x - canvasCenter.x - state.pan.x,
+                               io.MousePos.y - canvasCenter.y - state.pan.y};
+        state.pan.x += mouseFromCenter.x * (1.0f - zoomRatio);
+        state.pan.y += mouseFromCenter.y * (1.0f - zoomRatio);
+        state.zoom = newZoom;
+    }
+    if (hovered && (ImGui::IsMouseDragging(ImGuiMouseButton_Left) ||
+                    ImGui::IsMouseDragging(ImGuiMouseButton_Middle)))
+    {
+        state.pan.x += io.MouseDelta.x;
+        state.pan.y += io.MouseDelta.y;
+    }
+
+    auto transform = [&](ImVec2 point)
+    {
+        return ImVec2{
+            canvasCenter.x + state.pan.x + (point.x - graphCenter.x) * state.zoom,
+            canvasCenter.y + state.pan.y + (point.y - graphCenter.y) * state.zoom,
+        };
+    };
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImVec2 canvasMax{canvasPos.x + innerSize.x, canvasPos.y + innerSize.y};
+    drawList->AddRectFilled(canvasPos, canvasMax, IM_COL32(18, 18, 18, 255));
+    drawList->PushClipRect(canvasPos, canvasMax, true);
+
+    float gridSpacing = 32.0f * state.zoom;
+    if (gridSpacing >= 8.0f)
+    {
+        float offsetX = std::fmod(canvasCenter.x + state.pan.x, gridSpacing);
+        float offsetY = std::fmod(canvasCenter.y + state.pan.y, gridSpacing);
+        for (float x = canvasPos.x + offsetX; x < canvasMax.x; x += gridSpacing)
+            drawList->AddLine({x, canvasPos.y}, {x, canvasMax.y}, IM_COL32(255, 255, 255, 12));
+        for (float y = canvasPos.y + offsetY; y < canvasMax.y; y += gridSpacing)
+            drawList->AddLine({canvasPos.x, y}, {canvasMax.x, y}, IM_COL32(255, 255, 255, 12));
+    }
+
+    for (auto const& edge : edges)
+    {
+        if (edge.consumer >= visible.size() || edge.producer >= visible.size() ||
+            !visible[edge.consumer] || !visible[edge.producer])
+            continue;
+        ImVec2 consumer = positions[edge.consumer];
+        ImVec2 producer = positions[edge.producer];
+        ImVec2 start = transform({producer.x + nodeWidth, producer.y + nodeHeight * 0.5f});
+        ImVec2 end = transform({consumer.x, consumer.y + nodeHeight * 0.5f});
+        float middleX = (start.x + end.x) * 0.5f;
+        ImU32 edgeColor = IM_COL32(180, 190, 205, 150);
+        drawList->AddLine(start, {middleX, start.y}, edgeColor, 1.5f);
+        drawList->AddLine({middleX, start.y}, {middleX, end.y}, edgeColor, 1.5f);
+        drawList->AddLine({middleX, end.y}, end, edgeColor, 1.5f);
+        float arrowSize = std::clamp(6.0f * state.zoom, 3.0f, 7.0f);
+        drawList->AddTriangleFilled(end, {end.x - arrowSize, end.y - arrowSize * 0.65f},
+                                   {end.x - arrowSize, end.y + arrowSize * 0.65f}, edgeColor);
+    }
+
+    for (auto const& node : nodes)
+    {
+        if (!node.used)
+            continue;
+        ImVec2 nodeMin = transform(positions[node.handle]);
+        ImVec2 nodeMax{nodeMin.x + nodeWidth * state.zoom, nodeMin.y + nodeHeight * state.zoom};
+        bool nodeHovered = hovered && io.MousePos.x >= nodeMin.x && io.MousePos.x <= nodeMax.x &&
+                           io.MousePos.y >= nodeMin.y && io.MousePos.y <= nodeMax.y;
+        ImU32 fill = node.epilogue ? IM_COL32(45, 150, 70, 255)
+                                  : node.queue == RHIDeviceQueueType::Graphics ? IM_COL32(180, 105, 45, 255)
+                                                                              : IM_COL32(45, 135, 95, 255);
+        drawList->AddRectFilled(nodeMin, nodeMax, fill, 5.0f);
+        drawList->AddRect(nodeMin, nodeMax,
+                          nodeHovered ? IM_COL32(255, 220, 100, 255) : IM_COL32(0, 0, 0, 180),
+                          5.0f, 0, nodeHovered ? 2.0f : 1.0f);
+
+        if (state.zoom >= 0.55f)
+        {
+            drawList->PushClipRect({nodeMin.x + 6.0f, nodeMin.y + 3.0f},
+                                   {nodeMax.x - 4.0f, nodeMax.y - 3.0f}, true);
+            drawList->AddText({nodeMin.x + 7.0f, nodeMin.y + 4.0f}, IM_COL32(255, 255, 255, 255),
+                              node.name.data(), node.name.data() + node.name.size());
+            char details[96];
+            std::snprintf(details, sizeof(details), "#%zu  depth %zu  group %d",
+                          static_cast<size_t>(node.handle), node.depth, node.groupIndex);
+            drawList->AddText({nodeMin.x + 7.0f, nodeMin.y + 23.0f}, IM_COL32(235, 235, 235, 190), details);
+            drawList->PopClipRect();
+        }
+
+        if (nodeHovered)
+        {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(node.name.data(), node.name.data() + node.name.size());
+            ImGui::Text("Pass #%zu | Depth %zu | Order %zu | Group %d", static_cast<size_t>(node.handle),
+                        node.depth, node.ord, node.groupIndex);
+            ImGui::TextUnformatted(node.queue == RHIDeviceQueueType::Graphics ? "Graphics queue" : "Compute queue");
+            ImGui::EndTooltip();
+        }
+    }
+
+    drawList->PopClipRect();
+    ImGui::EndChild();
+    ImGui::EndPopup();
+}
+
 static void SetUUIDTooltip(FUUID id)
 {
     char buf[40];
@@ -2680,6 +2933,9 @@ void FRunningImGui()
                         CopyRenderGraphGraphviz(GContext->renderer);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("Copy the current Render Graph GraphViz source");
+                    ImGui::SameLine();
+                    if (ImGui::Button(PSI_SITEMAP " Open Graph"))
+                        OpenRenderGraphModal();
                     Allocator* scratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
                     Vector<Renderer::MemoryStat> stats(scratch);
                     GContext->renderer->DbgGetMemoryStatistics(stats);
@@ -3270,6 +3526,7 @@ void FRunningImGui()
         CommitSceneToGPU(true);
     if (!IsMaterialTexturePickerOpen())
         DrawTexturePreviewModal();
+    DrawRenderGraphModal();
     PruneTexturePreviewCache(texturePreviewFrame);
     ImGui::PopStyleColor();
 }
