@@ -83,6 +83,7 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 view, out 
                              baseColor4, normalTBN, pbrMetalRough, emissive4, transmission);
     outBaseColor = baseColor4.xyz;
     SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
+    EnsureValidHitShadingNormal(hit, view);
     wo = WorldToShadingLocal(hit, view);
 
 #if SHARC_QUERY || SHARC_UPDATE
@@ -374,7 +375,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
 
         LightSampleContext previousLightCtx = lastLightCtx;
         LightSampleContext currentLightCtx =
-            LightSampleContext(hitState.position, hitState.normal, !bsdf.HasTransmission());
+            LightSampleContext(hitState.position, FaceForward(hitState.normal, view), !bsdf.HasTransmission());
 #if SHARC_UPDATE
         PathRadiance localRadiance = PathRadiance();
         if (!AddEmissiveClusterHitEmission(hit.raw, hitState, ray.Direction, float3(1.0f),
@@ -406,7 +407,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             break;
 
         AOVCategory sampleCategory;
-        BSDFSample sample = BSDF_SampleF(bsdf, wo, rng.sample(), rng.sample2D(),
+        BSDFSample sample = BSDF_SampleF(hitState, bsdf, wo, rng.sample(), rng.sample2D(),
                                          TransportMode::Radiance, BxDFReflTransFlags::All,
                                          sampleCategory);
         if (!sample.IsValid())
@@ -432,10 +433,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         sharcPathRoughness += IsDiffuse(sample.flags) ? 1.0f : sharcRoughness;
 #endif
         ray.Direction = normalize(ShadingLocalToWorld(hitState, sample.wi));
-        float3 rayNormalFF = dot(ray.Direction, hitState.geometryNormal) < 0.0f
-            ? -hitState.geometryNormal
-            : hitState.geometryNormal;
-        ray.Origin = OffsetRay(hitState.position, rayNormalFF);
+        ray.Origin = OffsetSurfaceRay(hitState, ray.Direction);
         ++bounce;
     }
 #if !SHARC_UPDATE

@@ -76,6 +76,7 @@ struct HitState
     float2 uv;
     float2 uvDX;
     float2 uvDY;
+    bool useGeometricHemisphere;
 };
 
 
@@ -108,6 +109,51 @@ void SetHitShadingNormal(inout HitState hit, float3 normal)
 
     hit.tangent = normalize(tangent);
     hit.bitangent = normalize(cross(hit.normal, hit.tangent)) * bitangentSign;
+}
+
+void EnsureValidHitShadingNormal(inout HitState hit, float3 view)
+{
+    if (!hit.useGeometricHemisphere)
+        return;
+
+    float side = dot(hit.geometryNormal, view) < 0.0f ? -1.0f : 1.0f;
+    float3 geometryNormal = side * hit.geometryNormal;
+    float3 normal = side * FaceForward(hit.normal, hit.geometryNormal);
+    float geometryCos = dot(geometryNormal, view);
+    float normalCos = dot(normal, view);
+    float normalGeometryCos = dot(normal, geometryNormal);
+    float threshold = min(0.9f * geometryCos, 0.01f);
+    float c = 2.0f * normalCos * normalGeometryCos - geometryCos - threshold;
+    if (c >= 0.0f && dot(hit.normal, hit.geometryNormal) >= 0.0f)
+        return;
+
+    if (c < 0.0f)
+    {
+        // N' = normalize(N + x * Ng); require dot(Reflect(view, N'), Ng) = threshold.
+        // Solve a*x*x + 2*b*x + c = 0 without cancellation or division at grazing angles.
+        float a = geometryCos - threshold;
+        float b = normalCos - threshold * normalGeometryCos;
+        float root = sqrt(max(0.0f, b * b - a * c));
+        float normalWeight = b >= 0.0f ? root + b : a;
+        float geometryWeight = b >= 0.0f ? -c : root - b;
+        float3 correctedNormal = normalWeight * normal + geometryWeight * geometryNormal;
+        normal = LengthSquared(correctedNormal) > 1e-12f ? normalize(correctedNormal) : geometryNormal;
+    }
+
+    // Preserve the outward orientation so that wo.z still identifies the incident medium.
+    SetHitShadingNormal(hit, side * normal);
+}
+
+bool IsValidSurfaceDirection(HitState hit, float3 localDirection)
+{
+    if (!hit.useGeometricHemisphere)
+        return true;
+    return localDirection.z * dot(ShadingLocalToWorld(hit, localDirection), hit.geometryNormal) > 0.0f;
+}
+
+float3 OffsetSurfaceRay(HitState hit, float3 direction)
+{
+    return OffsetRay(hit.position, FaceForward(hit.geometryNormal, direction));
 }
 
 void RotateHitTangentFrame(inout HitState hit, float2 direction)
@@ -223,6 +269,7 @@ HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, f
     HitState hit;
     hit.uvDX = float2(0.0f);
     hit.uvDY = float2(0.0f);
+    hit.useGeometricHemisphere = true;
 
     // Barycentric weights
     const float3 barycentrics = float3(1.0 - bary.x - bary.y, bary.x, bary.y);
@@ -363,6 +410,7 @@ HitState GetCurveHitState(uint curveOffset, uint primitive, float2 /*triangleBar
     HitState hit;
     hit.uvDX = float2(0.0f);
     hit.uvDY = float2(0.0f);
+    hit.useGeometricHemisphere = false;
 
     GSCurveSet curve = gPrimBuffer.Load<GSCurveSet>(curveOffset);
     FCurveLeaf leaf = LoadCurveLeaf(curve, primitive);
@@ -918,8 +966,7 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, float uc, float aliasU, f
 }
 
 bool SampleVisibleSceneLight<S : ISampler>(
-    float3 position,
-    float3 geometryNormal,
+    HitState hit,
     LightSampleContext ctx,
     inout S rng,
     out LightLiSample Li)
@@ -927,9 +974,11 @@ bool SampleVisibleSceneLight<S : ISampler>(
     Li = SampleSceneLight(ctx, rng.sample(), rng.sample(), rng.sample2D());
     if (Li.pdf <= EPS)
         return false;
+    if ((ctx.upperHemisphere && dot(ctx.ns, Li.wi) <= 0.0f) ||
+        !IsValidSurfaceDirection(hit, WorldToShadingLocal(hit, Li.wi)))
+        return false;
 
-    float3 shadowNormalFF = dot(Li.wi, geometryNormal) < 0.0f ? -geometryNormal : geometryNormal;
-    float3 shadowOrigin = OffsetRay(position, shadowNormalFF);
+    float3 shadowOrigin = OffsetSurfaceRay(hit, Li.wi);
     float shadowDistance = Li.dist;
     if (shadowDistance < INF)
         shadowDistance = max(EPS_TMin, shadowDistance - max(EPS_TMin, shadowDistance * 1e-4f));
@@ -955,10 +1004,13 @@ float BSDF_PDF(IBSDF bsdf, float3 wo, float3 wi, TransportMode mode, BxDFReflTra
     return bsdf.PDF(wo, wi, mode, flags);
 }
 
-BSDFSample BSDF_SampleF(IBSDF bsdf, float3 wo, float uc, float2 u, TransportMode mode,
+BSDFSample BSDF_SampleF(HitState hit, IBSDF bsdf, float3 wo, float uc, float2 u, TransportMode mode,
                         BxDFReflTransFlags flags, out AOVCategory category)
 {
-    return bsdf.Sample_f(wo, uc, u, mode, flags, category);
+    BSDFSample sample = bsdf.Sample_f(wo, uc, u, mode, flags, category);
+    if (!sample.IsValid() || !IsValidSurfaceDirection(hit, wo) || !IsValidSurfaceDirection(hit, sample.wi))
+        return BSDFSample();
+    return sample;
 }
 
 struct PathRadiance
@@ -1033,8 +1085,10 @@ void AddLocalDirectLighting<S : ISampler>(
     LightSampleContext ctx,
     inout PathRadiance radiance)
 {
+    if (!IsValidSurfaceDirection(hit, wo))
+        return;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit.position, hit.geometryNormal, ctx, rng, Li))
+    if (!SampleVisibleSceneLight(hit, ctx, rng, Li))
         return;
 
     float3 wi = WorldToShadingLocal(hit, Li.wi);
@@ -1069,13 +1123,15 @@ void AddDiffuseDirectLighting<S : ISampler>(
     inout PathRadiance radiance)
 {
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit.position, hit.geometryNormal, ctx, rng, Li))
+    if (!SampleVisibleSceneLight(hit, ctx, rng, Li))
         return;
 
     float3 wi = WorldToShadingLocal(hit, Li.wi);
-    float diffusePdf = CosineHemispherePDF(AbsCosTheta(wi));
+    if (wi.z <= 0.0f)
+        return;
+    float diffusePdf = CosineHemispherePDF(wi.z);
     float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, diffusePdf);
-    float3 contrib = beta * f * AbsCosTheta(wi) * Li.Li * mis;
+    float3 contrib = beta * f * wi.z * Li.Li * mis;
     AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, currentCategory, true);
 }
 

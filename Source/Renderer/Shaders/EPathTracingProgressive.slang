@@ -309,8 +309,10 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 view, out 
                     clearcoatFactor, clearcoatRoughness);
 
     outBaseColor = baseColor4.xyz;
+    hit.useGeometricHemisphere = !isCurve && material.shaderBlockID != kMaterialShaderBlockHair;
 
     SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
+    EnsureValidHitShadingNormal(hit, view);
     RotateHitTangentFrame(hit, anisotropyDirection);
     wo = WorldToShadingLocal(hit, view);
 
@@ -539,7 +541,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             float3 exitWi = SampleCosineHemisphere(rng.sample2D());
             exitWi = FaceForward(exitWi, float3(0, 0, 1));
             float exitPdf = CosineHemispherePDF(AbsCosTheta(exitWi));
-            if (exitPdf <= EPS)
+            if (exitPdf <= EPS || !IsValidSurfaceDirection(exitSurface, exitWi))
                 break;
 
             beta = localBeta * exitF * AbsCosTheta(exitWi) / exitPdf;
@@ -550,10 +552,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
                 break;
 
             ray.Direction = normalize(ShadingLocalToWorld(exitSurface, exitWi));
-            float3 rayNormalFF = dot(ray.Direction, exitSurface.geometryNormal) < 0.0f
-                ? -exitSurface.geometryNormal
-                : exitSurface.geometryNormal;
-            ray.Origin = OffsetRay(exitSurface.position, rayNormalFF);
+            ray.Origin = OffsetSurfaceRay(exitSurface, ray.Direction);
             ++bounce;
             continue;
         }
@@ -562,7 +561,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         IBSDF bsdf = material.GetSurface();
         LightSampleContext previousLightCtx = lastLightCtx;
         LightSampleContext currentLightCtx =
-            LightSampleContext(hitState.position, hitState.normal, !bsdf.HasTransmission());
+            LightSampleContext(hitState.position, FaceForward(hitState.normal, view), !bsdf.HasTransmission());
         if (!AddEmissiveClusterHitEmission(hit.raw, hitState, ray.Direction, localBeta,
                                            bounce, firstBounceCategory, lastSamplePDF,
                                            previousLightCtx, radiance))
@@ -576,7 +575,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             break;
 
         AOVCategory sampleCategory;
-        BSDFSample sample = BSDF_SampleF(bsdf, wo, rng.sample(), rng.sample2D(),
+        BSDFSample sample = BSDF_SampleF(hitState, bsdf, wo, rng.sample(), rng.sample2D(),
                                          TransportMode::Radiance, BxDFReflTransFlags::All,
                                          sampleCategory);
         if (!sample.IsValid())
@@ -592,10 +591,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             break;
 
         ray.Direction = normalize(ShadingLocalToWorld(hitState, sample.wi));
-        float3 rayNormalFF = dot(ray.Direction, hitState.geometryNormal) < 0.0f
-            ? -hitState.geometryNormal
-            : hitState.geometryNormal;
-        ray.Origin = OffsetRay(hitState.position, rayNormalFF);
+        ray.Origin = OffsetSurfaceRay(hitState, ray.Direction);
         ++bounce;
     }
     WritePrimaryInstanceID(pix, primaryInstance);
