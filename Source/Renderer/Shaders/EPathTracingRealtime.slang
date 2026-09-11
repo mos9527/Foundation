@@ -72,8 +72,8 @@ void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
         transmission *= SampleMaterialTexture(material.transmissionTexture, uv, uvDX, uvDY).r;
 }
 
-IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out float3 outBaseColor,
-                       out float3 sharcMaterialDemodulation, out float sharcRoughness)
+IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 view, out float3 wo,
+                       out float3 outBaseColor, out float3 sharcMaterialDemodulation, out float sharcRoughness)
 {
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
     float transmission;
@@ -83,6 +83,7 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out fl
                              baseColor4, normalTBN, pbrMetalRough, emissive4, transmission);
     outBaseColor = baseColor4.xyz;
     SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
+    wo = WorldToShadingLocal(hit, view);
 
 #if SHARC_QUERY || SHARC_UPDATE
     sharcRoughness = pbrMetalRough.y;
@@ -288,12 +289,12 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             hitState = GetHitState(inst.resourceOffset, hit.raw.primitive, hit.raw.bary, inst, ray.Origin, ray.Direction, hit.raw.hitT, currentRayCone.width);
         }
 
-        float3 wo = WorldToShadingLocal(hitState, view);
+        float3 wo;
         float3 baseColorOut;
         float3 sharcMaterialDemodulation;
         float sharcRoughness;
         IMaterial material = MakeMaterial(
-            hit.raw, hitState, wo, baseColorOut, sharcMaterialDemodulation, sharcRoughness);
+            hit.raw, hitState, view, wo, baseColorOut, sharcMaterialDemodulation, sharcRoughness);
 
 #if !SHARC_UPDATE
         if (hasAnyDebugView && bounce == 0)

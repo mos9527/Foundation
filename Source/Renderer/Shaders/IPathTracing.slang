@@ -186,9 +186,9 @@ void ApplyRayConeAnisotropy(inout HitState hit, GSInstance inst,
     float3 ellipseAxis1 = minorDirection * rayConeRadiusAtIntersection;
 
     // Transform points to world space
-    float3 wp0 = inst.transform + inst.rotation.rotate(p0 * inst.scale);
-    float3 wp1 = inst.transform + inst.rotation.rotate(p1 * inst.scale);
-    float3 wp2 = inst.transform + inst.rotation.rotate(p2 * inst.scale);
+    float3 wp0 = inst.rotation.rotate(p0) * inst.scale + inst.transform;
+    float3 wp1 = inst.rotation.rotate(p1) * inst.scale + inst.transform;
+    float3 wp2 = inst.rotation.rotate(p2) * inst.scale + inst.transform;
     
     float3 d = hit.position - wp0;
     float3 edge01 = wp1 - wp0;
@@ -224,9 +224,6 @@ HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, f
     hit.uvDX = float2(0.0f);
     hit.uvDY = float2(0.0f);
 
-    // Construct position from ray equation (more robust than interpolation + transform)
-    hit.position  = rayOrigin + rayDirection * hitT;
-
     // Barycentric weights
     const float3 barycentrics = float3(1.0 - bary.x - bary.y, bary.x, bary.y);
 
@@ -249,6 +246,13 @@ HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, f
     FQDecode(vq1, p1, n1, t1, bi1, u1);
     FQDecode(vq2, p2, n2, t2, bi2, u2);
 
+    // Reconstruct on the BLAS triangle, adding the base vertex and translation last.
+    precise float3 edge01 = p1 - p0;
+    precise float3 edge02 = p2 - p0;
+    precise float3 objectPosition = p0 + (bary.x * edge01 + bary.y * edge02);
+    precise float3 worldPosition = inst.rotation.rotate(objectPosition) * inst.scale + inst.transform;
+    hit.position = worldPosition;
+
     // Interpolate vertex attributes (model space)
     const float3 normal         = normalize(n0 * barycentrics.x + n1 * barycentrics.y + n2 * barycentrics.z);
     const float3 tangent        = normalize(t0 * barycentrics.x + t1 * barycentrics.y + t2 * barycentrics.z);
@@ -256,15 +260,16 @@ HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, f
     hit.uv                      = u0 * barycentrics.x + u1 * barycentrics.y + u2 * barycentrics.z;
 
     // Geometry normal from triangle edges
-    const float3 geoNormal = normalize(cross(p1 - p0, p2 - p0));
+    const float3 geoNormal = normalize(cross(edge01, edge02));
 
-    // Transform normals/tangents to world space via instance TRS
-    // For normals, we need to multiply by inverse transpose of scale, which is 1.0 / scale
+    // TLAS uses S * R, so normals use inverse(S) * R.
     float3 invScale = 1.0f / inst.scale;
-    hit.normal         = normalize(inst.rotation.rotate(normal * invScale));
-    hit.tangent        = normalize(inst.rotation.rotate(tangent * inst.scale));
-    hit.geometryNormal = normalize(inst.rotation.rotate(geoNormal * invScale));
-    hit.bitangent      = cross(hit.normal, hit.tangent) * (bitangentSign > 0.0f ? 1 : -1);
+    hit.normal         = normalize(inst.rotation.rotate(normal) * invScale);
+    hit.tangent        = normalize(inst.rotation.rotate(tangent) * inst.scale);
+    hit.geometryNormal = normalize(inst.rotation.rotate(geoNormal) * invScale);
+    float scaleSign = sign(inst.scale.x) * sign(inst.scale.y) * sign(inst.scale.z);
+    hit.bitangent      = cross(hit.normal, hit.tangent) * (bitangentSign * scaleSign > 0.0f ? 1 : -1);
+    SetHitShadingNormal(hit, hit.normal);
     
     if (rayConeWidth > 0.0f)
         ApplyRayConeAnisotropy(hit, inst, p0, p1, p2, u0, u1, u2, rayDirection, rayConeWidth);
@@ -362,8 +367,8 @@ HitState GetCurveHitState(uint curveOffset, uint primitive, float2 /*triangleBar
     GSCurveSet curve = gPrimBuffer.Load<GSCurveSet>(curveOffset);
     FCurveLeaf leaf = LoadCurveLeaf(curve, primitive);
 
-    float3 objRo = inst.rotation.conjugate().rotate(rayOrigin - inst.transform) / inst.scale;
-    float3 objRd = inst.rotation.conjugate().rotate(rayDirection) / inst.scale;
+    float3 objRo = inst.rotation.conjugate().rotate((rayOrigin - inst.transform) / inst.scale);
+    float3 objRd = inst.rotation.conjugate().rotate(rayDirection / inst.scale);
     if (LengthSquared(objRd) <= 1e-12f)
         objRd = float3(0.0f, 0.0f, 1.0f);
 
@@ -384,7 +389,7 @@ HitState GetCurveHitState(uint curveOffset, uint primitive, float2 /*triangleBar
     {
         // Degenerate / near-parallel fallback: project the triangle hit onto the segment.
         float3 worldHit = rayOrigin + rayDirection * hitT;
-        float3 objHit = inst.rotation.conjugate().rotate(worldHit - inst.transform) / inst.scale;
+        float3 objHit = inst.rotation.conjugate().rotate((worldHit - inst.transform) / inst.scale);
         localU = axisLen2 > 1e-12f ? saturate(dot(objHit - leaf.p0, axis) / axisLen2) : 0.0f;
         float3 axisPoint = lerp(leaf.p0, leaf.p1, localU);
         float3 radial = objHit - axisPoint;
@@ -400,7 +405,7 @@ HitState GetCurveHitState(uint curveOffset, uint primitive, float2 /*triangleBar
     float radius = lerp(leaf.r0, leaf.r1, localU);
     float3 axisPoint = lerp(leaf.p0, leaf.p1, localU);
     float3 objPosition = axisPoint + localNormal * max(radius, 0.0f);
-    hit.position = inst.transform + inst.rotation.rotate(objPosition * inst.scale);
+    hit.position = inst.rotation.rotate(objPosition) * inst.scale + inst.transform;
 
     float3 viewLocal = -normalize(objRd);
     float3 facing = viewLocal - tangent * dot(viewLocal, tangent);
@@ -425,10 +430,11 @@ HitState GetCurveHitState(uint curveOffset, uint primitive, float2 /*triangleBar
         localBitangent = normalize(cross(facing, tangent));
 
     float3 invScale = 1.0f / inst.scale;
-    hit.normal = normalize(inst.rotation.rotate(localNormal * invScale));
+    hit.normal = normalize(inst.rotation.rotate(localNormal) * invScale);
     hit.geometryNormal = hit.normal;
-    hit.tangent = normalize(inst.rotation.rotate(tangent * inst.scale));
-    hit.bitangent = normalize(inst.rotation.rotate(localBitangent * inst.scale));
+    hit.tangent = normalize(inst.rotation.rotate(tangent) * inst.scale);
+    hit.bitangent = normalize(inst.rotation.rotate(localBitangent) * inst.scale);
+    SetHitShadingNormal(hit, hit.normal);
     return hit;
 }
 

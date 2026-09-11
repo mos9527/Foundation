@@ -287,7 +287,8 @@ void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
     clearcoatRoughness = saturate(clearcoatRoughness);
 }
 
-IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out float3 outBaseColor, bool isCurve = false, bool foldSubsurfaceToDiffuse = false)
+IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 view, out float3 wo,
+                       out float3 outBaseColor, bool isCurve = false, bool foldSubsurfaceToDiffuse = false)
 {
     GSInstance inst = LoadSceneInstance(payload.instance);
     GSMaterial material = LoadMaterial(inst.materialIndex);
@@ -311,6 +312,7 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 wo, out fl
 
     SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
     RotateHitTangentFrame(hit, anisotropyDirection);
+    wo = WorldToShadingLocal(hit, view);
 
     if (material.shaderBlockID == kMaterialShaderBlockHair)
     {
@@ -473,10 +475,10 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             hitState = GetHitState(inst.resourceOffset, hit.raw.primitive, hit.raw.bary, inst, ray.Origin, ray.Direction, hit.raw.hitT, currentRayCone.width);
         }
 
-        float3 wo = WorldToShadingLocal(hitState, view);
+        float3 wo;
         bool foldSubsurfaceToDiffuse = bounce > 0;
         float3 baseColorOut;
-        IMaterial material = MakeMaterial(hit.raw, hitState, wo, baseColorOut, hit.kind == HitKind::Curve, foldSubsurfaceToDiffuse);
+        IMaterial material = MakeMaterial(hit.raw, hitState, view, wo, baseColorOut, hit.kind == HitKind::Curve, foldSubsurfaceToDiffuse);
 
         if (hasAnyDebugView && bounce == 0)
         {
