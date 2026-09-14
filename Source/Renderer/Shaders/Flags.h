@@ -28,7 +28,9 @@ SHARED_ENUM_END()
 
 SHARED_ENUM_BEGIN(CameraProjection, uint32_t)
     Perspective = 0u,
-    Panoramic = 1u
+    Panoramic = 1u,
+    Panini = 2u,
+    Fisheye = 3u
 SHARED_ENUM_END()
 
 SHARED_BITMASK_ENUM_BEGIN(ViewFlags, uint32_t)

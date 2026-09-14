@@ -2821,24 +2821,34 @@ void FRunningImGui()
                 GEditor.cameraUpdated = true;
             }
         }
-        const char* projectionItems[] = {"Perspective", "Panoramic (Equirectangular)"};
+        const char* projectionItems[] = {
+            "Perspective",
+            "Panoramic (Equirectangular)",
+            "Panini",
+            "Fisheye (Equidistant)",
+        };
         int cameraProjection = static_cast<int>(GEditor.shaderGlobals.cameraProjection);
         if (ImGui::Combo("Projection", &cameraProjection, projectionItems, IM_ARRAYSIZE(projectionItems)))
         {
             GEditor.shaderGlobals.cameraProjection = to_integer(static_cast<CameraProjection>(cameraProjection));
             GEditor.cameraUpdated = true;
         }
-        bool perspectiveCamera = GEditor.shaderGlobals.cameraProjection == to_integer(CameraProjection::Perspective);
-        if (perspectiveCamera)
-            GEditor.cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GEditor.camera.fovY);
-        else
+        CameraProjection projection = static_cast<CameraProjection>(GEditor.shaderGlobals.cameraProjection);
+        bool panoramicCamera = projection == CameraProjection::Panoramic;
+        if (!panoramicCamera)
+            GEditor.cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GEditor.camera.fovY, 1.0f, 179.0f);
+        if (panoramicCamera)
             ImGui::TextDisabled("Renders a 360x180 equirectangular view.");
+        else if (projection == CameraProjection::Panini)
+            ImGui::TextDisabled("Compresses wide views while keeping vertical lines straight.");
+        else if (projection == CameraProjection::Fisheye)
+            ImGui::TextDisabled("Uses an equidistant full-frame fisheye mapping.");
         GEditor.cameraUpdated |= ImGui::SliderFloat("Z Near", &GEditor.camera.zNear, 0.001f, 10.0f, "%.4f",
                                                     ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Exposure (EV)", &GEditor.shaderGlobals.camEV, -16.0f, 16.0f);
         ImGui::Separator();
         ImGui::SliderFloat("WASD Speed", &GEditor.camera.moveSpeed, 0.1f, 50.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
-        if (perspectiveCamera)
+        if (!panoramicCamera)
         {
             GEditor.cameraUpdated |= ImGui::Checkbox("Enable DOF", &GEditor.aperture.dofEnabled);
             if (GEditor.aperture.dofEnabled)

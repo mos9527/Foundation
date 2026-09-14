@@ -579,6 +579,18 @@ bool IsPanoramicCamera()
     return globalParams.cameraProjection == uint32_t(CameraProjection::Panoramic);
 }
 
+float2 CameraNDC(float2 pixelSample)
+{
+    float2 ndc = pixelSample / float2(globalParams.fbWidth, globalParams.fbHeight) * 2.0f - 1.0f;
+    ndc.y = -ndc.y;
+    return ndc;
+}
+
+float3 ViewToWorldDirection(float3 viewDirection)
+{
+    return normalize(mul(globalParams.inverseView, float4(viewDirection, 0.0f)).xyz);
+}
+
 float3 GeneratePanoramicRayDirection(float2 pixelSample)
 {
     float2 uv = pixelSample / float2(globalParams.fbWidth, globalParams.fbHeight);
@@ -595,16 +607,54 @@ float3 GeneratePanoramicRayDirection(float2 pixelSample)
     );
 }
 
+float3 GeneratePaniniRayDirection(float2 pixelSample)
+{
+    static const float d = 1.0f;
+    float2 halfFov = atan(globalParams.cameraTanHalfFov);
+    float2 screen = CameraNDC(pixelSample) *
+        float2((d + 1.0f) * tan(halfFov.x * 0.5f), globalParams.cameraTanHalfFov.y);
+
+    float x = screen.x / (d + 1.0f);
+    float x2 = x * x;
+    float cosPhi = (-d * x2 + sqrt(max(0.0f, 1.0f + x2 * (1.0f - d * d)))) / (x2 + 1.0f);
+    float sinPhi = x * (d + cosPhi);
+    float tanTheta = screen.y * (d + cosPhi) / (d + 1.0f);
+    float cosTheta = rsqrt(1.0f + tanTheta * tanTheta);
+
+    return ViewToWorldDirection(float3(
+        sinPhi * cosTheta,
+        tanTheta * cosTheta,
+        -cosPhi * cosTheta
+    ));
+}
+
+float3 GenerateFisheyeRayDirection(float2 pixelSample)
+{
+    float aspect = globalParams.fbWidth / globalParams.fbHeight;
+    float2 radial = CameraNDC(pixelSample) * float2(aspect, 1.0f);
+    float radius = length(radial);
+    float theta = min(radius * atan(globalParams.cameraTanHalfFov.y), Pi - EPS);
+    float2 direction = radius > EPS ? radial / radius : float2(0.0f);
+
+    return ViewToWorldDirection(float3(
+        direction * sin(theta),
+        -cos(theta)
+    ));
+}
+
 // TODO UBO should supply jitter instead
 float3 GeneratePrimaryRayDirection(float2 pixelSample)
 {
     if (IsPanoramicCamera())
         return GeneratePanoramicRayDirection(pixelSample);
+    if (globalParams.cameraProjection == uint32_t(CameraProjection::Panini))
+        return GeneratePaniniRayDirection(pixelSample);
+    if (globalParams.cameraProjection == uint32_t(CameraProjection::Fisheye))
+        return GenerateFisheyeRayDirection(pixelSample);
 
-    float2 ndc = pixelSample / float2(globalParams.fbWidth, globalParams.fbHeight) * 2.0f - 1.0f;
-    ndc.y = -ndc.y;
+    float2 ndc = CameraNDC(pixelSample);
     float3 viewDirection = normalize(float3(ndc * globalParams.cameraTanHalfFov, -1.0f));
-    return normalize(mul(globalParams.inverseView, float4(viewDirection, 0.0f)).xyz);
+    return ViewToWorldDirection(viewDirection);
 }
 
 float WorldToNDCDepth(float3 worldPosition)
