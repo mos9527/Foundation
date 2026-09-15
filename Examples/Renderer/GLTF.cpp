@@ -9,10 +9,20 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <thread>
 #include "Examples.hpp"
 
 static constexpr const char* kTempScenePath = "Cache/GPUSceneGLTF.fscn";
+
+StringView SceneExtensionFromMagic(Span<const unsigned char> head)
+{
+    uint32_t magic = 0;
+    if (head.size() < sizeof(magic))
+        return ".gltf";
+    std::memcpy(&magic, head.data(), sizeof(magic));
+    return magic == kSceneMagic ? ".fscn" : ".gltf";
+}
 
 String PrepareScenePayload(RHIApplication const& app, JobSystem* jobs, StringView path)
 {
@@ -87,7 +97,7 @@ ResourceHandle RebuildGraph(ExampleVulkanContext& ctx, RendererUBO& ubo, GPUScen
 int main(int argc, char** argv)
 {
     // --- Command line ---------------------------------------------------------------------
-    // Positional: <scene path> (glTF/GLB/FSCN). Optional; defaults to Data/Assets/demo.glb.
+    // Positional: <scene path> (glTF/GLB/FSCN). Omit it to get a native file picker (windowed mode only).
     // Headless single-image render (no window, path traced):
     //   --headless               Render one image and exit (implied when -o/--output is given)
     //   -o, --output  <path>     Output PNG path (default: render.png)
@@ -116,10 +126,14 @@ int main(int argc, char** argv)
     String scenePathArg;
     if (auto positional = cmdl(1))
         scenePathArg = positional.str();
-    else
+    else if (!headless)
+        scenePathArg = Examples_PromptForFile({"Scenes", "glb;gltf;fscn"}, "PickedScene", &SceneExtensionFromMagic);
+
+    if (scenePathArg.empty())
     {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Missing scene path",
-                                 "Please specify a scene path (glTF/GLB/FSCN) as the first argument.", nullptr);
+                                 "No scene selected. Pick a glTF/GLB/FSCN file, or pass one as the first argument.",
+                                 nullptr);
         return 1;
     }
     SDL_Window* window = headless ? nullptr
