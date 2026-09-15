@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <exception>
 #include <optional>
+#include <SDL3/SDL_iostream.h>
 #include <stb_image_write.h>
 
 using namespace Foundation;
@@ -102,6 +103,76 @@ namespace
     {
         Examples_ReportFatalException();
         std::abort();
+    }
+
+    constexpr StringView kAndroidContentUriScheme = "content://";
+
+    struct ExampleDialogResult
+    {
+        SDL_AtomicInt done{};
+        String path;
+    };
+
+    void SDLCALL ExampleDialogCallback(void* userdata, const char* const* filelist, int)
+    {
+        auto* result = static_cast<ExampleDialogResult*>(userdata);
+        if (filelist && *filelist)
+            result->path = *filelist;
+        SDL_SetAtomicInt(&result->done, 1);
+    }
+
+    String CopyToLocalFile(StringView source, StringView destStem,
+                           StringView (*extensionFromMagic)(Span<const unsigned char>))
+    {
+        char* prefPath = SDL_GetPrefPath("", "Foundation Examples");
+        if (!prefPath)
+        {
+            LOG(Examples, LogError, "SDL_GetPrefPath failed: {}", SDL_GetError());
+            return {};
+        }
+        String const prefDir(prefPath);
+        SDL_free(prefPath);
+
+        SDL_IOStream* in = SDL_IOFromFile(String(source).c_str(), "rb");
+        if (!in)
+        {
+            LOG(Examples, LogError, "Failed to open '{}': {}", source, SDL_GetError());
+            return {};
+        }
+
+        Array<unsigned char, 64 * 1024> buffer{};
+        size_t read = SDL_ReadIO(in, buffer.data(), buffer.size());
+        String const destPath = Format("{}{}{}", prefDir, destStem,
+                                       extensionFromMagic ? extensionFromMagic({buffer.data(), read}) : StringView{});
+
+        SDL_IOStream* out = SDL_IOFromFile(destPath.c_str(), "wb");
+        if (!out)
+        {
+            LOG(Examples, LogError, "Failed to open '{}' for writing: {}", destPath, SDL_GetError());
+            SDL_CloseIO(in);
+            return {};
+        }
+
+        bool ok = true;
+        for (; read > 0; read = SDL_ReadIO(in, buffer.data(), buffer.size()))
+        {
+            if (SDL_WriteIO(out, buffer.data(), read) == read)
+                continue;
+            LOG(Examples, LogError, "Failed to write '{}': {}", destPath, SDL_GetError());
+            ok = false;
+            break;
+        }
+        ok = ok && SDL_GetIOStatus(in) == SDL_IO_STATUS_EOF;
+        SDL_CloseIO(in);
+        if (!SDL_CloseIO(out))
+            ok = false;
+        if (!ok)
+        {
+            SDL_RemovePath(destPath.c_str());
+            return {};
+        }
+        LOG(Examples, LogInfo, "Copied '{}' to '{}'", source, destPath);
+        return destPath;
     }
 
     bool EventBelongsToWindow(SDL_Event const& event, SDL_WindowID windowID)
@@ -867,6 +938,22 @@ void Examples_DumpAndOpenImage(RHIApplication const& app, StringView path, RHIEx
     LOG(Examples, LogInfo, "Wrote '{}'", outPath);
     if (!SDL_OpenURL(outPath.c_str()))
         LOG(Examples, LogWarn, "SDL_OpenURL failed: {}", SDL_GetError());
+}
+
+String Examples_PromptForFile(SDL_DialogFileFilter filter, StringView localCopyStem,
+                              StringView (*extensionFromMagic)(Span<const unsigned char>))
+{
+    ExampleDialogResult result{};
+    SDL_ShowOpenFileDialog(&ExampleDialogCallback, &result, nullptr, &filter, 1, nullptr, false);
+    while (SDL_GetAtomicInt(&result.done) == 0)
+    {
+        SDL_PumpEvents();
+        SDL_Delay(1);
+    }
+
+    if (result.path.empty() || !result.path.starts_with(kAndroidContentUriScheme))
+        return result.path;
+    return CopyToLocalFile(result.path, localCopyStem, extensionFromMagic);
 }
 
 float Examples_GetTime() { return static_cast<float>(SDL_GetTicks() / 1e3); }

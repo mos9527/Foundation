@@ -14,6 +14,7 @@
 #include <Math/ModelViewProjection.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
+#include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_main.h>
 void Examples_ReportFatalException();
 
@@ -192,6 +193,8 @@ void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx);
 bool Examples_CreateSwapchain(SDL_Window* window, RHIDevice* device, RHIDeviceScopedHandle<RHISurface>& outSurface, RHIDeviceScopedHandle<RHISwapchain>& outSwapchain);
 void Examples_DumpAndOpenImage(RHIApplication const& app, StringView path, RHIExtent2D extent, void const* data,
                                int channels = 4, int strideBytes = 0);
+String Examples_PromptForFile(SDL_DialogFileFilter filter, StringView localCopyStem = "Picked",
+                              StringView (*extensionFromMagic)(Span<const unsigned char>) = nullptr);
 float Examples_GetTime();
 
 
