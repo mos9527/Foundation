@@ -278,9 +278,6 @@ public:
         Span<GSInstance> instances;
         Span<GSMaterial> materials;
         Span<GSLight> lights;
-        GSOffsetCount instanceRange{};
-        GSOffsetCount materialRange{};
-        GSOffsetCount lightRange{};
     };
 
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);

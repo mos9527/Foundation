@@ -374,9 +374,9 @@ struct GPUSceneImpl
     void FlushDirectGeometryUpload();
 
     // Allocation in ring buffers
-    Span<GSInstance> AllocateInstance(uint32_t count, uint32_t& outOffset);
-    Span<GSMaterial> AllocateMaterial(uint32_t count, uint32_t& outOffset);
-    Span<GSLight> AllocateLight(uint32_t count, uint32_t& outOffset);
+    template <typename T>
+    GSOffsetCount UploadTable(UploadGPURingBuffer<T>& ring, Span<T> data, uint64_t hash, GSOffsetCount previous,
+                              uint64_t previousHash);
 
 
     GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, Allocator* allocator, GPUSceneDesc const& desc,
@@ -809,47 +809,32 @@ GPUSceneImpl::~GPUSceneImpl()
         mDynamicPrimitiveAlloc->Clear();
 }
 
-Span<GSInstance> GPUSceneImpl::AllocateInstance(uint32_t count, uint32& outOffset)
+template <typename T>
+GSOffsetCount GPUSceneImpl::UploadTable(UploadGPURingBuffer<T>& ring, Span<T> data, uint64_t hash,
+                                        GSOffsetCount previous, uint64_t previousHash)
 {
-    auto [ptr, off] = mInstanceBuffer.Allocate(count);
-    outOffset = off;
-    return {ptr, count};
-}
-
-Span<GSMaterial> GPUSceneImpl::AllocateMaterial(uint32_t count, uint32& outOffset)
-{
-    auto [ptr, off] = mMaterialBuffer.Allocate(count);
-    outOffset = off;
-    return {ptr, count};
-}
-
-Span<GSLight> GPUSceneImpl::AllocateLight(uint32_t count, uint32& outOffset)
-{
-    auto [ptr, off] = mLightBuffer.Allocate(count);
-    outOffset = off;
-    return {ptr, count};
+    uint32_t const count = static_cast<uint32_t>(data.size());
+    if (hash == previousHash && previous.count == count)
+        return previous;
+    auto [ptr, offset] = ring.Allocate(count);
+    if (count != 0u)
+        std::memcpy(ptr, data.data(), data.size_bytes());
+    return {offset, count};
 }
 
 GPUScene::GPUSceneTables GPUSceneImpl::BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount)
 {
-    GPUSceneTables tables{};
-    tables.instances = AllocateInstance(instanceCount, tables.instanceRange.offset);
-    tables.materials = AllocateMaterial(materialCount, tables.materialRange.offset);
-    tables.lights = AllocateLight(lightCount, tables.lightRange.offset);
-    tables.instanceRange.count = instanceCount;
-    tables.materialRange.count = materialCount;
-    tables.lightRange.count = lightCount;
-    return tables;
+    owner.mCommittedInstances.resize(instanceCount);
+    owner.mCommittedMaterials.resize(materialCount);
+    owner.mCommittedLights.resize(lightCount);
+    return {.instances = owner.mCommittedInstances,
+            .materials = owner.mCommittedMaterials,
+            .lights = owner.mCommittedLights};
 }
 
 GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUpdateFlags flag)
 {
     UpdateResult res{};
-    res.instances = tables.instanceRange;
-    res.instancesHash = FNV1a64(tables.instances);
-    res.materials = tables.materialRange;
-    res.materialsHash = FNV1a64(tables.materials);
-    res.lights = tables.lightRange;
     CHECK_MSG(!tables.lights.empty(), "Scene must contain an environment light");
     std::sort(tables.lights.begin(), tables.lights.end(), [&](GSLight const& a, GSLight const& b)
               { return (a.flags & kGSLightTypeMask) < (b.flags & kGSLightTypeMask); });
@@ -860,7 +845,6 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
     // and improves NEE for the rest of the lights.
     environment.params.y =
         (environment.flags & to_integer(GSLightFlagsBits::EnvironmentMap)) != 0u ? owner.mEnvMapAverageRadiance : 0.0f;
-    res.lightsHash = FNV1a64(tables.lights);
     // Resolve instance resources
     for (auto& inst : tables.instances)
     {
@@ -921,9 +905,15 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
         std::memcpy(ptr, emissiveClusters.data(), emissiveClusters.size() * sizeof(GSEmissiveCluster));
         res.emissiveClusters = {offset, static_cast<uint32_t>(emissiveClusters.size())};
     }
-    owner.mCommittedInstances.assign(tables.instances.begin(), tables.instances.end());
-    owner.mCommittedMaterials.assign(tables.materials.begin(), tables.materials.end());
-    owner.mCommittedLights.assign(tables.lights.begin(), tables.lights.end());
+    res.instancesHash = FNV1a64(tables.instances);
+    res.materialsHash = FNV1a64(tables.materials);
+    res.lightsHash = FNV1a64(tables.lights);
+    res.instances = UploadTable(mInstanceBuffer, tables.instances, res.instancesHash,
+                                owner.mLastUpdateResult.instances, owner.mLastUpdateResult.instancesHash);
+    res.materials = UploadTable(mMaterialBuffer, tables.materials, res.materialsHash,
+                                owner.mLastUpdateResult.materials, owner.mLastUpdateResult.materialsHash);
+    res.lights = UploadTable(mLightBuffer, tables.lights, res.lightsHash, owner.mLastUpdateResult.lights,
+                             owner.mLastUpdateResult.lightsHash);
     // Light BVH update
     if (owner.mLastUpdateResult.lightsHash == res.lightsHash &&
         owner.mLastUpdateResult.emissiveClustersHash == res.emissiveClustersHash)
