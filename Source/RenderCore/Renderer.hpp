@@ -1324,6 +1324,8 @@ namespace Foundation::RenderCore
          *
          * @note This call will block if pending GPU work exists.
          *
+         * @note Calling this before @ref BeginSetup only records the swapchain; setup binds it.
+         *
          * @note You may want to re-create the entire @ref Renderer instead if your resources depend on
          *       the backbuffer size.
          */
