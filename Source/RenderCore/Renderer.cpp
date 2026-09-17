@@ -1575,6 +1575,8 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
     mSwapchain = swapchain;
     mFrameSwaps = swapchain->GetImages().size();
     LOG(Renderer, LogInfo, "Swapchain uses {} back buffers", mFrameSwaps);
+    if (mState == State::Undefined)
+        return; // Bound before BeginSetup(), still valid, RT setup happens later anyways.
     if (mState == State::Execute)
     {
         // If changing swapchain during execution (e.g. due to resize exception)
