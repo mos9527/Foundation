@@ -152,6 +152,7 @@ int main(int argc, char** argv)
 
         FSceneGPUResources resources;
         UploadSceneResources(scene, gpu, resources);
+        gpu.Join();
         if (FLight const* environment = scene.GetEnvironmentLight();
             environment && environment->HasEnvironmentTexture())
             UploadSceneEnvironment(scene, *environment, gpu);
@@ -176,7 +177,6 @@ int main(int argc, char** argv)
             const ResourceHandle output =
                 RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, renderer, true /* headless */);
             // Accumulate
-            gpu.Join();
             for (uint32_t f = 0; f < sampleCount; ++f)
             {
                 Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
@@ -242,7 +242,6 @@ int main(int argc, char** argv)
                     RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, renderer, false /* headless */, scaling);
                 }
                 Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
-                CommitSceneToGPU(scene, gpu, resources, ubo);
                 // Debug Text
                 Examples_Text(input,
                               Format("{} meshes, {} instances, {} textures   {:.0f} FPS {} Samples",
