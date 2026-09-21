@@ -499,7 +499,7 @@ void Renderer::BindBackbufferUAV(PassHandle pass, int set_index) const
     CHECK(mState == State::Setup);
     CHECK_MSG(mSwapchain.IsValid(),
               "BindBackbufferUAV is not available in a headless Renderer (no swapchain). "
-              "Write to an explicit texture via BindTextureUAV instead.");
+              "Write to an explicit texture via BindTextureUAV instead.");    
     auto& tpass = mSetup->trackedPasses[pass];
     tpass.backbufferUAV = set_index;
     if (mSetup->lastBackbufferProducer != kInvalidHandle)
@@ -532,6 +532,7 @@ void Renderer::BindAccelerationStructureWrite(PassHandle pass, ResourceHandle as
 {
     CHECK(mState == State::Setup);
     mSetup->trackedPasses[pass].resources.emplace_back(as);
+    mSetup->trackedPasses[pass].piplineStages |= RHIPipelineStageBits::AccelerationBuild;
     mSetup->trackedPasses[pass].asUsages.emplace_back(as, RHIResourceAccessBits::AccelerationStructureWrite,
                                                       RHIPipelineStageBits::AccelerationBuild);
     if (mSetup->trackedResources[as].lastASState.lastProducer != kInvalidHandle &&
@@ -1648,6 +1649,23 @@ void Renderer::InvalidateTemporalResource(TemporalResourceHandle resource)
     mSetup->temporalResources[family].invalidatedFrame = mFrameSwapped;
 }
 
+constexpr uint64_t kGpuFenceTimeoutNs = 5ull * 1000ull * 1000ull * 1000ull; // 5s
+
+void WaitGpuFences(RHIDevice* device, Span<RHIDeviceFence* const> wait, const char* where)
+{
+    if (wait.empty())
+        return;
+    if (device->WaitForFences(wait, true, static_cast<size_t>(kGpuFenceTimeoutNs)))
+        return;
+    for (size_t i = 0; i < wait.size(); ++i)
+    {
+        const bool signaled = device->WaitForFences({wait.data() + i, 1}, true, 0);
+        LOG(Renderer, LogError, "{}: fence[{}] {}", where, i, signaled ? "signaled" : "PENDING");
+    }
+    CHECK_MSG(false, "{}: GPU fence wait timed out after 5s ({} fences). Device lost or hung.", where, wait.size());
+}
+
+
 void Renderer::WaitForFrame()
 {
     CHECK_MSG(mState != State::Execute,
@@ -1671,12 +1689,10 @@ void Renderer::WaitForFrame()
         wait.push_back(mSwaps[prevSync].graphicsFence.Get());
     if (mSetup->executionAnyCompute && mSwaps[prevSync].computeFence.IsValid())
         wait.push_back(mSwaps[prevSync].computeFence.Get());
-    if (wait.empty())
-        return;
-    mDevice->WaitForFences(wait, true, -1);
+    WaitGpuFences(mDevice.Get(), wait, "WaitForFrame");
 }
 
-void Renderer::AcquireSync()
+void Renderer::WaitSync()
 {
     CHECK(mExecuteAlloc);
     ZoneScopedN("Wait for GPU");
@@ -1686,11 +1702,25 @@ void Renderer::AcquireSync()
         wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
     if (mSetup && mSetup->executionAnyCompute)
         wait.push_back(mSwaps[mCurrentSync].computeFence.Get());
+    WaitGpuFences(mDevice.Get(), wait, "WaitSync");
+}
+
+void Renderer::ResetSync()
+{
+    Vector<RHIDeviceFence*> wait(mExecuteAlloc.Ptr());
+    wait.reserve(2);
+    if (mSetup && mSetup->executionAnyGraphics)
+        wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
+    if (mSetup && mSetup->executionAnyCompute)
+        wait.push_back(mSwaps[mCurrentSync].computeFence.Get());
     if (!wait.empty())
-    {
-        mDevice->WaitForFences(wait, true, -1);
         mDevice->ResetFences(wait);
-    }
+}
+
+void Renderer::AcquireSync()
+{
+    WaitSync();
+    ResetSync();
 }
 
 void Renderer::BeginExecute(uint32_t swapImageIndex, RHIDeviceSemaphore* imageAcquire)
@@ -1748,11 +1778,14 @@ void Renderer::BeginExecute()
 
 RHISwapchainResult Renderer::BeginExecute(Presenter* presenter)
 {
-    AcquireSync();
+    WaitSync();
     uint32_t image{};
     const RHISwapchainResult result = presenter->AcquireNextImage(image);
     if (RHISwapchainResultMayPresent(result))
+    {
+        ResetSync();
         BeginExecute(image, presenter->GetImageAcquireSemaphore().Get());
+    }
     return result;
 }
 
@@ -2252,6 +2285,9 @@ void Renderer::ExecuteFrame()
                 auto const& pass = mSetup->trackedPasses[pass_handle];
                 allStages |= pass.piplineStages;
             }
+            if (!allStages)
+                allStages = RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader |
+                            RHIPipelineStageBits::AccelerationBuild | RHIPipelineStageBits::Transfer;
             if (mSetup->executionNumGraphicsGroups && graphicsWaitValue >= 0 &&
                 group.queue == RHIDeviceQueueType::Compute)
                 wait->emplace_back(mGraphicsTimeline.Get(), graphicsWaitValue), waitStage->push_back(allStages);
