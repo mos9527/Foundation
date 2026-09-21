@@ -31,6 +31,14 @@ if (ANDROID)
         )
     endif()
 else()
+    # Recent LunarG Linux SDK tarballs ship the loader under
+    # $VULKAN_SDK/lib/VulkanLoader/lib instead of $VULKAN_SDK/lib, and the latter
+    # is the only SDK path FindVulkan searches. Add the loader prefix so
+    # find_package(Vulkan) resolves Vulkan_LIBRARY without needing a
+    # distro-provided libvulkan-dev.
+    if (DEFINED ENV{VULKAN_SDK})
+        list(APPEND CMAKE_PREFIX_PATH "$ENV{VULKAN_SDK}/lib/VulkanLoader")
+    endif()
     find_package(Vulkan REQUIRED)
 endif()
 FetchContent_MakeAvailable(VulkanMemoryAllocator)
