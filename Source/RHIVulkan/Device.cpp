@@ -652,7 +652,7 @@ bool VulkanDevice::WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_a
         return true;
     if (res == vk::Result::eTimeout)
         return false;
-    CHECK(false);  // Not handled otherwise!
+    CHECK_MSG(false, "vkWaitForFences failed: {}", static_cast<int32_t>(res));
 }
 
 void VulkanDevice::SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores)

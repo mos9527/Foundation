@@ -617,8 +617,17 @@ namespace Foundation::RenderCore
          */
         void ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierList cmd);
         /**
-         * @brief Acquires the synchronization primitives for the current frame.
+         * @brief Waits for the GPU fences of the sync slot about to be reused.
          *        Internal. Called by @ref BeginExecute.
+         */
+        void WaitSync();
+        /**
+         * @brief Resets the GPU fences of the current sync slot after @ref WaitSync.
+         *        Internal. Called once the frame is committed (acquire succeeded, or headless).
+         */
+        void ResetSync();
+        /**
+         * @brief Waits then resets the current sync slot. Headless @ref BeginExecute path.
          */
         void AcquireSync();
         /**
