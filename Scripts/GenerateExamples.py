@@ -16,11 +16,18 @@ MAIN_ACTIVITY = REPO_ROOT / "Android" / "app" / "src" / "main" / "java" / "found
 BUILD_GRADLE = REPO_ROOT / "Android" / "app" / "build.gradle.kts"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build.yml"
 
+CI_TARGETS_BEGIN = "          # BEGIN GENERATED CI EXAMPLE TARGETS"
+CI_TARGETS_END = "          # END GENERATED CI EXAMPLE TARGETS"
+
 ANDROID_EXCLUDED_EXAMPLES = {
     "ExampleRenderer_SM64"
 }
 
+# ExampleRenderer_SM64 only exists when CMake's WIN32 guard holds, so building it
+# on macOS/Linux fails with "unknown target". CI builds the same list everywhere,
+# so it is simply skipped here.
 CI_EXCLUDED_EXAMPLES = {
+    "ExampleRenderer_SM64"
 }
 
 
@@ -169,8 +176,8 @@ def main() -> int:
     ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     ci_workflow = replace_generated_region(
         ci_workflow,
-        "          # BEGIN GENERATED CI EXAMPLE TARGETS",
-        "          # END GENERATED CI EXAMPLE TARGETS",
+        CI_TARGETS_BEGIN,
+        CI_TARGETS_END,
         render_ci_targets(ci_examples),
     )
 

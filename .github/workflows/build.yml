@@ -71,7 +71,8 @@ jobs:
           libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev \
           libdrm-dev libgbm-dev \
           libasound2-dev libpulse-dev libpipewire-0.3-dev \
-          libdbus-1-dev libudev-dev libibus-1.0-dev libusb-1.0-0-dev
+          libdbus-1-dev libudev-dev libibus-1.0-dev libusb-1.0-0-dev \
+          libvulkan-dev
 
     - name: Install Ninja (macOS)
       if: matrix.platform == 'macos'
@@ -110,7 +111,7 @@ jobs:
         tar xf vulkan_sdk.tar.xz -C "$HOME/VulkanSDK"
         sdk="$HOME/VulkanSDK/$ver/x86_64"
         echo "VULKAN_SDK=$sdk" >> "$GITHUB_ENV"
-        echo "LD_LIBRARY_PATH=$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        echo "LD_LIBRARY_PATH=$sdk/lib:$sdk/lib/VulkanLoader/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         echo "$sdk/bin" >> "$GITHUB_PATH"
         "$sdk/bin/slangc" -v
 
@@ -167,7 +168,6 @@ jobs:
           ExampleRenderer_JoltPhysics
           ExampleRenderer_Dynamic
           ExampleRenderer_GLTF
-          ExampleRenderer_SM64
           Example_BindlessSimple
           Example_DebugText
           Example_SDF2D

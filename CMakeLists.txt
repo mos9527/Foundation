@@ -101,6 +101,11 @@ endif()
 # LTO
 include(CheckIPOSupported)
 check_ipo_supported(RESULT ipo_ok OUTPUT ipo_msg)
+# MSVC ICE, not a clue why.
+if (ipo_ok AND MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_SYSTEM_PROCESSOR MATCHES "[Aa][Rr][Mm]64")
+    message(STATUS "IPO disabled: MSVC ARM64 workaround")
+    set(ipo_ok FALSE)
+endif()
 if (ipo_ok)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ON)
