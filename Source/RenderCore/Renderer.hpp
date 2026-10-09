@@ -122,23 +122,31 @@ namespace Foundation::RenderCore
         // like drivers don't really care?
         // See Also: https://www.reddit.com/r/vulkan/comments/v2mswb/global_memory_barriers_vs_bufferimage_memory/
         // TODO: Investigate
+        struct PreparedTransition
+        {
+            PassHandle consumer{kInvalidHandle};
+            size_t frame{0};
+            int graphicsGroupIndex{-1};
+            RHIResourceAccess access{};
+            RHIPipelineStage stage{};
+            RHITextureLayout layout{};
+        };
         struct BufferState
         {
             // Last pass to write at Setup time
             PassHandle producer{kInvalidHandle};
-            // Last pass to transition at Execute time
+            // Last actual writer at Execute time
             PassHandle lastProducer{kInvalidHandle};
-            // Last frame the transition was executed
             size_t lastProducedFrame{0};
-            // Last queue this resource is owned by
             RHIDeviceQueueType lastOwnerQueue{RHIDeviceQueueType::Undefined};
-            // [Only used by @ref ExecuteReleaseQueueResources]
-            bool executeTempTransitionFlag{false};
+            PreparedTransition preparedTransition{};
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
             void reset()
             {
                 producer = kInvalidHandle;
+                lastOwnerQueue = RHIDeviceQueueType::Undefined;
+                preparedTransition = {};
                 access = {};
                 stage = {};
             }
@@ -153,20 +161,19 @@ namespace Foundation::RenderCore
             /* -- states -- */
             // Last pass to write at Setup time
             PassHandle producer{kInvalidHandle};
-            // Last pass to transition at Execute time
+            // Last actual writer at Execute time
             PassHandle lastProducer{kInvalidHandle};
-            // Last frame the transition was executed
             size_t lastProducedFrame{0};
-            // Last queue this resource is owned by
             RHIDeviceQueueType lastOwnerQueue{RHIDeviceQueueType::Undefined};
-            // [Only used by @ref ExecuteReleaseQueueResources]
-            bool executeTempTransitionFlag{false};
+            PreparedTransition preparedTransition{};
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
             RHITextureLayout layout{};
             void reset()
             {
                 producer = kInvalidHandle;
+                lastOwnerQueue = RHIDeviceQueueType::Undefined;
+                preparedTransition = {};
                 access = {};
                 stage = {};
                 layout = {};

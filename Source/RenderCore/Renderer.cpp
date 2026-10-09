@@ -255,19 +255,38 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
     {
         CHECK_MSG(resource.temporalFramesAgo == 0, "Cannot write through a temporal Previous() handle");
     }
-    // Do this for all sub resources in range
+    auto& trackedPass = mSetup->trackedPasses[pass];
     for (auto& sta : resource.GetLastSubresourceStateOf(range))
     {
-        // Add edge
         if (sta.producer != kInvalidHandle && sta.producer != pass)
             mSetup->add_edge(pass, sta.producer, handle);
-        // Set producer
         if (access & kAllShaderWrites)
             sta.producer = pass;
+
+        const auto subresource = sta.ToRange();
+        auto usage = Ranges::find_if(trackedPass.textureUsages, [&](auto const& entry)
+                                    {
+                                        auto const& [h, a, s, r, l] = entry;
+                                        return h == handle && r.layer.aspect == subresource.layer.aspect &&
+                                               r.layer.mipLevel == subresource.layer.mipLevel &&
+                                               r.layer.baseArrayLayer == subresource.layer.baseArrayLayer;
+                                    });
+        if (usage == trackedPass.textureUsages.end())
+        {
+            trackedPass.textureUsages.emplace_back(handle, access, stage, subresource, layout);
+        }
+        else
+        {
+            auto& [h, mergedAccess, mergedStage, r, mergedLayout] = *usage;
+            CHECK_MSG(mergedLayout == layout,
+                      "Pass {} declares incompatible layouts for texture {} (mip {}, layer {}, aspect {})",
+                      trackedPass.name, resource.name, sta.mip, sta.layer, static_cast<uint32_t>(sta.aspect));
+            mergedAccess |= access;
+            mergedStage |= stage;
+        }
     }
-    mSetup->trackedPasses[pass].textureUsages.emplace_back(handle, access, stage, range, layout);
-    mSetup->trackedPasses[pass].resources.emplace_back(handle);
-    mSetup->trackedPasses[pass].piplineStages |= stage;
+    trackedPass.resources.emplace_back(handle);
+    trackedPass.piplineStages |= stage;
 }
 
 /* -- binding -- */
@@ -1799,8 +1818,22 @@ void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, 
         sta.lastProducer = pass;
         sta.lastProducedFrame = mFrameSwapped;
     }
+    if (pass != kInvalidHandle)
+        sta.lastOwnerQueue = mSetup->trackedPasses[pass].queue;
+    auto const& prepared = sta.preparedTransition;
+    if (prepared.consumer != kInvalidHandle)
+    {
+        CHECK_MSG(prepared.consumer == pass && prepared.frame == mFrameSwapped && prepared.access == access &&
+                      prepared.stage == stage && prepared.layout == layout,
+                  "Prepared texture transition does not match its consumer");
+        sta.access = access;
+        sta.stage = stage;
+        sta.layout = layout;
+        sta.preparedTransition = {};
+        return;
+    }
     // RW resources need barriers even if the state doesn't change
-    // because of potential WOW hazards
+    // because of potential WAW hazards
     if ((sta.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
     {
         /* always barrier */
@@ -1847,6 +1880,19 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
     {
         tres.lastBufferState.lastProducer = pass;
         tres.lastBufferState.lastProducedFrame = mFrameSwapped;
+    }
+    if (pass != kInvalidHandle)
+        tres.lastBufferState.lastOwnerQueue = mSetup->trackedPasses[pass].queue;
+    auto const& prepared = tres.lastBufferState.preparedTransition;
+    if (prepared.consumer != kInvalidHandle)
+    {
+        CHECK_MSG(prepared.consumer == pass && prepared.frame == mFrameSwapped && prepared.access == access &&
+                      prepared.stage == stage,
+                  "Prepared buffer transition does not match its consumer");
+        tres.lastBufferState.access = access;
+        tres.lastBufferState.stage = stage;
+        tres.lastBufferState.preparedTransition = {};
+        return;
     }
     RHIBuffer* res = DerefPhysicalResource(tres.handle).Get<RHIBuffer*>();
     /* Same as textures */
@@ -2044,6 +2090,14 @@ void Renderer::ExecuteFrame()
                 break;
             }
         };
+        auto UpdatePreparedSync = [&](TrackedResource::PreparedTransition const& prepared)
+        {
+            if (prepared.consumer == kInvalidHandle)
+                return;
+            CHECK_MSG(prepared.frame == mFrameSwapped && prepared.graphicsGroupIndex >= 0,
+                      "Invalid prepared transition submission");
+            graphicsWaitValue = std::max(graphicsWaitValue, static_cast<int>(Counter(prepared.graphicsGroupIndex)));
+        };
         for (auto pass_handle : group.passes)
         {
             auto const& pass = mSetup->trackedPasses[pass_handle];
@@ -2058,13 +2112,17 @@ void Renderer::ExecuteFrame()
             {
                 auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
                 for (auto const& sta : tres.GetLastSubresourceStateOf(range))
+                {
                     UpdateSyncGroup(sta.lastProducer, sta.lastProducedFrame);
+                    UpdatePreparedSync(sta.preparedTransition);
+                }
             }
             // Buffers
             for (auto [hdl, access, stage] : pass.bufferUsages)
             {
                 auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
                 UpdateSyncGroup(tres.lastBufferState.lastProducer, tres.lastBufferState.lastProducedFrame);
+                UpdatePreparedSync(tres.lastBufferState.preparedTransition);
             }
             // Acceleration Structures
             for (auto [hdl, access, stage] : pass.asUsages)
@@ -2180,9 +2238,13 @@ void Renderer::ExecuteFrame()
             // Only Compute resources _need_ to be transitioned here beforehand. So we only deal with that
             if (needPostTransition)
             {
-                // Declare that the first pass from the next group handled the transition
-                size_t nextGroupIndex = (groupIndex + 1) % groups.size();
-                PassHandle executorPass = groups[nextGroupIndex].passes.front();
+                const RHIPipelineStage graphicsOnlyStages =
+                    RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::FragmentShader |
+                    RHIPipelineStageBits::MeshShader | RHIPipelineStageBits::TaskShader |
+                    RHIPipelineStageBits::RenderTargetOutput | RHIPipelineStageBits::EarlyFragmentTests |
+                    RHIPipelineStageBits::LateFragmentTests | RHIPipelineStageBits::AllGraphics;
+                Vector<TrackedResource::SubresourceState*> seenTextures(mExecuteAlloc.Ptr());
+                Vector<TrackedResource::BufferState*> seenBuffers(mExecuteAlloc.Ptr());
                 auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
                 cmd->Begin(mExecuteAlloc.Ptr());
                 cmd->DebugBegin("Graphics Pre Compute");
@@ -2193,53 +2255,63 @@ void Renderer::ExecuteFrame()
                     for (PassHandle pass : transitionGroup.passes)
                     {
                         auto& tracked = mSetup->trackedPasses[pass];
+                        if (!tracked.used)
+                            continue;
                         for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
                         {
                             auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
                             RHITexture* res = DerefPhysicalResource(tres.handle).Get<RHITexture*>();
                             for (auto& sta : tres.GetLastSubresourceStateOf(range))
                             {
-                                // Only deal with resources currently owned by us _once_
-                                // This implies that the states (stages) _could_ be one
-                                // of ours (e.g. Fragment) and cannot be transitioned by the subsequent (Compute)
-                                // group.
-                                // Releasing this state SHOULD imply that all queues - no matter capability
-                                // can transition it.
-                                if (sta.executeTempTransitionFlag)
-                                    continue; // Only transition once - so the *first* usages of the next group are valid
-                                // Subsequent intra-group transitions should always be valid by themselves
-                                ExecuteBarrierSubresourceState(executorPass, res, sta, access, stage, layout, cmd);
-                                sta.executeTempTransitionFlag = true;
+                                if (Ranges::find(seenTextures, &sta) != seenTextures.end())
+                                    continue;
+                                seenTextures.emplace_back(&sta);
+                                if (!(sta.stage & graphicsOnlyStages))
+                                    continue;
+                                CHECK_MSG(sta.preparedTransition.consumer == kInvalidHandle,
+                                          "Texture already has a prepared transition");
+                                RHICommandList::TransitionDesc desc{
+                                    .srcAccess = sta.access,
+                                    .dstAccess = access,
+                                    .srcStage = sta.stage,
+                                    .dstStage = stage,
+                                    .srcImgLayout = sta.layout,
+                                    .dstImgLayout = layout,
+                                    .srcImgRange = sta.ToRange(),
+                                };
+                                cmd->SetImageTransition(res, desc);
+                                sta.preparedTransition = {.consumer = pass,
+                                                          .frame = mFrameSwapped,
+                                                          .graphicsGroupIndex = group.graphicsGroupIndex,
+                                                          .access = access,
+                                                          .stage = stage,
+                                                          .layout = layout};
+                                sta.layout = layout;
                             }
                         }
                         for (auto [hdl, access, stage] : tracked.bufferUsages)
                         {
                             auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
-                            // Same as above
-                            if (tres.lastBufferState.executeTempTransitionFlag)
+                            auto& sta = tres.lastBufferState;
+                            if (Ranges::find(seenBuffers, &sta) != seenBuffers.end())
                                 continue;
-                            ExecuteBarrierBuffer(executorPass, tres, access, stage, cmd);
-                            tres.lastBufferState.executeTempTransitionFlag = true;
-                        }
-                    }
-                }
-                for (size_t groupOffset = 1; groupOffset <= postTransitionGroupCount; groupOffset++)
-                {
-                    auto& transitionGroup = groups[(groupIndex + groupOffset) % groups.size()];
-                    for (PassHandle pass : transitionGroup.passes)
-                    {
-                        auto& tracked = mSetup->trackedPasses[pass];
-                        // Reset the flags
-                        for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
-                        {
-                            auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
-                            for (auto& sta : tres.GetLastSubresourceStateOf(range))
-                                sta.executeTempTransitionFlag = false;
-                        }
-                        for (auto [hdl, access, stage] : tracked.bufferUsages)
-                        {
-                            auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
-                            tres.lastBufferState.executeTempTransitionFlag = false;
+                            seenBuffers.emplace_back(&sta);
+                            if (!(sta.stage & graphicsOnlyStages))
+                                continue;
+                            CHECK_MSG(sta.preparedTransition.consumer == kInvalidHandle,
+                                      "Buffer already has a prepared transition");
+                            RHICommandList::TransitionDesc desc{
+                                .srcAccess = sta.access,
+                                .dstAccess = access,
+                                .srcStage = sta.stage,
+                                .dstStage = stage,
+                            };
+                            cmd->SetBufferTransition(DerefPhysicalResource(tres.handle).Get<RHIBuffer*>(), desc);
+                            sta.preparedTransition = {.consumer = pass,
+                                                      .frame = mFrameSwapped,
+                                                      .graphicsGroupIndex = group.graphicsGroupIndex,
+                                                      .access = access,
+                                                      .stage = stage};
                         }
                     }
                 }
