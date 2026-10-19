@@ -58,7 +58,7 @@ void CommitSceneToGPU(bool resetAccumulation)
     if (!GContext->gpuScene || !GEditor.HasScene())
         return;
     if (resetAccumulation)
-        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+        GEditor.shaderGlobals.accumulatedFrames = 0;
     GPUSceneUpdateFlags flags{};
     if (GEditor.rendererConfig.ptLightBVHIncludeEmissiveClusters)
         flags |= GPUSceneUpdateFlagsBits::LBVH_IncludeEmissiveClusters;
@@ -333,7 +333,7 @@ void DoRenderReadback(RendererOutputs const& outputs)
         SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
         LOG(Editor, LogInfo, "{} HDR image saved to {} ({}x{}, {} frames)",
             RendererModeDisplayName(GEditor.rendererMode), hdrPath, w, h,
-            GEditor.shaderGlobals.ptAccumulatedFrames);
+            GEditor.shaderGlobals.accumulatedFrames);
     } else
     {
         CHECK_MSG(GEditor.postprocessOutput != kInvalidHandle, "Invalid SDR readback texture");
@@ -346,7 +346,7 @@ void DoRenderReadback(RendererOutputs const& outputs)
         SavePNG(sdr.bytes.data(), static_cast<int>(w), static_cast<int>(h), sdrPath);
         LOG(Editor, LogInfo, "{} SDR image saved to {} ({}x{}, {} frames)",
             RendererModeDisplayName(GEditor.rendererMode), sdrPath, w, h,
-            GEditor.shaderGlobals.ptAccumulatedFrames);
+            GEditor.shaderGlobals.accumulatedFrames);
     }
 }
 
@@ -679,7 +679,7 @@ void LoadEnvMap(StringView path)
     environment.environmentMap = true;
     gpu->UpdateUBO(GEditor.shaderGlobals);
     UpdateSceneLights();
-    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+    GEditor.shaderGlobals.accumulatedFrames = 0;
     LOG(Editor, LogInfo, "HDRI env map loaded successfully");
 }
 

@@ -233,11 +233,11 @@ int main(int argc, char** argv)
             if (paused < 0.5f || heldBody.IsValid())
             {
                 CHECK(scene.Step(std::min(dt, 1.0f / 60.0f)) == PhysicsStatus::Ok);
-                ubo.ptAccumulatedFrames = 0u;
+                ubo.accumulatedFrames = 0u;
             }
             else
             {
-                ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
+                ubo.accumulatedFrames += ubo.ptSamplesPerPixel;
             }
 
             if (heldBody.IsValid() && input.pointerDown)
@@ -263,7 +263,7 @@ int main(int argc, char** argv)
             }
 
             if (camera.Update(input, dt))
-                ubo.ptAccumulatedFrames = 0u;
+                ubo.accumulatedFrames = 0u;
 
             Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
             CHECK(scene.Commit(ubo) == PhysicsStatus::Ok);
@@ -279,7 +279,7 @@ int main(int argc, char** argv)
             if (Examples_RendererFlagsControls(input, renderer, cfg))
             {
                 input.wantResizeOrRebuild = true;
-                ubo.ptAccumulatedFrames = 0u;
+                ubo.accumulatedFrames = 0u;
             }
             Examples_NewFrame(window, ctx);
         }

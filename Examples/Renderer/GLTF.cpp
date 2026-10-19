@@ -181,7 +181,7 @@ int main(int argc, char** argv)
             {
                 Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
                 Examples_NewFrame(ctx.renderer.get());
-                ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
+                ubo.accumulatedFrames += ubo.ptSamplesPerPixel;
                 Print("\rSample {}/{} ({:.0f}%)   ", f + 1, sampleCount,
                            100.0f * static_cast<float>(f + 1) / static_cast<float>(sampleCount));
                 std::fflush(stdout);
@@ -232,13 +232,13 @@ int main(int argc, char** argv)
                 if (Examples_PollEvents(window, ctx, input))
                     break;
                 if (camera.Update(input, dt) /* moved */)
-                    ubo.ptAccumulatedFrames = 0u, paused = false;
+                    ubo.accumulatedFrames = 0u, paused = false;
                 else if (!paused)
-                    ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
+                    ubo.accumulatedFrames += ubo.ptSamplesPerPixel;
                 if (input.wantResizeOrRebuild)
                 {
                     input.wantResizeOrRebuild = paused = false;
-                    ubo.ptAccumulatedFrames = 0u;
+                    ubo.accumulatedFrames = 0u;
                     RebuildGraph(ctx, ubo, gpu, cfg, outputs, input, renderer, false /* headless */, scaling);
                 }
                 Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
@@ -246,13 +246,13 @@ int main(int argc, char** argv)
                 Examples_Text(input,
                               Format("{} meshes, {} instances, {} textures   {:.0f} FPS {} Samples",
                                           scene.GetMeshes().size(), scene.GetInstances().size(),
-                                          scene.GetTextures().size(), fps.Update(), ubo.ptAccumulatedFrames));
+                                          scene.GetTextures().size(), fps.Update(), ubo.accumulatedFrames));
                 if (Examples_RendererSwitchButton(input, renderer))
                     input.wantResizeOrRebuild = true;
                 if (Examples_RendererFlagsControls(input, renderer, cfg))
                 {
                     input.wantResizeOrRebuild = true;
-                    ubo.ptAccumulatedFrames = 0u;
+                    ubo.accumulatedFrames = 0u;
                     paused = false;
                 }
                 float const maxScaling = Examples_MaxRenderScale(ctx.renderer->GetSwapchainExtent());
@@ -260,11 +260,11 @@ int main(int argc, char** argv)
                     Examples_Slider(input, "Resolution", scaling, 0.10f, maxScaling, 0.05f, "x", false);
                 if (Examples_Slider(input, "Samples", maxSamples, 0.0f, 128.0f, 1.0f))
                 {
-                    ubo.ptAccumulatedFrames = 0u;
+                    ubo.accumulatedFrames = 0u;
                     paused = false;
                 }
                 // Auto pause
-                if (maxSamples > 0.0f && ubo.ptAccumulatedFrames >= maxSamples)
+                if (maxSamples > 0.0f && ubo.accumulatedFrames >= maxSamples)
                     paused = true;
                 Examples_NewFrame(window, ctx);
             }

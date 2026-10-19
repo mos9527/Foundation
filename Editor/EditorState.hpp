@@ -8,6 +8,7 @@
 #include <Renderer/ProgressivePathtracer.hpp>
 #include <Renderer/RealtimePathtracer.hpp>
 #include <Renderer/Rasterizer/GTAO.hpp>
+#include <Renderer/Rasterizer/TAA.hpp>
 #include "Camera.hpp"
 #include "Editor.hpp"
 #include "Runtime/GPUScene.hpp"
@@ -196,8 +197,10 @@ struct EditorState
     bool            asyncComputeEnabled = true;
     float           renderResolutionScale = 1.0f; // 0.25 .. 1.0
     bool            rasterGTAO = true;
-    GTAOConfig rasterGTAOConfig{};
-    
+    GTAOConfig      rasterGTAOConfig{};
+    bool            rasterTAA = true;
+    TAAConfig       rasterTAAConfig{};
+
     [[nodiscard]] bool HasScene() const { return scene.has_value(); }
     FImportedScene& Scene()
     {
@@ -248,6 +251,7 @@ void FHierarchyPanel();
 void FLightingPanel();
 void FRunningImGui();
 void ClearMaterialTexturePreviewCache();
+void UpdateEditorCameraGlobals(Renderer* renderer, RHIExtent2D renderExtent);
 
 void DoRenderReadback(RendererOutputs const& outputs);
 void FRendering(RendererOutputs const& outputs);

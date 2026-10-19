@@ -14,7 +14,7 @@ float3 LoadPTPostprocessRadiance(int3 coord)
     if ((globalParams.dbgViewFlags & uint32_t(ViewFlagsBits.AOVSampleCount)) != 0)
     {
         float samples = diffuseTex.Load(coord).a;
-        float maxSamples = float(globalParams.ptAccumulatedFrames);
+        float maxSamples = float(globalParams.accumulatedFrames);
         float ratio = maxSamples > 0.0f ? saturate(samples / maxSamples) : 0.0f;
         // Simple heatmap: Blue (0) -> Green (0.5) -> Red (1.0)
         return float3(

@@ -39,6 +39,7 @@ target_include_directories(Foundation_GPUScene PUBLIC
 add_library(Foundation_Rasterizer STATIC
     Rasterizer.cpp
     Rasterizer/GTAO.cpp
+    Rasterizer/TAA.cpp
 )
 target_link_libraries(Foundation_Rasterizer PUBLIC
     Foundation_GPUScene

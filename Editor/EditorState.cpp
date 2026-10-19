@@ -13,7 +13,7 @@ static ResourceHandle sPickResultBuffer;
 static RendererOutputs sRenderOutputs;
 static int2 sPickingPixel;
 static bool sPickingDoubleClick = false;
-static RasterFeature sEditorRasterEffects[2];
+static RasterFeature sEditorRasterEffects[3];
 
 RHISwapchainResult EditorBeginFrame(Renderer* renderer, Presenter* presenter)
 {
@@ -98,6 +98,44 @@ static RHIExtent2D ClampViewportExtent(RHIExtent2D extent)
     return {std::max(extent.x, 16u), std::max(extent.y, 16u)};
 }
 
+void UpdateEditorCameraGlobals(Renderer* renderer, RHIExtent2D renderExtent)
+{
+    CHECK(renderer);
+    float2 jitterNDC{};
+    if (IsRaster(GEditor.rendererMode) && GEditor.rasterTAA)
+    {
+        auto halton = [](uint32_t index, uint32_t base)
+        {
+            float value = 0.0f;
+            float fraction = 1.0f;
+            while (index > 0u)
+            {
+                fraction /= static_cast<float>(base);
+                value += fraction * static_cast<float>(index % base);
+                index /= base;
+            }
+            return value;
+        };
+        TAAConfig const& taa = GEditor.rasterTAAConfig;
+        uint32_t const sequenceLength = std::clamp(taa.sampleCount, 2u, 32u);
+        uint32_t const sampleIndex = GEditor.shaderGlobals.accumulatedFrames % sequenceLength + 1u;
+        float2 const sample{halton(sampleIndex, 2u) - 0.5f, halton(sampleIndex, 3u) - 0.5f};
+        float const spread = std::max(taa.jitterSpread, 0.0f);
+        jitterNDC = sample * (2.0f * spread) /
+            float2{static_cast<float>(renderExtent.x), static_cast<float>(renderExtent.y)};
+    }
+
+    UpdateRendererCameraUBO(GEditor.shaderGlobals, renderer->GetFrame(), GEditor.camera.view, GEditor.camera.proj,
+                            jitterNDC);
+    GEditor.shaderGlobals.zNear = GEditor.camera.zNear;
+    GEditor.shaderGlobals.projPlanes = planeSymmetric(GEditor.camera.proj);
+    GEditor.shaderGlobals.camPosition = float4(GEditor.camera.position, 0);
+    GEditor.shaderGlobals.camDirection = float4(GEditor.camera.rot * float3(0, 0, -1), 0);
+    GEditor.shaderGlobals.aperture = GEditor.aperture.dofEnabled
+        ? ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm * 1e-3f, GEditor.camera.fovY)
+        : 0.0f;
+}
+
 static RHIExtent2D ViewportExtentFromImGui()
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -155,7 +193,7 @@ static void RefreshPostprocessState(RHIExtent2D renderExtent)
     GEditor.postprocessGlobals.dbgShowOutline = GEditor.showImGui ? 1u : 0u;
     GEditor.postprocessGlobals.outlineInstanceId =
         static_cast<uint32_t>(SceneInstanceIndexFromId(GEditor.selectedInstance));
-    GEditor.postprocessGlobals.ptAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
+    GEditor.postprocessGlobals.accumulatedFrames = GEditor.shaderGlobals.accumulatedFrames;
     // fbWidth/fbHeight = display (output) extent for the blit pass UV mapping
     RHIExtent2D displayExtent = ClampViewportExtent(GEditor.viewport.renderExtent);
     GEditor.postprocessGlobals.fbWidth = static_cast<float>(displayExtent.x);
@@ -363,6 +401,8 @@ static void SetupSceneRenderer(FContext* context, RendererOutputs& outOutputs)
     size_t rasterEffectCount = 0;
     if (GEditor.rasterGTAO)
         sEditorRasterEffects[rasterEffectCount++] = GTAOFeature(&GEditor.rasterGTAOConfig);
+    if (GEditor.rasterTAA)
+        sEditorRasterEffects[rasterEffectCount++] = TAAFeature(&GEditor.rasterTAAConfig);
     GEditor.rendererConfig.ptRenderPaused = &GEditor.renderTask.renderPaused;
     auto gpuResources = CreateGPUSceneRendererResources(renderer, context->gpuScene);
     BuildGPUSceneHostUpdatePass(renderer, gpuResources);
@@ -487,30 +527,23 @@ static void FRunning()
     GEditor.camera.aspect = static_cast<float>(displayExtent.x) / static_cast<float>(displayExtent.y);
     GEditor.cameraUpdated |= GEditor.camera.UpdateMovement(dt);
     GEditor.camera.Update({});
-    UpdateRendererCameraUBO(GEditor.shaderGlobals, renderer->GetFrame(), GEditor.camera.view, GEditor.camera.proj);
-    GEditor.shaderGlobals.zNear = GEditor.camera.zNear;
-    GEditor.shaderGlobals.projPlanes = planeSymmetric(GEditor.shaderGlobals.proj);
-
-    GEditor.shaderGlobals.camPosition = float4(GEditor.camera.position, 0);
-    GEditor.shaderGlobals.camDirection = float4(GEditor.camera.rot * float3(0, 0, -1), 0);
-    GEditor.shaderGlobals.aperture = GEditor.aperture.dofEnabled
-        ? ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm * 1e-3f, GEditor.camera.fovY)
-        : 0.0f;
+    if (GEditor.cameraUpdated)
+        GEditor.shaderGlobals.accumulatedFrames = 0u;
+    UpdateEditorCameraGlobals(renderer, renderExtent);
     GEditor.shaderGlobals.dbgViewFlags = GEditor.rendererConfig.viewFlags;
     GEditor.shaderGlobals.dbgMaterialFlags = GEditor.rendererConfig.materialFlags;
     GEditor.shaderGlobals.energyCompensation = GEditor.rendererConfig.energyCompensation ? 1u : 0u;
     GEditor.shaderGlobals.ptPrimaryLightVisibility = GEditor.rendererConfig.ptPrimaryLightVisibility ? 1u : 0u;
 
-    static uint32_t sPrevPTAccumulatedFrames = 0u;
-    bool ptAccumWasReset = GEditor.shaderGlobals.ptAccumulatedFrames < sPrevPTAccumulatedFrames;
-    bool userOperation = GEditor.cameraUpdated || ptAccumWasReset;
+    static uint32_t sPrevAccumulatedFrames = 0u;
+    bool const accumulationWasReset = GEditor.shaderGlobals.accumulatedFrames < sPrevAccumulatedFrames;
+    bool const userOperation = GEditor.cameraUpdated || accumulationWasReset;
     if (userOperation && GEditor.renderTask.renderAutoPaused)
     {
         GEditor.renderTask.renderAutoPaused = false;
         GEditor.renderTask.renderPaused = false;
     }
-    if (GEditor.cameraUpdated)
-        GEditor.shaderGlobals.ptAccumulatedFrames = 0, GEditor.cameraUpdated = false;
+    GEditor.cameraUpdated = false;
     RefreshPostprocessState(renderExtent);
     EditorGizmos::BuildLightGizmos();
     renderer->ExecuteFrame();
@@ -584,20 +617,21 @@ static void FRunning()
         sPickingDoubleClick = false;
     }
     if (!GEditor.renderTask.renderPaused)
-        GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
+        GEditor.shaderGlobals.accumulatedFrames +=
+            IsRaster(GEditor.rendererMode) ? 1u : GEditor.shaderGlobals.ptSamplesPerPixel;
 
     // If the sample limit is reached, auto-pause the render.
     if (IsProgressive(GEditor.rendererMode) && !GEditor.renderTask.renderPaused &&
         GEditor.renderTask.autoPauseSampleLimit > 0)
     {
-        uint32_t completed = GEditor.shaderGlobals.ptAccumulatedFrames;
+        uint32_t completed = GEditor.shaderGlobals.accumulatedFrames;
         if (completed >= static_cast<uint32_t>(GEditor.renderTask.autoPauseSampleLimit))
         {
             GEditor.renderTask.renderAutoPaused = true;
             GEditor.renderTask.renderPaused = true;
         }
     }
-    sPrevPTAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
+    sPrevAccumulatedFrames = GEditor.shaderGlobals.accumulatedFrames;
 }
 
 static void FRenderingEnter()

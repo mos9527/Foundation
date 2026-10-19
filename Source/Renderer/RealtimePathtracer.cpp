@@ -30,7 +30,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
     CHECK(gpu.scene);
     CHECK_MSG(renderer->GetDevice()->GetCapabilities().raytracingInline, "Pathtracer requires Ray Query support");
     out = {};
-    globals->ptAccumulatedFrames = 0u;
+    globals->accumulatedFrames = 0u;
     RHIExtent2D renderExtent = cfg.renderExtent;
     if (renderExtent.x == 0u || renderExtent.y == 0u)
         renderExtent = renderer->GetSwapchainExtent();

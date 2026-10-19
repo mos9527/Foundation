@@ -459,7 +459,7 @@ static void MoveLightToView(int index)
 
     GEditor.Scene().GetLights()[index].transform.transform = GEditor.camera.position;
     UpdateSceneLights();
-    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+    GEditor.shaderGlobals.accumulatedFrames = 0;
 }
 
 static void AlignLightWithView(int index)
@@ -471,7 +471,7 @@ static void AlignLightWithView(int index)
     transform.transform = GEditor.camera.position;
     transform.rotation = GEditor.camera.rot;
     UpdateSceneLights();
-    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+    GEditor.shaderGlobals.accumulatedFrames = 0;
 }
 
 static void AlignViewToLight(int index)
@@ -500,7 +500,7 @@ static void DeleteLight(int index)
     if (GEditor.selectedLight == deletedId)
         ClearSelection();
     UpdateSceneLights();
-    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+    GEditor.shaderGlobals.accumulatedFrames = 0;
 }
 
 static const char* InstanceTypeName(uint32_t type)
@@ -1987,9 +1987,9 @@ void EditorDockSpaceAndMenuBar()
         }
         if (ImGui::BeginPopupModal("Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            // Only the progressive path tracer accumulates offline samples; every other mode
-            // (realtime PT, raster) exports the next rendered frame.
-            const bool progressiveRender = IsProgressive(GEditor.rendererMode);
+            bool const progressiveRender = IsProgressive(GEditor.rendererMode);
+            bool const rasterTAARender = IsRaster(GEditor.rendererMode) && GEditor.rasterTAA;
+            uint32_t const rasterTAAFrames = std::clamp(GEditor.rasterTAAConfig.sampleCount, 2u, 32u);
             const char* formatLabel = GEditor.renderTask.format == ERenderFormat::HDR ? "HDR" : "SDR";
             ImGui::Text("Configure %s %s render:", RendererModeDisplayName(GEditor.rendererMode), formatLabel);
             ImGui::Text("Output: %s", GEditor.renderTask.outputPath.c_str());
@@ -2004,18 +2004,24 @@ void EditorDockSpaceAndMenuBar()
                     GEditor.renderTask.timePopupInput = 0;
                 ImGui::TextDisabled("Set to 0 to disable limit");
             }
+            else if (rasterTAARender)
+            {
+                ImGui::Text("TAA accumulation: %u frames", rasterTAAFrames);
+            }
             else
             {
                 ImGui::TextUnformatted("This mode captures the next rendered frame.");
             }
             if (ImGui::Button(PSI_PLAY " Start Render"))
             {
-                GEditor.renderTask.targetSamples = progressiveRender ? GEditor.renderTask.samplePopupInput : 1;
+                GEditor.renderTask.targetSamples = progressiveRender
+                    ? GEditor.renderTask.samplePopupInput
+                    : (rasterTAARender ? static_cast<int>(rasterTAAFrames) : 1);
                 GEditor.renderTask.targetTimeSeconds = progressiveRender ? GEditor.renderTask.timePopupInput : 0;
                 GEditor.renderTask.startTime = ImGui::GetTime();
                 GEditor.renderTask.renderPaused = false;
                 GEditor.renderTask.renderAutoPaused = false;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
                 GEditor.renderTask.previousSpp = GEditor.shaderGlobals.ptSamplesPerPixel;
                 GEditor.renderTask.previousResolutionScale = GEditor.renderResolutionScale;
                 // Go for 1:1, 1spp always during rendering
@@ -2763,7 +2769,7 @@ void FLightingPanel()
         if (anyChanged)
         {
             UpdateSceneLights();
-            GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            GEditor.shaderGlobals.accumulatedFrames = 0;
         }
     }
     ImGui::End();
@@ -3071,7 +3077,7 @@ void FRunningImGui()
                 GEditor.renderResolutionScale = sPendingScale;
                 GEditor.state = FERunningEnter;
                 if (IsPathTracer(GEditor.rendererMode))
-                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                    GEditor.shaderGlobals.accumulatedFrames = 0;
             }
         }
         bool viewLUTChanged = false;
@@ -3159,7 +3165,7 @@ void FRunningImGui()
         if (ImGui::Checkbox("Async Compute", &asyncComputeEnabled))
         {
             GEditor.asyncComputeEnabled = asyncComputeEnabled;
-            GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            GEditor.shaderGlobals.accumulatedFrames = 0;
             changed = true;
         }
         ImGui::EndDisabled();
@@ -3170,7 +3176,7 @@ void FRunningImGui()
         {
             changed = true;
             if (IsPathTracer(GEditor.rendererMode))
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
         }
         {
             float anisoLevel = GEditor.rendererConfig.textureAnisoLevel;
@@ -3180,7 +3186,7 @@ void FRunningImGui()
                 GEditor.rendererConfig.textureAnisoLevel = anisoLevel;
                 changed = true;
                 if (IsPathTracer(GEditor.rendererMode))
-                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                    GEditor.shaderGlobals.accumulatedFrames = 0;
             }
             ImGui::EndDisabled();
         }
@@ -3192,7 +3198,7 @@ void FRunningImGui()
                 GEditor.rendererConfig.textureTrilinear = filterMode == 1;
                 changed = true;
                 if (IsPathTracer(GEditor.rendererMode))
-                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                    GEditor.shaderGlobals.accumulatedFrames = 0;
             }
         }
         // Progressive-only telemetry & sample auto-pause.
@@ -3201,15 +3207,15 @@ void FRunningImGui()
             ImGui::SeparatorText(PSI_SIGNAL " Stats");
             // Throughput: measure delta on the *frame* (dispatch) counter every ~250ms,
             // then derive samples/sec from frames/sec via the spp multiplier.
-            //   frames  = ptAccumulatedFrames / ptSamplesPerPixel      (dispatch count)
-            //   samples = ptAccumulatedFrames
+            //   frames  = accumulatedFrames / ptSamplesPerPixel      (dispatch count)
+            //   samples = accumulatedFrames
             // i.e. one dispatch advances `spp` pixel-samples.
             static double   sLastSampleTime  = ImGui::GetTime();
             static uint32_t sLastFrameCount  = 0u;
             static float    sFramesPerSec    = 0.0f;
             uint32_t samplesPerDispatch = GEditor.shaderGlobals.ptSamplesPerPixel;
-            uint32_t frameCount         = GEditor.shaderGlobals.ptAccumulatedFrames / samplesPerDispatch;
-            uint32_t completedSamples   = GEditor.shaderGlobals.ptAccumulatedFrames;
+            uint32_t frameCount         = GEditor.shaderGlobals.accumulatedFrames / samplesPerDispatch;
+            uint32_t completedSamples   = GEditor.shaderGlobals.accumulatedFrames;
             double now = ImGui::GetTime();
             double dt  = now - sLastSampleTime;
             if (dt >= 0.25)
@@ -3235,17 +3241,17 @@ void FRunningImGui()
             if (ImModalButton(PSI_ADJUST " 1sp", 0, 3))
             {
                 GEditor.renderTask.autoPauseSampleLimit = 1;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             };
             if (ImModalButton(PSI_ADJUST " 8sp", 1, 3))
             {
                 GEditor.renderTask.autoPauseSampleLimit = 8;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             };
             if (ImModalButton(PSI_ADJUST " NoLimit", 2, 3))
             {
                 GEditor.renderTask.autoPauseSampleLimit = 0;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             };
             int limit = GEditor.renderTask.autoPauseSampleLimit;
             if (ImGui::SliderInt("Samples", &limit, 0, 4096, limit > 0 ? "%d" : "Off", ImGuiSliderFlags_Logarithmic))
@@ -3257,7 +3263,7 @@ void FRunningImGui()
                     GEditor.renderTask.renderAutoPaused = false;
                     GEditor.renderTask.renderPaused = false;
                 }
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             }
         }
         // Controls shared by every path tracer (progressive + realtime).
@@ -3269,31 +3275,31 @@ void FRunningImGui()
             {
                 GEditor.shaderGlobals.ptMaxBounces = 0;
                 GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 1.0
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             }
             if (ImModalButton(PSI_BOLT " Fast", 1, 4))
             {
                 GEditor.shaderGlobals.ptMaxBounces = 4;
                 GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 1.0
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             }
             if (ImModalButton(PSI_FIRE " Full", 2, 4))
             {
                 GEditor.shaderGlobals.ptMaxBounces = 32;
                 GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 1.0
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             }
             if (ImModalButton(PSI_BEAKER " Über", 3, 4))
             {
                 GEditor.shaderGlobals.ptMaxBounces = 100;
                 GEditor.shaderGlobals.ptFireflyClamp = 100.0f;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             }
             ImGui::SeparatorText(PSI_RANDOM " Ray Bounce");
             if (ImGui::SliderInt("Max Bounces", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBounces), 0, 100,
                                  "%d", ImGuiSliderFlags_Logarithmic))
             {
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             }
             ImGui::SeparatorText(PSI_DASHBOARD " Performance");
             const bool serSupported = GContext->device->GetCapabilities().shaderExecutionReordering;
@@ -3302,7 +3308,7 @@ void FRunningImGui()
             if (ImGui::Checkbox("Shader Execution Reordering", &serEnabled))
             {
                 GEditor.rendererConfig.ptShaderExecutionReordering = serEnabled;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
             ImGui::EndDisabled();
@@ -3319,17 +3325,17 @@ void FRunningImGui()
             }
             if (ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0))
             {
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
             if (ImGui::Checkbox("Energy Compensation", &GEditor.rendererConfig.energyCompensation))
             {
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
             if (ImGui::Checkbox("Primary Light Visibility", &GEditor.rendererConfig.ptPrimaryLightVisibility))
             {
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             }
             if (ImGui::Checkbox("Emissive Triangle LBVH NEE", &GEditor.rendererConfig.ptLightBVHIncludeEmissiveClusters))
             {
@@ -3341,21 +3347,21 @@ void FRunningImGui()
             if (ImGui::Combo("Light Sampler", &lightSampler, lightSamplerItems, 2))
             {
                 GEditor.rendererConfig.lightSamplerMode = static_cast<LightSampler>(lightSampler);
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
             ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
             if (ImGui::SliderFloat("Adaptive Threshold", &GEditor.shaderGlobals.adaptiveThreshold, 0.0f, 1.0f, "%.4f"))
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             if (ImGui::SliderInt("Adaptive Min Samples", reinterpret_cast<int*>(&GEditor.shaderGlobals.adaptiveMinSamples), 1, 256))
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.accumulatedFrames = 0;
             int spp = static_cast<int>(GEditor.shaderGlobals.ptSamplesPerPixel);
             if (ImGui::SliderInt("SPP", &spp, 1, 64, "%d", ImGuiSliderFlags_Logarithmic))
             {
                 if (spp != static_cast<int>(GEditor.shaderGlobals.ptSamplesPerPixel))
                 {
                     GEditor.shaderGlobals.ptSamplesPerPixel = static_cast<uint32_t>(std::max(1, spp));
-                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                    GEditor.shaderGlobals.accumulatedFrames = 0;
                 }
             }
             const char* samplerItems[] = {"PCG (Independent)", "Sobol (Quasi-Monte Carlo)"};
@@ -3363,7 +3369,7 @@ void FRunningImGui()
             if (ImGui::Combo("Sampler", &ptSampler, samplerItems, 2))
             {
                 GEditor.rendererConfig.ptSampler = static_cast<PTSampler>(ptSampler);
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;                
+                GEditor.shaderGlobals.accumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
             }
         }
@@ -3412,7 +3418,30 @@ void FRunningImGui()
                         gtao.stepCount = static_cast<uint32_t>(steps);
                     ImGui::EndDisabled();
                     ImGui::PopID();
-                }                
+                }
+                if (ImGui::CollapsingHeader("TAA", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    ImGui::PushID("TAA");
+                    changed |= ImGui::Checkbox("Enable TAA", &GEditor.rasterTAA);
+                    ImGui::BeginDisabled(!GEditor.rasterTAA);
+                    TAAConfig& taa = GEditor.rasterTAAConfig;
+                    bool taaSettingsChanged = false;
+                    taaSettingsChanged |=
+                        ImGui::SliderFloat("History Weight", &taa.historyWeight, 0.0f, 0.99f, "%.2f");
+                    taaSettingsChanged |=
+                        ImGui::SliderFloat("Jitter Spread", &taa.jitterSpread, 0.0f, 2.0f, "%.2f");
+                    int sampleCount = static_cast<int>(taa.sampleCount);
+                    if (ImGui::SliderInt("Samples", &sampleCount, 2, 32))
+                    {
+                        taa.sampleCount = static_cast<uint32_t>(sampleCount);
+                        taaSettingsChanged = true;
+                    }
+                    taaSettingsChanged |= ImGui::Checkbox("Neighborhood Clamp", &taa.neighborhoodClamp);
+                    if (taaSettingsChanged)
+                        GEditor.shaderGlobals.accumulatedFrames = 0u;
+                    ImGui::EndDisabled();
+                    ImGui::PopID();
+                }
             }
             if ((GEditor.rendererConfig.viewFlags & ViewFlagsBits::Matcap) != 0u)
             {
@@ -3516,7 +3545,7 @@ void FRunningImGui()
                 if (IsRaster(GEditor.rendererMode))
                     changed = true;
                 else if (IsPathTracer(GEditor.rendererMode))
-                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                    GEditor.shaderGlobals.accumulatedFrames = 0;
             }
         }
         {
@@ -3526,7 +3555,7 @@ void FRunningImGui()
             if (ImBitmaskOptionPicker(GEditor.rendererConfig.materialFlags, items, values, true /* solo */))
             {
                 if (IsPathTracer(GEditor.rendererMode))
-                    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                    GEditor.shaderGlobals.accumulatedFrames = 0;
             }
         }
         if (changed)
@@ -3569,7 +3598,7 @@ void FRendering(RendererOutputs const& outputs)
         ImGui::Begin("##RenderProgressBar", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                          ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize);
-        uint32_t completedSamples = GEditor.shaderGlobals.ptAccumulatedFrames;
+        uint32_t completedSamples = GEditor.shaderGlobals.accumulatedFrames;
         float fraction = 0.0f;
         char overlay[128];
         const char* unitStr = IsProgressive(GEditor.rendererMode) ? "samples" : "frames";
@@ -3622,10 +3651,10 @@ void FRendering(RendererOutputs const& outputs)
         ImGui::End();
         ImGui::PopStyleVar(2);
     }
-    GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
+    UpdateEditorCameraGlobals(renderer, GEditor.rendererConfig.renderExtent);
     GEditor.postprocessGlobals.camEV = GEditor.shaderGlobals.camEV;
     GEditor.postprocessGlobals.dbgShowOutline = GEditor.showImGui ? 1u : 0u;
-    GEditor.postprocessGlobals.ptAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
+    GEditor.postprocessGlobals.accumulatedFrames = GEditor.shaderGlobals.accumulatedFrames;
     GEditor.postprocessGlobals.fbWidth = GEditor.shaderGlobals.fbWidth;
     GEditor.postprocessGlobals.fbHeight = GEditor.shaderGlobals.fbHeight;
     GEditor.postprocessGlobals.viewLutIndex =
@@ -3633,10 +3662,11 @@ void FRendering(RendererOutputs const& outputs)
     renderer->ExecuteFrame();
     if (!RHISwapchainResultMayPresent(EditorEndFrame(renderer, GContext->presenter)))
         RecreateEditorSwapchain();
-    GEditor.shaderGlobals.ptAccumulatedFrames += GEditor.shaderGlobals.ptSamplesPerPixel;
+    GEditor.shaderGlobals.accumulatedFrames +=
+        IsRaster(GEditor.rendererMode) ? 1u : GEditor.shaderGlobals.ptSamplesPerPixel;
 
     bool timeLimitReached = GEditor.renderTask.targetTimeSeconds > 0 && elapsed >= GEditor.renderTask.targetTimeSeconds;
-    bool sampleLimitReached = GEditor.renderTask.targetSamples > 0 && GEditor.shaderGlobals.ptAccumulatedFrames >= targetFrames;
+    bool sampleLimitReached = GEditor.renderTask.targetSamples > 0 && GEditor.shaderGlobals.accumulatedFrames >= targetFrames;
 
     if (cancelRendering || timeLimitReached || sampleLimitReached)
     {
@@ -3732,7 +3762,7 @@ static void DrawLightGizmos()
         light.transform.transform = newTranslation;
         light.transform.rotation = newRotation;
         UpdateSceneLights();
-        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+        GEditor.shaderGlobals.accumulatedFrames = 0;
     }
 }
 

@@ -329,8 +329,9 @@ public struct UBO
     public uint32_t lightBVHValid;
     public GSOffsetCount lightBVHDistantNodes;
     public uint32_t energyCompensation;
+    // -- Temporal accumulation
+    public uint32_t accumulatedFrames;
     // -- Path Tracing
-    public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBounces;
     public float ptFireflyClamp;
     public uint32_t ptSamplesPerPixel;
@@ -358,7 +359,7 @@ public struct PostprocessUBO
     public float camEV;
     public uint32_t viewLutIndex;
     public uint32_t dbgShowOutline;
-    public uint32_t ptAccumulatedFrames;
+    public uint32_t accumulatedFrames;
     public float fbWidth;
     public float fbHeight;
     public uint32_t outlineInstanceId;

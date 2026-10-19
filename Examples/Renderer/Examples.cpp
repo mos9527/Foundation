@@ -207,7 +207,7 @@ ResourceHandle Examples_BuildTonemappingPass(Renderer* renderer, RendererUBO con
             return;
         ExamplePostprocessPushConstants const pc{
             .viewFlags = globals->dbgViewFlags,
-            .accumulatedFrames = globals->ptAccumulatedFrames,
+            .accumulatedFrames = globals->accumulatedFrames,
         };
         r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, pc);
     };

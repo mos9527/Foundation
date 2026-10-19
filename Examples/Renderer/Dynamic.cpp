@@ -277,12 +277,12 @@ int main(int argc, char** argv)
         gpu.EndDynamicUpdate();
 
         if (paused < 0.5f)
-            ubo.ptAccumulatedFrames = 0u;
+            ubo.accumulatedFrames = 0u;
         else
-            ubo.ptAccumulatedFrames += ubo.ptSamplesPerPixel;
+            ubo.accumulatedFrames += ubo.ptSamplesPerPixel;
 
         if (camera.Update(input, dt))
-            ubo.ptAccumulatedFrames = 0u;
+            ubo.accumulatedFrames = 0u;
 
         Examples_UpdateCameraUBO(ubo, ctx.renderer.get(), camera, cfg);
         CommitDemoScene(gpu, water, ground, caustics, ubo);
@@ -296,7 +296,7 @@ int main(int argc, char** argv)
         if (Examples_RendererFlagsControls(input, renderer, cfg))
         {
             input.wantResizeOrRebuild = true;
-            ubo.ptAccumulatedFrames = 0u;
+            ubo.accumulatedFrames = 0u;
         }
         Examples_Slider(input, "Amplitude", amplitude, 0.0f, 2.0f, 0.05f, "x");
         Examples_Slider(input, "Paused", paused, 0.0f, 1.0f, 1.0f, "");

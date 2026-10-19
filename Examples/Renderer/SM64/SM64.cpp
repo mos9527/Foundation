@@ -640,7 +640,7 @@ int main(int argc, char** argv)
         gpu.EndDynamicUpdate();
         camera.yaw += camYawDelta * dt * 2.0f;
         if (camYawDelta != 0.0f)
-            ubo.ptAccumulatedFrames = 0u;
+            ubo.accumulatedFrames = 0u;
         camera.center = float3(state.position[0], state.position[1], state.position[2]);
         camera.aspect = static_cast<float>(cfg.renderExtent.x) / static_cast<float>(cfg.renderExtent.y);
         camera.RefreshMatrices();
@@ -667,7 +667,7 @@ int main(int argc, char** argv)
         if (Examples_RendererFlagsControls(input, renderer, cfg))
         {
             input.wantResizeOrRebuild = true;
-            ubo.ptAccumulatedFrames = 0u;
+            ubo.accumulatedFrames = 0u;
         }
 
         Examples_NewFrame(window, ctx);

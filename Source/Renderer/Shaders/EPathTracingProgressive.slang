@@ -172,7 +172,7 @@ void RayGenerationImpl(uint2 pix)
     if (pix.x >= uint(globalParams.fbWidth) || pix.y >= uint(globalParams.fbHeight))
         return;
 
-    if (globalParams.ptAccumulatedFrames > globalParams.adaptiveMinSamples &&
+    if (globalParams.accumulatedFrames > globalParams.adaptiveMinSamples &&
         globalParams.adaptiveThreshold > 0.0f &&
         adaptiveAux[pix].w != 0.0f)
     {
@@ -181,7 +181,7 @@ void RayGenerationImpl(uint2 pix)
 
     for (uint subSample = 0; subSample < globalParams.ptSamplesPerPixel; subSample++)
     {
-        uint sampleIndex = globalParams.ptAccumulatedFrames + subSample;
+        uint sampleIndex = globalParams.accumulatedFrames + subSample;
 
         // PCG or Sobol
         if ((kCompileOptions & uint32_t(PTCompileOptionsBits.SamplerPCG)) != 0)
@@ -356,7 +356,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     float etaScale = 1.0f;
     PathRadiance radiance = PathRadiance();
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
-    bool resetAccumulation = globalParams.ptAccumulatedFrames == 0u && subSample == 0u;
+    bool resetAccumulation = globalParams.accumulatedFrames == 0u && subSample == 0u;
     float sampleCount = resetAccumulation ? 1.0f : diffuse[pix].a + 1.0f;
     float lastSamplePDF = 0.0f;
     LightSampleContext lastLightCtx = LightSampleContext(float3(0.0f), float3(0.0f));

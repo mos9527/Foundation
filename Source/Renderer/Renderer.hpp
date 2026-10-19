@@ -63,8 +63,9 @@ struct RendererUBO
     uint32_t lightBVHValid{0u};
     GSOffsetCount lightBVHDistantNodes{};
     uint32_t energyCompensation{1u};
+    // -- Temporal accumulation
+    uint32_t accumulatedFrames{0u};
     // -- Path Tracing
-    uint32_t ptAccumulatedFrames{0u};
     uint32_t ptMaxBounces{4u};
     float ptFireflyClamp{1.0f}; // 10^x
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1.
@@ -92,7 +93,7 @@ struct PostprocessUBO
     float camEV{0.0f};
     uint32_t viewLutIndex{UINT32_MAX};
     uint32_t dbgShowOutline{0u};
-    uint32_t ptAccumulatedFrames{0u};
+    uint32_t accumulatedFrames{0u};
     float fbWidth{1.0f};
     float fbHeight{1.0f};
     uint32_t outlineInstanceId{~0u};
@@ -103,19 +104,25 @@ struct PostprocessUBO
 
 #pragma pack(pop)
 
-inline void UpdateRendererCameraUBO(RendererUBO& ubo, uint32_t frameNumber, float4x4 const& view, float4x4 const& proj)
+inline void UpdateRendererCameraUBO(RendererUBO& ubo, uint32_t frameNumber, float4x4 const& view,
+                                    float4x4 const& proj, float2 jitterNDC = {})
 {
+    float4x4 clipTranslation{1.0f};
+    clipTranslation[3][0] = jitterNDC.x;
+    clipTranslation[3][1] = jitterNDC.y;
+    float4x4 const jitteredProj = clipTranslation * proj;
     if (ubo.cameraHistoryFrame != frameNumber)
     {
         ubo.sharcPreviousCameraPosition = ubo.camPosition;
-        ubo.previousViewProj = ubo.cameraHistoryFrame == UINT32_MAX ? proj * view : ubo.proj * ubo.view;
+        ubo.previousViewProj =
+            ubo.cameraHistoryFrame == UINT32_MAX ? jitteredProj * view : ubo.proj * ubo.view;
         ubo.cameraHistoryFrame = frameNumber;
     }
     ubo.frameNumber = frameNumber;
     ubo.view = view;
-    ubo.proj = proj;
+    ubo.proj = jitteredProj;
     ubo.inverseView = inverse(view);
-    ubo.inverseViewProj = inverse(proj * view);
+    ubo.inverseViewProj = inverse(jitteredProj * view);
     ubo.cameraTanHalfFov = float2{1.0f / proj[0][0], 1.0f / proj[1][1]};
 }
 
