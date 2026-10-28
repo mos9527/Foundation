@@ -22,6 +22,8 @@ static const uint kCurveMask = 0x04;
 static const uint kTileWidth = 16;
 static const uint kTileThreadCount = kTileWidth * kTileWidth;
 static const uint kTileLightCapacity = 256;
+static const float kMinPointSpotIncidentLight = 1e-2f;
+static const float kMinLightDistanceSquared = 1e-8f;
 
 struct TileBounds
 {
@@ -34,11 +36,15 @@ groupshared uint tileLightCount;
 groupshared uint tileLightOverflow;
 groupshared uint tileLightIndices[kTileLightCapacity];
 
-bool SphereIntersectsAABB(float3 center, float radius, TileBounds bounds)
+// TODO Spot cone culling
+bool PointSpotIntersectsAABB(GSLight light, TileBounds bounds)
 {
-    float3 closest = clamp(center, bounds.minPosition, bounds.maxPosition);
-    float3 delta = center - closest;
-    return dot(delta, delta) <= radius * radius;
+    float3 closest = clamp(light.position, bounds.minPosition, bounds.maxPosition);
+    float3 delta = light.position - closest;
+    float distanceSquared = dot(delta, delta);
+    float peakIntensity = MaxComponent(light.color * light.power);
+    float radiusSquared = peakIntensity / kMinPointSpotIncidentLight;
+    return distanceSquared <= radiusSquared;
 }
 
 bool shadow(float3 p, float3 l, float tMax = INF)
@@ -135,8 +141,8 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
                 continue;
 
             bool intersects = tileHasSurface;
-            if (intersects && lightType != kGSLightTypeDirectional && light.params.w > 0.0f)
-                intersects = SphereIntersectsAABB(light.position, light.params.w, bounds);
+            if (intersects && (lightType == kGSLightTypePoint || lightType == kGSLightTypeSpot))
+                intersects = PointSpotIntersectsAABB(light, bounds);
             if (!intersects)
                 continue;
 
@@ -251,18 +257,11 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
             } else { // Point or Spot
                 float3 toLight = gl.position - p;
                 float dist2 = dot(toLight, toLight);
-                if (dist2 < 1e-8f) continue;
+                if (dist2 < kMinLightDistanceSquared) continue;
                 float dist = sqrt(dist2);
                 l = toLight / dist;
                 lightDist = dist;
                 atten = 1.0f / dist2;
-                if (gl.params.w > 0.0f) {
-                    float normalizedDist2 = dist2 / (gl.params.w * gl.params.w);
-                    if (normalizedDist2 >= 1.0f)
-                        continue;
-                    float rangeFalloff = 1.0f - normalizedDist2 * normalizedDist2;
-                    atten *= rangeFalloff * rangeFalloff;
-                }
                 if (lightType == kGSLightTypeSpot) { // Spot
                     float cosTheta = dot(gl.direction, -l);
                     if (cosTheta < gl.params.z) continue;
@@ -271,6 +270,10 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
                         atten *= (delta * delta) * (delta * delta);
                     }
                 }
+                // Use the same cutoff with either the tile list or the overflow full-list path.
+                if ((lightType == kGSLightTypePoint || lightType == kGSLightTypeSpot) &&
+                    MaxComponent(lightColor) * atten < kMinPointSpotIncidentLight)
+                    continue;
             }
 
             float3 wi = toLocal.rotate(l);

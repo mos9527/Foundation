@@ -2454,7 +2454,6 @@ void FLightingPanel()
                 light.power = 10.0f;
                 light.radius = 0.05f;
                 light.angularDiameter = radians(2.00f);
-                light.range = 10.0f;
                 size_t const insertIndex = !lights.empty() && lights.front().type == FLightType::Environment ? 1u : 0u;
                 lights.insert(lights.begin() + static_cast<std::ptrdiff_t>(insertIndex), light);
                 GEditor.Scene().RebuildIndex();
@@ -2724,7 +2723,6 @@ void FLightingPanel()
                 if (light.type == FLightType::Point || light.type == FLightType::Spot)
                 {
                     lightChanged |= ImGui::DragFloat("Radius", &light.radius, 0.01f, 0.0f, 100.0f, "%.3f");
-                    lightChanged |= ImGui::DragFloat("Range", &light.range, 0.1f, 0.0f, 10000.0f, "%.2f");
                 }
 
                 // Spot cone angles

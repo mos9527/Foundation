@@ -415,7 +415,6 @@ public float3 EnvMapUVToDir(float2 uv, float azimuthOffset)
     float sinTheta = sin(theta);
     return float3(sinTheta * cos(phi), cos(theta), sinTheta * sin(phi));
 }
-// SH9 coefficients are cosine-convolved and 1/pi-scaled on CPU.
 public void SHEvalBasis9(float3 d, out float y[9])
 {
     float x = d.x, y_ = d.y, z = d.z;
