@@ -882,6 +882,9 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
             float3 scaleAbs = abs(inst.scale);
             float areaScale =
                 std::max(scaleAbs.x * scaleAbs.y, std::max(scaleAbs.y * scaleAbs.z, scaleAbs.z * scaleAbs.x));
+            // Use row lengths so we can take non uniform scale into account
+            mat3 basisRows = transpose(mat3_cast(inst.rotation) * mat3(scale(inst.scale)));
+            float3 extentScale{length(basisRows[0]), length(basisRows[1]), length(basisRows[2])};
             for (FEmissiveMeshlet const& emitter : geometry->emissiveMeshlets)
             {
                 GSEmissiveCluster& cluster = emissiveClusters.emplace_back();
@@ -890,9 +893,8 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
                 cluster.aliasOffset = geometry->mesh.emissiveAliases.offset + emitter.aliasOffset * sizeof(GSAlias);
                 cluster.triCount = emitter.triCount;
                 cluster.flux = emissionWeight * emitter.area * areaScale * (2.0f * std::numbers::pi_v<float>);
-                float3 center = inst.rotation * emitter.center;
-                cluster.origin = center * inst.scale + inst.transform;
-                cluster.extent = emitter.radius * scaleAbs;
+                cluster.origin = inst.rotation * (emitter.center * inst.scale) + inst.transform;
+                cluster.extent = emitter.radius * extentScale;
             }
         }
     }
@@ -3145,7 +3147,8 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         {
             res.mask = 0x01; // MESH_MASK
         }
-        mat3 basis = transpose(mat3(scale(src.scale)) * mat3_cast(src.rotation));
+        // Match glTF/editor T * R * S: scale in object space, then rotate.
+        mat3 basis = transpose(mat3_cast(src.rotation) * mat3(scale(src.scale)));
         std::memcpy(res.transformBasisRowMajor[0], &basis[0], sizeof(float) * 3);
         std::memcpy(res.transformBasisRowMajor[1], &basis[1], sizeof(float) * 3);
         std::memcpy(res.transformBasisRowMajor[2], &basis[2], sizeof(float) * 3);

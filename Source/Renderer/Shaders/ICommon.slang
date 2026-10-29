@@ -122,7 +122,7 @@ public static const uint32_t kLightSelectionClusterBit = 1u << 31u;
 public static const uint32_t kLightSelectionIndexMask = ~kLightSelectionClusterBit;
 public struct GSInstance
 {
-    // TRS
+    // T * R * S in GLTF order...
     public float3 transform;
     public quat rotation;
     public float3 scale;

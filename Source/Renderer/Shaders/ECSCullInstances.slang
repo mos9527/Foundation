@@ -31,7 +31,7 @@ bool frustumCull(float4 ijkl, float3 center, float radius, float zNear)
 
 float3 pointToWorld(float3 point, GSInstance inst)
 {
-    return inst.rotation.rotate(point) * inst.scale + inst.transform;
+    return inst.rotation.rotate(point * inst.scale) + inst.transform;
 }
 
 bool projectAABB(GSMesh mesh, GSInstance inst, float4x4 viewProj, out float4 aabb, out float nearestDepth)

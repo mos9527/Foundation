@@ -51,10 +51,10 @@ void main(
         float2 uv;
         float bitangentSign;
         FQDecode(fq, position, normal, tangent, bitangentSign, uv);
-        position = group.instance.rotation.rotate(position);
-        position = position * group.instance.scale + group.instance.transform;
-        normal = group.instance.rotation.rotate(normal);
-        tangent = group.instance.rotation.rotate(tangent);
+        position = group.instance.rotation.rotate(position * group.instance.scale) + group.instance.transform;
+        normal = normalize(group.instance.rotation.rotate(normal / group.instance.scale));
+        tangent = normalize(group.instance.rotation.rotate(tangent * group.instance.scale));
+        bitangentSign *= sign(group.instance.scale.x) * sign(group.instance.scale.y) * sign(group.instance.scale.z);
         V2F v2f;
         v2f.pos = mul(mul(globalParams.proj, globalParams.view), float4(position, 1.0));
         v2f.normal = normal;

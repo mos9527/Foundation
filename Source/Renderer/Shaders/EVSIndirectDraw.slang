@@ -1,9 +1,4 @@
-// Vertex shader for the CPU-updateable dynamic geometry indirect draw. Dynamic geo skips the
-// meshlet/DAG pipeline and is drawn with a plain indexed draw (DrawIndexedIndirectCount): the
-// dynamic primitive ring is bound as a UINT32 index buffer, so SV_VertexID is the mesh-local
-// vertex index, and SV_InstanceID carries the absolute scene instance index (set via
-// firstInstance in the indirect command). Output matches EMSBasic's V2F and uses bindings 0..2
-// so the shared EPSGBuffer fragment (bindings 3..5) produces an identical gbuffer.
+// TODO: What a mess.
 #include "ICommon.slang"
 
 uniform UBO globalParams;
@@ -26,10 +21,10 @@ V2F main(uint vertexID: SV_VertexID, uint drawID: SV_DrawIndex)
     float2 uv;
     FQDecode(fq, position, normal, tangent, bitangentSign, uv);
 
-    position = inst.rotation.rotate(position);
-    position = position * inst.scale + inst.transform;
-    normal = inst.rotation.rotate(normal);
-    tangent = inst.rotation.rotate(tangent);
+    position = inst.rotation.rotate(position * inst.scale) + inst.transform;
+    normal = normalize(inst.rotation.rotate(normal / inst.scale));
+    tangent = normalize(inst.rotation.rotate(tangent * inst.scale));
+    bitangentSign *= sign(inst.scale.x) * sign(inst.scale.y) * sign(inst.scale.z);
 
     V2F v2f;
     v2f.pos = mul(mul(globalParams.proj, globalParams.view), float4(position, 1.0));

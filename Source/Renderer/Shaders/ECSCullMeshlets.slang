@@ -24,7 +24,7 @@ Texture2D<float> hiz;
 
 // Model to view space
 float3 pointToView(float3 point, GSInstance inst, float4x4 view) {
-    float3 worldPos = inst.rotation.rotate(point) * inst.scale + inst.transform;
+    float3 worldPos = inst.rotation.rotate(point * inst.scale) + inst.transform;
     return mul(view, float4(worldPos, 1.0)).xyz;
 }
 
@@ -92,7 +92,7 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     GSInstance inst = instances[work.instanceID];
     GSMesh mesh = primitive.Load<GSMesh>(inst.resourceOffset);
     uint32_t meshletID = work.firstMeshlet + groupIndex;
-    float scale = max(max(inst.scale.x,inst.scale.y),inst.scale.z);
+    float scale = max(max(abs(inst.scale.x), abs(inst.scale.y)), abs(inst.scale.z));
     // -- LOD selection --
     // Always runs - and deterministic regardless of cullFlags
     bool valid = false;

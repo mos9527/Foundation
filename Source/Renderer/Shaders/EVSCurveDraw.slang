@@ -51,11 +51,11 @@ V2F main(uint vertexID: SV_VertexID, uint drawID: SV_DrawIndex)
     uint corner = vertexID % 8u;
     float h = (corner == 2u || corner == 3u || corner == 6u || corner == 7u) ? -1.0f : 1.0f;
 
-    float3 position = inst.rotation.rotate(vtx.position) * inst.scale + inst.transform;
+    float3 position = inst.rotation.rotate(vtx.position * inst.scale) + inst.transform;
     float3 invScale = 1.0f / inst.scale;
     normal = normalize(inst.rotation.rotate(normal * invScale));
-    tangent = normalize(inst.rotation.rotate(tangent * invScale));
-    bitangent = normalize(inst.rotation.rotate(bitangent * invScale));
+    tangent = normalize(inst.rotation.rotate(tangent * inst.scale));
+    bitangent = normalize(inst.rotation.rotate(bitangent * inst.scale));
 
     V2F v2f;
     v2f.pos = mul(mul(globalParams.proj, globalParams.view), float4(position, 1.0));

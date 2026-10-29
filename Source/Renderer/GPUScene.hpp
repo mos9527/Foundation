@@ -80,7 +80,7 @@ struct GSMesh
 };
 struct GSInstance
 {
-    // TRS
+    // T * R * S in GLTF order...
     float3 transform{0, 0, 0};
     quat rotation{0, 0, 0, 1};
     float3 scale{1, 1, 1};
