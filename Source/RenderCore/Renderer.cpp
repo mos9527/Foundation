@@ -973,7 +973,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
                 CHECK_MSG(bind.type == RHIDescriptorType::StorageImage && bind.count == 1,
                           "Backbuffer UAV {} must be a single storage image in shader {}", bind.name, path);
             refl_var_bind_points.try_emplace(bind.name, Pair<uint32_t, uint32_t>{});
-            auto [it, inserted] = refl_var_layouts.emplace(bind.name, Pair{bind.type, bind.count});
+            auto [it, inserted] =
+                refl_var_layouts.emplace(bind.name, Pair<RHIDescriptorType, uint32_t>{bind.type, bind.count});
             CHECK_MSG(inserted || it->second.first == bind.type,
                       "Inconsistent descriptor types across shader stages for {} in shader {} (was {}, now {})",
                       bind.name, path, it->second.first, bind.type);
@@ -1075,7 +1076,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     Map<Pair<uint32_t, uint32_t>, String> externalSlots(mAllocator);
     for (auto& [name, layout, set, binding_index, set_name] : tracked.externalBindings)
     {
-        auto [it, inserted] = externalSets.emplace(set_name, Pair{nextSet, layout});
+        auto [it, inserted] =
+            externalSets.emplace(set_name, Pair<uint32_t, RHIDeviceDescriptorSetLayout*>{nextSet, layout});
         if (inserted)
             tracked.pExternalDescriptorSets.emplace_back(nextSet++, layout);
         CHECK_MSG(it->second.second == layout,
