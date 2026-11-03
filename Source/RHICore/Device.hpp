@@ -89,15 +89,22 @@ namespace Foundation::RHI
     };
     class RHIDeviceDescriptorSetLayout : public RHIObject
     {
+        // Layout metadata must outlive temporary arrays supplied at creation time.
+        Vector<RHIDeviceDescriptorSetLayoutDesc::Binding> mBindings;
+
     protected:
         const RHIDevice& mDevice;
 
     public:
         const RHIDeviceDescriptorSetLayoutDesc mDesc;
-        RHIDeviceDescriptorSetLayout(RHIDevice const& device, RHIDeviceDescriptorSetLayoutDesc const& desc) :
-            mDevice(device), mDesc(desc)
+        RHIDeviceDescriptorSetLayout(RHIDevice const& device, RHIDeviceDescriptorSetLayoutDesc const& desc,
+                                     Allocator* allocator = GLOBAL_ALLOC) :
+            mBindings(desc.bindings.begin(), desc.bindings.end(), allocator), mDevice(device),
+            mDesc{.bindings = mBindings, .updateAfterBind = desc.updateAfterBind}
         {
         }
+        RHIDeviceDescriptorSetLayout(const RHIDeviceDescriptorSetLayout&) = delete;
+        RHIDeviceDescriptorSetLayout& operator=(const RHIDeviceDescriptorSetLayout&) = delete;
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };

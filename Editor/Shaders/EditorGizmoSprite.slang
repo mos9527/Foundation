@@ -57,7 +57,7 @@ VertexOutput vertMain(float3 center : POSITION, float2 corner : TEXCOORD0, float
     return output;
 }
 
-public[[vk_binding(0, 1)]] Texture2D<float4> gTextures2D[];
+public Texture2D<float4> gTextures2D[];
 [shader("fragment")]
 float4 fragMain(VertexOutput input) : SV_TARGET
 {

@@ -7,7 +7,7 @@ Texture2D<float4> specularTex;
 SamplerState gLutSampler;
 uniform PostprocessUBO globalParams;
 
-public[[vk_binding(0, 1)]] Texture3D<float4> gTextures3D[];
+public Texture3D<float4> gTextures3D[];
 
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {

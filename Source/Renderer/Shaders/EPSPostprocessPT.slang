@@ -7,7 +7,7 @@ Texture2D<float4> specularTex;
 SamplerState gLutSampler;
 uniform PostprocessUBO globalParams;
 
-public[[vk_binding(0, 1)]] Texture3D<float4> gTextures3D[];
+public Texture3D<float4> gTextures3D[];
 
 float3 LoadPTPostprocessRadiance(int3 coord)
 {

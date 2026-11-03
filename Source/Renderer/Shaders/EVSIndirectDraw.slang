@@ -1,11 +1,10 @@
-// TODO: What a mess.
 #include "ICommon.slang"
 
 uniform UBO globalParams;
-[[vk_binding(1, 0)]] StructuredBuffer<GSInstance> instances;
-[[vk_binding(2, 0)]] ByteAddressBuffer dynamicPrimitives; // current frame slot
-// Binding 6 (after EPSGBuffer's 3..5): absolute instance index per indirect draw.
-[[vk_binding(6, 0)]] StructuredBuffer<uint> drawInstanceIDs;
+StructuredBuffer<GSInstance> instances;
+ByteAddressBuffer dynamicPrimitives; // current frame slot
+// Absolute instance index per indirect draw.
+StructuredBuffer<uint> drawInstanceIDs;
 
 [shader("vertex")]
 V2F main(uint vertexID: SV_VertexID, uint drawID: SV_DrawIndex)

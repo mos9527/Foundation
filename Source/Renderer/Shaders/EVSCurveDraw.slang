@@ -4,9 +4,9 @@
 #include "ICommon.slang"
 
 uniform UBO globalParams;
-[[vk_binding(1, 0)]] StructuredBuffer<GSInstance> instances;
-[[vk_binding(2, 0)]] ByteAddressBuffer primitive;
-[[vk_binding(6, 0)]] StructuredBuffer<uint> drawInstanceIDs;
+StructuredBuffer<GSInstance> instances;
+ByteAddressBuffer primitive;
+StructuredBuffer<uint> drawInstanceIDs;
 
 FCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint leafIndex)
 {

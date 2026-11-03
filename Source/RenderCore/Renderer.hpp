@@ -313,7 +313,8 @@ namespace Foundation::RenderCore
         bool unCullable{false}; // Acts as an additional execution root
         // Backbuffer specializations
         Optional<RHIPipelineState::PipelineStateDesc::Attachment::Blending> backbufferRTV{}; // opt: blending mode
-        Optional<int> backbufferUAV; // opt: set index
+        Optional<String> backbufferUAV; // opt: shader variable name
+        uint32_t backbufferUAVSet{}; // Resolved at PSO build time.
         // Uses compute shader? (not necessarily in a compute queue)
         // Should be mutually exclusive with write_backbuffer and other graphics states
         bool isComputePass{false};
@@ -346,9 +347,10 @@ namespace Foundation::RenderCore
             shaders;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]
         Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> textureBindings, bufferBindings, asBindings;
-        // External Bind Sets [binding point, layout ptr, set index (set when built)]
+        // External sets [shader variable, layout ptr, resolved set, layout binding, logical set name].
+        // Variables with the same logical set name share a descriptor set.
         // Sorted lexicographically if the pipeline is built.
-        Vector<Tuple<String, RHIDeviceDescriptorSetLayout*, int>> externalBindings;
+        Vector<Tuple<String, RHIDeviceDescriptorSetLayout*, int, uint32_t, String>> externalBindings;
         // Samplers
         Vector<Pair<ResourceHandle, String>> samplers;
         // Push Constant
@@ -932,9 +934,12 @@ namespace Foundation::RenderCore
          *
          * @param reading_layout If provided, the @ref Renderer will ensure this pass become the new writer of `reading_layout`
          *                       as well as a dependency of the last writer of `reading_layout` and `layout`.
+         * @param binding_index Binding in the supplied layout; shader coordinates are relocated to match it.
+         * @param set_name Logical set identity for sharing a multi-binding layout; defaults to `bind_point`.
          */
         void BindDescriptorSetWrite(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout,
-                                    RHIDeviceDescriptorSetLayout* reading_layout = nullptr);
+                                    RHIDeviceDescriptorSetLayout* reading_layout = nullptr,
+                                    uint32_t binding_index = 0, StringView set_name = {});
         /**
          * @brief Declares an external descriptor-set write without binding it to a pipeline.
          *
@@ -948,8 +953,12 @@ namespace Foundation::RenderCore
          * This creates an execution dependency from the last writer of the same layout.
          * It does not transition or otherwise synchronize the descriptor set's resources.
          * Call @ref CmdBindDescriptorSet at Record time to bind the set.
+         *
+         * @param binding_index Binding in the supplied layout; shader coordinates are relocated to match it.
+         * @param set_name Logical set identity for sharing a multi-binding layout; defaults to `bind_point`.
          */
-        void BindDescriptorSetRead(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout);
+        void BindDescriptorSetRead(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout,
+                                   uint32_t binding_index = 0, StringView set_name = {});
         /**
          * @brief Marks a pass as "uncullable", meaning it will always be executed even if it has no dependencies.
          *
@@ -1022,10 +1031,10 @@ namespace Foundation::RenderCore
         void BindBackbufferRTV(PassHandle pass,
                                RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending = {}) const;
         /**
-         * @brief Binds the backbuffer as RW access at binding 0 of set index
-         * @note The set index MUST be the last set index bound in the pass.
+         * @brief Binds the backbuffer as RW access to the named shader variable.
+         * @note Its descriptor set is allocated automatically after generated and external sets.
          */
-        void BindBackbufferUAV(PassHandle pass, int set_index) const;
+        void BindBackbufferUAV(PassHandle pass, StringView bind_point) const;
         /**
          * @brief Declares that this pass will write to the texture via copy / blit (transfer destination).
          *

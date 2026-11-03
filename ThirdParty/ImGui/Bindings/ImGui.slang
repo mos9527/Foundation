@@ -21,7 +21,6 @@ struct PushConstants
 SamplerState linSampler;
 SamplerState nearSampler;
 
-[[vk::binding(0, 1)]] // [binding, set]
 texture2D textures[];
 
 [shader("vertex")]

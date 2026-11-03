@@ -4,12 +4,9 @@ import IFlags;
 import IMath;
 [[SpecializationConstant]] int flags;
 uniform UBO globalParams;
-// Bindings 3..5: shared by the meshlet path (EMSBasic, bindings 1,2,6,7) and the indirect-draw
-// path (EVSIndirectDraw, bindings 1,2) so this fragment is reused unmodified by both. Each set's
-// bindings must be contiguous, hence the gbuffer slots sit directly after the common 0..2.
-[[vk_binding(3,0)]] StructuredBuffer<GSMaterial> materials;
-[[vk_binding(4,0)]] SamplerState textureSampler;
-[[vk_binding(5,0)]] RWTexture2D<uint32_t> overdraw;
+StructuredBuffer<GSMaterial> materials;
+SamplerState textureSampler;
+RWTexture2D<uint32_t> overdraw;
 struct Fragment
 {
     float4 RT0 : SV_Target0;

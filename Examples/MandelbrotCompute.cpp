@@ -23,7 +23,7 @@ int main(int argc, char** argv)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "csMain", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/MandelbrotCompute.spv"));
             r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstant));
-            r->BindBackbufferUAV(self, 0);
+            r->BindBackbufferUAV(self, "image");
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {

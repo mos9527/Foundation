@@ -2,7 +2,7 @@ struct PushConstant {
     int x, y, scale, col32;
     uint32_t text[28]; // (128-4*4)/4
 };
-[[vk::binding(0, 0)]] RWTexture2D texture;
+RWTexture2D texture;
 [[vk::push_constant]] PushConstant pc;
 
 // Generated from https://www.dafont.com/perfect-dos-vga-437.font

@@ -34,6 +34,12 @@ namespace Foundation::RenderCore {
             String name;
             uint32_t descriptorSet;
             uint32_t binding;
+            RHIDescriptorType type;
+            uint32_t count{1}; // Zero denotes a runtime-sized descriptor array.
+            uint32_t id;
+            // Literal operand offsets in the original SPIR-V, measured in words.
+            size_t descriptorSetWordOffset;
+            size_t bindingWordOffset;
         };
         Vector<Binding> mBindings;
         struct PushConstant {
@@ -51,6 +57,8 @@ namespace Foundation::RenderCore {
         Vector<SpecializationConstant> mSpecializationConstants;
         Shader(Span<const char> bytecode, Allocator* alloc);
 
+        // Patch a private copy of this module and update its reflected coordinates.
+        void RemapBindings(Span<char> bytecode, const Map<String, Pair<uint32_t, uint32_t>>& locations);
         [[nodiscard]] String DbgDumpShaderInfo() const;
     };
 }

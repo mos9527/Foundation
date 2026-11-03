@@ -31,7 +31,7 @@ namespace Foundation::RenderUtils
             name, RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r)
             {
-                r->BindBackbufferUAV(self, 0u);
+                r->BindBackbufferUAV(self, "texture");
                 r->BindShader(self, RHIShaderStageBits::Compute, "debugText", r->GetApplication()->ResolveRelativePathBase("Data/Shaders/CSDebugText.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSDebugTextData));
             },

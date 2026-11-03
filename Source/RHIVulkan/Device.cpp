@@ -908,7 +908,7 @@ void VulkanDeviceDescriptorSetLayout::DebugSetObjectName(const char* name)
 
 VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDevice& device,
                                                                  RHIDeviceDescriptorSetLayoutDesc const& desc) :
-    RHIDeviceDescriptorSetLayout(device, desc), mDevice(device)
+    RHIDeviceDescriptorSetLayout(device, desc, device.GetAllocator()), mDevice(device)
 {
     StackArena arena{};
     AllocatorStack alloc(arena);

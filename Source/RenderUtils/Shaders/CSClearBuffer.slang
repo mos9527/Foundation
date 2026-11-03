@@ -2,7 +2,7 @@ struct PushConstant {
     float4 color;
     int w, h;
 }
-[[vk::binding(0, 0)]] RWTexture2D texture;
+RWTexture2D texture;
 [[vk::push_constant]] PushConstant pc;
 
 [shader("compute")]

@@ -380,10 +380,13 @@ void Renderer::BindTextureSampler(PassHandle pass, ResourceHandle sampler, Strin
 }
 
 void Renderer::BindDescriptorSetWrite(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout,
-                                      RHIDeviceDescriptorSetLayout* reading_layout)
+                                      RHIDeviceDescriptorSetLayout* reading_layout,
+                                      uint32_t binding_index, StringView set_name)
 {
+    CHECK_MSG(!bind_point.empty(), "An external descriptor binding requires a shader variable name");
     BindDescriptorSetWrite(pass, layout, reading_layout);
-    mSetup->trackedPasses[pass].externalBindings.emplace_back(bind_point, layout, ~0u);
+    mSetup->trackedPasses[pass].externalBindings.emplace_back(
+        bind_point, layout, -1, binding_index, set_name.empty() ? bind_point : set_name);
 }
 
 void Renderer::BindDescriptorSetWrite(PassHandle pass, RHIDeviceDescriptorSetLayout* layout,
@@ -406,10 +409,12 @@ void Renderer::BindDescriptorSetWrite(PassHandle pass, RHIDeviceDescriptorSetLay
     }
 }
 
-void Renderer::BindDescriptorSetRead(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout)
+void Renderer::BindDescriptorSetRead(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout,
+                                     uint32_t binding_index, StringView set_name)
 {
     CHECK(mState == State::Setup);
     CHECK(layout);
+    CHECK_MSG(!bind_point.empty(), "An external descriptor binding requires a shader variable name");
     uintptr_t key = reinterpret_cast<uintptr_t>(layout);
     if (mSetup->descriptorSetWriters.contains(key))
     {
@@ -417,7 +422,8 @@ void Renderer::BindDescriptorSetRead(PassHandle pass, StringView bind_point, RHI
         if (writer != kInvalidHandle && writer != pass)
             BindPass(pass, writer);
     }
-    mSetup->trackedPasses[pass].externalBindings.emplace_back(bind_point, layout, ~0u);
+    mSetup->trackedPasses[pass].externalBindings.emplace_back(
+        bind_point, layout, -1, binding_index, set_name.empty() ? bind_point : set_name);
 }
 
 void Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point, RHIPipelineStage stage,
@@ -513,14 +519,15 @@ void Renderer::BindBackbufferRTV(PassHandle pass,
     mSetup->lastBackbufferProducer = pass;
 }
 
-void Renderer::BindBackbufferUAV(PassHandle pass, int set_index) const
+void Renderer::BindBackbufferUAV(PassHandle pass, StringView bind_point) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(mSwapchain.IsValid(),
               "BindBackbufferUAV is not available in a headless Renderer (no swapchain). "
-              "Write to an explicit texture via BindTextureUAV instead.");    
+              "Write to an explicit texture via BindTextureUAV instead.");
+    CHECK_MSG(!bind_point.empty(), "A backbuffer UAV binding requires a shader variable name");
     auto& tpass = mSetup->trackedPasses[pass];
-    tpass.backbufferUAV = set_index;
+    tpass.backbufferUAV = String(bind_point);
     if (mSetup->lastBackbufferProducer != kInvalidHandle)
         mSetup->add_edge(pass, mSetup->lastBackbufferProducer, kInvalidHandle);
     mSetup->lastBackbufferProducer = pass;
@@ -860,30 +867,30 @@ void Renderer::BuildPipelineState(PassHandle pass)
     if (tracked.shaders.empty())
         return; // Pass with no shaders
     LOG(Renderer, LogInfo, "** Building PSO for {} [{}] **", tracked.name, pass);
-    Vector<char> data(mAllocator);
+    Map<String, Vector<char>> bytecodes(mAllocator);
     Map<String, RHIDeviceScopedHandle<RHIShaderModule>> shaders(mAllocator);
     Map<String, UniquePtr<Shader>> reflections(mAllocator);
+    Vector<String> pso_stage_paths(mAllocator);
     Map<String, Span<const char>> specializations(mAllocator);
     Map<String, uint32_t> rtHitGroups(mAllocator);
     Map<String, RHIPipelineState::PipelineStateDesc::RayTracingHitGroupType> rtHitGroupTypes(mAllocator);
     for (auto const& [shader_path, entry_point, stage, spec, rtHitGroup, rtHitGroupType] : tracked.shaders)
     {
-        if (!shaders.contains(shader_path))
+        if (!reflections.contains(shader_path))
         {
             auto info = GetApplication()->QueryFileInfo(shader_path);
             FILE* fp = fopen(shader_path.c_str(), "rb");
             CHECK_MSG(fp, "Failed to open shader file {}", shader_path);
+            auto& data = bytecodes.emplace(shader_path, Vector<char>(mAllocator)).first->second;
             data.resize(info.Get().size);
-            fread(data.data(), 1, data.size(), fp);
+            size_t bytesRead = fread(data.data(), 1, data.size(), fp);
             fclose(fp);
+            CHECK_MSG(bytesRead == data.size(), "Failed to read complete shader file {}", shader_path);
             reflections.emplace(shader_path, ConstructUnique<Shader>(mAllocator, data, mAllocator));
-            shaders[shader_path] = mDevice->CreateShaderModule({.source = data});
-            shaders[shader_path]->DebugSetObjectName(shader_path.c_str());
         }
         specializations[entry_point] = spec;
         rtHitGroups[entry_point] = rtHitGroup;
         rtHitGroupTypes[entry_point] = rtHitGroupType;
-        auto& module = shaders[shader_path];
         // In BindShader we have already guaranteed these to be unique per stage
         if (stage & RHIShaderStageBits::Compute)
             tracked.isComputePass = true, tracked.piplineStages |= RHIPipelineStageBits::ComputeShader;
@@ -923,8 +930,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
                                               .specializationData = specializations[entry_point],
                                               .raytracingHitGroupIndex = rtHitGroups[entry_point],
                                               .raytracingHitGroupType = rtHitGroupTypes[entry_point],
-                                          },
-                                      .shaderModule = module.Get()});
+                                          }});
+                pso_stage_paths.emplace_back(shader_path);
                 if (stage & (RHIShaderStageBits::Compute | RHIShaderStageBits::Mesh | RHIShaderStageBits::Task))
                     tracked.groupLocalSize = ep.groupLocalSize;
                 found = true;
@@ -935,16 +942,17 @@ void Renderer::BuildPipelineState(PassHandle pass)
     }
     if (tracked.isComputePass)
     {
-        CHECK_MSG(shaders.size() == 1,
+        CHECK_MSG(reflections.size() == 1,
                   "Pass {} must have exactly 1 Compute Shader, and 0 of any other types, if CS is used.", tracked.name);
     }
 #pragma endregion
 #pragma region Descriptor Sets
     /* -- Descriptor Set Build -- */
-    // Check variable bindings to be consistent across stages
-    // [name, [set, binding]]
+    // Resource names are pipeline-wide identities; original shader coordinates are not an ABI.
+    // [name, [relocated set, binding]] and [name, [descriptor type, minimum array size]]
     Map<String, Pair<uint32_t, uint32_t>> refl_var_bind_points(mAllocator);
-    Optional<int> backbufferUAVUsage; // opt: set index
+    Map<String, Pair<RHIDescriptorType, uint32_t>> refl_var_layouts(mAllocator);
+    Optional<uint32_t> backbufferUAVUsage;
     // Check if any shader in the pipeline uses PC
     for (auto const& [path, refl] : reflections)
     {
@@ -961,67 +969,17 @@ void Renderer::BuildPipelineState(PassHandle pass)
         {
             CHECK_MSG(!bind.name.empty(), "Unnamed bindings are not supported. Enable debug information for shader {}",
                       path);
-            auto it = refl_var_bind_points.find(bind.name);
-            if (it == refl_var_bind_points.end())
-            {
-                if (tracked.backbufferUAV == bind.descriptorSet)
-                {
-                    CHECK_MSG(bind.binding == 0 && !backbufferUAVUsage.has_value(),
-                              "Set {} is used for Backbuffer UAV, which can only contain one binding at 0 (got {})",
-                              bind.descriptorSet, bind.binding);
-                    backbufferUAVUsage = bind.descriptorSet;
-                    continue;
-                }
-                refl_var_bind_points[bind.name] = {bind.descriptorSet, bind.binding};
-            }
-            else
-            {
-                auto& [set, binding] = it->second;
-                CHECK_MSG(set == bind.descriptorSet && binding == bind.binding,
-                          "Inconsistent binding points across shader stages for variable {} in shader {}", bind.name,
-                          path);
-            }
+            if (tracked.backbufferUAV && tracked.backbufferUAV.Get() == bind.name)
+                CHECK_MSG(bind.type == RHIDescriptorType::StorageImage && bind.count == 1,
+                          "Backbuffer UAV {} must be a single storage image in shader {}", bind.name, path);
+            refl_var_bind_points.try_emplace(bind.name, Pair<uint32_t, uint32_t>{});
+            auto [it, inserted] = refl_var_layouts.emplace(bind.name, Pair{bind.type, bind.count});
+            CHECK_MSG(inserted || it->second.first == bind.type,
+                      "Inconsistent descriptor types across shader stages for {} in shader {} (was {}, now {})",
+                      bind.name, path, it->second.first, bind.type);
+            // A supplied layout can satisfy differently sized declarations by covering the largest one.
+            it->second.second = std::max(it->second.second, bind.count);
         }
-    }
-    // Check that all [set,binding] are unique, and bindings per set is contiguous
-    Map<Pair<int, int>, String> bind_unique(mAllocator); // set, binding, name
-    for (auto& [name, bind] : refl_var_bind_points)
-    {
-        auto it = bind_unique.find(bind);
-        CHECK_MSG(it == bind_unique.end(), "Binding set {} binding {} is used by both {} and {} in pass {}.",
-                  bind.first, bind.second, name, it->second, tracked.name);
-        bind_unique[bind] = name;
-    }
-    // Check per-set binding contiguity
-    for (uint32_t set = 0;; set++)
-    {
-        Pair<int, int> key{set, 0};
-        auto it = bind_unique.find(key);
-        if (it == bind_unique.end())
-            break;
-        int cbindings = 0, last_binding = 0;
-        for (; it != bind_unique.end() && it->first.first == set; it++)
-        {
-            last_binding = it->first.second;
-            cbindings++;
-        }
-        String diagnostic;
-        if (last_binding != cbindings - 1)
-        {
-            fmt::format_to(std::back_inserter(diagnostic), "\n== Bindings for Set {} ==", set);
-            for (int b = 0; b <= last_binding; b++)
-            {
-                auto itb = bind_unique.find({set, static_cast<uint32_t>(b)});
-                if (itb != bind_unique.end())
-                    fmt::format_to(std::back_inserter(diagnostic), "\n  Binding {}: {}", b, itb->second);
-                else
-                    fmt::format_to(std::back_inserter(diagnostic), "\n  Binding {}: ! missing !", b);
-            }
-        }
-        CHECK_MSG(last_binding == cbindings - 1,
-                  "Pass {} Binding set {} has non-contiguous bindings (max binding {}, count {}). Last binding {}. "
-                  "Diagnostic: {}",
-                  tracked.name, set, last_binding, cbindings, bind_unique[{set, last_binding}], diagnostic);
     }
     // Check descriptor set layout to be consistent across stages
     Map<String, RHIDescriptorType> var_types(mAllocator);
@@ -1081,78 +1039,92 @@ void Renderer::BuildPipelineState(PassHandle pass)
         auto [p, ins] = var_samplers.emplace(binding, Vector<ResourceHandle>(mAllocator));
         p->second.emplace_back(sampler_handle);
     }
-    // External sets (e.g. @ref BindlessPool)
+    // External resources use the supplied layout's binding numbers, not compiler-assigned coordinates.
     std::sort(tracked.externalBindings.begin(), tracked.externalBindings.end());
-    for (auto& [binding, desc_set_layout, set] : tracked.externalBindings)
+    for (auto& [binding, desc_set_layout, set, binding_index, set_name] : tracked.externalBindings)
     {
-        // We don't create anything for these sets, user provides the layouts - but we do resolve these
-        // to actual [set,binding] pairs so they can be bound by bind points (var names)
-        if (refl_var_bind_points.contains(binding))
-        {
-            auto bind = refl_var_bind_points[binding];
-            CHECK_MSG(bind.second < desc_set_layout->mDesc.bindings.size(),
-                      "Shader binding {} at set {} exceeded declared layout binding {} size {} in pass {}.", binding,
-                      binding, bind.first, desc_set_layout->mDesc.bindings.size(), tracked.name);
-            set = bind.first, tracked.pExternalDescriptorSets.emplace_back(set, desc_set_layout);
-        }
-        else
-        {
-            CHECK_MSG(false,
-                      "External descriptor set binding {} is not used by any shader in pass {}. Has the set been used "
-                      "by e.g. Backbuffer?",
-                      binding, tracked.name);
-        }
-        var_ext_sets[binding] = desc_set_layout;
+        auto reflected = refl_var_layouts.find(binding);
+        CHECK_MSG(reflected != refl_var_layouts.end(),
+                  "External descriptor binding {} is not used by any shader in pass {}", binding, tracked.name);
+        CHECK_MSG(!var_types.contains(binding) &&
+                      (!tracked.backbufferUAV || tracked.backbufferUAV.Get() != binding),
+                  "External binding {} is also bound as a generated resource or backbuffer in pass {}",
+                  binding, tracked.name);
+        CHECK_MSG(binding_index < desc_set_layout->mDesc.bindings.size(),
+                  "External binding {} exceeds layout size {} at binding {} in pass {}",
+                  binding, desc_set_layout->mDesc.bindings.size(), binding_index, tracked.name);
+        auto const& layoutBinding = desc_set_layout->mDesc.bindings[binding_index];
+        CHECK_MSG(layoutBinding.type == reflected->second.first && layoutBinding.count > 0 &&
+                      layoutBinding.count >= reflected->second.second,
+                  "External layout is incompatible with shader binding {} in pass {}", binding, tracked.name);
+        CHECK_MSG(var_ext_sets.emplace(binding, desc_set_layout).second,
+                  "External binding {} is declared more than once in pass {}", binding, tracked.name);
     }
-    // Sort by set index
-    std::sort(tracked.pExternalDescriptorSets.begin(), tracked.pExternalDescriptorSets.end());
-    tracked.pExternalDescriptorSets.erase(
-        std::unique(tracked.pExternalDescriptorSets.begin(), tracked.pExternalDescriptorSets.end()),
-        tracked.pExternalDescriptorSets.end());
-    // [[set, binding], name]
+    // Pack graph-owned resources alphabetically into one dense set, independent of shader/pass declaration order.
     Vector<Pair<Pair<uint32_t, uint32_t>, String>> bindings(mAllocator);
-    bindings.reserve(var_types.size());
+    bindings.reserve(refl_var_bind_points.size());
     for (auto& [name, bind] : refl_var_bind_points)
     {
-        if (!var_ext_sets.contains(name))
-            bindings.emplace_back(bind, name);
+        if (var_ext_sets.contains(name) || (tracked.backbufferUAV && tracked.backbufferUAV.Get() == name))
+            continue;
+        bind = {0, static_cast<uint32_t>(bindings.size())};
+        bindings.emplace_back(bind, name);
     }
-    std::sort(bindings.begin(), bindings.end());
+    uint32_t nextSet = bindings.empty() ? 0u : 1u;
+    Map<String, Pair<uint32_t, RHIDeviceDescriptorSetLayout*>> externalSets(mAllocator);
+    Map<Pair<uint32_t, uint32_t>, String> externalSlots(mAllocator);
+    for (auto& [name, layout, set, binding_index, set_name] : tracked.externalBindings)
+    {
+        auto [it, inserted] = externalSets.emplace(set_name, Pair{nextSet, layout});
+        if (inserted)
+            tracked.pExternalDescriptorSets.emplace_back(nextSet++, layout);
+        CHECK_MSG(it->second.second == layout,
+                  "External set {} uses different layouts in pass {}", set_name, tracked.name);
+        set = static_cast<int>(it->second.first);
+        Pair<uint32_t, uint32_t> location{it->second.first, binding_index};
+        auto [slot, unique] = externalSlots.emplace(location, name);
+        CHECK_MSG(unique, "External set {} binding {} is shared by {} and {} in pass {}",
+                  set_name, binding_index, slot->second, name, tracked.name);
+        refl_var_bind_points.at(name) = location;
+    }
+    if (tracked.backbufferUAV)
+    {
+        auto const& name = tracked.backbufferUAV.Get();
+        auto reflected = refl_var_layouts.find(name);
+        CHECK_MSG(reflected != refl_var_layouts.end(),
+                  "Backbuffer UAV {} is not used by any shader in pass {}", name, tracked.name);
+        CHECK_MSG(reflected->second.first == RHIDescriptorType::StorageImage && reflected->second.second == 1 &&
+                      !var_types.contains(name) && !var_ext_sets.contains(name),
+                  "Backbuffer UAV {} must be a separately bound storage image in pass {}", name, tracked.name);
+        tracked.backbufferUAVSet = nextSet;
+        backbufferUAVUsage = nextSet;
+        refl_var_bind_points.at(name) = {nextSet, 0};
+    }
     // Separate into descriptor sets
     Vector<RHIDeviceDescriptorSetLayoutDesc::Binding> set_bindings(mAllocator);
     for (const auto& binding : bindings | std::views::values)
     {
-        CHECK_MSG(var_types.contains(binding) || var_ext_sets.contains(binding),
+        CHECK_MSG(var_types.contains(binding),
                   "Binding {} is not bound by pass {}, but is used by one of its shaders.", binding, tracked.name);
+        auto const& [expectedType, minimumCount] = refl_var_layouts.at(binding);
+        CHECK_MSG(var_types.at(binding) == expectedType,
+                  "Binding {} in pass {} expects descriptor type {}, but is bound as {}",
+                  binding, tracked.name, expectedType, var_types.at(binding));
         uint32_t num_elems = 0;
         if (var_samplers.contains(binding))
             num_elems += var_samplers.find(binding)->second.size();
         if (var_handles.contains(binding))
             num_elems += var_handles.find(binding)->second.size();
-        CHECK_MSG(num_elems > 0 || var_ext_sets.contains(binding),
-                  "Binding {} is bound with zero elements in pass {}, but is used by one of its shaders.", binding,
-                  tracked.name);
-        set_bindings.push_back({.count = num_elems, .stage = RHIShaderStageBits::All, .type = var_types[binding]});
-    }
-    // Check if our first set is not 0
-    if (!bindings.empty() && bindings[0].first.first != 0)
-    {
-        LOG(BuildPipelineState, LogError,
-            "Binding set numbers must start from 0. Error at set {} binding {} in pass {}.", bindings[0].first.first,
-            bindings[0].first.second, tracked.name);
-        CHECK_MSG(false, "Binding set numbers must start from 0.");
+        CHECK_MSG(num_elems > 0 && num_elems >= minimumCount,
+                  "Binding {} in pass {} requires at least {} descriptors, but is bound with {}",
+                  binding, tracked.name, minimumCount, num_elems);
+        set_bindings.push_back({.count = num_elems, .stage = RHIShaderStageBits::All, .type = expectedType});
     }
     for (uint32_t i = 0, j = 0; i < bindings.size(); i = j)
     {
         uint32_t set = bindings[i].first.first;
-        // Check if our first binding is not 0
-        if (bindings[i].first.second != 0)
-        {
-            LOG(BuildPipelineState, LogError,
-                "Binding numbers must start from 0 in each descriptor set. Error at set {} binding {} in pass {}.", set,
-                bindings[i].first.second, tracked.name);
-            CHECK_MSG(false, "Binding binding must start from 0.");
-        }
+        CHECK_MSG(set == tracked.pDescriptorLayouts.size() && bindings[i].first.second == 0,
+                  "Generated descriptor set allocation is inconsistent in pass {}", tracked.name);
         while (j < bindings.size() && bindings[j].first.first == set)
             j++;
         // Check and create descriptors
@@ -1276,24 +1248,35 @@ void Renderer::BuildPipelineState(PassHandle pass)
         if (hasTemporalBindings)
             updateBindings(alternate, 1);
     }
-    // Add external sets
-    // We've already established that these would not conflict with our own sets, and has already been sorted
-    for (auto const& [ptr, layout_ptr] : tracked.pExternalDescriptorSets)
+    // External and backbuffer sets follow the generated set in their allocated order.
+    for (auto const& [set, layout_ptr] : tracked.pExternalDescriptorSets)
     {
+        CHECK_MSG(set == tracked.pDescriptorLayouts.size(),
+                  "External descriptor set allocation is inconsistent in pass {}", tracked.name);
         tracked.pDescriptorLayouts.emplace_back(layout_ptr);
     }
-    // Add Backbuffer UAV set if needed
     if (backbufferUAVUsage.has_value())
     {
-        auto set = backbufferUAVUsage.Get();
-        CHECK_MSG(
-            set == tracked.pDescriptorLayouts.size(),
-            "Backbuffer UAV View MUST be the last descriptor set in pass {}. Declared {}, but pass only has {} sets.",
-            tracked.name, set, tracked.pDescriptorLayouts.size());
+        CHECK_MSG(backbufferUAVUsage.Get() == tracked.pDescriptorLayouts.size(),
+                  "Backbuffer descriptor set allocation is inconsistent in pass {}", tracked.name);
         tracked.pDescriptorLayouts.emplace_back(mSwapDescriptorSetLayout.Get());
     }
 #pragma endregion
 #pragma region PSO
+    // Shader modules are immutable: relocate each pass-local bytecode copy before creating them.
+    for (auto const& [path, reflection] : reflections)
+    {
+        auto& data = bytecodes.at(path);
+        reflection->RemapBindings(data, refl_var_bind_points);
+        auto module = mDevice->CreateShaderModule({.source = data});
+        module->DebugSetObjectName(path.c_str());
+        shaders.emplace(path, std::move(module));
+        LOG(Renderer, LogDebug, "** Relocated shader {} for {} **\n{}", path, tracked.name,
+            reflection->DbgDumpShaderInfo());
+    }
+    CHECK(pso_stages.size() == pso_stage_paths.size());
+    for (size_t i = 0; i < pso_stages.size(); i++)
+        pso_stages[i].shaderModule = shaders.at(pso_stage_paths[i]).Get();
     /* -- Pipeline State Creation -- */
     if (!pso_stages.empty())
     {
@@ -2450,7 +2433,7 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
     if (!descriptorSets.empty())
         cmd->BindDescriptorSet(tpass.GetPipelineType(), tpass.pso.Get(), descriptorSets, 0);
     if (tpass.backbufferUAV)
-        CmdBindDescriptorSet(pass, cmd, tpass.backbufferUAV.Get(), mSwaps[GetSwap()].viewSet.Get());
+        CmdBindDescriptorSet(pass, cmd, tpass.backbufferUAVSet, mSwaps[GetSwap()].viewSet.Get());
 }
 
 void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32_t set_index,
