@@ -291,7 +291,23 @@ public:
         String name;
         size_t bytes;
     };
-    void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
+    struct PagePoolStat
+    {
+        String name;
+        size_t physicalPages{0}; // Physical buffers; one can cover multiple logical pages
+        size_t logicalPages{0};
+        size_t leafTables{0}; // Does not include the always-present root table
+        size_t logicalPageBytes{0};
+        size_t capacityBytes{0}; // Addressable payload bytes, excluding tables and allocator padding
+        size_t payloadBytes{0}; // Actual payload allocation size
+        size_t pageTableBytes{0}; // Actual root and leaf allocation sizes
+        size_t liveBytes{0}; // Active suballocations, including any upload alignment padding
+        size_t retiredBytes{0}; // Superseded allocations awaiting reclamation, possibly already GPU-complete
+        size_t retiredAllocations{0};
+    };
+    // Optional page details are captured with the memory breakdown under the same residency lock.
+    // This is observational only: it does not poll queues, wait for GPU idle, or reclaim pages.
+    void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats, Vector<PagePoolStat>* outPages = nullptr) const;
     [[nodiscard]] String DbgGetBufferStatistics() const;
 
     enum class TLASBuildResult

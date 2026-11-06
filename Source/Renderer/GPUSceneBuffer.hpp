@@ -89,6 +89,7 @@ class PagedBuffer
     };
     RHIDevice* mDevice;
     RHIBufferDesc mDesc;
+    String mDebugName;
     uint64_t mMinPageUnits;
     uint64_t mCapacity{0};
     RHIDeviceScopedHandle<RHIBuffer> mRoot;
@@ -96,7 +97,7 @@ class PagedBuffer
     Vector<Page> mPages;
     Vector<uint32_t> mPageOwners;
 
-    RHIDeviceScopedHandle<RHIBuffer> CreateAddressTable(uint32_t entries, bool root)
+    RHIDeviceScopedHandle<RHIBuffer> CreateAddressTable(uint32_t entries, bool root, uint32_t index = 0)
     {
         auto buffer = mDevice->CreateBuffer(
             {.resource = {.heap = RHIDeviceHeapType::Upload,
@@ -109,7 +110,8 @@ class PagedBuffer
              .alignment = alignof(uint64_t),
              .deviceAddressTable = root});
         std::memset(buffer->Map(), 0, buffer->mDesc.size);
-        buffer->DebugSetObjectName(root ? "GPUScene Page Table" : "GPUScene Page Table Leaf");
+        buffer->DebugSetObjectName((root ? Format("GPUScene / {} / Page Table Root", mDebugName)
+                                        : Format("GPUScene / {} / Page Table Leaf {}", mDebugName, index)).c_str());
         return buffer;
     }
 
@@ -126,8 +128,24 @@ public:
         size_t offset; // bytes within buffer, never a virtual offset
     };
 
-    PagedBuffer(RHIDevice* device, Allocator* allocator, size_t minPageBytes, RHIBufferDesc desc) :
-        mDevice(device), mDesc(desc), mMinPageUnits((uint64_t(minPageBytes) + sizeof(T) - 1u) / sizeof(T)),
+    struct Statistics
+    {
+        size_t physicalPages{0};
+        size_t logicalPages{0};
+        size_t leafTables{0};
+        size_t logicalPageBytes{0};
+        size_t capacityBytes{0};
+        size_t payloadBytes{0}; // Device allocation sizes, including allocator padding
+        size_t pageTableBytes{0}; // Root plus allocated leaves
+        size_t liveBytes{0}; // Active suballocations, including any upload alignment padding
+        size_t retiredBytes{0}; // Superseded suballocations not yet reclaimed
+        size_t retiredAllocations{0};
+    };
+
+    PagedBuffer(RHIDevice* device, Allocator* allocator, size_t minPageBytes, RHIBufferDesc desc,
+                const char* debugName) :
+        mDevice(device), mDesc(desc), mDebugName(debugName),
+        mMinPageUnits((uint64_t(minPageBytes) + sizeof(T) - 1u) / sizeof(T)),
         mLeaves(allocator), mPages(allocator), mPageOwners(allocator)
     {
         CHECK_MSG(minPageBytes != 0, "GPUScene page size must be non-zero");
@@ -160,7 +178,9 @@ public:
         RHIBufferDesc desc = mDesc;
         desc.size = static_cast<size_t>(capacity) * sizeof(T);
         auto buffer = mDevice->CreateBuffer(desc);
-        buffer->DebugSetObjectName("GPUScene Buffer Page");
+        buffer->DebugSetObjectName(Format("GPUScene / {} / Page {} ({} bytes, logical pages {}..{})",
+                                         mDebugName, mPages.size(), desc.size, mCapacity >> PageShift,
+                                         ((mCapacity + capacity) >> PageShift) - 1u).c_str());
         auto allocator = mDevice->CreateVirtualAllocator(capacity);
         uint64_t local = allocator->Allocate(count, alignment);
         CHECK(local != RHIVirtualAllocator::kInvalidOffset);
@@ -180,7 +200,7 @@ public:
                 mLeaves.resize(size_t(leafIndex) + 1u);
             if (!mLeaves[leafIndex])
             {
-                mLeaves[leafIndex] = CreateAddressTable(GS_PAGE_TABLE_LEAF_ENTRIES, false);
+                mLeaves[leafIndex] = CreateAddressTable(GS_PAGE_TABLE_LEAF_ENTRIES, false, leafIndex);
                 root[leafIndex] = mLeaves[leafIndex]->GetBufferAddress();
             }
             mLeaves[leafIndex]->Map<uint64_t>()[pageIndex & (GS_PAGE_TABLE_LEAF_ENTRIES - 1u)] =
@@ -222,6 +242,30 @@ public:
         for (auto const& page : mPages)
             if (uint64_t used = page.allocator->GetPeakUsage())
                 page.buffer->Flush(0, static_cast<size_t>(used) * sizeof(T));
+    }
+
+    [[nodiscard]] String const& GetDebugName() const { return mDebugName; }
+    [[nodiscard]] Statistics GetStatistics() const
+    {
+        Statistics stats{
+            .physicalPages = mPages.size(),
+            .logicalPages = mPageOwners.size(),
+            .logicalPageBytes = size_t(kPageUnits) * sizeof(T),
+            .capacityBytes = static_cast<size_t>(mCapacity) * sizeof(T),
+            .pageTableBytes = mRoot->GetAllocationSize(),
+        };
+        for (auto const& leaf : mLeaves)
+            if (leaf)
+            {
+                ++stats.leafTables;
+                stats.pageTableBytes += leaf->GetAllocationSize();
+            }
+        for (auto const& page : mPages)
+        {
+            stats.payloadBytes += page.buffer->GetAllocationSize();
+            stats.liveBytes += static_cast<size_t>(page.allocator->GetUsedBytes()) * sizeof(T);
+        }
+        return stats;
     }
 
     [[nodiscard]] RHIBuffer* GetPageTable() const { return mRoot.Get(); }
@@ -273,7 +317,8 @@ class UploadBuffer : public PagedBuffer<T, PageShift>
     }
 
 public:
-    UploadBuffer(RHIDevice* device, Allocator* allocator, Retirement& retirement, size_t pageBytes) :
+    UploadBuffer(RHIDevice* device, Allocator* allocator, Retirement& retirement, size_t pageBytes,
+                 const char* debugName) :
         PagedBuffer<T, PageShift>(device, allocator, pageBytes,
             {.resource = {.heap = RHIDeviceHeapType::Upload,
                           .hostAccess = RHIResourceHostAccess::WriteOnly,
@@ -281,7 +326,7 @@ public:
                           .coherent = true},
              .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
                  RHIBufferUsageBits::TransferSource | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
-             .alignment = std::max<size_t>(16u, alignof(T))}),
+             .alignment = std::max<size_t>(16u, alignof(T))}, debugName),
         mRetirement(retirement), mCurrent(allocator), mRetired(allocator)
     {
     }
@@ -324,6 +369,17 @@ public:
         mRetired.clear();
         mUsed = 0;
         this->Clear();
+    }
+
+    [[nodiscard]] auto GetStatistics() const
+    {
+        auto stats = PagedBuffer<T, PageShift>::GetStatistics();
+        size_t const currentBytes = static_cast<size_t>(mUsed) * sizeof(T);
+        stats.retiredBytes = stats.liveBytes - currentBytes;
+        stats.liveBytes = currentBytes;
+        stats.retiredAllocations = mRetired.size();
+        // Do not poll queues or reclaim here: inspecting the profiler must not change residency.
+        return stats;
     }
 
     [[nodiscard]] uint32_t Used() const { return mUsed; }

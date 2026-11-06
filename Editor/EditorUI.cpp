@@ -174,6 +174,156 @@ static float BytesToMiB(size_t bytes)
     return bytes / static_cast<float>(1 << 20u);
 }
 
+static void DrawGPUScenePageStatsTable(Vector<GPUScene::PagePoolStat>& stats)
+{
+    size_t physicalPages = 0, leafTables = 0, liveBytes = 0, retiredBytes = 0, capacityBytes = 0, tableBytes = 0;
+    for (auto const& stat : stats)
+    {
+        physicalPages += stat.physicalPages;
+        leafTables += stat.leafTables;
+        liveBytes += stat.liveBytes;
+        retiredBytes += stat.retiredBytes;
+        capacityBytes += stat.capacityBytes;
+        tableBytes += stat.pageTableBytes;
+    }
+    ImGui::TextWrapped("Payload pages: %zu | Address tables: %zu roots + %zu leaves", physicalPages, stats.size(), leafTables);
+    ImGui::TextWrapped("Live: %.2f MiB | Retired: %.2f MiB | Reusable: %.2f MiB",
+                       BytesToMiB(liveBytes), BytesToMiB(retiredBytes), BytesToMiB(capacityBytes - liveBytes - retiredBytes));
+    ImGui::TextWrapped("Payload capacity: %.2f MiB | Page tables: %.1f KiB", BytesToMiB(capacityBytes), tableBytes / 1024.0f);
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("Pages stay allocated for reuse. Hover columns for details.");
+    ImGui::PopTextWrapPos();
+
+    static constexpr const char* labels[] = {"Pool", "Pages", "Allocated", "Live", "Retired", "Free", "Tables", "Fill"};
+    static constexpr const char* descriptions[] = {
+        "Pool names also prefix GPU buffer debug labels. Each pool has one stable page-table root.",
+        "Physical payload buffers, not logical address pages. A large allocation can span several logical pages.",
+        "Actual GPU allocation bytes: payload buffers plus the root and leaf tables. Includes allocator padding.",
+        "Active suballocations, including upload alignment padding. Excludes retired snapshots.",
+        "Superseded upload allocations not yet reclaimed. They may already be GPU-complete; reclamation runs on updates.",
+        "Reusable payload capacity: capacity minus live and retired bytes. Free ranges may be fragmented.",
+        "Page-table overhead: the root plus allocated leaf tables. Already included in Allocated and Tracked Total.",
+        "Occupied payload capacity (live + retired). This is utilization of allocated pages, not a fixed scene budget.",
+    };
+    ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable |
+        ImGuiTableFlags_Sortable | ImGuiTableFlags_Hideable | ImGuiTableFlags_ScrollX | ImGuiTableFlags_SizingFixedFit;
+    // ScrollX creates a child region: a zero height consumes the remaining panel space,
+    // which may already be exhausted by the preceding profiler sections. Reserve all
+    // rows plus the horizontal scrollbar, and let the parent Profiler scroll vertically.
+    auto const& style = ImGui::GetStyle();
+    float const headerHeight = ImGui::GetTextLineHeight() + style.CellPadding.y * 2.0f;
+    float const rowHeight = ImGui::GetFrameHeight() + style.CellPadding.y * 2.0f;
+    float const tableHeight = headerHeight + rowHeight * static_cast<float>(stats.size()) + style.ScrollbarSize + 2.0f;
+    if (!ImGui::BeginTable("##GPUScenePageStatsTable", 8, flags, ImVec2(0.0f, tableHeight)))
+        return;
+    for (int column = 0; column < 8; ++column)
+    {
+        ImGuiTableColumnFlags columnFlags = column == 2
+            ? ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_PreferSortDescending : ImGuiTableColumnFlags_None;
+        ImGui::TableSetupColumn(labels[column], columnFlags);
+    }
+    ImGui::TableSetupScrollFreeze(1, 1);
+    ImGui::TableNextRow(ImGuiTableRowFlags_Headers, headerHeight);
+    for (int column = 0; column < 8; ++column)
+    {
+        if (!ImGui::TableSetColumnIndex(column))
+            continue;
+        ImGui::TableHeader(labels[column]);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", descriptions[column]);
+    }
+    if (ImGuiTableSortSpecs* sortSpecs = ImGui::TableGetSortSpecs(); sortSpecs && sortSpecs->SpecsCount > 0)
+    {
+        auto Value = [](GPUScene::PagePoolStat const& stat, int column) -> double
+        {
+            switch (column)
+            {
+            case 1: return static_cast<double>(stat.physicalPages);
+            case 2: return static_cast<double>(stat.payloadBytes + stat.pageTableBytes);
+            case 3: return static_cast<double>(stat.liveBytes);
+            case 4: return static_cast<double>(stat.retiredBytes);
+            case 5: return static_cast<double>(stat.capacityBytes - stat.liveBytes - stat.retiredBytes);
+            case 6: return static_cast<double>(stat.pageTableBytes);
+            case 7:
+                return stat.capacityBytes ? static_cast<double>(stat.liveBytes + stat.retiredBytes) / stat.capacityBytes : 0.0;
+            default: return 0.0;
+            }
+        };
+        ImGuiTableColumnSortSpecs const& spec = sortSpecs->Specs[0];
+        std::sort(stats.begin(), stats.end(), [&](auto const& lhs, auto const& rhs)
+        {
+            double a = Value(lhs, spec.ColumnIndex), b = Value(rhs, spec.ColumnIndex);
+            int cmp = a < b ? -1 : (a > b ? 1 : 0);
+            if (cmp == 0)
+                cmp = std::strcmp(lhs.name.c_str(), rhs.name.c_str());
+            return spec.SortDirection == ImGuiSortDirection_Ascending ? cmp < 0 : cmp > 0;
+        });
+    }
+
+    auto DrawBytes = [](size_t bytes)
+    {
+        if (bytes >= (1u << 20u))
+            ImGui::Text("%.2f MiB", BytesToMiB(bytes));
+        else if (bytes >= 1024u)
+            ImGui::Text("%.1f KiB", bytes / 1024.0f);
+        else
+            ImGui::Text("%zu B", bytes);
+    };
+    for (auto const& stat : stats)
+    {
+        size_t const occupiedBytes = stat.liveBytes + stat.retiredBytes;
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, rowHeight);
+        if (ImGui::TableNextColumn())
+        {
+            ImGui::TextUnformatted(stat.name.c_str());
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("GPU debug labels:\nGPUScene / %s / Page N\nGPUScene / %s / Page Table Root\n"
+                                  "GPUScene / %s / Page Table Leaf N", stat.name.c_str(), stat.name.c_str(), stat.name.c_str());
+        }
+        if (ImGui::TableNextColumn())
+        {
+            ImGui::Text("%zu", stat.physicalPages);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%zu physical buffers cover %zu logical pages\nLogical page size: %zu bytes\n"
+                                  "1 root + %zu leaf tables", stat.physicalPages, stat.logicalPages, stat.logicalPageBytes,
+                                  stat.leafTables);
+        }
+        if (ImGui::TableNextColumn())
+        {
+            DrawBytes(stat.payloadBytes + stat.pageTableBytes);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Payload allocation: %.2f MiB\nAddressable capacity: %.2f MiB\nPage tables: %.1f KiB",
+                                  BytesToMiB(stat.payloadBytes), BytesToMiB(stat.capacityBytes), stat.pageTableBytes / 1024.0f);
+        }
+        if (ImGui::TableNextColumn())
+            DrawBytes(stat.liveBytes);
+        if (ImGui::TableNextColumn())
+        {
+            DrawBytes(stat.retiredBytes);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%zu retired allocations awaiting reclamation (not necessarily still in flight).",
+                                  stat.retiredAllocations);
+        }
+        if (ImGui::TableNextColumn())
+            DrawBytes(stat.capacityBytes - occupiedBytes);
+        if (ImGui::TableNextColumn())
+            ImGui::Text("%.1f KiB", stat.pageTableBytes / 1024.0f);
+        if (ImGui::TableNextColumn())
+        {
+            if (stat.capacityBytes)
+            {
+                float fill = static_cast<float>(occupiedBytes) / static_cast<float>(stat.capacityBytes);
+                char overlay[32];
+                std::snprintf(overlay, sizeof(overlay), "%.1f%%", fill * 100.0f);
+                ImGui::ProgressBar(fill, ImVec2(ImGui::GetFontSize() * 5.0f, 0.0f), overlay);
+            }
+            else
+                ImGui::TextDisabled("No payload");
+        }
+    }
+    ImGui::EndTable();
+}
+
 static void AppendMemoryFlag(char* buffer, size_t bufferSize, const char* flag)
 {
     size_t len = std::strlen(buffer);
@@ -2886,10 +3036,9 @@ void FRunningImGui()
     if (ImGui::Begin("Profiler"))
     {
         if (timings.empty())
-        {
-            ImGui::Text("No Info");
-        }
-        else
+            ImGui::TextDisabled("No GPU timing data");
+        // Memory/page diagnostics remain useful before GPU timestamps are available.
+        if (GContext->device)
         {
             if (ImGui::TreeNodeEx(PSI_SIGNAL " Device", ImGuiTreeNodeFlags_DefaultOpen))
             {
@@ -2933,9 +3082,22 @@ void FRunningImGui()
                 {
                     Allocator* scratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
                     Vector<GPUScene::MemoryStat> stats(scratch);
-                    GContext->gpuScene->DbgGetMemoryStatistics(stats);
-                    size_t totalBytes = DrawMemoryStatsTable("##GPUSceneMemoryTable", stats);
-                    ImGui::Text("Tracked Total: %.1f MB", totalBytes / static_cast<float>(1 << 20u));
+                    Vector<GPUScene::PagePoolStat> pages(scratch);
+                    GContext->gpuScene->DbgGetMemoryStatistics(stats, &pages);
+                    size_t totalBytes = 0;
+                    for (auto const& stat : stats)
+                        totalBytes += stat.bytes;
+                    ImGui::Text("Tracked Total: %.2f MiB", BytesToMiB(totalBytes));
+                    if (ImGui::TreeNodeEx("Buffer Pages", ImGuiTreeNodeFlags_DefaultOpen))
+                    {
+                        DrawGPUScenePageStatsTable(pages);
+                        ImGui::TreePop();
+                    }
+                    if (ImGui::TreeNode("Allocation Breakdown"))
+                    {
+                        DrawMemoryStatsTable("##GPUSceneMemoryTable", stats);
+                        ImGui::TreePop();
+                    }
                 }
                 ImGui::TreePop();
             }
@@ -2959,7 +3121,7 @@ void FRunningImGui()
                 }
                 ImGui::TreePop();
             }
-            if (ImGui::TreeNodeEx(PSI_TIME " Frametime", ImGuiTreeNodeFlags_DefaultOpen))
+            if (!timings.empty() && ImGui::TreeNodeEx(PSI_TIME " Frametime", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 Allocator* frameScratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
                 static constexpr size_t kHistogramSamples = 5e3, kFrametimeSamples = 3e2;

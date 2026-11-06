@@ -92,6 +92,7 @@ struct GPUSceneImpl
     using UpdateResult = GPUScene::UpdateResult;
     using GPUSceneTables = GPUScene::GPUSceneTables;
     using MemoryStat = GPUScene::MemoryStat;
+    using PagePoolStat = GPUScene::PagePoolStat;
     using TLASBuildResult = GPUScene::TLASBuildResult;
     GPUScene& owner;
     RHIDevice* mDevice{nullptr};
@@ -376,7 +377,7 @@ struct GPUSceneImpl
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
     UpdateResult EndScene(GPUSceneTables& tables, GPUSceneUpdateFlags flag);
 
-    void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
+    void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats, Vector<PagePoolStat>* outPages = nullptr) const;
     [[nodiscard]] String DbgGetBufferStatistics() const;
 
     [[nodiscard]] TLASBuildResult BuildTLAS(RHICommandList* cmd, bool update);
@@ -447,16 +448,16 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
                            GPUSceneDesc const& desc, AllocatorStack* frameScratch) :
     owner(owner), mDevice(device), mJobs(jobs), mAllocator(allocator), mStackAlloc(frameScratch),
     mUploadRetirement(device, allocator),
-    mDynamicStaging(device, allocator, mUploadRetirement, desc.uploadPageSize),
-    mInstanceBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
-    mMaterialBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
-    mLightBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
-    mEmissiveClusterBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
-    mLightBVHNodeBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
-    mLightBVHLightIndexBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
-    mLightBVHBitmaskBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
-    mLightBVHGlobalIndexBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
-    mLightBVHNodeIndexBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
+    mDynamicStaging(device, allocator, mUploadRetirement, desc.uploadPageSize, "Dynamic Staging"),
+    mInstanceBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize, "Instances"),
+    mMaterialBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize, "Materials"),
+    mLightBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize, "Lights"),
+    mEmissiveClusterBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize, "Emissive Clusters"),
+    mLightBVHNodeBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize, "Light BVH Nodes"),
+    mLightBVHLightIndexBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize, "Light BVH Light Indices"),
+    mLightBVHBitmaskBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize, "Light BVH Bitmasks"),
+    mLightBVHGlobalIndexBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize, "Light BVH Global Indices"),
+    mLightBVHNodeIndexBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize, "Light BVH Node Indices"),
     mTexture2DPool(device, allocator, {.maxBindings = desc.texturesBudget}),
     mTexture3DPool(device, allocator,
                    {.maxBindings = kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack}),
@@ -469,7 +470,7 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
     mUploadTextureQueue(std::bit_ceil(static_cast<size_t>(desc.texturesBudget) + 1), allocator),
     mUploadBufferQueue(std::bit_ceil(static_cast<size_t>(kGPUSceneBufferQueueCapacity)), allocator),
     mLightBVHRefitLevels(allocator), mTLASInstanceStride(mDevice->WriteAccelerationStructureInstanceData({}, nullptr)),
-    mTLASInstances(device, allocator, mUploadRetirement, desc.uploadPageSize)
+    mTLASInstances(device, allocator, mUploadRetirement, desc.uploadPageSize, "TLAS Instances")
 {
     CHECK(mDevice != nullptr);
     CHECK(mJobs != nullptr);
@@ -502,10 +503,11 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
                      .shared = true},
         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
             RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly};
-    mPrimitive = ConstructUnique<PrimitivePageBuffer>(allocator, device, allocator, desc.primitivePageSize, geometryDesc);
+    mPrimitive = ConstructUnique<PrimitivePageBuffer>(allocator, device, allocator, desc.primitivePageSize,
+                                                    geometryDesc, "Static Geometry");
     geometryDesc.resource.hostAccess = RHIResourceHostAccess::Invisible;
     mDynamicPrimitive = ConstructUnique<PrimitivePageBuffer>(allocator, device, allocator, desc.dynamicGeometryPageSize,
-                                                           geometryDesc);
+                                                           geometryDesc, "Dynamic Geometry");
     if (mDirectGeometryUpload)
         LOG(GPUScene, LogDebug, "Direct GPU Memory Access available. Uploading geometry pages via direct copy.");
     mTLASBuffer =
@@ -935,7 +937,7 @@ void GPUScene::UpdateUBO(RendererUBO& globals) const
         globals.envSHCoeffs[i] = mEnvSHCoeffs[i];
 }
 
-void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
+void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats, Vector<PagePoolStat>* outPages) const
 {
     auto AddBufferSize = [&](RHIDeviceScopedHandle<RHIBuffer> const& buffer) -> size_t
     {
@@ -943,7 +945,32 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
             return 0;
         return buffer->GetAllocationSize();
     };
-    auto AddPagedBufferSize = [&](auto const& buffer) -> size_t { return buffer.GetAllocationSize(); };
+    auto AddPages = [&](auto const& buffer)
+    {
+        size_t bytes;
+        if (outPages)
+        {
+            auto page = buffer.GetStatistics();
+            bytes = page.payloadBytes + page.pageTableBytes;
+            outPages->push_back({
+                .name = buffer.GetDebugName(),
+                .physicalPages = page.physicalPages,
+                .logicalPages = page.logicalPages,
+                .leafTables = page.leafTables,
+                .logicalPageBytes = page.logicalPageBytes,
+                .capacityBytes = page.capacityBytes,
+                .payloadBytes = page.payloadBytes,
+                .pageTableBytes = page.pageTableBytes,
+                .liveBytes = page.liveBytes,
+                .retiredBytes = page.retiredBytes,
+                .retiredAllocations = page.retiredAllocations,
+            });
+        }
+        else
+            bytes = buffer.GetAllocationSize();
+        // Each pool is counted once, including its root and leaves.
+        outStats.push_back({Format("{} (Pages + Tables)", buffer.GetDebugName()), bytes});
+    };
     auto SumBuffers = [&](auto const& buffers) -> size_t
     {
         size_t bytes = 0;
@@ -952,19 +979,22 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
         return bytes;
     };
 
-    size_t primitiveBytes = mPrimitive->GetAllocationSize();
+    AddPages(*mPrimitive);
+    AddPages(*mDynamicPrimitive);
+    AddPages(mDynamicStaging);
+    AddPages(mInstanceBuffer);
+    AddPages(mMaterialBuffer);
+    AddPages(mLightBuffer);
+    AddPages(mEmissiveClusterBuffer);
+    AddPages(mLightBVHNodeBuffer);
+    AddPages(mLightBVHLightIndexBuffer);
+    AddPages(mLightBVHBitmaskBuffer);
+    AddPages(mLightBVHGlobalIndexBuffer);
+    AddPages(mLightBVHNodeIndexBuffer);
+    AddPages(mTLASInstances);
+
     auto texture2DStats = mTexture2DPool.GetStats();
     auto texture3DStats = mTexture3DPool.GetStats();
-    size_t instanceBytes = AddPagedBufferSize(mInstanceBuffer);
-    size_t materialBytes = AddPagedBufferSize(mMaterialBuffer);
-    size_t lightBytes = AddPagedBufferSize(mLightBuffer);
-    size_t emissiveClusterBytes = AddPagedBufferSize(mEmissiveClusterBuffer);
-    size_t lightBVHNodeBytes = AddPagedBufferSize(mLightBVHNodeBuffer);
-    size_t lightBVHIndexBytes = AddPagedBufferSize(mLightBVHLightIndexBuffer);
-    size_t lightBVHBitmaskBytes = AddPagedBufferSize(mLightBVHBitmaskBuffer);
-    size_t lightBVHGlobalBytes = AddPagedBufferSize(mLightBVHGlobalIndexBuffer);
-    size_t lightBVHNodeIndexBytes = AddPagedBufferSize(mLightBVHNodeIndexBuffer);
-    size_t tlasInstanceBytes = AddPagedBufferSize(mTLASInstances);
     size_t blasBytes = SumBuffers(mBLASBuffers);
     size_t curveBLASBytes = SumBuffers(mCurveBLASBuffers);
     size_t tlasBytes = AddBufferSize(mTLASBuffer);
@@ -974,19 +1004,8 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     size_t sobolBytes = AddBufferSize(owner.mSobolMatricesBuffer);
     size_t defaultBufferBytes = AddBufferSize(owner.mFoundationDefaultBufferFloat);
 
-    size_t dynamicPrimitiveBytes = mDynamicPrimitive->GetAllocationSize();
-    size_t dynamicStagingBytes = mDynamicStaging.GetAllocationSize();
-
-    outStats.push_back({"Primitive Buffer (Buffer)", primitiveBytes});
-    outStats.push_back({"Dynamic Primitive Buffer (Buffer)", dynamicPrimitiveBytes});
-    outStats.push_back({"Dynamic Primitive Staging (Buffer)", dynamicStagingBytes});
     outStats.push_back({"Texture2D Pool (Texture)", texture2DStats.ownedTextureBytes});
     outStats.push_back({"Texture3D Pool (Texture)", texture3DStats.ownedTextureBytes});
-    outStats.push_back({"Instance Buffer (Buffer)", instanceBytes});
-    outStats.push_back({"TLAS Instance Buffer (Buffer)", tlasInstanceBytes});
-    outStats.push_back({"Dynamic Upload Buffers (Buffer)",
-                        materialBytes + lightBytes + emissiveClusterBytes + lightBVHNodeBytes + lightBVHIndexBytes +
-                            lightBVHBitmaskBytes + lightBVHGlobalBytes + lightBVHNodeIndexBytes});
     outStats.push_back({"Mesh BLAS (Buffer)", blasBytes});
     outStats.push_back({"Curve BLAS (Buffer)", curveBLASBytes});
     outStats.push_back({"TLAS (Buffer)", tlasBytes});
@@ -999,17 +1018,26 @@ String GPUSceneImpl::DbgGetBufferStatistics() const
 {
     String res;
     Vector<MemoryStat> stats(GLOBAL_ALLOC);
-    DbgGetMemoryStatistics(stats);
+    Vector<PagePoolStat> pages(GLOBAL_ALLOC);
+    DbgGetMemoryStatistics(stats, &pages);
     size_t totalBytes = 0;
     for (auto const& stat : stats)
         totalBytes += stat.bytes;
 
     auto texture2DStats = mTexture2DPool.GetStats();
     auto texture3DStats = mTexture3DPool.GetStats();
-    fmt::format_to(std::back_inserter(res), "Primitive Pages: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
-                   mPrimitive->GetAllocationSize() / static_cast<float>(1 << 20u),
-                   mPrimitive->GetUsedBytes() / static_cast<float>(1 << 20u),
-                   mPrimitive->Capacity() / static_cast<float>(1 << 20u));
+    for (auto const& page : pages)
+    {
+        constexpr float mib = static_cast<float>(1 << 20u);
+        size_t const freeBytes = page.capacityBytes - page.liveBytes - page.retiredBytes;
+        fmt::format_to(std::back_inserter(res),
+                       "{}: {} physical pages, {} logical pages ({} bytes/page), {} leaf tables\n"
+                       "  Live {:.2f} MiB, retired {:.2f} MiB ({} allocations), free {:.2f} / {:.2f} MiB capacity; "
+                       "payload {:.2f} MiB, page tables {:.1f} KiB\n",
+                       page.name, page.physicalPages, page.logicalPages, page.logicalPageBytes, page.leafTables,
+                       page.liveBytes / mib, page.retiredBytes / mib, page.retiredAllocations, freeBytes / mib,
+                       page.capacityBytes / mib, page.payloadBytes / mib, page.pageTableBytes / 1024.0f);
+    }
     fmt::format_to(std::back_inserter(res),
                    "Texture2D Pool: {:.1f} MB owned, {:.1f} MB referenced, used {} / {} bindings, owned {} textures\n",
                    texture2DStats.ownedTextureBytes / static_cast<float>(1 << 20u),
@@ -1020,9 +1048,6 @@ String GPUSceneImpl::DbgGetBufferStatistics() const
                    texture3DStats.ownedTextureBytes / static_cast<float>(1 << 20u),
                    texture3DStats.referencedTextureBytes / static_cast<float>(1 << 20u), texture3DStats.activeBindings,
                    texture3DStats.capacity, texture3DStats.ownedTextureBindings);
-    fmt::format_to(std::back_inserter(res), "Instance Buffer: {:.1f} MB allocated, used {} / {} instances\n",
-                   mInstanceBuffer.GetAllocationSize() / static_cast<float>(1 << 20u), mInstanceBuffer.Used(),
-                   mInstanceBuffer.Capacity());
     for (auto const& stat : stats)
         fmt::format_to(std::back_inserter(res), "{}: {:.1f} MB\n", stat.name,
                        stat.bytes / static_cast<float>(1 << 20u));
@@ -3408,10 +3433,10 @@ void GPUScene::ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffs
     outPrimitiveFlags = g->dynamic ? GSInstanceFlagsBits::Dynamic : GSInstanceFlagsBits{};
 }
 GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables, GPUSceneUpdateFlags flag) { return mImpl->EndScene(tables, flag); }
-void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
+void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats, Vector<PagePoolStat>* outPages) const
 {
     std::lock_guard<Mutex> residencyLock(mImpl->mUploadStateMutex);
-    mImpl->DbgGetMemoryStatistics(outStats);
+    mImpl->DbgGetMemoryStatistics(outStats, outPages);
 }
 String GPUScene::DbgGetBufferStatistics() const
 {
