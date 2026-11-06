@@ -2317,10 +2317,55 @@ static void DrawHierarchyTree()
     ImGui::SameLine();
     ImGui::TextDisabled("%zu nodes / %zu instances / %zu lights", scene.GetNodes().size(),
                         scene.GetInstances().size(), scene.GetLights().size());
+    static char nameFilter[128]{};
+    static int typeFilter = 0;
+    static constexpr char const* typeNames[] = {"All types", "Mesh", "Light", "Env", "Node (Root)"};
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+    ImGui::InputTextWithHint("##HierarchyNameFilter", "Search by name...", nameFilter, sizeof(nameFilter));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::Combo("##HierarchyTypeFilter", &typeFilter, typeNames, IM_ARRAYSIZE(typeNames));
     ImGui::Separator();
     auto const nodes = scene.GetNodes();
     auto const& hierarchy = scene.mHierarchy;
     constexpr uint32_t invalid = FSceneHierarchy::Invalid;
+    bool const filtering = nameFilter[0] != '\0' || typeFilter != 0;
+    Vector<uint8_t> visible(filtering ? nodes.size() : 0u, 0u, GLOBAL_ALLOC);
+    if (filtering)
+    {
+        for (uint32_t index : hierarchy.order)
+        {
+            FSceneNode const& node = nodes[index];
+            int const light = scene.LightIndex(node.light);
+            int const instance = scene.InstanceIndex(node.instance);
+            bool typeMatches = false;
+            switch (typeFilter)
+            {
+            case 0: typeMatches = true; break;
+            case 1: typeMatches = instance >= 0 && scene.GetInstances()[instance].type == FInstanceType::Mesh; break;
+            case 2: typeMatches = light >= 0 && scene.GetLights()[light].type != FLightType::Environment; break;
+            case 3: typeMatches = light >= 0 && scene.GetLights()[light].type == FLightType::Environment; break;
+            case 4:
+                typeMatches = hierarchy.parents[index] == invalid && instance < 0 && light < 0 && node.camera.IsNil();
+                break;
+            }
+            bool nameMatches = true;
+            if (nameFilter[0] != '\0')
+            {
+                FUUID const nameId = node.name.IsNil() && light >= 0 ? scene.GetLights()[light].name : node.name;
+                char const* name = ResolveSceneName(nameId);
+                nameMatches = name && ImStristr(name, nullptr, nameFilter, nullptr) != nullptr;
+            }
+            visible[index] = typeMatches && nameMatches;
+        }
+        // Include ancestors of matches so filtered children remain reachable.
+        for (auto it = hierarchy.order.rbegin(); it != hierarchy.order.rend(); ++it)
+        {
+            uint32_t const parent = hierarchy.parents[*it];
+            if (visible[*it] && parent != invalid)
+                visible[parent] = 1;
+        }
+    }
     Vector<uint8_t> revealPath(GEditor.revealSelectedNode ? nodes.size() : 0u, 0u, GLOBAL_ALLOC);
     if (!revealPath.empty())
     {
@@ -2335,6 +2380,7 @@ static void DrawHierarchyTree()
     Vector<uint32_t> pending(GLOBAL_ALLOC);
     pending.assign(hierarchy.roots.rbegin(), hierarchy.roots.rend());
     FUUID deleteNode{};
+    bool anyVisible = false;
     // Explicit stack also handles very deep imported hierarchies without recursive UI calls.
     while (!pending.empty())
     {
@@ -2345,8 +2391,21 @@ static void DrawHierarchyTree()
             ImGui::TreePop();
             continue;
         }
+        if (filtering && !visible[index])
+            continue;
+        anyVisible = true;
         FSceneNode const& node = nodes[index];
-        bool const leaf = hierarchy.firstChild[index] == invalid;
+        bool leaf = hierarchy.firstChild[index] == invalid;
+        if (filtering && !leaf)
+        {
+            leaf = true;
+            for (uint32_t child = hierarchy.firstChild[index]; child != invalid; child = hierarchy.nextSibling[child])
+                if (visible[child])
+                {
+                    leaf = false;
+                    break;
+                }
+        }
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                    ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen;
         if (leaf)
@@ -2355,7 +2414,7 @@ static void DrawHierarchyTree()
             flags |= ImGuiTreeNodeFlags_DefaultOpen;
         if (GEditor.highlightSelectedNodeInHierarchy && GEditor.selectedNode == node.id)
             flags |= ImGuiTreeNodeFlags_Selected;
-        if (!revealPath.empty() && revealPath[index])
+        if ((filtering && !leaf) || (!revealPath.empty() && revealPath[index]))
             ImGui::SetNextItemOpen(true);
         FUUID name = node.name;
         char const* kind = "Node";
@@ -2412,9 +2471,15 @@ static void DrawHierarchyTree()
             std::reverse(pending.begin() + static_cast<std::ptrdiff_t>(first), pending.end());
         }
     }
+    if (filtering && !anyVisible)
+        ImGui::TextDisabled("No matching nodes");
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput &&
         ImGui::IsKeyPressed(ImGuiKey_Delete, false))
-        deleteNode = GEditor.selectedNode;
+    {
+        int const selectedIndex = scene.NodeIndex(GEditor.selectedNode);
+        if (!filtering || (selectedIndex >= 0 && visible[selectedIndex]))
+            deleteNode = GEditor.selectedNode;
+    }
     if (!deleteNode.IsNil())
         DeleteSceneNode(deleteNode);
 }
