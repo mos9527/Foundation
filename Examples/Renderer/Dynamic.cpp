@@ -195,14 +195,10 @@ int main(int argc, char** argv)
     auto ctx = Examples_InitVulkan(window, argc, argv, RendererDesc{});   
 
     GPUSceneDesc desc{};
-    desc.primitiveBudget = 64u * 1024u;
-    desc.dynamicGeometryBudget = 256u * 1024u;
-    desc.dynamicStagingBudget = 256u * 1024u;
-    desc.instanceBudget = 8;
-    desc.materialBudget = 8;
-    desc.lightBudget = 8;
-    desc.geometryBudget = 8;
-    desc.tlasInstanceBudget = 8;
+    desc.primitivePageSize = 64u * 1024u;
+    desc.dynamicGeometryPageSize = 256u * 1024u;
+    desc.uploadPageSize = 256u * 1024u;
+    desc.geometryReserve = 8;
     GPUScene gpu(ctx.device.Get(), ctx.jobs.get(), GLOBAL_ALLOC, desc);
     GeometryHandle water{};
     GeometryHandle ground{};

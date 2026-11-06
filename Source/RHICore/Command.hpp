@@ -88,6 +88,9 @@ namespace Foundation::RHI
                                      uint32_t first_instance = 0) = 0;
         virtual RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0,
                                             int32_t vertex_offset = 0, uint32_t first_instance = 0) = 0;
+        virtual RHICommandList& DrawIndirectCount(RHIBuffer* cmd_buffer, size_t cmd_offset,
+                                                  RHIBuffer* count_buffer, size_t count_offset,
+                                                  uint32_t max_draw_count, uint32_t cmd_stride) = 0;
         virtual RHICommandList& DrawIndexedIndirectCount(RHIBuffer* cmd_buffer, size_t cmd_offset,
                                                          RHIBuffer* count_buffer, size_t count_offset,
                                                          uint32_t max_draw_count, uint32_t cmd_stride) = 0;

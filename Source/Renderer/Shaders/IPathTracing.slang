@@ -1,3 +1,4 @@
+import IGPUScene;
 import IBindless;
 import IFlags;
 import ICommon;
@@ -31,16 +32,16 @@ static const uint kCurveMask = 0x04;
 uniform UBO globalParams;
 // Scene
 RaytracingAccelerationStructure TLAS;
-StructuredBuffer<GSInstance> gInstances;
+ByteAddressBuffer gInstances;
 // Primitives, either static or dynamic
 ByteAddressBuffer gPrimBuffer;
 ByteAddressBuffer gDynamicPrimBuffer;
-StructuredBuffer<GSMaterial> gMaterials;
+ByteAddressBuffer gMaterials;
 // Lights
 // GPUScene sorts these by type (env, directional, ...see kGSLightType*)
 // gLights[0] always exists and is the environment light.
-StructuredBuffer<GSLight> gLights;
-StructuredBuffer<GSEmissiveCluster> gEmissiveClusters;
+ByteAddressBuffer gLights;
+ByteAddressBuffer gEmissiveClusters;
 #include "ILightBVH.slang"
 SamplerState gTexSampler;
 
@@ -144,7 +145,7 @@ uint GetLightIndex(uint lightInstance)
 
 GSInstance LoadSceneInstance(uint localInstanceIndex)
 {
-    return gInstances[NonUniformResourceIndex(GetInstanceBufferIndex(localInstanceIndex))];
+    return GSLoad<GSInstance>(gInstances, NonUniformResourceIndex(GetInstanceBufferIndex(localInstanceIndex)));
 }
 
 bool IsCurveInstance(uint instance)
@@ -154,12 +155,12 @@ bool IsCurveInstance(uint instance)
 
 GSMaterial LoadMaterial(uint localMaterialIndex)
 {
-    return gMaterials[NonUniformResourceIndex(GetMaterialBufferIndex(localMaterialIndex))];
+    return GSLoad<GSMaterial>(gMaterials, NonUniformResourceIndex(GetMaterialBufferIndex(localMaterialIndex)));
 }
 
 GSLight LoadSceneLight(uint localLightIndex)
 {
-    return gLights[NonUniformResourceIndex(globalParams.lights.offset + localLightIndex)];
+    return GSLoad<GSLight>(gLights, NonUniformResourceIndex(globalParams.lights.offset + localLightIndex));
 }
 
 void ApplyRayConeAnisotropy(inout HitState hit, GSInstance inst,
@@ -228,15 +229,15 @@ HitState GetHitState(ByteAddressBuffer prims, uint meshOffset, uint primitive, f
     const float3 barycentrics = float3(1.0 - bary.x - bary.y, bary.x, bary.y);
 
     // Fetch triangle indices
-    GSMesh mesh = prims.Load<GSMesh>(meshOffset);
-    uint i0 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 0) * sizeof(uint32_t));
-    uint i1 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 1) * sizeof(uint32_t));
-    uint i2 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 2) * sizeof(uint32_t));
+    GSMesh mesh = GSLoadPrimitive<GSMesh>(prims, meshOffset);
+    uint i0 = GSLoadPrimitive<uint32_t>(prims, mesh.indices.offset + (primitive * 3 + 0) * sizeof(uint32_t));
+    uint i1 = GSLoadPrimitive<uint32_t>(prims, mesh.indices.offset + (primitive * 3 + 1) * sizeof(uint32_t));
+    uint i2 = GSLoadPrimitive<uint32_t>(prims, mesh.indices.offset + (primitive * 3 + 2) * sizeof(uint32_t));
 
     // Fetch and decode vertices
-    FQVertex vq0 = prims.Load<FQVertex>(mesh.vertices.offset + i0 * sizeof(FQVertex));
-    FQVertex vq1 = prims.Load<FQVertex>(mesh.vertices.offset + i1 * sizeof(FQVertex));
-    FQVertex vq2 = prims.Load<FQVertex>(mesh.vertices.offset + i2 * sizeof(FQVertex));
+    FQVertex vq0 = GSLoadPrimitive<FQVertex>(prims, mesh.vertices.offset + i0 * sizeof(FQVertex));
+    FQVertex vq1 = GSLoadPrimitive<FQVertex>(prims, mesh.vertices.offset + i1 * sizeof(FQVertex));
+    FQVertex vq2 = GSLoadPrimitive<FQVertex>(prims, mesh.vertices.offset + i2 * sizeof(FQVertex));
     float3 p0, p1, p2;
     float3 n0, n1, n2;
     float3 t0, t1, t2;
@@ -295,14 +296,14 @@ HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
 float2 GetHitUV(ByteAddressBuffer prims, uint meshOffset, uint primitive, float2 bary)
 {
     const float3 barycentrics = float3(1.0 - bary.x - bary.y, bary.x, bary.y);
-    GSMesh mesh = prims.Load<GSMesh>(meshOffset);
-    uint i0 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 0) * sizeof(uint32_t));
-    uint i1 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 1) * sizeof(uint32_t));
-    uint i2 = prims.Load<uint32_t>(mesh.indices.offset + (primitive * 3 + 2) * sizeof(uint32_t));
+    GSMesh mesh = GSLoadPrimitive<GSMesh>(prims, meshOffset);
+    uint i0 = GSLoadPrimitive<uint32_t>(prims, mesh.indices.offset + (primitive * 3 + 0) * sizeof(uint32_t));
+    uint i1 = GSLoadPrimitive<uint32_t>(prims, mesh.indices.offset + (primitive * 3 + 1) * sizeof(uint32_t));
+    uint i2 = GSLoadPrimitive<uint32_t>(prims, mesh.indices.offset + (primitive * 3 + 2) * sizeof(uint32_t));
 
-    float2 u0 = float2(prims.Load<FQVertex>(mesh.vertices.offset + i0 * sizeof(FQVertex)).uv);
-    float2 u1 = float2(prims.Load<FQVertex>(mesh.vertices.offset + i1 * sizeof(FQVertex)).uv);
-    float2 u2 = float2(prims.Load<FQVertex>(mesh.vertices.offset + i2 * sizeof(FQVertex)).uv);
+    float2 u0 = float2(GSLoadPrimitive<FQVertex>(prims, mesh.vertices.offset + i0 * sizeof(FQVertex)).uv);
+    float2 u1 = float2(GSLoadPrimitive<FQVertex>(prims, mesh.vertices.offset + i1 * sizeof(FQVertex)).uv);
+    float2 u2 = float2(GSLoadPrimitive<FQVertex>(prims, mesh.vertices.offset + i2 * sizeof(FQVertex)).uv);
     
     return u0 * barycentrics.x + u1 * barycentrics.y + u2 * barycentrics.z;
 }
@@ -351,10 +352,11 @@ float4 IntersectInfiniteCone(float3 ro, float3 rd, float3 pa, float3 pb, float r
     return float4(t + tOffset, normal);
 }
 
-FCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint primitive)
+FCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint primitive, bool isDynamic)
 {
     uint leafIndex = primitive / 4u;
-    return gPrimBuffer.Load<FCurveLeaf>(curve.leaves.offset + leafIndex * sizeof(FCurveLeaf));
+    return GSLoadPrimitive<FCurveLeaf>(gPrimBuffer, gDynamicPrimBuffer, isDynamic,
+                                      curve.leaves.offset + leafIndex * sizeof(FCurveLeaf));
 }
 
 HitState GetCurveHitState(uint curveOffset, uint primitive, float2 /*triangleBary*/, GSInstance inst,
@@ -364,8 +366,9 @@ HitState GetCurveHitState(uint curveOffset, uint primitive, float2 /*triangleBar
     hit.uvDX = float2(0.0f);
     hit.uvDY = float2(0.0f);
 
-    GSCurveSet curve = gPrimBuffer.Load<GSCurveSet>(curveOffset);
-    FCurveLeaf leaf = LoadCurveLeaf(curve, primitive);
+    bool isDynamic = GSInstanceIsDynamic(inst);
+    GSCurveSet curve = GSLoadPrimitive<GSCurveSet>(gPrimBuffer, gDynamicPrimBuffer, isDynamic, curveOffset);
+    FCurveLeaf leaf = LoadCurveLeaf(curve, primitive, isDynamic);
 
     float3 objRo = inst.rotation.conjugate().rotate(rayOrigin - inst.transform) / inst.scale;
     float3 objRd = inst.rotation.conjugate().rotate(rayDirection) / inst.scale;
@@ -861,9 +864,9 @@ uint SampleAliasTable(uint byteOffset, uint count, float u, out float pdf)
 {
     uint binIndex = min(uint(u * float(count)), count - 1u);
     float localU = u * float(count) - float(binIndex);
-    GSAlias bin = gPrimBuffer.Load<GSAlias>(byteOffset + binIndex * sizeof(GSAlias));
+    GSAlias bin = GSLoadPrimitive<GSAlias>(gPrimBuffer, byteOffset + binIndex * sizeof(GSAlias));
     uint selected = localU >= bin.select ? min(bin.alias, count - 1u) : binIndex;
-    pdf = gPrimBuffer.Load<GSAlias>(byteOffset + selected * sizeof(GSAlias)).prob;
+    pdf = GSLoadPrimitive<GSAlias>(gPrimBuffer, byteOffset + selected * sizeof(GSAlias)).prob;
     return selected;
 }
 
@@ -872,20 +875,20 @@ void LoadEmissiveClusterTriangle(GSEmissiveCluster cluster, uint triangleIndex,
                                  out float2 uv0, out float2 uv1, out float2 uv2)
 {
     GSInstance inst = LoadSceneInstance(cluster.instanceIndex);
-    GSMesh mesh = gPrimBuffer.Load<GSMesh>(inst.resourceOffset);
+    GSMesh mesh = GSLoadPrimitive<GSMesh>(gPrimBuffer, inst.resourceOffset);
     FMeshlet meshlet =
-        gPrimBuffer.Load<FMeshlet>(mesh.meshlets.offset + cluster.meshletIndex * sizeof(FMeshlet));
+        GSLoadPrimitive<FMeshlet>(gPrimBuffer, mesh.meshlets.offset + cluster.meshletIndex * sizeof(FMeshlet));
     uint triBase = mesh.meshletTriOffset + meshlet.triOffset + triangleIndex * sizeof(MIndex);
-    MIndex tri = gPrimBuffer.Load<MIndex>(triBase);
+    MIndex tri = GSLoadPrimitive<MIndex>(gPrimBuffer, triBase);
     uint vtxBase = mesh.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
-    uint i0 = gPrimBuffer.Load<uint32_t>(vtxBase + uint(tri.v0) * sizeof(uint32_t));
-    uint i1 = gPrimBuffer.Load<uint32_t>(vtxBase + uint(tri.v1) * sizeof(uint32_t));
-    uint i2 = gPrimBuffer.Load<uint32_t>(vtxBase + uint(tri.v2) * sizeof(uint32_t));
+    uint i0 = GSLoadPrimitive<uint32_t>(gPrimBuffer, vtxBase + uint(tri.v0) * sizeof(uint32_t));
+    uint i1 = GSLoadPrimitive<uint32_t>(gPrimBuffer, vtxBase + uint(tri.v1) * sizeof(uint32_t));
+    uint i2 = GSLoadPrimitive<uint32_t>(gPrimBuffer, vtxBase + uint(tri.v2) * sizeof(uint32_t));
     float3 n, t;
     float sign;
-    FQDecode(gPrimBuffer.Load<FQVertex>(mesh.vertices.offset + i0 * sizeof(FQVertex)), p0, n, t, sign, uv0);
-    FQDecode(gPrimBuffer.Load<FQVertex>(mesh.vertices.offset + i1 * sizeof(FQVertex)), p1, n, t, sign, uv1);
-    FQDecode(gPrimBuffer.Load<FQVertex>(mesh.vertices.offset + i2 * sizeof(FQVertex)), p2, n, t, sign, uv2);
+    FQDecode(GSLoadPrimitive<FQVertex>(gPrimBuffer, mesh.vertices.offset + i0 * sizeof(FQVertex)), p0, n, t, sign, uv0);
+    FQDecode(GSLoadPrimitive<FQVertex>(gPrimBuffer, mesh.vertices.offset + i1 * sizeof(FQVertex)), p1, n, t, sign, uv1);
+    FQDecode(GSLoadPrimitive<FQVertex>(gPrimBuffer, mesh.vertices.offset + i2 * sizeof(FQVertex)), p2, n, t, sign, uv2);
     p0 = inst.rotation.rotate(p0 * inst.scale) + inst.transform;
     p1 = inst.rotation.rotate(p1 * inst.scale) + inst.transform;
     p2 = inst.rotation.rotate(p2 * inst.scale) + inst.transform;
@@ -1155,10 +1158,10 @@ bool AddEmissiveClusterHitEmission(
     GSInstance inst = LoadSceneInstance(payload.instance);
     if (inst.emissiveClusterOffset == ~0u || GSInstanceIsDynamic(inst) || GSInstanceType(inst) != kGSInstanceTypeMesh)
         return false;
-    GSMesh mesh = gPrimBuffer.Load<GSMesh>(inst.resourceOffset);
+    GSMesh mesh = GSLoadPrimitive<GSMesh>(gPrimBuffer, inst.resourceOffset);
     if (payload.primitive >= mesh.emissivePrimitiveMap.count)
         return false;
-    uint packed = gPrimBuffer.Load<uint32_t>(mesh.emissivePrimitiveMap.offset + payload.primitive * sizeof(uint32_t));
+    uint packed = GSLoadPrimitive<uint32_t>(gPrimBuffer, mesh.emissivePrimitiveMap.offset + payload.primitive * sizeof(uint32_t));
     if (packed == ~0u)
         return false;
     uint meshletOrdinal = packed >> 8u;
@@ -1180,7 +1183,7 @@ bool AddEmissiveClusterHitEmission(
     }
 
     float trianglePMF =
-        gPrimBuffer.Load<GSAlias>(cluster.aliasOffset + localTriangle * sizeof(GSAlias)).prob;
+        GSLoadPrimitive<GSAlias>(gPrimBuffer, cluster.aliasOffset + localTriangle * sizeof(GSAlias)).prob;
     float3 p0, p1, p2;
     float2 uv0, uv1, uv2;
     LoadEmissiveClusterTriangle(cluster, localTriangle, p0, p1, p2, uv0, uv1, uv2);

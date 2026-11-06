@@ -1490,31 +1490,16 @@ static_assert(std::is_trivially_copyable_v<FSceneHeader>);
 static_assert(std::is_trivially_copyable_v<FSerializedMeshLOD>);
 static_assert(std::is_trivially_copyable_v<FSerializedCurve>);
 
-static constexpr uint32_t kGPUSceneRingFrameSlack = 4u;
 static constexpr uint32_t kGPUScenePersistentTexture2DBindings = 2u; // GGX LUT + Sheen LTC LUT.
 static constexpr uint32_t kGPUScenePersistentTexture3DBindings = 2u; // default SDR/HDR view LUTs.
 static constexpr uint32_t kGPUSceneDefaultTextureBindings = 2u; // _FoundationDefault Texture2D + Texture2DFloat.
 static constexpr uint32_t kGPUSceneEnvMapBindings = 3u; // Env map + marginal/conditional CDF textures.
 static constexpr uint32_t kGPUSceneTextureBindingSlack = 8u;
-static constexpr size_t kGPUSceneByteBudgetSlack = 64u << 10u;
-
-uint32_t CountGPUSceneBudget(size_t count)
+uint32_t CountGPUSceneReservation(size_t count)
 {
     count = std::max<size_t>(count, 1u);
-    CHECK_MSG(count <= UINT32_MAX, "GPUScene count budget {} exceeds uint32_t range", count);
+    CHECK_MSG(count <= UINT32_MAX, "GPUScene reservation {} exceeds uint32_t range", count);
     return static_cast<uint32_t>(count);
-}
-
-uint32_t RingGPUSceneBudget(size_t count) { return CountGPUSceneBudget(count * kGPUSceneRingFrameSlack); }
-
-uint32_t ByteGPUSceneBudget(size_t bytes, size_t minBytes, size_t alignment, size_t maxBytes = UINT32_MAX)
-{
-    if (bytes != 0)
-        bytes += kGPUSceneByteBudgetSlack;
-    size_t budget = AlignUp(std::max(bytes, minBytes), alignment);
-    CHECK_MSG(budget <= maxBytes, "GPUScene byte budget {} exceeds maximum {}", budget, maxBytes);
-    CHECK_MSG(budget <= UINT32_MAX, "GPUScene byte budget {} exceeds uint32_t range", budget);
-    return static_cast<uint32_t>(budget);
 }
 
 void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, FTexture&& texture)
@@ -1665,52 +1650,9 @@ bool FImportedScene::ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allo
 GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCapabilities const& caps) const
 {
     GPUSceneDesc desc{};
-    size_t primitiveBytes = 0;
-    size_t rigidMeshCount = 0;
-    for (auto const& mesh : GetMeshes())
-    {
-        primitiveBytes = AlignUp(primitiveBytes, size_t(4));
-        primitiveBytes += GPUScene::CalculateMeshPrimitiveSize(mesh);
-        ++rigidMeshCount;
-    }
-    for (auto const& curve : GetCurves())
-    {
-        primitiveBytes = AlignUp(primitiveBytes, size_t(4));
-        primitiveBytes += GPUScene::CalculateCurvePrimitiveSize(curve);
-    }
-
-    desc.primitiveBudget = ByteGPUSceneBudget(primitiveBytes, desc.primitiveBudget, size_t(4));
-
-    size_t intersectableLightCount = 0;
-    for (auto const& light : GetLights())
-    {
-        if (light.type == FLightType::Disk || light.type == FLightType::Rect ||
-            ((light.type == FLightType::Point || light.type == FLightType::Spot) && light.radius > 0.0f))
-            intersectableLightCount++;
-    }
-    const size_t tlasInstanceCount = GetInstances().size() + intersectableLightCount;
-    desc.instanceBudget = RingGPUSceneBudget(GetInstances().size());
-    desc.tlasInstanceBudget = RingGPUSceneBudget(tlasInstanceCount);
-    desc.materialBudget = RingGPUSceneBudget(GetMaterials().size());
-    desc.lightBudget = RingGPUSceneBudget(GetLights().size());
-    desc.instanceBudget += desc.lightBudget;
-    desc.tlasInstanceBudget += desc.lightBudget;
-    size_t emissiveClusterCount = 0;
-    size_t dynamicBytes = 0;
-    for (FInstance const& instance : GetInstances())
-    {
-        if (instance.type != FInstanceType::Mesh)
-            continue;
-        int meshIndex = MeshIndex(instance.resource);
-        if (meshIndex < 0)
-            continue;
-        FSerializedMesh const& mesh = GetMeshes()[static_cast<size_t>(meshIndex)];
-        emissiveClusterCount += mesh.emissiveMeshlets.count;
-    }
-    desc.dynamicGeometryBudget = ByteGPUSceneBudget(dynamicBytes, 0, size_t(16));
-    desc.emissiveClusterBudget = RingGPUSceneBudget(emissiveClusterCount);
-    desc.geometryBudget = CountGPUSceneBudget(rigidMeshCount + GetCurves().size());
-    desc.dynamicStagingFramesInFlight = kGPUSceneRingFrameSlack;
+    // Buffer pages grow with content. Only descriptor reservations and CPU/upload-queue
+    // hints depend on the imported scene; no scan or preallocation of payload bytes is needed.
+    desc.geometryReserve = CountGPUSceneReservation(GetMeshes().size() + GetCurves().size());
 
     size_t textureBindings =
         kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings + kGPUSceneTextureBindingSlack;
@@ -1726,7 +1668,7 @@ GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCap
     if (environmentLight && environmentLight->environmentMap)
         textureBindings += kGPUSceneEnvMapBindings;
     textureBindings += kGPUScenePersistentTexture3DBindings;
-    desc.texturesBudget = CountGPUSceneBudget(textureBindings);
+    desc.texturesBudget = CountGPUSceneReservation(textureBindings);
     return desc;
 }
 

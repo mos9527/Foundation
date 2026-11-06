@@ -49,7 +49,7 @@ namespace Foundation::RHI
         void Flush(size_t offset, size_t size) override;
         void Unmap() override;
 
-        vk::DeviceAddress GetBufferAddress() const;
+        vk::DeviceAddress GetBufferAddress() const override;
         RHIBufferScopedHandle<RHIBuffer> CreateAliasedBuffer(RHIBufferDesc const& desc, size_t offset) override;
         RHIBuffer* GetAliasedBuffer(Handle handle) const override;
         void DestroyAliasedBuffer(Handle handle) override;

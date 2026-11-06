@@ -512,14 +512,10 @@ int main(int argc, char** argv)
 
     // GPUScene init
     GPUSceneDesc desc{};
-    desc.primitiveBudget = 1024u * 1024u;
-    desc.dynamicGeometryBudget = 1024u * 1024u;
-    desc.dynamicStagingBudget = 1024u * 1024u;
-    desc.instanceBudget = 8;
-    desc.materialBudget = 8;
-    desc.lightBudget = 8;
-    desc.geometryBudget = 8;
-    desc.tlasInstanceBudget = 8;
+    desc.primitivePageSize = 1024u * 1024u;
+    desc.dynamicGeometryPageSize = 1024u * 1024u;
+    desc.uploadPageSize = 64u * 1024u;
+    desc.geometryReserve = 8;
     GPUScene gpu(ctx.device.Get(), ctx.jobs.get(), GLOBAL_ALLOC, desc);
 
     GeometryHandle mario{};

@@ -402,45 +402,14 @@ static void ApplySceneCamera(FImportedScene const& scene, FArcballCamera& camera
     }
 }
 
-static size_t GPUSceneBudgetBytes(GPUSceneDesc const& desc)
+static GPUScene* CreateGPUScene(FImportedScene const& scene)
 {
-    size_t const lightBVHBudget = size_t(desc.lightBudget) + desc.emissiveClusterBudget;
-    return size_t(desc.primitiveBudget) +
-           size_t(desc.instanceBudget) * sizeof(GSInstance) +
-           size_t(desc.materialBudget) * sizeof(GSMaterial) +
-           size_t(desc.lightBudget) * sizeof(GSLight) +
-           size_t(desc.emissiveClusterBudget) * sizeof(GSEmissiveCluster) +
-           lightBVHBudget * 2u * sizeof(GSLightBVHNode) +
-           lightBVHBudget * sizeof(uint32_t) +
-           lightBVHBudget * sizeof(uint2) +
-           size_t(desc.lightBudget) * sizeof(uint32_t) +
-           lightBVHBudget * 2u * sizeof(uint32_t) +
-           size_t(desc.tlasInstanceBudget) * GContext->device->WriteAccelerationStructureInstanceData({}, nullptr) +
-           size_t(desc.tlasBudget) +
-           size_t(desc.tlasScratchBudget) +
-           size_t(desc.dynamicGeometryBudget) +
-           size_t(desc.dynamicStagingBudget) * (size_t(desc.dynamicStagingFramesInFlight) + 1u);
-}
-
-static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBytes)
-{
-    auto estimatedBudget = CalculateSceneGPUDesc(scene, GContext->device->GetCapabilities());
-    LOG(Editor, LogDebug,
-        "Estimated GPUScene budget: primitive {} MB, dynamic {} MB, instances {}, TLAS instances {}, materials {}, lights {}, emissive clusters {}, textures {}",
-        estimatedBudget.primitiveBudget / (1u << 20),
-        estimatedBudget.dynamicGeometryBudget / (1u << 20),
-        estimatedBudget.instanceBudget,
-        estimatedBudget.tlasInstanceBudget,
-        estimatedBudget.materialBudget,
-        estimatedBudget.lightBudget,
-        estimatedBudget.emissiveClusterBudget,
-        estimatedBudget.texturesBudget);
-
-    outBudgetBytes = GPUSceneBudgetBytes(estimatedBudget);
-
-    auto* gpu = Construct<GPUScene>(GContext->allocator, GContext->device.Get(), GContext->jobs.get(), GContext->allocator,
-                                    estimatedBudget, GContext->editorFrameScratch.get());
-    return gpu;
+    auto desc = CalculateSceneGPUDesc(scene, GContext->device->GetCapabilities());
+    LOG(Editor, LogDebug, "GPUScene pages: primitive {} KiB, dynamic {} KiB, upload {} KiB; {} texture descriptors",
+        desc.primitivePageSize / 1024u, desc.dynamicGeometryPageSize / 1024u, desc.uploadPageSize / 1024u,
+        desc.texturesBudget);
+    return Construct<GPUScene>(GContext->allocator, GContext->device.Get(), GContext->jobs.get(), GContext->allocator,
+                                desc, GContext->editorFrameScratch.get());
 }
 
 static void DestroyGPUScene(GPUScene*& gpu)
@@ -483,7 +452,6 @@ struct SceneLoadStats
     size_t sceneInstanceCount = 0;
     size_t sceneCurveCount = 0;
     size_t sceneMaterialCount = 0;
-    size_t sceneGpuBudget = 0;
     double uploadMs = 0.0;
 };
 
@@ -512,7 +480,7 @@ static void InitializeSceneLoad(FImportedScene& scene, SceneLoadStats& stats, GP
     stats.sceneInstanceCount = scene.GetInstances().size();
     stats.sceneCurveCount = scene.GetCurves().size();
     stats.sceneMaterialCount = scene.GetMaterials().size();
-    newGPUScene = CreateGPUScene(scene, stats.sceneGpuBudget);
+    newGPUScene = CreateGPUScene(scene);
 }
 
 static void BeginSceneUpload(FImportedScene& scene, GPUScene* gpu, FSceneGPUResources& resources)

@@ -1,8 +1,9 @@
 import ICommon;
+import IGPUScene;
 
 ByteAddressBuffer skinningInput;
 ByteAddressBuffer skinningPalette;
-RWByteAddressBuffer dynamicPrimitives;
+ByteAddressBuffer dynamicPrimitives;
 
 struct PushConstant
 {
@@ -35,7 +36,7 @@ void main(uint32_t id : SV_DispatchThreadID)
     float weightSum = weights.x + weights.y + weights.z + weights.w;
     if (weightSum <= 0.0)
     {
-        dynamicPrimitives.Store<FQVertex>(pc.vertexDestinationOffset + id * sizeof(FQVertex), source);
+        GSStorePrimitive<FQVertex>(dynamicPrimitives, pc.vertexDestinationOffset + id * sizeof(FQVertex), source);
         return;
     }
     weights /= weightSum;
@@ -53,7 +54,7 @@ void main(uint32_t id : SV_DispatchThreadID)
     float3x3 basis = (float3x3)skin;
     normal = normalize(mul(basis, normal));
     tangent = normalize(mul(basis, tangent));
-    dynamicPrimitives.Store<FQVertex>(
+    GSStorePrimitive<FQVertex>(dynamicPrimitives,
         pc.vertexDestinationOffset + id * sizeof(FQVertex),
         FQPack(position, normal, tangent, bitangentSign, uv));
 }

@@ -56,14 +56,9 @@ int main(int argc, char** argv)
     {
         JoltGPUSceneDesc desc{};
         desc.physics.maxBodies = kMaxBodies;
-        desc.gpu.primitiveBudget = 64u * 1024u;
-        desc.gpu.dynamicGeometryBudget = 256u * 1024u;
-        desc.gpu.dynamicStagingBudget = 256u * 1024u;
-        desc.gpu.instanceBudget = kMaxBodies * 2;
-        desc.gpu.materialBudget = 8;
-        desc.gpu.lightBudget = 8;
-        desc.gpu.geometryBudget = 8;
-        desc.gpu.tlasInstanceBudget = kMaxBodies * 2;
+        desc.gpu.primitivePageSize = 64u * 1024u;
+        desc.gpu.dynamicGeometryPageSize = 256u * 1024u;
+        desc.gpu.geometryReserve = 8;
         JoltGPUScene scene(ctx.device.Get(), ctx.jobs.get(), desc);
 
         PhysicsShapeHandle floorShape{};

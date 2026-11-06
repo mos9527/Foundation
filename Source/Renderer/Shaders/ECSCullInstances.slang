@@ -1,3 +1,4 @@
+import IGPUScene;
 import ICommon;
 import IFlags;
 import IHiZ;
@@ -8,7 +9,7 @@ uniform UBO globalParams;
 
 RWStructuredBuffer<Atomic<uint>> outTasksCounter;
 RWStructuredBuffer<MeshletTaskWork> outTasks;
-StructuredBuffer<GSInstance> instances;
+ByteAddressBuffer instances;
 ByteAddressBuffer primitive;
 RWStructuredBuffer<MeshletTaskDispatch> outTasksDispatch;
 
@@ -84,10 +85,10 @@ void emitTasks(uint iid, GSMesh mesh, bool clearVisibility)
 
 bool loadInstanceMesh(uint iid, out GSInstance inst, out GSMesh mesh)
 {
-    inst = instances[iid];
+    inst = GSLoad<GSInstance>(instances, iid);
     if (GSInstanceType(inst) != 0u || GSInstanceIsDynamic(inst))
         return false;
-    mesh = primitive.Load<GSMesh>(inst.resourceOffset);
+    mesh = GSLoadPrimitive<GSMesh>(primitive, inst.resourceOffset);
 
     float3 worldCenter = pointToWorld(mesh.boundsCenter, inst);
     float3 viewCenter = mul(globalParams.view, float4(worldCenter, 1.0f)).xyz;

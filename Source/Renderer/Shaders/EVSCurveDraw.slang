@@ -1,29 +1,34 @@
-// Vertex shader for DOTS curve triangle MDI draws. The static Primitive buffer is
-// bound as a UINT32 index buffer; SV_VertexID is the curve-local vertex index.
+import IGPUScene;
+// DOTS curve MDI draws pull indices and vertices from the selected scene page table.
 // Leaf data reconstructs a radial normal / strand UV for the shared EPSGBuffer.
 #include "ICommon.slang"
 
 uniform UBO globalParams;
-StructuredBuffer<GSInstance> instances;
+ByteAddressBuffer instances;
 ByteAddressBuffer primitive;
+ByteAddressBuffer dynamicPrimitives;
 StructuredBuffer<uint> drawInstanceIDs;
 
-FCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint leafIndex)
+FCurveLeaf LoadCurveLeaf(GSCurveSet curve, uint leafIndex, bool isDynamic)
 {
-    return primitive.Load<FCurveLeaf>(curve.leaves.offset + leafIndex * sizeof(FCurveLeaf));
+    return GSLoadPrimitive<FCurveLeaf>(primitive, dynamicPrimitives, isDynamic,
+                                      curve.leaves.offset + leafIndex * sizeof(FCurveLeaf));
 }
 
 [shader("vertex")]
 V2F main(uint vertexID: SV_VertexID, uint drawID: SV_DrawIndex)
 {
     uint instanceID = drawInstanceIDs[drawID];
-    GSInstance inst = instances[instanceID];
-    GSCurveSet curve = primitive.Load<GSCurveSet>(inst.resourceOffset);
-    FCurveDOTSVertex vtx =
-        primitive.Load<FCurveDOTSVertex>(curve.vertices.offset + vertexID * sizeof(FCurveDOTSVertex));
+    GSInstance inst = GSLoad<GSInstance>(instances, instanceID);
+    bool isDynamic = GSInstanceIsDynamic(inst);
+    GSCurveSet curve = GSLoadPrimitive<GSCurveSet>(primitive, dynamicPrimitives, isDynamic, inst.resourceOffset);
+    vertexID = GSLoadPrimitive<uint32_t>(primitive, dynamicPrimitives, isDynamic,
+                                         curve.indices.offset + vertexID * sizeof(uint32_t));
+    FCurveDOTSVertex vtx = GSLoadPrimitive<FCurveDOTSVertex>(
+        primitive, dynamicPrimitives, isDynamic, curve.vertices.offset + vertexID * sizeof(FCurveDOTSVertex));
 
     uint leafIndex = vertexID / 8u;
-    FCurveLeaf leaf = LoadCurveLeaf(curve, leafIndex);
+    FCurveLeaf leaf = LoadCurveLeaf(curve, leafIndex, isDynamic);
     float3 axis = leaf.p1 - leaf.p0;
     float axisLen2 = dot(axis, axis);
     float3 tangent = axisLen2 > 1e-12f ? normalize(axis) : float3(0.0f, 1.0f, 0.0f);

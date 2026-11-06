@@ -1,3 +1,4 @@
+import IGPUScene;
 import IBindless;
 import ICommon;
 import IBxDF;
@@ -7,7 +8,7 @@ import IMath;
 [[SpecializationConstant]] int flags;
 
 uniform UBO globalParams;
-StructuredBuffer<GSLight> lights;
+ByteAddressBuffer lights;
 Texture2D<float4> RT0;
 Texture2D<float4> RT1;
 Texture2D<float4> RT2;
@@ -66,12 +67,12 @@ bool shadow(float3 p, float3 l, float tMax = INF)
 
 float EnvLightAzimuth()
 {
-    return lights[globalParams.lights.offset].params.x / 180.0f * Pi;
+    return GSLoad<GSLight>(lights, globalParams.lights.offset).params.x / 180.0f * Pi;
 }
 
 float3 EnvLightTint()
 {
-    GSLight gl = lights[globalParams.lights.offset];
+    GSLight gl = GSLoad<GSLight>(lights, globalParams.lights.offset);
     return gl.color * gl.power;
 }
 
@@ -135,7 +136,7 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
         bool tileHasSurface = bounds.minPosition.x <= bounds.maxPosition.x;
         for (uint lightIndex = groupIndex; lightIndex < globalParams.lights.count;
              lightIndex += kTileThreadCount) {
-            GSLight light = lights[globalParams.lights.offset + lightIndex];
+            GSLight light = GSLoad<GSLight>(lights, globalParams.lights.offset + lightIndex);
             uint lightType = GSLightType(light);
             if (lightType == kGSLightTypeEnvironment || !any(light.color * light.power > 0.0f))
                 continue;
@@ -178,7 +179,7 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
         diffuseOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         float3 envLight = EnvLightTint();
         if (globalParams.hasEnvMap != 0u &&
-            GSLightHasFlag(lights[globalParams.lights.offset], uint32_t(GSLightFlagsBits.EnvironmentMap))) {
+            GSLightHasFlag(GSLoad<GSLight>(lights, globalParams.lights.offset), uint32_t(GSLightFlagsBits.EnvironmentMap))) {
             float2 uvNdc = (tid.xy + 0.5f) / float2(globalParams.fbWidth, globalParams.fbHeight);
             float4 ndcFar = float4(uvNdc.x * 2.0f - 1.0f, 1.0f - uvNdc.y * 2.0f, 1.0f, 1.0f);
             float4 wsFar = mul(globalParams.inverseViewProj, ndcFar);
@@ -242,7 +243,7 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
         // TODO: Area lights. That's probably going to be ReSTIR DI if we'd want soft shadows from those...
         for (uint li = 0; li < lightCount; li++) {
             uint lightIndex = useFullLightList ? li : tileLightIndices[li];
-            GSLight gl = lights[globalParams.lights.offset + lightIndex];
+            GSLight gl = GSLoad<GSLight>(lights, globalParams.lights.offset + lightIndex);
             uint32_t lightType = GSLightType(gl);
             float3 lightColor = gl.color * gl.power;
             if (!any(lightColor > 0.0f)) continue;
@@ -301,7 +302,7 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
 
         float3 envTint = EnvLightTint();
         bool envHasEnvMap = globalParams.hasEnvMap != 0u &&
-            GSLightHasFlag(lights[globalParams.lights.offset], uint32_t(GSLightFlagsBits.EnvironmentMap));
+            GSLightHasFlag(GSLoad<GSLight>(lights, globalParams.lights.offset), uint32_t(GSLightFlagsBits.EnvironmentMap));
         float3 diffuseAlbedo = baseColor * (1.0f - metallic);
         float ao = (flags & uint32_t(ViewFlagsBits.EnableRasterAmbientOcclusion)) != 0
                      ? ambientOcclusion.Load(uint3(tid, 0))

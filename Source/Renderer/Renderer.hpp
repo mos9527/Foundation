@@ -183,8 +183,6 @@ struct RendererResources
     ResourceHandle tlas{kInvalidHandle};
     BindlessPool* textures2D{nullptr};
     BindlessPool* textures3D{nullptr};
-    RHIBuffer* primitiveBufferRHI{nullptr};
-    RHIBuffer* dynamicPrimitiveBufferRHI{nullptr};
     bool hasDynamicGeometry{false};
     bool hasDynamicTextures{false};
     bool hasCurveGeometry{false};

@@ -1,10 +1,11 @@
+import IGPUScene;
 import IBindless;
 import ICommon;
 import IFlags;
 import IMath;
 [[SpecializationConstant]] int flags;
 uniform UBO globalParams;
-StructuredBuffer<GSMaterial> materials;
+ByteAddressBuffer materials;
 SamplerState textureSampler;
 RWTexture2D<uint32_t> overdraw;
 struct Fragment
@@ -29,7 +30,7 @@ Fragment drawMeshlet(V2F input)
 Fragment drawTextureLOD(V2F input)
 {
     Fragment output;
-    GSMaterial material = materials[globalParams.materials.offset + input.materialIndex];
+    GSMaterial material = GSLoad<GSMaterial>(materials, globalParams.materials.offset + input.materialIndex);
     float3 color = float3(0.0f);
     if (material.baseColorTexture != ~0u)
     {
@@ -69,7 +70,7 @@ float Bayer4x4(uint2 pixel)
 Fragment drawGBuffer(V2F input, float2 fragCoord){
     Fragment output;
     int materialFlags = globalParams.dbgMaterialFlags;
-    GSMaterial material = materials[globalParams.materials.offset + input.materialIndex];
+    GSMaterial material = GSLoad<GSMaterial>(materials, globalParams.materials.offset + input.materialIndex);
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
         baseColor *= SampleMaterialTexture(material.baseColorTexture, input.uv);

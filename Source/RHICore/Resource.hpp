@@ -31,6 +31,9 @@ namespace Foundation::RHI
         RHIBufferUsage usage{};
         size_t size{}; // size in bytes
         size_t alignment{4}; // alignment in bytes, may be ignored by implementations
+        // This buffer represents allocations reached through device addresses. Its barriers must
+        // cover those allocations as well, not just the address table. Backing buffers must be shared.
+        bool deviceAddressTable{false};
 
         static RHIBufferDesc CreateStagingDesc(size_t size)
         {
@@ -110,6 +113,8 @@ namespace Foundation::RHI
         [[nodiscard]] virtual RHIBuffer* GetAliasedBuffer(Handle handle) const = 0;
         virtual void DestroyAliasedBuffer(Handle handle) = 0;
         [[nodiscard]] virtual size_t GetAllocationSize() const = 0;
+        // Requires RHIBufferUsageBits::DeviceAddress. Valid for the lifetime of this buffer.
+        [[nodiscard]] virtual uint64_t GetBufferAddress() const = 0;
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };

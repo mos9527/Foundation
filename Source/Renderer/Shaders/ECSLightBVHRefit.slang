@@ -1,3 +1,4 @@
+import IGPUScene;
 #include "ICommon.slang"
 import ILightBVHNode;
 
@@ -9,10 +10,10 @@ struct PushConstant
 [[vk::push_constant]] PushConstant pc;
 
 uniform UBO globalParams;
-StructuredBuffer<GSLight> lights;
-RWStructuredBuffer<GSLightBVHNode> lightBVHNodes;
-StructuredBuffer<uint> lightBVHLightIndices;
-StructuredBuffer<uint> gNodeIndices;
+ByteAddressBuffer lights;
+ByteAddressBuffer lightBVHNodes;
+ByteAddressBuffer lightBVHLightIndices;
+ByteAddressBuffer gNodeIndices;
 
 float3 SafeNormalize(float3 v)
 {
@@ -124,9 +125,9 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
 {
     if (DTid.x >= pc.gNodeCount)
         return;
-    uint localIndex = gNodeIndices[pc.gFirstNodeOffset + DTid.x];
+    uint localIndex = GSLoad<uint>(gNodeIndices, pc.gFirstNodeOffset + DTid.x);
     uint nodeIndex = globalParams.lightBVHNodes.offset + localIndex;
-    GSLightBVHNode node = lightBVHNodes[nodeIndex];
+    GSLightBVHNode node = GSLoad<GSLightBVHNode>(lightBVHNodes, nodeIndex);
     uint count = LightBVHNodeLightCount(node);
     uint offset = LightBVHNodeLightOffset(node);
 
@@ -136,8 +137,8 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
     float flux = 0.0f;
     for (uint i = 0; i < count; ++i)
     {
-        uint lightIndex = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
-        GSLight light = lights[globalParams.lights.offset + lightIndex];
+        uint lightIndex = GSLoad<uint>(lightBVHLightIndices, globalParams.lightBVHLightIndices.offset + offset + i);
+        GSLight light = GSLoad<GSLight>(lights, globalParams.lights.offset + lightIndex);
         float3 cMin, cMax, coneDir;
         float cosCone;
         ComputeLightBounds(light, cMin, cMax, coneDir, cosCone);
@@ -158,8 +159,8 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
         attributes.cosConeAngle = 1.0f;
         for (uint i = 0; i < count; ++i)
         {
-            uint lightIndex = lightBVHLightIndices[globalParams.lightBVHLightIndices.offset + offset + i];
-            GSLight light = lights[globalParams.lights.offset + lightIndex];
+            uint lightIndex = GSLoad<uint>(lightBVHLightIndices, globalParams.lightBVHLightIndices.offset + offset + i);
+            GSLight light = GSLoad<GSLight>(lights, globalParams.lights.offset + lightIndex);
             float3 cMin, cMax, coneDir;
             float cosCone;
             ComputeLightBounds(light, cMin, cMax, coneDir, cosCone);
@@ -173,7 +174,7 @@ void updateLeafNodes(uint3 DTid : SV_DispatchThreadID)
         attributes.cosConeAngle = kLightBVHInvalidCosConeAngle;
     }
     PackLightBVHNodeAttributes(node, attributes);
-    lightBVHNodes[nodeIndex] = node;
+    GSStore<GSLightBVHNode>(lightBVHNodes, nodeIndex, node);
 }
 
 [shader("compute")]
@@ -182,13 +183,13 @@ void updateInternalNodes(uint3 DTid : SV_DispatchThreadID)
 {
     if (DTid.x >= pc.gNodeCount)
         return;
-    uint localIndex = gNodeIndices[pc.gFirstNodeOffset + DTid.x];
+    uint localIndex = GSLoad<uint>(gNodeIndices, pc.gFirstNodeOffset + DTid.x);
     uint nodeIndex = globalParams.lightBVHNodes.offset + localIndex;
-    GSLightBVHNode node = lightBVHNodes[nodeIndex];
+    GSLightBVHNode node = GSLoad<GSLightBVHNode>(lightBVHNodes, nodeIndex);
     uint leftIndex = nodeIndex + 1u;
     uint rightIndex = globalParams.lightBVHNodes.offset + LightBVHNodeRightChild(node);
-    LightBVHNodeAttributes left = UnpackLightBVHNode(lightBVHNodes[leftIndex]);
-    LightBVHNodeAttributes right = UnpackLightBVHNode(lightBVHNodes[rightIndex]);
+    LightBVHNodeAttributes left = UnpackLightBVHNode(GSLoad<GSLightBVHNode>(lightBVHNodes, leftIndex));
+    LightBVHNodeAttributes right = UnpackLightBVHNode(GSLoad<GSLightBVHNode>(lightBVHNodes, rightIndex));
 
     float3 leftMin = left.origin - left.extent;
     float3 leftMax = left.origin + left.extent;
@@ -204,5 +205,5 @@ void updateInternalNodes(uint3 DTid : SV_DispatchThreadID)
         left.coneDirection, left.cosConeAngle, right.coneDirection, right.cosConeAngle,
         attributes.cosConeAngle);
     PackLightBVHNodeAttributes(node, attributes);
-    lightBVHNodes[nodeIndex] = node;
+    GSStore<GSLightBVHNode>(lightBVHNodes, nodeIndex, node);
 }

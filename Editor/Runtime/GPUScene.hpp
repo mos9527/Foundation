@@ -18,8 +18,7 @@ struct FSceneGPUResources
 
 bool IsSceneEnvironmentTexture(FImportedScene const& scene, size_t textureIndex);
 
-GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI::RHIDeviceCapabilities const& caps,
-                                   uint32_t minLightBudget = 1024u);
+GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI::RHIDeviceCapabilities const& caps);
 void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources& outResources);
 void UploadSceneEnvironment(FImportedScene const& scene, FLight const& environment, GPUScene& gpu);
 

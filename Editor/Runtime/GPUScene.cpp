@@ -12,12 +12,9 @@ bool IsSceneEnvironmentTexture(FImportedScene const& scene, size_t textureIndex)
            scene.GetTextures()[textureIndex].id == environment->environmentTexture;
 }
 
-GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI::RHIDeviceCapabilities const& caps,
-                                   uint32_t minLightBudget)
+GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI::RHIDeviceCapabilities const& caps)
 {
-    GPUSceneDesc desc = scene.CalculateGPUSceneDesc(caps);
-    desc.lightBudget = std::max(desc.lightBudget, minLightBudget);
-    return desc;
+    return scene.CalculateGPUSceneDesc(caps);
 }
 
 void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources& outResources)

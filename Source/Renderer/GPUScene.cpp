@@ -1,4 +1,5 @@
 #include "GPUScene.hpp"
+#include "GPUSceneBuffer.hpp"
 #include <Core/Allocator.hpp>
 #include <Core/AllocatorStack.hpp>
 #include <Core/Atomic.hpp>
@@ -10,8 +11,9 @@
 #include <bit>
 #include <condition_variable>
 #include <cstddef>
-    #include <numbers>
-    #include "LightBVH.hpp"
+#include <numbers>
+#include <numeric>
+#include "LightBVH.hpp"
 #include "Precompute.hpp"
 #include "Renderer.hpp"
 #include "Tables/GGX.hpp"
@@ -60,40 +62,11 @@ static void GPUSceneAccumulateUploadBudget(size_t& budget, size_t bytes)
 static constexpr size_t kMinDirectGeometryUploadHeapSize = 512ull * (1ull << 20);
 static constexpr uint32_t kGPUScenePersistentTexture3DBindings = 3u; // GGX IOR/Inv IOR + sheen LTC LUTs.
 static constexpr uint32_t kGPUSceneTextureBindingSlack = 8u;
-static constexpr size_t kGPUSceneByteBudgetSlack = 64u << 10u;
 
 template <typename T>
-struct UploadGPURingBuffer
-{
-    RHIDeviceScopedHandle<RHIBuffer> mBuffer;
-    T *mBegin, *mPrevRing, *mRing, *mEnd;
-
-    UploadGPURingBuffer(RHIDevice* device, size_t budget)
-    {
-        mBuffer = device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
-                                                     .hostAccess = RHIResourceHostAccess::WriteOnly,
-                                                     .coherent = true},
-                                        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
-                                            RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
-                                        .size = budget * sizeof(T)});
-        mBegin = mRing = mPrevRing = mBuffer->Map<T>();
-        mEnd = mBegin + budget;
-    }
-    Pair<T*, uint32_t> Allocate(uint32_t count)
-    {
-        CHECK_MSG(count <= Capacity(), "GPU upload ring allocation overflow: requested {} elements, capacity {}", count,
-                  Capacity());
-        T* begin = mRing;
-        if (static_cast<size_t>(mEnd - begin) < count) // Wrap
-            begin = mRing = mBegin;
-        uint32_t offset = static_cast<uint32_t>(begin - mBegin);
-        mPrevRing = begin, mRing = begin + count;
-        return {begin, offset};
-    }
-    void Reset() { mRing = mBegin; }
-    [[nodiscard]] uint32_t Used() const { return mRing - mPrevRing; }
-    [[nodiscard]] uint32_t Capacity() const { return static_cast<uint32_t>(mEnd - mBegin); }
-};
+using UploadGPUPagedBuffer = GPUSceneBuffers::UploadBuffer<T>;
+using PrimitivePageBuffer = GPUSceneBuffers::PagedBuffer<char, GS_PRIMITIVE_PAGE_SHIFT>;
+using UploadBytePageBuffer = GPUSceneBuffers::UploadBuffer<char, GS_PRIMITIVE_PAGE_SHIFT>;
 
 template <typename T>
 uint32_t FreelistPop(Vector<T>& storage, Vector<uint32_t>& freelist)
@@ -160,22 +133,13 @@ struct GPUSceneImpl
     };
     Vector<Geometry> mGeometry;
     Vector<uint32_t> mGeometryFreelist;
-    RHIDeviceScopedHandle<RHIVirtualAllocator> mPrimitiveAlloc;
-    // Fast path for UMA devices?
-    char* mPrimitiveMapped{nullptr};
+    UniquePtr<PrimitivePageBuffer> mPrimitive;
     bool mDirectGeometryUpload{false};
-    // Dynamic geometry
-    // Topology for these do NOT change (e.g. skinning, morphing), otherwise
-    // rebuilding BLASes is required.
+    GPUSceneBuffers::Retirement mUploadRetirement;
+    // Dynamic geometry keeps stable virtual offsets; topology changes require a BLAS rebuild.
     bool mDynamicIsUpdate{false};
-    char* mDynamicStagingMapped{nullptr};
-    RHIDeviceScopedHandle<RHIBuffer> mDynamicPrimitiveBuffer;
-    RHIDeviceScopedHandle<RHIBuffer> mDynamicStagingBuffer;
-    RHIDeviceScopedHandle<RHIVirtualAllocator> mDynamicPrimitiveAlloc;
-    uint32_t mDynamicStagingFrames{0};
-    uint32_t mDynamicStagingFrameIndex{0};
-    uint32_t mDynamicStagingFrameSize{0};
-    uint32_t mDynamicStagingCursor{0};
+    UniquePtr<PrimitivePageBuffer> mDynamicPrimitive;
+    UploadBytePageBuffer mDynamicStaging;
     Vector<RHICommandList::CopyBufferRegion> mDynamicUploadRegions;
     struct DynamicTextureUpload
     {
@@ -195,19 +159,19 @@ struct GPUSceneImpl
     uint32_t mLastRefitCount{0};
     uint32_t mLastRebuildCount{0};
     uint32_t mMeshletGlobalCounter{0};
-    UploadGPURingBuffer<GSInstance> mInstanceBuffer;
-    UploadGPURingBuffer<GSMaterial> mMaterialBuffer;
+    UploadGPUPagedBuffer<GSInstance> mInstanceBuffer;
+    UploadGPUPagedBuffer<GSMaterial> mMaterialBuffer;
 
     // Light BVH
     bool mLightBVHNeedsRefit{false};
-    UploadGPURingBuffer<GSLight> mLightBuffer;
-    UploadGPURingBuffer<GSEmissiveCluster> mEmissiveClusterBuffer;
-    UploadGPURingBuffer<GSLightBVHNode> mLightBVHNodeBuffer;
+    UploadGPUPagedBuffer<GSLight> mLightBuffer;
+    UploadGPUPagedBuffer<GSEmissiveCluster> mEmissiveClusterBuffer;
+    UploadGPUPagedBuffer<GSLightBVHNode> mLightBVHNodeBuffer;
     Vector<LightBVHRefitLevel> mLightBVHRefitLevels;
-    UploadGPURingBuffer<uint32_t> mLightBVHLightIndexBuffer;
-    UploadGPURingBuffer<uint2> mLightBVHBitmaskBuffer;
-    UploadGPURingBuffer<uint32_t> mLightBVHGlobalIndexBuffer;
-    UploadGPURingBuffer<uint32_t> mLightBVHNodeIndexBuffer;
+    UploadGPUPagedBuffer<uint32_t> mLightBVHLightIndexBuffer;
+    UploadGPUPagedBuffer<uint2> mLightBVHBitmaskBuffer;
+    UploadGPUPagedBuffer<uint32_t> mLightBVHGlobalIndexBuffer;
+    UploadGPUPagedBuffer<uint32_t> mLightBVHNodeIndexBuffer;
 
     // BLAS
     Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
@@ -225,9 +189,10 @@ struct GPUSceneImpl
     RHIDeviceScopedHandle<RHIBuffer> mLightBLASBuffer;
 
     // TLAS
+    bool mTLASBuilt{false};
     uint32_t mTLASInstanceStride{0};
     RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;
-    UploadGPURingBuffer<char> mTLASInstances;
+    UploadBytePageBuffer mTLASInstances;
     void EnsureTLASCapacity(uint32_t totalInstances);
     uint32_t CountLiveInstances() const;
     uint32_t CountTLASInstances() const;
@@ -373,9 +338,11 @@ struct GPUSceneImpl
                                    RHITexture* texture, uint32_t layer, uint32_t mip, Vector<BlobCopyTask>& outWrites);
     void FlushDirectGeometryUpload();
 
-    // Allocation in ring buffers
+    // Paged snapshots; unchanged tables retain their live allocations.
     template <typename T>
-    GSOffsetCount UploadTable(UploadGPURingBuffer<T>& ring, Span<T> data, uint64_t hash, GSOffsetCount previous,
+    GSOffsetCount UploadTable(UploadGPUPagedBuffer<T>& pages, Span<T> data);
+    template <typename T>
+    GSOffsetCount UploadTable(UploadGPUPagedBuffer<T>& pages, Span<T> data, uint64_t hash, GSOffsetCount previous,
                               uint64_t previousHash);
 
 
@@ -464,8 +431,8 @@ void GPUSceneImpl::FlushDirectGeometryUpload()
 {
     if (!mDirectGeometryUpload)
         return;
-    if (mPrimitiveAlloc->GetPeakUsage())
-        owner.mPrimitiveBuffer->Flush(0, mPrimitiveAlloc->GetPeakUsage());
+    std::lock_guard<Mutex> lock(mUploadStateMutex);
+    mPrimitive->Flush();
 }
 
 GPUScene::GPUScene(RHIDevice* device, JobSystem* jobs, Allocator* allocator, GPUSceneDesc const& desc,
@@ -479,13 +446,17 @@ GPUScene::GPUScene(RHIDevice* device, JobSystem* jobs, Allocator* allocator, GPU
 GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, Allocator* allocator,
                            GPUSceneDesc const& desc, AllocatorStack* frameScratch) :
     owner(owner), mDevice(device), mJobs(jobs), mAllocator(allocator), mStackAlloc(frameScratch),
-    mInstanceBuffer(device, desc.instanceBudget), mMaterialBuffer(device, desc.materialBudget),
-    mLightBuffer(device, desc.lightBudget), mEmissiveClusterBuffer(device, desc.emissiveClusterBudget),
-    mLightBVHNodeBuffer(device, (desc.lightBudget + desc.emissiveClusterBudget) * 2u),
-    mLightBVHLightIndexBuffer(device, desc.lightBudget + desc.emissiveClusterBudget),
-    mLightBVHBitmaskBuffer(device, desc.lightBudget + desc.emissiveClusterBudget),
-    mLightBVHGlobalIndexBuffer(device, desc.lightBudget),
-    mLightBVHNodeIndexBuffer(device, (desc.lightBudget + desc.emissiveClusterBudget) * 2u),
+    mUploadRetirement(device, allocator),
+    mDynamicStaging(device, allocator, mUploadRetirement, desc.uploadPageSize),
+    mInstanceBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
+    mMaterialBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
+    mLightBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
+    mEmissiveClusterBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
+    mLightBVHNodeBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
+    mLightBVHLightIndexBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
+    mLightBVHBitmaskBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
+    mLightBVHGlobalIndexBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
+    mLightBVHNodeIndexBuffer(device, allocator, mUploadRetirement, desc.uploadPageSize),
     mTexture2DPool(device, allocator, {.maxBindings = desc.texturesBudget}),
     mTexture3DPool(device, allocator,
                    {.maxBindings = kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack}),
@@ -494,11 +465,11 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
     mGeometry(allocator), mGeometryFreelist(allocator), mDynamicUploadRegions(allocator),
     mDynamicTextureUploads(allocator), mDynamicTextureGPUUpdates(allocator), mDynamicTextures(allocator),
     mDynamicGeometries(allocator),
-    mUploadGeometryQueue(std::bit_ceil(static_cast<size_t>(desc.geometryBudget) + 1), allocator),
+    mUploadGeometryQueue(std::bit_ceil(static_cast<size_t>(desc.geometryReserve) + 1), allocator),
     mUploadTextureQueue(std::bit_ceil(static_cast<size_t>(desc.texturesBudget) + 1), allocator),
     mUploadBufferQueue(std::bit_ceil(static_cast<size_t>(kGPUSceneBufferQueueCapacity)), allocator),
     mLightBVHRefitLevels(allocator), mTLASInstanceStride(mDevice->WriteAccelerationStructureInstanceData({}, nullptr)),
-    mTLASInstances(device, desc.tlasInstanceBudget * mTLASInstanceStride)
+    mTLASInstances(device, allocator, mUploadRetirement, desc.uploadPageSize)
 {
     CHECK(mDevice != nullptr);
     CHECK(mJobs != nullptr);
@@ -514,63 +485,29 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
     }();
     (void)samplingSelfTestsPassed;
 #endif
-    mGeometry.reserve(desc.geometryBudget);
-    mBLASes.reserve(desc.geometryBudget);
-    mBLASBuffers.reserve(desc.geometryBudget);
-    mCurveBLASes.reserve(desc.geometryBudget);
-    mCurveBLASBuffers.reserve(desc.geometryBudget);
+    mGeometry.reserve(desc.geometryReserve);
+    mBLASes.reserve(desc.geometryReserve);
+    mBLASBuffers.reserve(desc.geometryReserve);
+    mCurveBLASes.reserve(desc.geometryReserve);
+    mCurveBLASBuffers.reserve(desc.geometryReserve);
     mTexture2DSlots.reserve(desc.texturesBudget);
     mTexture3DSlots.reserve(kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack);
-    mPrimitiveAlloc = mDevice->CreateVirtualAllocator(desc.primitiveBudget);
     auto caps = mDevice->GetCapabilities();
-    size_t directGeometryBudget = static_cast<size_t>(desc.primitiveBudget);
-    size_t minDirectGeometryHeapSize = std::max(directGeometryBudget, kMinDirectGeometryUploadHeapSize);
+    size_t minDirectGeometryHeapSize = std::max<size_t>(desc.primitivePageSize, kMinDirectGeometryUploadHeapSize);
     mDirectGeometryUpload = caps.integratedGPU && caps.deviceLocalHostVisibleBuffers &&
         caps.deviceLocalHostVisibleHeapSize >= minDirectGeometryHeapSize;
-    RHIResourceDesc geoDesc{
-        .heap = RHIDeviceHeapType::Local,
-        .hostAccess = mDirectGeometryUpload ? RHIResourceHostAccess::WriteOnly : RHIResourceHostAccess::Invisible,
-        .shared = true,
-    };
-    owner.mPrimitiveBuffer = mDevice->CreateBuffer(
-        {.resource = geoDesc,
-         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
-             RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly |
-             RHIBufferUsageBits::IndexBuffer,
-         .size = desc.primitiveBudget});
+    RHIBufferDesc geometryDesc{
+        .resource = {.heap = RHIDeviceHeapType::Local,
+                     .hostAccess = mDirectGeometryUpload ? RHIResourceHostAccess::WriteOnly : RHIResourceHostAccess::Invisible,
+                     .shared = true},
+        .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
+            RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly};
+    mPrimitive = ConstructUnique<PrimitivePageBuffer>(allocator, device, allocator, desc.primitivePageSize, geometryDesc);
+    geometryDesc.resource.hostAccess = RHIResourceHostAccess::Invisible;
+    mDynamicPrimitive = ConstructUnique<PrimitivePageBuffer>(allocator, device, allocator, desc.dynamicGeometryPageSize,
+                                                           geometryDesc);
     if (mDirectGeometryUpload)
-    {
-        mPrimitiveMapped = owner.mPrimitiveBuffer->Map<char>();
-        LOG(GPUScene, LogDebug, "Direct GPU Memory Access available ({} MiB budget used). Uploading via direct copy.",
-            directGeometryBudget / (1u << 20));
-    }
-    if (desc.dynamicGeometryBudget != 0)
-    {
-        mDynamicPrimitiveBuffer = mDevice->CreateBuffer(
-            {.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
-             .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
-                 RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly |
-                 RHIBufferUsageBits::IndexBuffer,
-             .size = desc.dynamicGeometryBudget});
-        mDynamicPrimitiveBuffer->DebugSetObjectName("Dynamic Primitive Buffer");
-        mDynamicPrimitiveAlloc = mDevice->CreateVirtualAllocator(desc.dynamicGeometryBudget);
-        LOG(GPUScene, LogDebug, "Dynamic geometry: {} MiB device budget.", desc.dynamicGeometryBudget / (1u << 20));
-    }
-    if (desc.dynamicStagingBudget != 0)
-    {
-        CHECK_MSG(desc.dynamicStagingFramesInFlight >= 1, "dynamicStagingFramesInFlight must be >= 1");
-        mDynamicStagingFrames = desc.dynamicStagingFramesInFlight + 1u;
-        mDynamicStagingFrameSize = desc.dynamicStagingBudget;
-        size_t const stagingBytes = static_cast<size_t>(desc.dynamicStagingBudget) * mDynamicStagingFrames;
-        mDynamicStagingBuffer = mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
-                                                                    .hostAccess = RHIResourceHostAccess::WriteOnly,
-                                                                    .coherent = true,
-                                                                    .staging = true},
-                                                       .usage = RHIBufferUsageBits::TransferSource,
-                                                       .size = stagingBytes});
-        mDynamicStagingBuffer->DebugSetObjectName("Dynamic Texture Staging");
-        mDynamicStagingMapped = mDynamicStagingBuffer->Map<char>();
-    }
+        LOG(GPUScene, LogDebug, "Direct GPU Memory Access available. Uploading geometry pages via direct copy.");
     mTLASBuffer =
         mDevice->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
                                .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
@@ -791,35 +728,44 @@ GPUSceneImpl::GPUSceneImpl(GPUScene& owner, RHIDevice* device, JobSystem* jobs, 
     }
 }
 
-GPUScene::~GPUScene() = default;
+GPUScene::~GPUScene()
+{
+    // The public AS/default resources are destroyed before mImpl, so synchronize here.
+    mImpl->Join();
+    mImpl->mDevice->WaitIdle();
+}
 
 GPUSceneImpl::~GPUSceneImpl()
 {
     Join();
     if (mImmediateUpload)
         mImmediateUpload->WaitIdle();
-    if (mPrimitiveAlloc)
-        mPrimitiveAlloc->Clear();
-    for (auto& g : mGeometry)
-    {
-        g.dynamicBLASBuffer.Reset();
-        g.dynamicBLASScratch.Reset();
-    }
-    if (mDynamicPrimitiveAlloc)
-        mDynamicPrimitiveAlloc->Clear();
+    // Destroy AS objects before their backing buffers. Page allocators clear themselves.
+    mBLASes.clear();
+    mCurveBLASes.clear();
+    mRectBLAS.Reset();
+    mDiskBLAS.Reset();
+    mSphereBLAS.Reset();
 }
 
 template <typename T>
-GSOffsetCount GPUSceneImpl::UploadTable(UploadGPURingBuffer<T>& ring, Span<T> data, uint64_t hash,
-                                        GSOffsetCount previous, uint64_t previousHash)
+GSOffsetCount GPUSceneImpl::UploadTable(UploadGPUPagedBuffer<T>& pages, Span<T> data)
 {
+    CHECK_MSG(data.size() <= UINT32_MAX, "GPUScene table exceeds the virtual element address range");
     uint32_t const count = static_cast<uint32_t>(data.size());
-    if (hash == previousHash && previous.count == count)
-        return previous;
-    auto [ptr, offset] = ring.Allocate(count);
+    auto [ptr, offset] = pages.Allocate(count);
     if (count != 0u)
         std::memcpy(ptr, data.data(), data.size_bytes());
     return {offset, count};
+}
+
+template <typename T>
+GSOffsetCount GPUSceneImpl::UploadTable(UploadGPUPagedBuffer<T>& pages, Span<T> data, uint64_t hash,
+                                        GSOffsetCount previous, uint64_t previousHash)
+{
+    if (hash == previousHash && previous.count == data.size())
+        return previous;
+    return UploadTable(pages, data);
 }
 
 GPUScene::GPUSceneTables GPUSceneImpl::BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount)
@@ -834,6 +780,8 @@ GPUScene::GPUSceneTables GPUSceneImpl::BeginScene(uint32_t instanceCount, uint32
 
 GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUpdateFlags flag)
 {
+    std::lock_guard<Mutex> residencyLock(mUploadStateMutex);
+    mUploadRetirement.BeginEpoch();
     UpdateResult res{};
     CHECK_MSG(!tables.lights.empty(), "Scene must contain an environment light");
     std::sort(tables.lights.begin(), tables.lights.end(), [&](GSLight const& a, GSLight const& b)
@@ -899,14 +847,9 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
         }
     }
     res.emissiveClustersHash = FNV1a64(Span<GSEmissiveCluster const>(emissiveClusters));
-    if (owner.mLastUpdateResult.emissiveClustersHash == res.emissiveClustersHash)
-        res.emissiveClusters = owner.mLastUpdateResult.emissiveClusters;
-    else if (!emissiveClusters.empty())
-    {
-        auto [ptr, offset] = mEmissiveClusterBuffer.Allocate(static_cast<uint32_t>(emissiveClusters.size()));
-        std::memcpy(ptr, emissiveClusters.data(), emissiveClusters.size() * sizeof(GSEmissiveCluster));
-        res.emissiveClusters = {offset, static_cast<uint32_t>(emissiveClusters.size())};
-    }
+    res.emissiveClusters = UploadTable(mEmissiveClusterBuffer, Span<GSEmissiveCluster>(emissiveClusters),
+                                       res.emissiveClustersHash, owner.mLastUpdateResult.emissiveClusters,
+                                       owner.mLastUpdateResult.emissiveClustersHash);
     res.instancesHash = FNV1a64(tables.instances);
     res.materialsHash = FNV1a64(tables.materials);
     res.lightsHash = FNV1a64(tables.lights);
@@ -934,26 +877,16 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
         lightBVH.valid = bvh.valid;
         mLightBVHRefitLevels = bvh.refitLevels;
 
-        if (!bvh.nodes.empty())
+        // Empty tables still replace/retire the previous snapshot.
+        lightBVH.nodes = UploadTable(mLightBVHNodeBuffer, Span<GSLightBVHNode>(bvh.gpuNodes));
+        if (bvh.distantRootNode != UINT32_MAX)
         {
-            auto [nodePtr, nodeOff] = mLightBVHNodeBuffer.Allocate(static_cast<uint32_t>(bvh.gpuNodes.size()));
-            std::memcpy(nodePtr, bvh.gpuNodes.data(), bvh.gpuNodes.size() * sizeof(GSLightBVHNode));
-            lightBVH.nodes.offset = nodeOff;
-            lightBVH.nodes.count = static_cast<uint32_t>(bvh.gpuNodes.size());
-            if (bvh.distantRootNode != UINT32_MAX)
-            {
-                lightBVH.distantNodes.offset = nodeOff + bvh.distantRootNode;
-                lightBVH.distantNodes.count = bvh.distantNodeCount;
-            }
+            lightBVH.distantNodes.offset = lightBVH.nodes.offset + bvh.distantRootNode;
+            lightBVH.distantNodes.count = bvh.distantNodeCount;
         }
-        if (!bvh.nodeIndices.empty())
+        lightBVH.nodeIndices = UploadTable(mLightBVHNodeIndexBuffer, Span<uint32_t>(bvh.nodeIndices));
         {
-            auto [nPtr, nOff] = mLightBVHNodeIndexBuffer.Allocate(static_cast<uint32_t>(bvh.nodeIndices.size()));
-            std::memcpy(nPtr, bvh.nodeIndices.data(), bvh.nodeIndices.size() * sizeof(uint32_t));
-            lightBVH.nodeIndices.offset = nOff;
-            lightBVH.nodeIndices.count = static_cast<uint32_t>(bvh.nodeIndices.size());
-        }
-        {
+            CHECK_MSG(bvh.lightBitmasks.size() <= UINT32_MAX, "GPUScene light masks exceed the virtual element address range");
             auto [maskPtr, maskOff] = mLightBVHBitmaskBuffer.Allocate(static_cast<uint32_t>(bvh.lightBitmasks.size()));
             for (size_t i = 0; i < bvh.lightBitmasks.size(); ++i)
             {
@@ -963,21 +896,8 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
             lightBVH.bitmasks.offset = maskOff;
             lightBVH.bitmasks.count = static_cast<uint32_t>(bvh.lightBitmasks.size());
         }
-        if (!bvh.lightIndices.empty())
-        {
-            auto [idxPtr, idxOff] = mLightBVHLightIndexBuffer.Allocate(static_cast<uint32_t>(bvh.lightIndices.size()));
-            std::memcpy(idxPtr, bvh.lightIndices.data(), bvh.lightIndices.size() * sizeof(uint32_t));
-            lightBVH.lightIndices.offset = idxOff;
-            lightBVH.lightIndices.count = static_cast<uint32_t>(bvh.lightIndices.size());
-        }
-        if (!bvh.globalLightIndices.empty())
-        {
-            auto [gPtr, gOff] =
-                mLightBVHGlobalIndexBuffer.Allocate(static_cast<uint32_t>(bvh.globalLightIndices.size()));
-            std::memcpy(gPtr, bvh.globalLightIndices.data(), bvh.globalLightIndices.size() * sizeof(uint32_t));
-            lightBVH.globalLightIndices.offset = gOff;
-            lightBVH.globalLightIndices.count = static_cast<uint32_t>(bvh.globalLightIndices.size());
-        }
+        lightBVH.lightIndices = UploadTable(mLightBVHLightIndexBuffer, Span<uint32_t>(bvh.lightIndices));
+        lightBVH.globalLightIndices = UploadTable(mLightBVHGlobalIndexBuffer, Span<uint32_t>(bvh.globalLightIndices));
     }
 
     owner.mLastUpdateResult = res;
@@ -1023,7 +943,7 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
             return 0;
         return buffer->GetAllocationSize();
     };
-    auto AddRingBufferSize = [&](auto const& buffer) -> size_t { return buffer.mBuffer->GetAllocationSize(); };
+    auto AddPagedBufferSize = [&](auto const& buffer) -> size_t { return buffer.GetAllocationSize(); };
     auto SumBuffers = [&](auto const& buffers) -> size_t
     {
         size_t bytes = 0;
@@ -1032,19 +952,19 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
         return bytes;
     };
 
-    size_t primitiveBytes = AddBufferSize(owner.mPrimitiveBuffer);
+    size_t primitiveBytes = mPrimitive->GetAllocationSize();
     auto texture2DStats = mTexture2DPool.GetStats();
     auto texture3DStats = mTexture3DPool.GetStats();
-    size_t instanceBytes = AddRingBufferSize(mInstanceBuffer);
-    size_t materialBytes = AddRingBufferSize(mMaterialBuffer);
-    size_t lightBytes = AddRingBufferSize(mLightBuffer);
-    size_t emissiveClusterBytes = AddRingBufferSize(mEmissiveClusterBuffer);
-    size_t lightBVHNodeBytes = AddRingBufferSize(mLightBVHNodeBuffer);
-    size_t lightBVHIndexBytes = AddRingBufferSize(mLightBVHLightIndexBuffer);
-    size_t lightBVHBitmaskBytes = AddRingBufferSize(mLightBVHBitmaskBuffer);
-    size_t lightBVHGlobalBytes = AddRingBufferSize(mLightBVHGlobalIndexBuffer);
-    size_t lightBVHNodeIndexBytes = AddRingBufferSize(mLightBVHNodeIndexBuffer);
-    size_t tlasInstanceBytes = AddRingBufferSize(mTLASInstances);
+    size_t instanceBytes = AddPagedBufferSize(mInstanceBuffer);
+    size_t materialBytes = AddPagedBufferSize(mMaterialBuffer);
+    size_t lightBytes = AddPagedBufferSize(mLightBuffer);
+    size_t emissiveClusterBytes = AddPagedBufferSize(mEmissiveClusterBuffer);
+    size_t lightBVHNodeBytes = AddPagedBufferSize(mLightBVHNodeBuffer);
+    size_t lightBVHIndexBytes = AddPagedBufferSize(mLightBVHLightIndexBuffer);
+    size_t lightBVHBitmaskBytes = AddPagedBufferSize(mLightBVHBitmaskBuffer);
+    size_t lightBVHGlobalBytes = AddPagedBufferSize(mLightBVHGlobalIndexBuffer);
+    size_t lightBVHNodeIndexBytes = AddPagedBufferSize(mLightBVHNodeIndexBuffer);
+    size_t tlasInstanceBytes = AddPagedBufferSize(mTLASInstances);
     size_t blasBytes = SumBuffers(mBLASBuffers);
     size_t curveBLASBytes = SumBuffers(mCurveBLASBuffers);
     size_t tlasBytes = AddBufferSize(mTLASBuffer);
@@ -1054,8 +974,8 @@ void GPUSceneImpl::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     size_t sobolBytes = AddBufferSize(owner.mSobolMatricesBuffer);
     size_t defaultBufferBytes = AddBufferSize(owner.mFoundationDefaultBufferFloat);
 
-    size_t dynamicPrimitiveBytes = AddBufferSize(mDynamicPrimitiveBuffer);
-    size_t dynamicStagingBytes = AddBufferSize(mDynamicStagingBuffer);
+    size_t dynamicPrimitiveBytes = mDynamicPrimitive->GetAllocationSize();
+    size_t dynamicStagingBytes = mDynamicStaging.GetAllocationSize();
 
     outStats.push_back({"Primitive Buffer (Buffer)", primitiveBytes});
     outStats.push_back({"Dynamic Primitive Buffer (Buffer)", dynamicPrimitiveBytes});
@@ -1086,10 +1006,10 @@ String GPUSceneImpl::DbgGetBufferStatistics() const
 
     auto texture2DStats = mTexture2DPool.GetStats();
     auto texture3DStats = mTexture3DPool.GetStats();
-    fmt::format_to(std::back_inserter(res), "Primitive Buffer: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
-                   owner.mPrimitiveBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
-                   mPrimitiveAlloc->GetUsedBytes() / static_cast<float>(1 << 20u),
-                   owner.mPrimitiveBuffer->mDesc.size / static_cast<float>(1 << 20u));
+    fmt::format_to(std::back_inserter(res), "Primitive Pages: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
+                   mPrimitive->GetAllocationSize() / static_cast<float>(1 << 20u),
+                   mPrimitive->GetUsedBytes() / static_cast<float>(1 << 20u),
+                   mPrimitive->Capacity() / static_cast<float>(1 << 20u));
     fmt::format_to(std::back_inserter(res),
                    "Texture2D Pool: {:.1f} MB owned, {:.1f} MB referenced, used {} / {} bindings, owned {} textures\n",
                    texture2DStats.ownedTextureBytes / static_cast<float>(1 << 20u),
@@ -1101,7 +1021,7 @@ String GPUSceneImpl::DbgGetBufferStatistics() const
                    texture3DStats.referencedTextureBytes / static_cast<float>(1 << 20u), texture3DStats.activeBindings,
                    texture3DStats.capacity, texture3DStats.ownedTextureBindings);
     fmt::format_to(std::back_inserter(res), "Instance Buffer: {:.1f} MB allocated, used {} / {} instances\n",
-                   mInstanceBuffer.mBuffer->GetAllocationSize() / static_cast<float>(1 << 20u), mInstanceBuffer.Used(),
+                   mInstanceBuffer.GetAllocationSize() / static_cast<float>(1 << 20u), mInstanceBuffer.Used(),
                    mInstanceBuffer.Capacity());
     for (auto const& stat : stats)
         fmt::format_to(std::back_inserter(res), "{}: {:.1f} MB\n", stat.name,
@@ -1118,11 +1038,11 @@ GPUScene::Result GPUSceneImpl::ReserveMesh(FSerializedMesh const& src, GSMesh& o
     auto const& lod0 = src.lods[0];
     const size_t size = GPUScene::CalculateMeshPrimitiveSize(src);
     constexpr size_t kAlign = 4;
-    uint64_t base = mPrimitiveAlloc->Allocate(size, kAlign);
-    if (base == RHIVirtualAllocator::kInvalidOffset)
+    uint64_t base = mPrimitive->Allocate(size, kAlign);
+    if (base == UINT32_MAX)
     {
         LOG(GPUScene, LogError, "Primitive buffer overflow for serialized mesh. Need {} bytes, {} used of {}", size,
-            mPrimitiveAlloc->GetUsedBytes(), mPrimitiveAlloc->GetCapacity());
+            mPrimitive->GetUsedBytes(), mPrimitive->Capacity());
         return Result::OutOfMemory;
     }
     outOffset = static_cast<uint32_t>(base);
@@ -1167,17 +1087,17 @@ size_t GPUSceneImpl::StageMesh(ImmediateUpload::UploadBatch* batch, FSerializedM
                                uint32_t offset, Vector<BlobCopyTask>& outWrites)
 {
     const size_t size = GPUScene::CalculateMeshPrimitiveSize(src);
+    auto dst = mPrimitive->Resolve(offset, size);
     char* ptr = nullptr;
     if (mDirectGeometryUpload)
     {
-        CHECK(mPrimitiveMapped != nullptr);
-        ptr = mPrimitiveMapped + offset;
+        ptr = dst.buffer->Map<char>() + dst.offset;
     }
     else
     {
         if (batch->ptr + size > batch->end)
             return 0;
-        ptr = batch->Upload(owner.mPrimitiveBuffer.Get(), size, offset);
+        ptr = batch->Upload(dst.buffer, size, dst.offset);
         CHECK(ptr != nullptr);
     }
     // The header is a trivial copy, written inline; only payloads need threaded decode.
@@ -1220,11 +1140,11 @@ GPUScene::Result GPUSceneImpl::ReserveCurve(FSerializedCurve const& src, GSCurve
 
     const size_t size = GPUScene::CalculateCurvePrimitiveSize(src);
     constexpr size_t kAlign = 4;
-    uint64_t base = mPrimitiveAlloc->Allocate(size, kAlign);
-    if (base == RHIVirtualAllocator::kInvalidOffset)
+    uint64_t base = mPrimitive->Allocate(size, kAlign);
+    if (base == UINT32_MAX)
     {
         LOG(GPUScene, LogError, "Primitive buffer overflow for serialized curve. Need {} bytes, {} used of {}", size,
-            mPrimitiveAlloc->GetUsedBytes(), mPrimitiveAlloc->GetCapacity());
+            mPrimitive->GetUsedBytes(), mPrimitive->Capacity());
         return Result::OutOfMemory;
     }
     outOffset = static_cast<uint32_t>(base);
@@ -1252,17 +1172,17 @@ size_t GPUSceneImpl::StageCurve(ImmediateUpload::UploadBatch* batch, FSerialized
                                 GSCurveSet const& header, uint32_t offset, Vector<BlobCopyTask>& outWrites)
 {
     const size_t size = GPUScene::CalculateCurvePrimitiveSize(src);
+    auto dst = mPrimitive->Resolve(offset, size);
     char* ptr = nullptr;
     if (mDirectGeometryUpload)
     {
-        CHECK(mPrimitiveMapped != nullptr);
-        ptr = mPrimitiveMapped + offset;
+        ptr = dst.buffer->Map<char>() + dst.offset;
     }
     else
     {
         if (batch->ptr + size > batch->end)
             return 0;
-        ptr = batch->Upload(owner.mPrimitiveBuffer.Get(), size, offset);
+        ptr = batch->Upload(dst.buffer, size, dst.offset);
         CHECK(ptr != nullptr);
     }
     std::memcpy(ptr, &header, sizeof(GSCurveSet));
@@ -1830,6 +1750,7 @@ void GPUSceneImpl::PrepareUploads(UploadBatchState& state)
               [&](size_t a, size_t b) { return state.geometry[a].footprint > state.geometry[b].footprint; });
     for (size_t index : order)
     {
+        std::lock_guard<Mutex> lock(mUploadStateMutex);
         PendingGeometryUpload& pending = state.geometry[index];
         Geometry* geometry = ResolveGeometry(pending.handle);
         CHECK_MSG(geometry, "Pending geometry references a freed slot");
@@ -1848,9 +1769,6 @@ void GPUSceneImpl::PrepareUploads(UploadBatchState& state)
         CHECK_MSG(dst != nullptr, "Staging buffer too small for buffer upload");
         std::memcpy(dst, pending.data.data(), pending.data.size());
     }
-    if (mDirectGeometryUpload)
-        FlushDirectGeometryUpload();
-
     struct Subresource
     {
         size_t slot;
@@ -1920,6 +1838,9 @@ void GPUSceneImpl::DecodeUploads(UploadBatchState& state, size_t begin, size_t e
 
 void GPUSceneImpl::SubmitUploads(UploadBatchState& state)
 {
+    // Decode jobs have completed; non-coherent direct mappings must be flushed now,
+    // before the submission that makes these geometry pages visible to BLAS builds.
+    FlushDirectGeometryUpload();
     state.batch.End();
     state.nextSemaphoreTimeline = mImmediateUpload->CompletionTimeline();
     state.nextSemaphoreTimelineValue = state.batch.CompletionValue();
@@ -1971,6 +1892,7 @@ void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const
     LOG(GPUScene, LogDebug, "GPUScene constructing {} BLASes", count);
     for (size_t i = 0; i < count; ++i)
     {
+        std::lock_guard<Mutex> lock(mUploadStateMutex);
         Geometry* geometry = ResolveGeometry(state.geometryHandles[i]);
         CHECK(geometry != nullptr);
         bool const curve = geometry->type == kGSInstanceTypeCurve;
@@ -1980,15 +1902,17 @@ void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const
         if (curve)
         {
             GSCurveSet const& source = geometry->curve;
+            auto vertices = mPrimitive->Resolve(source.vertices.offset, uint64_t(source.vertices.count) * sizeof(FCurveDOTSVertex));
+            auto indices = mPrimitive->Resolve(source.indices.offset, uint64_t(source.indices.count) * sizeof(uint32_t));
             info.triangleData = {
                 .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
-                .vertexBuffer = owner.mPrimitiveBuffer.Get(),
-                .vertexOffset = source.vertices.offset,
+                .vertexBuffer = vertices.buffer,
+                .vertexOffset = static_cast<uint32_t>(vertices.offset),
                 .vertexCount = source.vertices.count,
                 .vertexStride = sizeof(FCurveDOTSVertex),
                 .indexFormat = RHIResourceFormat::R32Uint,
-                .indexBuffer = owner.mPrimitiveBuffer.Get(),
-                .indexOffset = source.indices.offset,
+                .indexBuffer = indices.buffer,
+                .indexOffset = static_cast<uint32_t>(indices.offset),
                 .indexCount = source.indices.count,
             };
             ranges[i] = {.primitiveCount = source.indices.count / 3};
@@ -1996,15 +1920,17 @@ void GPUSceneImpl::SubmitBLAS(UploadBatchState& state, ImmediateSubmitDesc const
         else
         {
             GSMesh const& source = geometry->mesh;
+            auto vertices = mPrimitive->Resolve(source.vertices.offset, uint64_t(source.vertices.count) * sizeof(FQVertex));
+            auto indices = mPrimitive->Resolve(source.indices.offset, uint64_t(source.indices.count) * sizeof(uint32_t));
             info.triangleData = {
                 .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
-                .vertexBuffer = owner.mPrimitiveBuffer.Get(),
-                .vertexOffset = source.vertices.offset,
+                .vertexBuffer = vertices.buffer,
+                .vertexOffset = static_cast<uint32_t>(vertices.offset),
                 .vertexCount = source.vertices.count,
                 .vertexStride = sizeof(FQVertex),
                 .indexFormat = RHIResourceFormat::R32Uint,
-                .indexBuffer = owner.mPrimitiveBuffer.Get(),
-                .indexOffset = source.indices.offset,
+                .indexBuffer = indices.buffer,
+                .indexOffset = static_cast<uint32_t>(indices.offset),
                 .indexCount = source.indices.count,
             };
             ranges[i] = {.primitiveCount = source.indices.count / 3};
@@ -2176,25 +2102,25 @@ void GPUSceneImpl::SubmitBLASCompaction(UploadBatchState& state)
 
 void GPUSceneImpl::AllocateDynamicBLAS(Geometry& g)
 {
-    CHECK(mDynamicPrimitiveBuffer);
-    uint32_t const base = g.offset;
     bool const curve = g.type == kGSInstanceTypeCurve;
     uint32_t const vertexOffset = curve ? g.curve.vertices.offset : g.mesh.vertices.offset;
     uint32_t const vertexCount = curve ? g.curve.vertices.count : g.mesh.vertices.count;
     uint32_t const indexOffset = curve ? g.curve.indices.offset : g.mesh.indices.offset;
     uint32_t const indexCount = curve ? g.curve.indices.count : g.mesh.indices.count;
     uint32_t const vertexStride = curve ? sizeof(FCurveDOTSVertex) : sizeof(FQVertex);
+    auto vertices = mDynamicPrimitive->Resolve(vertexOffset, uint64_t(vertexCount) * vertexStride);
+    auto indices = mDynamicPrimitive->Resolve(indexOffset, uint64_t(indexCount) * sizeof(uint32_t));
     RHIAccelerationStructureGeometryInfo geo{
         .type = RHIAccelerationGeometryType::Triangles,
         .triangleData = {
             .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
-            .vertexBuffer = mDynamicPrimitiveBuffer.Get(),
-            .vertexOffset = vertexOffset,
+            .vertexBuffer = vertices.buffer,
+            .vertexOffset = static_cast<uint32_t>(vertices.offset),
             .vertexCount = vertexCount,
             .vertexStride = vertexStride,
             .indexFormat = RHIResourceFormat::R32Uint,
-            .indexBuffer = mDynamicPrimitiveBuffer.Get(),
-            .indexOffset = indexOffset,
+            .indexBuffer = indices.buffer,
+            .indexOffset = static_cast<uint32_t>(indices.offset),
             .indexCount = indexCount,
         }};
     RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = indexCount / 3};
@@ -2232,11 +2158,6 @@ void GPUSceneImpl::AllocateDynamicBLAS(Geometry& g)
 GPUScene::Result GPUSceneImpl::Allocate(uint32_t vertexCount, uint32_t indexCount, GeometryHandle& outHandle,
                                         bool isGpu)
 {
-    if (!mDynamicPrimitiveBuffer)
-    {
-        LOG(GPUScene, LogError, "Allocate called but GPUSceneDesc::dynamicGeometryBudget is 0 (feature disabled)");
-        return Result::InvalidInput;
-    }
     if (vertexCount == 0 || indexCount == 0 || (indexCount % 3u) != 0u)
         return Result::InvalidInput;
 
@@ -2250,21 +2171,21 @@ GPUScene::Result GPUSceneImpl::Allocate(uint32_t vertexCount, uint32_t indexCoun
     uint32_t const vtxBytes = static_cast<uint32_t>(vtxBytes64);
     uint32_t const stride = static_cast<uint32_t>(stride64);
 
+    std::lock_guard<Mutex> lock(mUploadStateMutex);
     GeometryHandle handle{};
     Geometry* gp = nullptr;
     {
-        std::lock_guard<Mutex> lock(mUploadStateMutex);
-        uint64_t base = mDynamicPrimitiveAlloc->Allocate(stride, 16);
-        if (base == RHIVirtualAllocator::kInvalidOffset)
+        uint64_t base = mDynamicPrimitive->Allocate(stride, 16);
+        if (base == UINT32_MAX)
         {
             LOG(GPUScene, LogError, "Dynamic geometry overflow. Need {} bytes, {} used of {}", stride,
-                mDynamicPrimitiveAlloc->GetUsedBytes(), mDynamicPrimitiveAlloc->GetCapacity());
+                mDynamicPrimitive->GetUsedBytes(), mDynamicPrimitive->Capacity());
             return Result::OutOfMemory;
         }
         uint32_t slot = FreelistPop(mGeometry, mGeometryFreelist);
         if (slot == UINT32_MAX)
         {
-            mDynamicPrimitiveAlloc->Free(base);
+            mDynamicPrimitive->Free(base);
             return Result::OutOfMemory;
         }
         Geometry& g = mGeometry[slot];
@@ -2299,11 +2220,6 @@ GPUScene::Result GPUSceneImpl::Allocate(uint32_t vertexCount, uint32_t indexCoun
 GPUScene::Result GPUSceneImpl::Allocate(uint32_t vertexCount, uint32_t indexCount, uint32_t leafCount,
                                         GeometryHandle& outHandle, bool isGpu)
 {
-    if (!mDynamicPrimitiveBuffer)
-    {
-        LOG(GPUScene, LogError, "Allocate called but GPUSceneDesc::dynamicGeometryBudget is 0 (feature disabled)");
-        return Result::InvalidInput;
-    }
     uint64_t const expectedIndexCount = static_cast<uint64_t>(leafCount) * 12u;
     if (vertexCount == 0 || leafCount == 0 || expectedIndexCount > UINT32_MAX ||
         indexCount != static_cast<uint32_t>(expectedIndexCount))
@@ -2317,17 +2233,17 @@ GPUScene::Result GPUSceneImpl::Allocate(uint32_t vertexCount, uint32_t indexCoun
     if (vtxBytes64 > UINT32_MAX || idxBytes64 > UINT32_MAX || leafBytes64 > UINT32_MAX || stride64 > UINT32_MAX)
         return Result::InvalidInput;
 
+    std::lock_guard<Mutex> lock(mUploadStateMutex);
     GeometryHandle handle{};
     Geometry* gp = nullptr;
     {
-        std::lock_guard<Mutex> lock(mUploadStateMutex);
-        uint64_t base = mDynamicPrimitiveAlloc->Allocate(static_cast<uint32_t>(stride64), 16);
-        if (base == RHIVirtualAllocator::kInvalidOffset)
+        uint64_t base = mDynamicPrimitive->Allocate(static_cast<uint32_t>(stride64), 16);
+        if (base == UINT32_MAX)
             return Result::OutOfMemory;
         uint32_t slot = FreelistPop(mGeometry, mGeometryFreelist);
         if (slot == UINT32_MAX)
         {
-            mDynamicPrimitiveAlloc->Free(base);
+            mDynamicPrimitive->Free(base);
             return Result::OutOfMemory;
         }
         Geometry& g = mGeometry[slot];
@@ -2408,23 +2324,29 @@ GPUScene::Result GPUSceneImpl::Allocate(RHITextureDesc const& sourceDesc, const 
 
 uint32_t GPUSceneImpl::AllocateDynamicStaging(uint32_t size, uint32_t alignment)
 {
-    CHECK_MSG(mDynamicStagingMapped, "CPU dynamic updates require GPUSceneDesc::dynamicStagingBudget");
-    uint32_t const offset = AlignUp(mDynamicStagingCursor, alignment);
-    CHECK_MSG(size <= mDynamicStagingFrameSize - std::min(offset, mDynamicStagingFrameSize),
-              "Dynamic staging overflow. Need {} bytes, {} used of {}", size, offset, mDynamicStagingFrameSize);
-    mDynamicStagingCursor = offset + size;
-    return mDynamicStagingFrameIndex * mDynamicStagingFrameSize + offset;
+    CHECK(alignment != 0);
+    // Buffer copies need 4-byte offsets; image copies also need texel-block alignment.
+    uint32_t const copyAlignment = std::lcm(4u, alignment);
+    if (std::has_single_bit(copyAlignment))
+        return mDynamicStaging.AllocateMore(size, copyAlignment).second;
+
+    // RGB formats can require non-power-of-two alignment. Reserve padding, but align
+    // the physical buffer offset, not the virtual offset (page bases may not align).
+    CHECK_MSG(size <= UINT32_MAX - (copyAlignment - 1u), "Dynamic staging size exceeds the virtual byte address range");
+    uint32_t const offset = mDynamicStaging.AllocateMore(size + copyAlignment - 1u, 4u).second;
+    size_t const localOffset = mDynamicStaging.Resolve(offset).offset;
+    uint32_t const padding = static_cast<uint32_t>((copyAlignment - localOffset % copyAlignment) % copyAlignment);
+    return offset + padding;
 }
 
 void GPUSceneImpl::BeginDynamicUpdate()
 {
     CHECK_MSG(!mDynamicIsUpdate, "BeginDynamicUpdate called while a window is already open");
-    CHECK_MSG(mDynamicUploadRegions.empty(),
+    CHECK_MSG(mDynamicUploadRegions.empty() && mDynamicTextureUploads.empty(),
               "BeginDynamicUpdate called before pending CPU updates were uploaded");
+    mUploadRetirement.BeginEpoch();
+    mDynamicStaging.BeginUpdate();
     mDynamicIsUpdate = true;
-    if (mDynamicStagingFrames != 0)
-        mDynamicStagingFrameIndex = (mDynamicStagingFrameIndex + 1u) % mDynamicStagingFrames;
-    mDynamicStagingCursor = 0;
 }
 
 void GPUSceneImpl::UpdateDynamicMeshGPU(GeometryHandle handle, bool updateVertices, bool updateIndices)
@@ -2475,14 +2397,14 @@ void GPUSceneImpl::UpdateDynamicMeshCPU(GeometryHandle handle, Span<const FQVert
     {
         uint32_t const size = static_cast<uint32_t>(vertices.size_bytes());
         uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(FQVertex));
-        std::memcpy(mDynamicStagingMapped + srcOffset, vertices.data(), size);
+        std::memcpy(mDynamicStaging.Mapped(srcOffset), vertices.data(), size);
         mDynamicUploadRegions.push_back({.srcOffset = srcOffset, .dstOffset = g->mesh.vertices.offset, .size = size});
     }
     if (!indices.empty())
     {
         uint32_t const size = static_cast<uint32_t>(indices.size_bytes());
         uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(uint32_t));
-        std::memcpy(mDynamicStagingMapped + srcOffset, indices.data(), size);
+        std::memcpy(mDynamicStaging.Mapped(srcOffset), indices.data(), size);
         mDynamicUploadRegions.push_back({.srcOffset = srcOffset, .dstOffset = g->mesh.indices.offset, .size = size});
         g->dynamicIndicesDirty = true;
     }
@@ -2511,14 +2433,14 @@ void GPUSceneImpl::UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurv
     {
         uint32_t const size = static_cast<uint32_t>(vertices.size_bytes());
         uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(FCurveDOTSVertex));
-        std::memcpy(mDynamicStagingMapped + srcOffset, vertices.data(), size);
+        std::memcpy(mDynamicStaging.Mapped(srcOffset), vertices.data(), size);
         mDynamicUploadRegions.push_back({.srcOffset = srcOffset, .dstOffset = g->curve.vertices.offset, .size = size});
     }
     if (!indices.empty())
     {
         uint32_t const size = static_cast<uint32_t>(indices.size_bytes());
         uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(uint32_t));
-        std::memcpy(mDynamicStagingMapped + srcOffset, indices.data(), size);
+        std::memcpy(mDynamicStaging.Mapped(srcOffset), indices.data(), size);
         mDynamicUploadRegions.push_back({.srcOffset = srcOffset, .dstOffset = g->curve.indices.offset, .size = size});
         g->dynamicIndicesDirty = true;
     }
@@ -2526,7 +2448,7 @@ void GPUSceneImpl::UpdateDynamicCurveCPU(GeometryHandle handle, Span<const FCurv
     {
         uint32_t const size = static_cast<uint32_t>(leaves.size_bytes());
         uint32_t const srcOffset = AllocateDynamicStaging(size, alignof(FCurveLeaf));
-        std::memcpy(mDynamicStagingMapped + srcOffset, leaves.data(), size);
+        std::memcpy(mDynamicStaging.Mapped(srcOffset), leaves.data(), size);
         mDynamicUploadRegions.push_back({.srcOffset = srcOffset, .dstOffset = g->curve.leaves.offset, .size = size});
     }
     g->dirty = true;
@@ -2560,8 +2482,9 @@ void GPUSceneImpl::UpdateDynamicTextureCPU(TextureHandle handle, FTexture const&
         for (uint32_t mip = 0; mip < source.GetNumMips(); ++mip)
         {
             Span<unsigned char> subresource = source.GetSubresource(mip, layer);
+            CHECK_MSG(subresource.size() <= UINT32_MAX, "Texture upload exceeds the virtual byte address range");
             uint32_t const srcOffset = AllocateDynamicStaging(static_cast<uint32_t>(subresource.size()), alignment);
-            std::memcpy(mDynamicStagingMapped + srcOffset, subresource.data(), subresource.size());
+            std::memcpy(mDynamicStaging.Mapped(srcOffset), subresource.data(), subresource.size());
             mDynamicTextureUploads.push_back(
                 {texture, state.initialized,
                  {.srcBufferOffset = srcOffset,
@@ -2610,11 +2533,12 @@ void GPUSceneImpl::EndDynamicUpdate()
 
 void GPUSceneImpl::UploadDynamicGeometryCPU(RHICommandList* cmd)
 {
+    std::lock_guard<Mutex> residencyLock(mUploadStateMutex);
     CHECK_MSG(!mDynamicIsUpdate,
               "UploadDynamicGeometryCPU recorded while a dynamic update is still in progress "
               "(call EndDynamicUpdate before the upload pass)");
     CHECK(cmd);
-    if (!mDynamicPrimitiveBuffer || mDynamicGeometries.empty())
+    if (mDynamicGeometries.empty())
         return;
 
     for (uint32_t slot : mDynamicGeometries)
@@ -2624,17 +2548,21 @@ void GPUSceneImpl::UploadDynamicGeometryCPU(RHICommandList* cmd)
             continue;
         if (g.uploadHeader)
         {
+            auto dst = mDynamicPrimitive->Resolve(g.offset);
             if (g.type == kGSInstanceTypeCurve)
-                cmd->UpdateBuffer(mDynamicPrimitiveBuffer.Get(), g.offset, AsBytes(AsSpan(g.curve)));
+                cmd->UpdateBuffer(dst.buffer, dst.offset, AsBytes(AsSpan(g.curve)));
             else
-                cmd->UpdateBuffer(mDynamicPrimitiveBuffer.Get(), g.offset, AsBytes(AsSpan(g.mesh)));
+                cmd->UpdateBuffer(dst.buffer, dst.offset, AsBytes(AsSpan(g.mesh)));
             g.uploadHeader = false;
         }
     }
-    if (mDynamicUploadRegions.empty())
-        return;
-    CHECK(mDynamicStagingBuffer);
-    cmd->CopyBuffer(mDynamicStagingBuffer.Get(), mDynamicPrimitiveBuffer.Get(), mDynamicUploadRegions);
+    for (auto const& upload : mDynamicUploadRegions)
+    {
+        auto src = mDynamicStaging.Resolve(static_cast<uint32_t>(upload.srcOffset), upload.size);
+        auto dst = mDynamicPrimitive->Resolve(static_cast<uint32_t>(upload.dstOffset), upload.size);
+        RHICommandList::CopyBufferRegion region{.srcOffset = src.offset, .dstOffset = dst.offset, .size = upload.size};
+        cmd->CopyBuffer(src.buffer, dst.buffer, {&region, 1});
+    }
     mDynamicUploadRegions.clear();
 }
 
@@ -2644,7 +2572,7 @@ void GPUSceneImpl::UploadDynamicTexturesCPU(RHICommandList* cmd)
               "UploadDynamicTexturesCPU recorded while a dynamic update is still in progress "
               "(call EndDynamicUpdate before the upload pass)");
     CHECK(cmd);
-    if (!mDynamicStagingBuffer || mDynamicTextureUploads.empty())
+    if (mDynamicTextureUploads.empty())
         return;
 
     Vector<RHITexture*> transitioned(mAllocator);
@@ -2673,8 +2601,10 @@ void GPUSceneImpl::UploadDynamicTexturesCPU(RHICommandList* cmd)
     }
     for (DynamicTextureUpload const& upload : mDynamicTextureUploads)
     {
-        cmd->CopyBufferToImage(mDynamicStagingBuffer.Get(), upload.texture, RHITextureLayout::TransferDst,
-                               Span<const RHICommandList::CopyImageRegion>{&upload.region, 1});
+        auto src = mDynamicStaging.Resolve(upload.region.srcBufferOffset);
+        auto region = upload.region;
+        region.srcBufferOffset = static_cast<uint32_t>(src.offset);
+        cmd->CopyBufferToImage(src.buffer, upload.texture, RHITextureLayout::TransferDst, {&region, 1});
     }
     for (RHITexture* texture : transitioned)
     {
@@ -2830,6 +2760,7 @@ void GPUSceneImpl::CompleteDynamicTextureGPU(TextureHandle handle, GPUScene::Dyn
 
 void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
 {
+    std::lock_guard<Mutex> residencyLock(mUploadStateMutex);
     CHECK_MSG(!mDynamicIsUpdate,
               "BuildBLAS recorded while a dynamic update is still in progress "
               "(call EndDynamicGeometryUpdate before the refit pass)");
@@ -2857,17 +2788,19 @@ void GPUSceneImpl::BuildBLAS(RHICommandList* cmd)
         uint32_t const indexOffset = curve ? g.curve.indices.offset : g.mesh.indices.offset;
         uint32_t const indexCount = curve ? g.curve.indices.count : g.mesh.indices.count;
         uint32_t const vertexStride = curve ? sizeof(FCurveDOTSVertex) : sizeof(FQVertex);
+        auto vertices = mDynamicPrimitive->Resolve(vertexOffset, uint64_t(vertexCount) * vertexStride);
+        auto indices = mDynamicPrimitive->Resolve(indexOffset, uint64_t(indexCount) * sizeof(uint32_t));
         RHIAccelerationStructureGeometryInfo geo{
             .type = RHIAccelerationGeometryType::Triangles,
             .triangleData = {
                 .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
-                .vertexBuffer = mDynamicPrimitiveBuffer.Get(),
-                .vertexOffset = vertexOffset,
+                .vertexBuffer = vertices.buffer,
+                .vertexOffset = static_cast<uint32_t>(vertices.offset),
                 .vertexCount = vertexCount,
                 .vertexStride = vertexStride,
                 .indexFormat = RHIResourceFormat::R32Uint,
-                .indexBuffer = mDynamicPrimitiveBuffer.Get(),
-                .indexOffset = indexOffset,
+                .indexBuffer = indices.buffer,
+                .indexOffset = static_cast<uint32_t>(indices.offset),
                 .indexCount = indexCount,
             }};
         RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = indexCount / 3};
@@ -2928,8 +2861,8 @@ void GPUSceneImpl::FreeGeometry(uint32_t slot)
         return;
     if (g.dynamic)
     {
-        if (mDynamicPrimitiveAlloc)
-            mDynamicPrimitiveAlloc->Free(g.offset);
+        if (mDynamicPrimitive)
+            mDynamicPrimitive->Free(g.offset);
         if (g.blas < mBLASes.size())
         {
             mBLASes[g.blas].Reset();
@@ -2947,7 +2880,7 @@ void GPUSceneImpl::FreeGeometry(uint32_t slot)
     }
     else
     {
-        mPrimitiveAlloc->Free(g.offset);
+        mPrimitive->Free(g.offset);
         if (g.type == kGSInstanceTypeCurve)
         {
             if (g.blas < mCurveBLASes.size())
@@ -2994,6 +2927,7 @@ void GPUSceneImpl::FreeTextureSlot(bool is3D, uint32_t slot)
 void GPUSceneImpl::Collect()
 {
     Join();
+    mDevice->WaitIdle();
     {
         Vector<uint8_t> referenced(mGeometry.size(), 0u, mAllocator);
         for (GSInstance const& inst : owner.mCommittedInstances)
@@ -3074,7 +3008,8 @@ void GPUSceneImpl::EnsureTLASCapacity(uint32_t totalInstances)
     CHECK_MSG(totalInstances <= UINT32_MAX / mTLASInstanceStride,
               "TLAS instance byte count overflow: {} instances with stride {}", totalInstances, mTLASInstanceStride);
     RHIAccelerationStructureGeometryInstanceData instance{
-        .instanceBuffer = mTLASInstances.mBuffer.Get(), .instanceOffset = 0, .totalPrimitives = totalInstances};
+        // Only queried for build sizes; no instance data is read here.
+        .instanceBuffer = mTLASInstances.GetPageTable(), .instanceOffset = 0, .totalPrimitives = totalInstances};
     RHIAccelerationStructureGeometryInfo geometry{.type = RHIAccelerationGeometryType::Instances,
                                                   .instanceData = instance};
     RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = totalInstances};
@@ -3100,6 +3035,7 @@ void GPUSceneImpl::EnsureTLASCapacity(uint32_t totalInstances)
 GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool update)
 {
     std::lock_guard<Mutex> residencyLock(mUploadStateMutex);
+    mUploadRetirement.BeginEpoch();
     auto GeometryReady = [&](uint32_t resourceIndex) -> bool
     {
         if (resourceIndex >= mGeometry.size())
@@ -3126,7 +3062,7 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         if (GeometryReady(inst.resourceIndex))
             ++readyInstances;
     uint32_t totalInstances = readyInstances + lightInstances;
-    if (totalInstances != owner.mLastTLASInstancesCount)
+    if (!mTLASBuilt || totalInstances != owner.mLastTLASInstancesCount)
     {
         update = false;
         owner.mLastTLASInstancesCount = totalInstances;
@@ -3137,7 +3073,7 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
         RHIAccelerationStructureGeometryInstance res{
             .instanceID = instanceID,
         };
-        if (src.type == kGSInstanceTypeCurve)
+        if ((src.type & kGSInstanceTypeMask) == kGSInstanceTypeCurve)
         {
             res.mask = 0x04; // CURVE_MASK
             res.shaderBindingTableRecordOffset = kCurveSBTOffset;
@@ -3202,11 +3138,11 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
     };
 
     owner.mTLASInstanceMap.clear();
-    uint32_t instancesOffset = 0;
+    uint32_t const instanceBytes = mTLASInstanceStride * std::max(totalInstances, 1u);
+    auto [pInstances, instancesOffset] = mTLASInstances.Allocate(instanceBytes, 16u);
+    auto instanceRange = mTLASInstances.Resolve(instancesOffset, instanceBytes);
     if (totalInstances > 0)
     {
-        auto [pInstances, offset] = mTLASInstances.Allocate(mTLASInstanceStride * totalInstances);
-        instancesOffset = offset;
         for (uint32_t i = 0; i < owner.mCommittedInstances.size(); ++i)
         {
             GSInstance const& inst = owner.mCommittedInstances[i];
@@ -3214,7 +3150,8 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
                 continue;
             Geometry const* g = &mGeometry[inst.resourceIndex];
             auto data = ConvertInstance(inst, static_cast<uint32_t>(owner.mTLASInstanceMap.size()));
-            data.blas = (g->type == kGSInstanceTypeCurve) ? mCurveBLASes[g->blas].Get() : mBLASes[g->blas].Get();
+            data.blas = (!g->dynamic && g->type == kGSInstanceTypeCurve)
+                ? mCurveBLASes[g->blas].Get() : mBLASes[g->blas].Get();
             pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);
             owner.mTLASInstanceMap.push_back(i);
         }
@@ -3228,8 +3165,8 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
             }
         }
     }
-    RHIAccelerationStructureGeometryInstanceData instance{.instanceBuffer = mTLASInstances.mBuffer.Get(),
-                                                          .instanceOffset = instancesOffset,
+    RHIAccelerationStructureGeometryInstanceData instance{.instanceBuffer = instanceRange.buffer,
+                                                          .instanceOffset = static_cast<uint32_t>(instanceRange.offset),
                                                           .totalPrimitives = totalInstances};
     RHIAccelerationStructureGeometryInfo geometry{.type = RHIAccelerationGeometryType::Instances,
                                                   .instanceData = instance};
@@ -3246,6 +3183,7 @@ GPUScene::TLASBuildResult GPUSceneImpl::BuildTLAS(RHICommandList* cmd, bool upda
     if (update)
         desc.srcAS = owner.mTLAS.Get();
     cmd->BuildAccelerationStructure({{{desc}}});
+    mTLASBuilt = true;
     return TLASBuildResult::Built;
 }
 
@@ -3345,6 +3283,7 @@ void GPUSceneImpl::Reset()
     Join();
     if (mImmediateUpload)
         mImmediateUpload->WaitIdle();
+    mDevice->WaitIdle();
     mActiveUpload.reset();
     PendingGeometryUpload g;
     while (mUploadGeometryQueue.Pop(g))
@@ -3359,9 +3298,11 @@ void GPUSceneImpl::Reset()
     {
     }
     mUploadPending.store(0, std::memory_order_release);
-    mDynamicStagingFrameIndex = 0;
-    mDynamicStagingCursor = 0;
+    mUploadRetirement.BeginEpoch();
+    mDynamicStaging.Reset();
+    mTLASInstances.Reset();
     mDynamicUploadRegions.clear();
+    mDynamicTextureUploads.clear();
     mDynamicIsUpdate = false;
     mBLASes.clear();
     mBLASBuffers.clear();
@@ -3370,6 +3311,7 @@ void GPUSceneImpl::Reset()
     mCurveBLASBuffers.clear();
     mCurveBLASFreelist.clear();
     mGeometry.clear();
+    mGeometryFreelist.clear();
     owner.mCommittedInstances.clear();
     owner.mCommittedLights.clear();
     owner.mCommittedMaterials.clear();
@@ -3388,9 +3330,10 @@ void GPUSceneImpl::Reset()
     owner.mLastUpdateResult = {};
     mMeshletGlobalCounter = 0;
     owner.mLastTLASInstancesCount = 0;
-    mPrimitiveAlloc->Clear();
-    if (mDynamicPrimitiveAlloc)
-        mDynamicPrimitiveAlloc->Clear();
+    mTLASBuilt = false;
+    mPrimitive->Clear();
+    if (mDynamicPrimitive)
+        mDynamicPrimitive->Clear();
     mDynamicGeometries.clear();
     owner.mEnvMapPrefilteredMips = 0u;
     for (auto& c : owner.mEnvSHCoeffs)
@@ -3457,6 +3400,7 @@ GPUScene::GPUSceneTables GPUScene::BeginScene(uint32_t instanceCount, uint32_t m
 void GPUScene::ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffset, uint32_t& outPrimitiveType,
                                GSInstanceFlags& outPrimitiveFlags) const
 {
+    std::lock_guard<Mutex> residencyLock(mImpl->mUploadStateMutex);
     GPUSceneImpl::Geometry* g = mImpl->ResolveGeometry(handle);
     CHECK_MSG(g, "ResolveGeometry on an invalid geometry handle");
     outPrimitiveOffset = g->offset;
@@ -3464,8 +3408,16 @@ void GPUScene::ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffs
     outPrimitiveFlags = g->dynamic ? GSInstanceFlagsBits::Dynamic : GSInstanceFlagsBits{};
 }
 GPUScene::UpdateResult GPUScene::EndScene(GPUSceneTables& tables, GPUSceneUpdateFlags flag) { return mImpl->EndScene(tables, flag); }
-void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const { mImpl->DbgGetMemoryStatistics(outStats); }
-String GPUScene::DbgGetBufferStatistics() const { return mImpl->DbgGetBufferStatistics(); }
+void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
+{
+    std::lock_guard<Mutex> residencyLock(mImpl->mUploadStateMutex);
+    mImpl->DbgGetMemoryStatistics(outStats);
+}
+String GPUScene::DbgGetBufferStatistics() const
+{
+    std::lock_guard<Mutex> residencyLock(mImpl->mUploadStateMutex);
+    return mImpl->DbgGetBufferStatistics();
+}
 GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, bool update)
 {
     return mImpl->BuildTLAS(cmd, update);
@@ -3526,23 +3478,18 @@ void GPUScene::BuildBLAS(RHICommandList* cmd) { mImpl->BuildBLAS(cmd); }
 uint32_t GPUScene::GetDynamicRefitCount() const { return mImpl->mLastRefitCount; }
 uint32_t GPUScene::GetDynamicRebuildCount() const { return mImpl->mLastRebuildCount; }
 
-RHIBuffer* GPUScene::GetDynamicPrimitiveBuffer() const
-{
-    return mImpl->mDynamicPrimitiveBuffer ? mImpl->mDynamicPrimitiveBuffer.Get() : mPrimitiveBuffer.Get();
-}
-RHIBuffer* GPUScene::GetDynamicStagingBuffer() const
-{
-    return mImpl->mDynamicStagingBuffer ? mImpl->mDynamicStagingBuffer.Get() : nullptr;
-}
-RHIBuffer* GPUScene::GetInstanceBuffer() const { return mImpl->mInstanceBuffer.mBuffer.Get(); }
-RHIBuffer* GPUScene::GetMaterialBuffer() const { return mImpl->mMaterialBuffer.mBuffer.Get(); }
-RHIBuffer* GPUScene::GetLightBuffer() const { return mImpl->mLightBuffer.mBuffer.Get(); }
-RHIBuffer* GPUScene::GetEmissiveClusterBuffer() const { return mImpl->mEmissiveClusterBuffer.mBuffer.Get(); }
-RHIBuffer* GPUScene::GetLightBVHNodeBuffer() const { return mImpl->mLightBVHNodeBuffer.mBuffer.Get(); }
-RHIBuffer* GPUScene::GetLightBVHLightIndexBuffer() const { return mImpl->mLightBVHLightIndexBuffer.mBuffer.Get(); }
-RHIBuffer* GPUScene::GetLightBVHBitmaskBuffer() const { return mImpl->mLightBVHBitmaskBuffer.mBuffer.Get(); }
-RHIBuffer* GPUScene::GetLightBVHGlobalIndexBuffer() const { return mImpl->mLightBVHGlobalIndexBuffer.mBuffer.Get(); }
-RHIBuffer* GPUScene::GetLightBVHNodeIndexBuffer() const { return mImpl->mLightBVHNodeIndexBuffer.mBuffer.Get(); }
+RHIBuffer* GPUScene::GetPrimitiveBuffer() const { return mImpl->mPrimitive->GetPageTable(); }
+RHIBuffer* GPUScene::GetDynamicPrimitiveBuffer() const { return mImpl->mDynamicPrimitive->GetPageTable(); }
+RHIBuffer* GPUScene::GetDynamicStagingBuffer() const { return mImpl->mDynamicStaging.GetPageTable(); }
+RHIBuffer* GPUScene::GetInstanceBuffer() const { return mImpl->mInstanceBuffer.GetPageTable(); }
+RHIBuffer* GPUScene::GetMaterialBuffer() const { return mImpl->mMaterialBuffer.GetPageTable(); }
+RHIBuffer* GPUScene::GetLightBuffer() const { return mImpl->mLightBuffer.GetPageTable(); }
+RHIBuffer* GPUScene::GetEmissiveClusterBuffer() const { return mImpl->mEmissiveClusterBuffer.GetPageTable(); }
+RHIBuffer* GPUScene::GetLightBVHNodeBuffer() const { return mImpl->mLightBVHNodeBuffer.GetPageTable(); }
+RHIBuffer* GPUScene::GetLightBVHLightIndexBuffer() const { return mImpl->mLightBVHLightIndexBuffer.GetPageTable(); }
+RHIBuffer* GPUScene::GetLightBVHBitmaskBuffer() const { return mImpl->mLightBVHBitmaskBuffer.GetPageTable(); }
+RHIBuffer* GPUScene::GetLightBVHGlobalIndexBuffer() const { return mImpl->mLightBVHGlobalIndexBuffer.GetPageTable(); }
+RHIBuffer* GPUScene::GetLightBVHNodeIndexBuffer() const { return mImpl->mLightBVHNodeIndexBuffer.GetPageTable(); }
 bool GPUScene::NeedsLightBVHRefit() const { return mImpl->mLightBVHNeedsRefit; }
 uint32_t GPUScene::GetLightBVHRefitLevelCount() const
 {
@@ -3565,4 +3512,3 @@ BindlessPool* GPUScene::GetTexture2DPool() { return &mImpl->mTexture2DPool; }
 BindlessPool* GPUScene::GetTexture3DPool() { return &mImpl->mTexture3DPool; }
 BindlessPool const* GPUScene::GetTexture2DPool() const { return &mImpl->mTexture2DPool; }
 BindlessPool const* GPUScene::GetTexture3DPool() const { return &mImpl->mTexture3DPool; }
-uint32_t GPUScene::GetLightCapacity() const { return mImpl->mLightBuffer.Capacity(); }

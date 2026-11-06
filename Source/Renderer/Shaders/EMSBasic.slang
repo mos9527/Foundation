@@ -1,8 +1,9 @@
+import IGPUScene;
 #include "ICommon.slang"
 
 uniform UBO globalParams;
 
-StructuredBuffer<GSInstance> instances;
+ByteAddressBuffer instances;
 ByteAddressBuffer primitive;
 StructuredBuffer<uint> inMeshletCounter;
 StructuredBuffer<uint2> inMeshletIndices; // (x: Meshlet ID, y: Instance ID)
@@ -30,9 +31,9 @@ void main(
         // Linear dispatch, grouped by kMeshIndirectPerDrawMeshlets
         uint2 indices = inMeshletIndices[drawID];
         group.meshletID = indices.x;
-        group.instance = instances[indices.y];
-        group.mesh = primitive.Load<GSMesh>(group.instance.resourceOffset);
-        group.meshlet = primitive.Load<FMeshlet>(group.mesh.meshlets.offset + group.meshletID * sizeof(FMeshlet));
+        group.instance = GSLoad<GSInstance>(instances, indices.y);
+        group.mesh = GSLoadPrimitive<GSMesh>(primitive, group.instance.resourceOffset);
+        group.meshlet = GSLoadPrimitive<FMeshlet>(primitive, group.mesh.meshlets.offset + group.meshletID * sizeof(FMeshlet));
     }
     GroupMemoryBarrierWithGroupSync();
     uint32_t vtxBase = group.mesh.meshletVtxOffset + group.meshlet.vtxOffset * sizeof(uint32_t);
@@ -42,8 +43,8 @@ void main(
     // Each thread in the WG processes multiple vertices/triangles
     SetMeshOutputCounts(vtxCount, triCount);
     for (uint i = tid; i < vtxCount; i += kMeshWorkGroupSize) {
-        uint ind = primitive.Load<uint32_t>(vtxBase + i * sizeof(uint32_t));
-        FQVertex fq = primitive.Load<FQVertex>(group.mesh.vertices.offset + ind * sizeof(FQVertex));
+        uint ind = GSLoadPrimitive<uint32_t>(primitive, vtxBase + i * sizeof(uint32_t));
+        FQVertex fq = GSLoadPrimitive<FQVertex>(primitive, group.mesh.vertices.offset + ind * sizeof(FQVertex));
         float3 position, normal, tangent;
         float2 uv;
         float bitangentSign;
@@ -65,7 +66,7 @@ void main(
         verts[i] = v2f;
     }
     for (uint i = tid; i < triCount; i += kMeshWorkGroupSize) {
-        MIndex tri = primitive.Load<MIndex>(triBase + i * sizeof(MIndex));
+        MIndex tri = GSLoadPrimitive<MIndex>(primitive, triBase + i * sizeof(MIndex));
         triangles[i] = uint3(tri.v0, tri.v1, tri.v2);
     }
 }

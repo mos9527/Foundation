@@ -1,4 +1,5 @@
 import ILightBVHNode;
+import IGPUScene;
 
 struct GizmoUBO
 {
@@ -24,7 +25,7 @@ struct GizmoUBO
 };
 uniform GizmoUBO globalParams;
 
-StructuredBuffer<GSLightBVHNode> lightBVHNodes;
+ByteAddressBuffer lightBVHNodes;
 
 Texture2D<float> sceneDepth;
 SamplerState linSampler;
@@ -142,7 +143,7 @@ VertexOutput vertMain(uint vertexID : SV_VertexID)
     uint nodeOffset = vertexID / 64u;
     uint lane = vertexID % 64u;
     uint nodeIndex = globalParams.firstLightBVHNode + nodeOffset;
-    GSLightBVHNode packedNode = lightBVHNodes[nodeIndex];
+    GSLightBVHNode packedNode = GSLoad<GSLightBVHNode>(lightBVHNodes, nodeIndex);
     LightBVHNodeAttributes node = UnpackLightBVHNode(packedNode);
     bool distant = globalParams.numLightBVHDistantNodes != 0u &&
         nodeIndex >= globalParams.firstLightBVHDistantNode;

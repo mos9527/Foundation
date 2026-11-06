@@ -170,19 +170,16 @@ static_assert(sizeof(FCurveLeaf) == 40);
 
 struct GPUSceneDesc
 {
-    uint32_t primitiveBudget = 16 * (1u << 20); // 16MB
-    uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of GSInstance elements (ring)
-    uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
-    uint32_t lightBudget = static_cast<uint32_t>(1e4); // # of lights (ring)
-    uint32_t emissiveClusterBudget = static_cast<uint32_t>(1e5);
-    uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
-    uint32_t geometryBudget = static_cast<uint32_t>(1e4); // # of geometry (ring)
-    uint32_t tlasInstanceBudget = static_cast<uint32_t>(1e4); // # of TLAS instances (ring)
-    uint32_t tlasBudget = 16 * (1u << 20); // 16MB
-    uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
-    uint32_t dynamicGeometryBudget = 0; // device-local bytes (0 = disabled)
-    uint32_t dynamicStagingBudget = 0; // CPU staging buffer size for dynamic geometry (0 = disabled)
-    uint32_t dynamicStagingFramesInFlight = 1; // CPU staging frames in flight
+    // Minimum physical page sizes, not scene budgets. Pages are allocated lazily and
+    // oversized allocations receive a contiguous multi-page buffer. Existing offsets stay valid.
+    uint32_t primitivePageSize = 16u << 20u;
+    uint32_t dynamicGeometryPageSize = 1u << 20u;
+    uint32_t uploadPageSize = 64u << 10u; // Scene tables, dynamic staging and TLAS instance data
+    uint32_t texturesBudget = static_cast<uint32_t>(1e3); // Bindless texture descriptors (not buffer pages)
+    uint32_t geometryReserve = static_cast<uint32_t>(1e4); // CPU reservation / upload queue hint, not a limit
+    // Acceleration structures require contiguous storage; these reservations are separate from scene pages.
+    uint32_t tlasBudget = 16u << 20u;
+    uint32_t tlasScratchBudget = 32u << 20u;
 };
 
 BITMASK_ENUM_BEGIN(GPUSceneUpdateFlags, uint32_t)
@@ -280,6 +277,10 @@ public:
         Span<GSLight> lights;
     };
 
+    // Commit scene/dynamic edits outside render-graph recording. Before replacing a
+    // snapshot, submit all command lists that reference it; recycling waits for GPU
+    // completion, not for a fixed number of frames. Previous UpdateResult ranges are
+    // not valid for new recordings after a subsequent commit replaces them.
     GPUSceneTables BeginScene(uint32_t instanceCount, uint32_t materialCount, uint32_t lightCount);
     void ResolveGeometry(GeometryHandle handle, uint32_t& outPrimitiveOffset, uint32_t& outPrimitiveType,
                          GSInstanceFlags& outPrimitiveFlags) const;
@@ -292,7 +293,6 @@ public:
     };
     void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
     [[nodiscard]] String DbgGetBufferStatistics() const;
-    [[nodiscard]] uint32_t GetLightCapacity() const;
 
     enum class TLASBuildResult
     {
@@ -386,8 +386,10 @@ public:
     }
     [[nodiscard]] uint32_t GetMaterialCount() const { return static_cast<uint32_t>(mCommittedMaterials.size()); }
 
-    /* Geometry */
-    [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
+    /* Scene buffers are stable page-table bindings, not contiguous payload buffers.
+     * Use IGPUScene.slang helpers for shader access. Staging is a synchronization-only
+     * page-table resource; physical copy/build ranges are resolved internally. */
+    [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const;
     [[nodiscard]] RHIBuffer* GetDynamicPrimitiveBuffer() const;
     [[nodiscard]] RHIBuffer* GetDynamicStagingBuffer() const;
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const;
@@ -435,8 +437,6 @@ private:
     Vector<GSMaterial> mCommittedMaterials;
     // TLAS instanceID -> committed instance index
     Vector<uint32_t> mTLASInstanceMap;
-    // Primitive buffer for geometries
-    RHIDeviceScopedHandle<RHIBuffer> mPrimitiveBuffer;
     RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
     uint32_t mLastTLASInstancesCount{0};
     // Shared default resources

@@ -48,9 +48,10 @@ namespace Foundation::RHI
         {
             Vector<vk::ImageMemoryBarrier2> image;
             Vector<vk::BufferMemoryBarrier2> buffer;
+            Vector<vk::MemoryBarrier2> memory;
 
             Barriers(Allocator* allocator) :
-                image(allocator), buffer(allocator)
+                image(allocator), buffer(allocator), memory(allocator)
             {
                 image.reserve(kCommandBarrierReserveSize);
                 buffer.reserve(kCommandBarrierReserveSize);
@@ -93,6 +94,8 @@ namespace Foundation::RHI
                              uint32_t first_instance = 0) override;
         RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0,
                                     int32_t vertex_offset = 0, uint32_t first_instance = 0) override;
+        RHICommandList& DrawIndirectCount(RHIBuffer* buffer, size_t offset, RHIBuffer* count_buffer,
+                                          size_t count_offset, uint32_t max_draw_count, uint32_t stride) override;
         RHICommandList& DrawIndexedIndirectCount(RHIBuffer* buffer, size_t offset, RHIBuffer* count_buffer,
                                                  size_t count_offset, uint32_t max_draw_count,
                                                  uint32_t stride) override;

@@ -23,8 +23,6 @@ RendererResources CreateGPUSceneRendererResources(Renderer* renderer, GPUScene* 
         .sobolMatricesBuffer = renderer->CreateResource("Sobol Matrices Buffer", scene->GetSobolMatricesBuffer()),
         .textures2D = scene->GetTexture2DPool(),
         .textures3D = scene->GetTexture3DPool(),
-        .primitiveBufferRHI = scene->GetPrimitiveBuffer(),
-        .dynamicPrimitiveBufferRHI = scene->GetDynamicPrimitiveBuffer(),
         .hasDynamicGeometry = scene->HasDynamicGeometry(),
         .hasDynamicTextures = scene->HasDynamicTextures(),
         .hasCurveGeometry = scene->HasCurveGeometry(),

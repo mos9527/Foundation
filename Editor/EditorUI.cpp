@@ -2439,11 +2439,10 @@ void FLightingPanel()
         // ---- Scene Lights ----
             GEditor.Scene().EnsureEnvironmentLight();
             auto& lights = GEditor.Scene().mTables.lights;
-            uint32_t lightCapacity = GContext->gpuScene ? GContext->gpuScene->GetLightCapacity() : 0u;
-            bool canAddLight = GContext->gpuScene && lights.size() < lightCapacity;
+            bool canAddLight = GContext->gpuScene != nullptr;
             if (!canAddLight)
                 ImGui::BeginDisabled();
-            if (ImModalButton(canAddLight ? PSI_PLUS_SIGN " Add Light" : "(Lights Full)"))
+            if (ImModalButton(PSI_PLUS_SIGN " Add Light"))
             {
                 FLight light{};
                 light.id = FUUID::Generate();

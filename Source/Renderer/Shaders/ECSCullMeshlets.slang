@@ -1,3 +1,4 @@
+import IGPUScene;
 import ICommon;
 import IFlags;
 import IHiZ;
@@ -6,7 +7,7 @@ import IMath;
 uniform UBO globalParams;
 
 ByteAddressBuffer primitive;
-StructuredBuffer<GSInstance> instances;
+ByteAddressBuffer instances;
 
 RWStructuredBuffer<uint> visibility;
 
@@ -89,8 +90,8 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     MeshletTaskWork work = inTasks[dispatchIndex];
     if (groupIndex >= work.numMeshlets)
         return; // Inactive
-    GSInstance inst = instances[work.instanceID];
-    GSMesh mesh = primitive.Load<GSMesh>(inst.resourceOffset);
+    GSInstance inst = GSLoad<GSInstance>(instances, work.instanceID);
+    GSMesh mesh = GSLoadPrimitive<GSMesh>(primitive, inst.resourceOffset);
     uint32_t meshletID = work.firstMeshlet + groupIndex;
     float scale = max(max(abs(inst.scale.x), abs(inst.scale.y)), abs(inst.scale.z));
     // -- LOD selection --
@@ -102,16 +103,16 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     {
         FLODGroup group;
         if (meshletID < mesh.meshlets.count) {
-            meshlet = primitive.Load<FMeshlet>(mesh.meshlets.offset + meshletID * sizeof(FMeshlet));
+            meshlet = GSLoadPrimitive<FMeshlet>(primitive, mesh.meshlets.offset + meshletID * sizeof(FMeshlet));
             // View-dependent culling
-            group = primitive.Load<FLODGroup>(mesh.groups.offset + meshlet.group * sizeof(FLODGroup));
+            group = GSLoadPrimitive<FLODGroup>(primitive, mesh.groups.offset + meshlet.group * sizeof(FLODGroup));
             viewCenter = pointToView(group.center, inst, globalParams.view);
             float selfError = projErrorSimple(group.error * scale, viewCenter, group.radius * scale, globalParams.proj[1][1], globalParams.zNear);
             // Remember - we take the upper_bound of the acceptable clusters
             // where it's the *first* LOD that exceeds the error threshold
             valid = selfError > globalParams.lodThreshold;
             if (meshlet.refined != ~0u){
-                group = primitive.Load<FLODGroup>(mesh.groups.offset + meshlet.refined * sizeof(FLODGroup));
+                group = GSLoadPrimitive<FLODGroup>(primitive, mesh.groups.offset + meshlet.refined * sizeof(FLODGroup));
                 viewCenter = pointToView(group.center, inst, globalParams.view);
                 float refError = projErrorSimple(group.error * scale, viewCenter, group.radius * scale, globalParams.proj[1][1], globalParams.zNear);
                 // The refined ones exceeds it too - impossible unless it's closer to

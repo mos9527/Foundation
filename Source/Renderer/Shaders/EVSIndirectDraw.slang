@@ -1,8 +1,9 @@
+import IGPUScene;
 #include "ICommon.slang"
 
 uniform UBO globalParams;
-StructuredBuffer<GSInstance> instances;
-ByteAddressBuffer dynamicPrimitives; // current frame slot
+ByteAddressBuffer instances;
+ByteAddressBuffer dynamicPrimitives; // stable page table
 // Absolute instance index per indirect draw.
 StructuredBuffer<uint> drawInstanceIDs;
 
@@ -11,9 +12,10 @@ V2F main(uint vertexID: SV_VertexID, uint drawID: SV_DrawIndex)
 {
     // SV_InstanceID is unreliable here (HLSL excludes firstInstance); index by the draw instead.
     uint instanceID = drawInstanceIDs[drawID];
-    GSInstance inst = instances[instanceID];
-    GSMesh mesh = dynamicPrimitives.Load<GSMesh>(inst.resourceOffset);
-    FQVertex fq = dynamicPrimitives.Load<FQVertex>(mesh.vertices.offset + vertexID * sizeof(FQVertex));
+    GSInstance inst = GSLoad<GSInstance>(instances, instanceID);
+    GSMesh mesh = GSLoadPrimitive<GSMesh>(dynamicPrimitives, inst.resourceOffset);
+    uint index = GSLoadPrimitive<uint32_t>(dynamicPrimitives, mesh.indices.offset + vertexID * sizeof(uint32_t));
+    FQVertex fq = GSLoadPrimitive<FQVertex>(dynamicPrimitives, mesh.vertices.offset + index * sizeof(FQVertex));
 
     float3 position, normal, tangent;
     float bitangentSign;

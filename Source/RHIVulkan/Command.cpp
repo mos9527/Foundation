@@ -93,6 +93,16 @@ RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, Transit
 {
     CHECK(mInTransition && mBarriers && "Invalid barrier states.");
     auto* res = static_cast<VulkanBuffer*>(image);
+    if (image->mDesc.deviceAddressTable)
+    {
+        CHECK_MSG(image->mDesc.resource.shared, "Device address tables require shared backing buffers");
+        mBarriers->memory.push_back(
+            vk::MemoryBarrier2{.srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.srcStage),
+                               .srcAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.srcAccess),
+                               .dstStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.dstStage),
+                               .dstAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.dstAccess)});
+        return *this;
+    }
     mBarriers->buffer.push_back(
         vk::BufferMemoryBarrier2{.srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.srcStage),
                                  .srcAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.srcAccess),
@@ -150,13 +160,15 @@ RHICommandList& VulkanCommandList::SetAccelerationStructureTransition(RHIAcceler
 RHICommandList& VulkanCommandList::EndTransition()
 {
     CHECK(mInTransition && mBarriers && "Invalid barrier states.");
-    if (mBarriers->image.empty() && mBarriers->buffer.empty())
+    if (mBarriers->image.empty() && mBarriers->buffer.empty() && mBarriers->memory.empty())
     {
         mBarriers.reset();
         mInTransition = false;
         return *this; // No transitions to apply
     }
     vk::DependencyInfo dependency_info{
+        .memoryBarrierCount = static_cast<uint32_t>(mBarriers->memory.size()),
+        .pMemoryBarriers = mBarriers->memory.data(),
         .bufferMemoryBarrierCount = static_cast<uint32_t>(mBarriers->buffer.size()),
         .pBufferMemoryBarriers = mBarriers->buffer.data(),
         .imageMemoryBarrierCount = static_cast<uint32_t>(mBarriers->image.size()),
@@ -215,6 +227,16 @@ RHICommandList& VulkanCommandList::DrawIndexed(uint32_t index_count, uint32_t in
 {
     CHECK(mAllocator && "Invalid command list states.");
     mCommandBuffer.drawIndexed(index_count, instance_count, first_index, vertex_offset, first_instance);
+    return *this;
+}
+
+RHICommandList& VulkanCommandList::DrawIndirectCount(RHIBuffer* buffer, size_t offset, RHIBuffer* count_buffer,
+                                                     size_t count_offset, uint32_t max_draw_count, uint32_t stride)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    mCommandBuffer.drawIndirectCount(static_cast<VulkanBuffer*>(buffer)->GetVkBuffer(), offset,
+                                     static_cast<VulkanBuffer*>(count_buffer)->GetVkBuffer(), count_offset,
+                                     max_draw_count, stride);
     return *this;
 }
 

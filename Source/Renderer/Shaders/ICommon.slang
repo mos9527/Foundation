@@ -126,7 +126,7 @@ public struct GSInstance
     public float3 transform;
     public quat rotation;
     public float3 scale;
-    public uint32_t resourceOffset; // Mesh or curve set offset in the (static or dynamic) Primitive buffer (bytes)
+    public uint32_t resourceOffset; // Virtual mesh/curve header byte offset in the static or dynamic primitive pages
     public uint32_t materialIndex; // In Material buffer (offset)
     public uint32_t resourceIndex; // Debug use
     public uint32_t type; // [7:0] 0=Mesh, 1=Curve; bit 8 = dynamic
@@ -134,7 +134,7 @@ public struct GSInstance
 };
 // Geometry kind (mesh/curve), ignoring feature flags.
 public uint32_t GSInstanceType(GSInstance i) { return i.type & kGSInstanceTypeMask; }
-// True when the instance's primitive data lives in the dynamic (CPU-updateable) ring buffer.
+// True when the instance's primitive data lives in the dynamic page pool (CPU- or GPU-authored).
 public bool GSInstanceIsDynamic(GSInstance i) { return (i.type & uint32_t(GSInstanceFlagsBits.Dynamic)) != 0u; }
 public struct GSCurveSet
 {
@@ -200,14 +200,13 @@ public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
     public uint32_t groupCountY;
     public uint32_t groupCountZ;
 };
-// Mirrors VkDrawIndexedIndirectCommand (used to GPU-drive the dynamic-geometry raster draw).
-public struct DrawIndexedIndirectCommand
+// Mirrors VkDrawIndirectCommand. The vertex shader pulls indices and vertices from scene pages.
+public struct DrawIndirectCommand
 {
-    public uint32_t indexCount;
+    public uint32_t vertexCount;
     public uint32_t instanceCount;
-    public uint32_t firstIndex;
-    public int32_t vertexOffset;
-    public uint32_t firstInstance; // carries the absolute scene instance index (read via SV_InstanceID)
+    public uint32_t firstVertex;
+    public uint32_t firstInstance;
 };
 public struct MeshletTaskWork
 {

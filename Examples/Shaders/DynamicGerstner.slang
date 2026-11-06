@@ -1,6 +1,7 @@
+import IGPUScene;
 import ICommon;
 import IMath;
-RWByteAddressBuffer dynamicPrimitives;
+ByteAddressBuffer dynamicPrimitives;
 
 struct PushConstant
 {
@@ -67,7 +68,7 @@ void main(uint32_t id : SV_DispatchThreadID)
         float2 xz0 = (uv - 0.5) * pc.extent;
         float3 position, normal, tangent;
         SampleGerstner(xz0, position, normal, tangent);
-        dynamicPrimitives.Store<FQVertex>(
+        GSStorePrimitive<FQVertex>(dynamicPrimitives,
             pc.vertexOffset + id * sizeof(FQVertex),
             FQPack(position, normal, tangent, 1.0, uv));
     }
@@ -82,11 +83,11 @@ void main(uint32_t id : SV_DispatchThreadID)
         uint32_t i2 = i0 + side;
         uint32_t i3 = i2 + 1u;
         uint32_t indexOffset = pc.indexOffset + id * 6u * sizeof(uint32_t);
-        dynamicPrimitives.Store<uint32_t>(indexOffset + 0u, i0);
-        dynamicPrimitives.Store<uint32_t>(indexOffset + 4u, i2);
-        dynamicPrimitives.Store<uint32_t>(indexOffset + 8u, i1);
-        dynamicPrimitives.Store<uint32_t>(indexOffset + 12u, i1);
-        dynamicPrimitives.Store<uint32_t>(indexOffset + 16u, i2);
-        dynamicPrimitives.Store<uint32_t>(indexOffset + 20u, i3);
+        GSStorePrimitive<uint32_t>(dynamicPrimitives, indexOffset + 0u, i0);
+        GSStorePrimitive<uint32_t>(dynamicPrimitives, indexOffset + 4u, i2);
+        GSStorePrimitive<uint32_t>(dynamicPrimitives, indexOffset + 8u, i1);
+        GSStorePrimitive<uint32_t>(dynamicPrimitives, indexOffset + 12u, i1);
+        GSStorePrimitive<uint32_t>(dynamicPrimitives, indexOffset + 16u, i2);
+        GSStorePrimitive<uint32_t>(dynamicPrimitives, indexOffset + 20u, i3);
     }
 }

@@ -23,16 +23,15 @@ struct MeshletTaskWork
     uint32_t firstMeshlet;
     uint32_t numMeshlets;
 };
-// Mirrors VkDrawIndexedIndirectCommand. One per dynamic (CPU-updateable) geometry instance,
-// produced by ECSIndirectDraw and consumed by DrawIndexedIndirectCount.
-struct DrawIndexedIndirectCommand
+// Mirrors VkDrawIndirectCommand. Curve/dynamic vertex shaders pull indices from scene pages.
+struct DrawIndirectCommand
 {
-    uint32_t indexCount;
+    uint32_t vertexCount;
     uint32_t instanceCount;
-    uint32_t firstIndex;
-    int32_t vertexOffset;
+    uint32_t firstVertex;
     uint32_t firstInstance;
 };
+static_assert(sizeof(DrawIndirectCommand) == 16);
 #pragma pack(pop)
 constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
@@ -554,7 +553,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             auto DynamicDrawCmds =
                 renderer->CreateResource("Dynamic Draw Commands",
                                          RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                                                       .size = sizeof(DrawIndexedIndirectCommand) * kMaxDynamicDraws});
+                                                       .size = sizeof(DrawIndirectCommand) * kMaxDynamicDraws});
             auto DynamicDrawCount = renderer->CreateResource(
                 "Dynamic Draw Count",
                 RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
@@ -565,7 +564,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             DynamicMotionDrawCmds =
                 renderer->CreateResource("Dynamic Motion Draw Commands",
                                          RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                                                       .size = sizeof(DrawIndexedIndirectCommand) * kMaxDynamicDraws});
+                                                       .size = sizeof(DrawIndirectCommand) * kMaxDynamicDraws});
             DynamicMotionDrawCount = renderer->CreateResource(
                 "Dynamic Motion Draw Count",
                 RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
@@ -654,15 +653,14 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->CmdSetPipeline(self, cmd);
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
                     r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
-                    cmd->BindIndexBuffer(gpu.dynamicPrimitiveBufferRHI, 0, RHIResourceFormat::R32Uint);
                     auto* cmds = r->DerefResource(DynamicDrawCmds).Get<RHIBuffer*>();
                     auto* count = r->DerefResource(DynamicDrawCount).Get<RHIBuffer*>();
-                    cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxDynamicDraws,
-                                                  sizeof(DrawIndexedIndirectCommand));
+                    cmd->DrawIndirectCount(cmds, 0, count, 0, kMaxDynamicDraws,
+                                                  sizeof(DrawIndirectCommand));
                     cmd->EndGraphics();
                 });
         }
-        /* Curves (DOTS triangles): static Primitive-buffer MDI path, cull-disabled like the TLAS. */
+        /* Curves (DOTS triangles): paged vertex-pulling MDI path, cull-disabled like the TLAS. */
         ResourceHandle CurveMotionDrawCmds = kInvalidHandle;
         ResourceHandle CurveMotionDrawCount = kInvalidHandle;
         ResourceHandle CurveMotionDrawInstanceIDs = kInvalidHandle;
@@ -671,7 +669,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             auto CurveDrawCmds =
                 renderer->CreateResource("Curve Draw Commands",
                                          RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                                                       .size = sizeof(DrawIndexedIndirectCommand) * kMaxCurveDraws});
+                                                       .size = sizeof(DrawIndirectCommand) * kMaxCurveDraws});
             auto CurveDrawCount = renderer->CreateResource(
                 "Curve Draw Count",
                 RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
@@ -681,7 +679,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             CurveMotionDrawCmds =
                 renderer->CreateResource("Curve Motion Draw Commands",
                                          RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                                                       .size = sizeof(DrawIndexedIndirectCommand) * kMaxCurveDraws});
+                                                       .size = sizeof(DrawIndirectCommand) * kMaxCurveDraws});
             CurveMotionDrawCount = renderer->CreateResource(
                 "Curve Motion Draw Count",
                 RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
@@ -699,6 +697,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
+                    r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::ComputeShader,
+                                             "dynamicPrimitives");
                     r->BindBufferUnordered(self, CurveDrawCmds, RHIPipelineStageBits::ComputeShader, "outDrawCmds");
                     r->BindBufferUnordered(self, CurveDrawInstanceIDs, RHIPipelineStageBits::ComputeShader,
                                            "outDrawInstanceIDs");
@@ -724,6 +724,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::AllGraphics, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
+                    r->BindBufferStorageRead(self, DynamicPrimitiveBuffer, RHIPipelineStageBits::AllGraphics,
+                                             "dynamicPrimitives");
                     r->BindBufferStorageRead(self, CurveDrawInstanceIDs, RHIPipelineStageBits::AllGraphics,
                                              "drawInstanceIDs");
                     r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
@@ -763,11 +765,10 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                     r->CmdSetPipeline(self, cmd);
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
                     r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
-                    cmd->BindIndexBuffer(gpu.primitiveBufferRHI, 0, RHIResourceFormat::R32Uint);
                     auto* cmds = r->DerefResource(CurveDrawCmds).Get<RHIBuffer*>();
                     auto* count = r->DerefResource(CurveDrawCount).Get<RHIBuffer*>();
-                    cmd->DrawIndexedIndirectCount(cmds, 0, count, 0, kMaxCurveDraws,
-                                                  sizeof(DrawIndexedIndirectCommand));
+                    cmd->DrawIndirectCount(cmds, 0, count, 0, kMaxCurveDraws,
+                                                  sizeof(DrawIndirectCommand));
                     cmd->EndGraphics();
                 });
         }
