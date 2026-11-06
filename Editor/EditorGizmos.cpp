@@ -321,11 +321,11 @@ static void AppendDiskGizmo(Vector<GizmoVertex>& vertices, FLight const& light, 
 {
     float3 pos = light.transform.transform;
     float3 dir = normalize(light.transform.rotation * float3(0.0f, 0.0f, -1.0f));
-    float3 u, v;
-    CoordinateSystem(dir, u, v);
-
-    AppendWireCircle(vertices, pos, u, v, float2(light.width, light.height), color);
-    float arrowLen = std::max(light.width, light.height) * 1.5f;
+    float3 const u = light.transform.rotation * float3(1, 0, 0);
+    float3 const v = light.transform.rotation * float3(0, -1, 0);
+    float2 const halfExtents = light.WorldHalfExtents();
+    AppendWireCircle(vertices, pos, u, v, halfExtents, color);
+    float arrowLen = std::max(halfExtents.x, halfExtents.y) * 1.5f;
     AppendLine(vertices, pos, pos + dir * arrowLen, color);
 }
 
@@ -333,14 +333,14 @@ static void AppendRectGizmo(Vector<GizmoVertex>& vertices, FLight const& light, 
 {
     float3 pos = light.transform.transform;
     float3 dir = normalize(light.transform.rotation * float3(0.0f, 0.0f, -1.0f));
-    float3 u, v;
-    CoordinateSystem(dir, u, v);
-
+    float3 const u = light.transform.rotation * float3(1, 0, 0);
+    float3 const v = light.transform.rotation * float3(0, -1, 0);
+    float2 const halfExtents = light.WorldHalfExtents();
     float3 corners[4] = {
-        pos + u * light.width + v * light.height,
-        pos - u * light.width + v * light.height,
-        pos - u * light.width - v * light.height,
-        pos + u * light.width - v * light.height,
+        pos + u * halfExtents.x + v * halfExtents.y,
+        pos - u * halfExtents.x + v * halfExtents.y,
+        pos - u * halfExtents.x - v * halfExtents.y,
+        pos + u * halfExtents.x - v * halfExtents.y,
     };
     for (int i = 0; i < 4; ++i)
         AppendLine(vertices, corners[i], corners[(i + 1) % 4], color);
@@ -373,48 +373,10 @@ static bool WorldToRenderPixel(float3 world, mat4 const& viewProj, float2 render
     return true;
 }
 
-static mat4 InstanceTransformMatrix(FTransform const& transform)
-{
-    return translate(mat4(1.0f), transform.transform) *
-           mat4_cast(transform.rotation) *
-           scale(mat4(1.0f), transform.scale);
-}
-
-static bool GetSelectedInstanceWorldBounds(FSerializedBounds& outBounds)
-{
-    if (!IsSelectedInstanceValid())
-        return false;
-
-    FInstance const& instance = GEditor.Scene().GetInstances()[SceneInstanceIndexFromId(GEditor.selectedInstance)];
-    FSerializedBounds const* localBounds = InstanceResourceBounds(instance);
-    if (!localBounds)
-        return false;
-
-    mat4 const localToWorld = InstanceTransformMatrix(instance.transform);
-    outBounds = FSerializedBounds::Empty();
-    for (int x = 0; x < 2; ++x)
-    {
-        for (int y = 0; y < 2; ++y)
-        {
-            for (int z = 0; z < 2; ++z)
-            {
-                float3 const p{
-                    x ? localBounds->max.x : localBounds->min.x,
-                    y ? localBounds->max.y : localBounds->min.y,
-                    z ? localBounds->max.z : localBounds->min.z
-                };
-                float4 const world = localToWorld * float4(p, 1.0f);
-                outBounds += float3{world.x, world.y, world.z};
-            }
-        }
-    }
-    return outBounds.IsValid();
-}
-
-static void AppendSelectedInstanceBounds(Vector<GizmoVertex>& vertices)
+static void AppendSelectedNodeBounds(Vector<GizmoVertex>& vertices)
 {
     FSerializedBounds bounds{};
-    if (!GetSelectedInstanceWorldBounds(bounds))
+    if (!SceneNodeWorldBounds(GEditor.selectedNode, bounds))
         return;
 
     AppendWireBounds(vertices, bounds, float4{1.0f, 0.72f, 0.18f, 0.95f});
@@ -693,7 +655,7 @@ void BuildLightGizmos()
     }
 
     if (GEditor.gizmo.showBoundingBox)
-        AppendSelectedInstanceBounds(sGizmo.vertices);
+        AppendSelectedNodeBounds(sGizmo.vertices);
 
     sGizmo.vertexCount = static_cast<uint32_t>(sGizmo.vertices.size());
     sGizmo.spriteIndexCount = static_cast<uint32_t>(sGizmo.spriteIndices.size());

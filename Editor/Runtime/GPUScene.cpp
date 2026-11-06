@@ -137,8 +137,9 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu)
     dst.position = src.transform.transform;
     // Default forward is (0,0,-1).
     dst.direction = normalize(src.transform.rotation * float3(0, 0, -1));
-    float areaWidth = std::max(src.width, 1e-6f);
-    float areaHeight = std::max(src.height, 1e-6f);
+    float2 const halfExtents = src.WorldHalfExtents();
+    float areaWidth = std::max(halfExtents.x, 1e-6f);
+    float areaHeight = std::max(halfExtents.y, 1e-6f);
     if (src.type == FLightType::Directional)
         dst.params.x = src.angularDiameter;
     else if (src.type == FLightType::Point)
@@ -150,9 +151,9 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene const& gpu)
         dst.params = float4(areaWidth, areaHeight, 0.0f, 0.0f);
     if (src.type == FLightType::Disk || src.type == FLightType::Rect)
     {
-        float3 n = dst.direction;
-        float3 u, v;
-        CoordinateSystem(n, u, v);
+        // Keep the node's roll; an arbitrary basis around direction loses area-light orientation.
+        float3 const u = normalize(src.transform.rotation * float3(1, 0, 0));
+        float3 const v = normalize(src.transform.rotation * float3(0, -1, 0));
         if (src.type == FLightType::Disk)
         {
             dst.dpdu = u;
@@ -243,9 +244,10 @@ void FillGSMaterial(GSMaterial& dst, FMaterial const& src, FSceneGPUResources co
 GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources const& resources,
                                         RendererUBO& globals, GPUSceneUpdateFlags flag)
 {
+    scene.EnsureEnvironmentLight();
+    scene.UpdateWorldTransforms();
     auto instances = scene.GetInstances();
     auto materials = scene.GetMaterials();
-    scene.EnsureEnvironmentLight();
     auto lights = scene.GetLights();
     CHECK_MSG(instances.size() <= UINT32_MAX && materials.size() <= UINT32_MAX && lights.size() <= UINT32_MAX,
               "Scene table exceeds uint32_t range");

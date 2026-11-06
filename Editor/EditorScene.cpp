@@ -357,23 +357,38 @@ void UpdateSceneLights()
     CommitSceneToGPU(false);
 }
 
-void DeleteSelectedInstance()
+void DeleteSceneNode(FUUID nodeId)
 {
-    if (!GContext->gpuScene || !GEditor.HasScene())
+    if (!GContext->gpuScene || !GEditor.HasScene() || !GEditor.Scene().CanRemoveNode(nodeId))
         return;
-    int const idx = SceneInstanceIndexFromId(GEditor.selectedInstance);
-    auto& sceneInstances = GEditor.Scene().mTables.instances;
-    if (idx < 0 || idx >= static_cast<int>(sceneInstances.size()))
+    auto& scene = GEditor.Scene();
+    // Keep per-instance geometry overrides aligned when an entire subtree disappears.
+    HashMap<FUUID, GeometryHandle> overrides(GLOBAL_ALLOC);
+    auto const instances = scene.GetInstances();
+    for (size_t i = 0; i < instances.size() && i < GEditor.resources.instanceGeometry.size(); ++i)
+        if (GEditor.resources.instanceGeometry[i].IsValid())
+            overrides.emplace(instances[i].id, GEditor.resources.instanceGeometry[i]);
+    bool const selectionRemoved = scene.IsNodeInSubtree(GEditor.selectedNode, nodeId);
+    if (!scene.RemoveNode(nodeId))
         return;
-
-    sceneInstances.erase(sceneInstances.begin() + idx);
-    GEditor.Scene().RebuildIndex();
-    ClearSelection();
-    // Recommit the (now smaller) instance table, then reclaim geometry no longer
-    // referenced. Wait for the GPU to finish before reclaiming resident resources.
+    GEditor.resources.instanceGeometry.assign(scene.GetInstances().size(), GeometryHandle{});
+    for (size_t i = 0; i < scene.GetInstances().size(); ++i)
+    {
+        auto const existing = overrides.find(scene.GetInstances()[i].id);
+        if (existing != overrides.end())
+            GEditor.resources.instanceGeometry[i] = existing->second;
+    }
+    if (selectionRemoved)
+        ClearSelection();
+    // Recommit components before reclaiming geometry no longer referenced by any node.
     CommitSceneToGPU(true);
     GContext->device->WaitIdle();
     GContext->gpuScene->Collect();
+}
+
+void DeleteSelectedNode()
+{
+    DeleteSceneNode(GEditor.selectedNode);
 }
 
 static void ApplySceneCamera(FImportedScene const& scene, FArcballCamera& cameraState,
@@ -614,7 +629,8 @@ void LoadScene(StringView path)
     load->arena.emplace(GLOBAL_ALLOC, kDefaultSceneLoadScratchBudget);
     load->alloc.emplace(*load->arena);
     load->file.emplace(scenePayloadPath, MemoryMappedAccess::ReadOnly);
-    load->scene.emplace(*load->file, load->alloc->Ptr());
+    // Resident component/node metadata grows with the scene, not the fixed LUT scratch arena.
+    load->scene.emplace(*load->file, GLOBAL_ALLOC);
     LoadFSCN(*load->scene);
 
     InitializeSceneLoad(*load->scene, load->stats, gpu);

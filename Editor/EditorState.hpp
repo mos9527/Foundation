@@ -158,12 +158,12 @@ struct EditorState
     Optional<MemoryMappedFile> sceneFile;
     Optional<FImportedScene>     scene;
     String             currentSavePath;
-    // Selection UUIDs; nil == none. Scene index == GPU index (1:1 commit order).
+    // Node selection is independent of the flattened GPU component tables.
+    FUUID              selectedNode{};
     FUUID              selectedInstance{};
     FUUID              selectedMaterial{};
     FUUID              selectedLight{};
-    bool               scrollSelectedLightToTop = false;
-    float              selectedLightHighlightStart = -1.0f;
+    bool               revealSelectedNode = false;
     bool               openSelectionContextMenu = false;
     bool               applySelectionDoubleClickAction = false;
     RenderOutputState  renderTask;
@@ -228,7 +228,8 @@ extern EditorState GEditor;
 
 void CommitSceneToGPU(bool resetAccumulation = true);
 void UpdateSceneLights();
-void DeleteSelectedInstance();
+void DeleteSceneNode(FUUID nodeId);
+void DeleteSelectedNode();
 void LoadScene(StringView path);
 void RequestLoadScene(StringView path, StringView envMapPath = {});
 bool PollSceneLoad();
@@ -239,16 +240,18 @@ void HandleFile(const char* filePath);
 
 void EditorDockSpaceAndMenuBar();
 
+int SceneNodeIndexFromId(FUUID id);
 int SceneInstanceIndexFromId(FUUID id);
 int SceneLightIndexFromId(FUUID id);
 int SceneMaterialIndexFromId(FUUID id);
 bool IsSelectedInstanceValid();
 FSerializedBounds const* InstanceResourceBounds(FInstance const& instance);
+bool SceneNodeWorldBounds(FUUID nodeId, FSerializedBounds& bounds);
+void SelectNode(FUUID nodeId);
 void SelectInstance(FUUID instanceId, FUUID materialId);
 void SelectLight(FUUID lightId);
 void ClearSelection();
 void FHierarchyPanel();
-void FLightingPanel();
 void FRunningImGui();
 void ClearMaterialTexturePreviewCache();
 void UpdateEditorCameraGlobals(Renderer* renderer, RHIExtent2D renderExtent);

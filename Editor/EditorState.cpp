@@ -35,6 +35,8 @@ void RecreateEditorSwapchain()
         GContext->presenter->SetSwapchain(GContext->swapchain);
 }
 
+int SceneNodeIndexFromId(FUUID id) { return GEditor.HasScene() ? GEditor.Scene().NodeIndex(id) : -1; }
+
 int SceneInstanceIndexFromId(FUUID id) { return GEditor.HasScene() ? GEditor.Scene().InstanceIndex(id) : -1; }
 
 int SceneLightIndexFromId(FUUID id) { return GEditor.HasScene() ? GEditor.Scene().LightIndex(id) : -1; }
@@ -72,8 +74,70 @@ FSerializedBounds const* InstanceResourceBounds(FInstance const& instance)
     return nullptr;
 }
 
+bool SceneNodeWorldBounds(FUUID nodeId, FSerializedBounds& bounds)
+{
+    int const index = SceneNodeIndexFromId(nodeId);
+    if (index < 0)
+        return false;
+    FImportedScene const& scene = GEditor.Scene();
+    bounds = FSerializedBounds::Empty();
+    Vector<uint32_t> pending(GLOBAL_ALLOC);
+    pending.push_back(static_cast<uint32_t>(index));
+    while (!pending.empty())
+    {
+        uint32_t const current = pending.back();
+        pending.pop_back();
+        FSceneNode const& node = scene.GetNodes()[current];
+        mat4 const& world = scene.mHierarchy.worldTransforms[current];
+        int const instance = scene.InstanceIndex(node.instance);
+        if (instance >= 0)
+        {
+            if (FSerializedBounds const* local = InstanceResourceBounds(scene.GetInstances()[instance]))
+            {
+                for (int corner = 0; corner < 8; ++corner)
+                {
+                    float3 const point{corner & 1 ? local->max.x : local->min.x,
+                                       corner & 2 ? local->max.y : local->min.y,
+                                       corner & 4 ? local->max.z : local->min.z};
+                    bounds += float3(world * float4(point, 1.0f));
+                }
+            }
+        }
+        else if (!node.camera.IsNil() || (!node.light.IsNil() &&
+                     scene.GetLights()[scene.LightIndex(node.light)].type != FLightType::Environment))
+        {
+            float3 const position(world[3]);
+            bounds += position - float3(0.1f);
+            bounds += position + float3(0.1f);
+        }
+        for (uint32_t child = scene.mHierarchy.firstChild[current]; child != FSceneHierarchy::Invalid;
+             child = scene.mHierarchy.nextSibling[child])
+            pending.push_back(child);
+    }
+    return bounds.IsValid();
+}
+
+void SelectNode(FUUID nodeId)
+{
+    ClearSelection();
+    int const index = SceneNodeIndexFromId(nodeId);
+    if (index < 0)
+        return;
+    FSceneNode const& node = GEditor.Scene().GetNodes()[index];
+    GEditor.selectedNode = node.id;
+    GEditor.selectedInstance = node.instance;
+    GEditor.selectedLight = node.light;
+    int const instance = SceneInstanceIndexFromId(node.instance);
+    if (instance >= 0)
+        GEditor.selectedMaterial = GEditor.Scene().GetInstances()[instance].material;
+    GEditor.revealSelectedNode = true;
+}
+
 void SelectInstance(FUUID instanceId, FUUID materialId)
 {
+    if (!GEditor.HasScene())
+        return;
+    SelectNode(GEditor.Scene().InstanceNode(instanceId));
     GEditor.selectedInstance = instanceId;
     GEditor.selectedMaterial = materialId;
     GEditor.selectedLight = kNilUUID;
@@ -81,6 +145,9 @@ void SelectInstance(FUUID instanceId, FUUID materialId)
 
 void SelectLight(FUUID lightId)
 {
+    if (!GEditor.HasScene())
+        return;
+    SelectNode(GEditor.Scene().LightNode(lightId));
     GEditor.selectedLight = lightId;
     GEditor.selectedInstance = kNilUUID;
     GEditor.selectedMaterial = kNilUUID;
@@ -88,9 +155,11 @@ void SelectLight(FUUID lightId)
 
 void ClearSelection()
 {
+    GEditor.selectedNode = kNilUUID;
     GEditor.selectedLight = kNilUUID;
     GEditor.selectedInstance = kNilUUID;
     GEditor.selectedMaterial = kNilUUID;
+    GEditor.revealSelectedNode = false;
 }
 
 static RHIExtent2D ClampViewportExtent(RHIExtent2D extent)
@@ -567,8 +636,6 @@ static void FRunning()
         auto selectLight = [&](int light)
         {
             SelectLight(GEditor.Scene().GetLights()[light].id);
-            GEditor.scrollSelectedLightToTop = true;
-            GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
         };
         auto selectInstance = [&](uint32_t instance)
         {

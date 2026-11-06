@@ -13,6 +13,7 @@
 #include <cctype>
 #include <cgltf.h>
 #include <climits>
+#include <cmath>
 #include <cstring>
 #include <lz4.h>
 #include <numeric>
@@ -269,6 +270,8 @@ namespace
     void ValidateSceneHeader(FSceneHeader const& header)
     {
         CHECK_MSG(header.magic == kSceneMagic, "Unsupported FSCN magic");
+        CHECK_MSG(header.version == kSceneVersion,
+                  "Unsupported FSCN version {} (expected {}); reimport the source scene", header.version, kSceneVersion);
         CHECK_MSG(header.headerSize == sizeof(FSceneHeader), "Unsupported FScene header size");
         CHECK_MSG(header.metadataSize <= SIZE_MAX, "FScene metadata too large for this platform");
         CHECK_MSG(header.payloadAlignment != 0, "FScene payload alignment must be non-zero");
@@ -280,7 +283,6 @@ namespace
         CHECK_MSG(header.metadataOffset % 16 == 0, "Misaligned FScene metadata offset");
         CHECK_MSG(header.metadataOffset <= header.fileSize, "FScene metadata offset exceeds file size");
         CHECK_MSG(header.metadataSize <= header.fileSize - header.metadataOffset, "FScene metadata exceeds file size");
-        CHECK_MSG(header.version == kSceneVersion, "Unsupported FScene version {}", header.version);
     }
 
     void ValidateBlobRef(FSceneHeader const& header, FBlobRef const& blob, const char* name)
@@ -348,6 +350,7 @@ namespace
         CHECK_MSG(tables.meshes.size() <= UINT32_MAX, "FScene mesh table is too large");
         CHECK_MSG(tables.curves.size() <= UINT32_MAX, "FScene curve table is too large");
         CHECK_MSG(tables.textures.size() <= UINT32_MAX, "FScene texture table is too large");
+        CHECK_MSG(tables.nodes.size() <= INT32_MAX, "FScene node table is too large");
 
         // String pool: content-addressed ids (id == hash of value).
         HashSet<FUUID> stringIds(GLOBAL_ALLOC);
@@ -935,20 +938,37 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
     FEnvironmentTextureSource environmentTextureSource =
         LoadFoundationEnvironmentExtension(data, path, environmentLight);
 
-    /* Texture ids are reserved up front so materials can reference textures before payloads load. */
-    CHECK_MSG(data->textures_count <= UINT32_MAX, "glTF texture count exceeds uint32_t");
-    CHECK_MSG(!environmentTextureSource.HasValue() || data->textures_count < UINT32_MAX,
-              "glTF texture count leaves no room for environment texture");
-    size_t const sceneTextureCount = data->textures_count + (environmentTextureSource.HasValue() ? 1u : 0u);
-    uint32_t const environmentTextureIndex =
-        environmentTextureSource.HasValue() ? static_cast<uint32_t>(data->textures_count) : kInvalidTexture;
-    scene.mTables.textures.clear();
-    scene.mTables.textures.reserve(sceneTextureCount);
-    for (size_t i = 0; i < sceneTextureCount; ++i)
+    // A glTF texture is an image + sampler reference, not a unique image asset.
+    // Reserve assets on first material use, before starting any worker jobs. Sampling
+    // uses the renderer's shared samplers; image storage is shared independently.
+    struct TextureTask
     {
-        scene.mTables.textures.emplace_back(scratchAlloc);
-        scene.mTables.textures.back().id = FUUID::Generate();
+        cgltf_texture* source{};
+        bool srgb{};
+    };
+    Vector<TextureTask> textureTasks(scratchAlloc);
+    HashMap<FUUID, uint32_t> linearTextures(scratchAlloc), srgbTextures(scratchAlloc);
+    Vector<FUUID> imageSources(data->images_count, kNilUUID, scratchAlloc);
+    for (size_t i = 0; i < data->images_count; ++i)
+    {
+        cgltf_image const& image = data->images[i];
+        if (cgltf_buffer_view const* view = image.buffer_view)
+        {
+            CHECK_MSG(view->buffer && view->buffer->data && view->offset <= view->buffer->size &&
+                          view->size <= view->buffer->size - view->offset,
+                      "Embedded texture bufferView is out of range");
+            imageSources[i] = FUUID::FromBytes(static_cast<unsigned char const*>(view->buffer->data) + view->offset,
+                                              view->size);
+        }
+        else if (image.uri)
+        {
+            String const uri = DecodeURI(image.uri);
+            String const source = uri.starts_with("data:") ? uri :
+                                      "file:" + NormalizePath(JoinPath(ParentPath(path), uri));
+            imageSources[i] = FUUID::FromString(source);
+        }
     }
+    scene.mTables.textures.clear();
 
     /* Materials — slot 0 is kDefaultMaterialUUID (glTF default material). */
     Vector<FUUID> gltfMaterialIds(data->materials_count, kNilUUID, scratchAlloc);
@@ -959,17 +979,33 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         .id = kDefaultMaterialUUID,
         .baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f},
     });
-    // Extra texture flags. Mostly used for sRGB to linear conversion
     constexpr unsigned kTextureInSRGB = 1 << 0;
-    Vector<unsigned> textureFlags(data->textures_count, 0, scratchAlloc);
     auto assignTextureId = [&](cgltf_texture_view const& view, unsigned flags = 0u) -> FUUID
     {
-        if (!view.texture)
+        if (!view.texture || !view.texture->image)
             return kNilUUID;
-        size_t index = cgltf_texture_index(data, view.texture);
-        CHECK_MSG(index < data->textures_count, "glTF texture index out of range");
-        textureFlags[index] |= flags;
-        return scene.mTables.textures[index].id;
+        cgltf_image const* image = view.texture->image;
+        size_t const imageIndex = cgltf_image_index(data, image);
+        CHECK_MSG(imageIndex < imageSources.size(), "glTF image index out of range");
+        FUUID const source = imageSources[imageIndex];
+        if (source.IsNil())
+            return kNilUUID;
+        bool const srgb = (flags & kTextureInSRGB) != 0;
+        // The same image used for color and data needs distinct decode/mipmap formats.
+        auto& texturesBySource = srgb ? srgbTextures : linearTextures;
+        auto existing = texturesBySource.find(source);
+        if (existing != texturesBySource.end())
+            return scene.mTables.textures[existing->second].id;
+        CHECK_MSG(textureTasks.size() < UINT32_MAX, "Scene texture count exceeds uint32_t");
+        uint32_t const index = static_cast<uint32_t>(textureTasks.size());
+        texturesBySource.emplace(source, index);
+        textureTasks.push_back({view.texture, srgb});
+        FSerializedTexture& texture = scene.mTables.textures.emplace_back(scratchAlloc);
+        texture.id = FUUID::Generate();
+        texture.name = internString(view.texture->name ? view.texture->name : image->name);
+        if (texture.name.IsNil() && image->uri && !StringView(image->uri).starts_with("data:"))
+            texture.name = internString(DecodeURI(image->uri).c_str());
+        return texture.id;
     };
     for (size_t i = 0; i < data->materials_count; i++)
     {
@@ -1068,6 +1104,20 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         scene.Add(material);
     }
 
+    size_t const uniqueTextureCount = textureTasks.size();
+    uint32_t environmentTextureIndex = kInvalidTexture;
+    if (environmentTextureSource.HasValue())
+    {
+        CHECK_MSG(scene.mTables.textures.size() < UINT32_MAX, "No room for the environment texture");
+        environmentTextureIndex = static_cast<uint32_t>(scene.mTables.textures.size());
+        FSerializedTexture& texture = scene.mTables.textures.emplace_back(scratchAlloc);
+        texture.id = FUUID::Generate();
+        texture.name = internString(environmentTextureSource.path ? environmentTextureSource.path->c_str() :
+                                                                      "Environment");
+    }
+    size_t const sceneTextureCount = scene.mTables.textures.size();
+    LOG(Scene, LogInfo, "{} glTF texture records -> {} unique material image/color-space assets",
+        data->textures_count, uniqueTextureCount);
     Vector<FBlobJob> blobJobs(scratchAlloc);
 
     /* Textures */
@@ -1077,23 +1127,20 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
     for (size_t i = 0; i < sceneTextureCount; i++)
         textureBlobJobs.emplace_back(scratchAlloc);
     JobBarrier textureJobs{};
-    if (data->textures_count != 0)
+    if (uniqueTextureCount != 0)
     {
-        for (size_t i = 0; i < data->textures_count; i++)
-            scene.mTables.textures[i].name = internString(data->textures[i].name);
-
         textureJobs = jobs->ParallelFor(
-            "SceneTexture", data->textures_count, GetSceneJobGrain(*jobs, data->textures_count),
+            "SceneTexture", uniqueTextureCount, GetSceneJobGrain(*jobs, uniqueTextureCount),
             [&](size_t begin, size_t end, JobContext&)
             {
                 for (size_t i = begin; i < end; ++i)
                 {
-                    cgltf_texture* src = &data->textures[i];
-                    String name = src->name ? src->name : Format("{}_{}", path, i);
-                    unsigned flags = textureFlags[i];
+                    TextureTask const& task = textureTasks[i];
+                    char const* textureName = task.source->name ? task.source->name : task.source->image->name;
+                    String name = textureName ? textureName : Format("{}_{}", path, i);
                     FTexture texture(scratchAlloc);
                     LOG(Scene, LogInfo, "Loading texture {}", name);
-                    auto loaded = LoadGLTFTexture(app, src, path, scratchAlloc, flags & kTextureInSRGB);
+                    auto loaded = LoadGLTFTexture(app, task.source, path, scratchAlloc, task.srgb);
                     if (loaded.has_value())
                     {
                         if (loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Unorm ||
@@ -1137,11 +1184,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         {
             LOG(Scene, LogInfo, "Loading environment HDRI {}", *environmentTextureSource.path);
             auto result = LoadTexture(app, *environmentTextureSource.path, scratchAlloc, true);
-            if (!result)
-            {
-                LOG(Scene, LogError, "Failed to load environment HDRI {}", *environmentTextureSource.path);
-                return;
-            }
+            CHECK_MSG(result.has_value(), "Failed to load environment HDRI {}", *environmentTextureSource.path);
             environmentTexture = std::move(result.Get());
         }
         BuildTextureBlobJobs(scene.mTables.textures[environmentTextureIndex],
@@ -1287,7 +1330,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         AppendResourceBlobJobs(blobJobs, jobs);
     for (FResourceBlobJobs& jobs : curveBlobJobs)
         AppendResourceBlobJobs(blobJobs, jobs);
-    for (size_t i = 0; i < data->textures_count; ++i)
+    for (size_t i = 0; i < uniqueTextureCount; ++i)
         AppendResourceBlobJobs(blobJobs, textureBlobJobs[i]);
     Vector<FPreparedBlob> preparedBlobs(scratchAlloc);
     preparedBlobs.reserve(blobJobs.size());
@@ -1304,20 +1347,45 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         CommitPreparedBlobJobs(blobSerializer, preparedBlobs);
     }
 
-    /* Instances / Cameras / Light */
-    for (size_t i = 0; i < data->nodes_count; i++)
+    /* Source hierarchy and components. Only instantiate the selected glTF scene. */
+    cgltf_scene const* activeScene = data->scene ? data->scene : (data->scenes_count ? &data->scenes[0] : nullptr);
+    auto addNode = [&](FSceneNode value) -> uint32_t
     {
-        const cgltf_node* node = &data->nodes[i];
-        auto getTransform = [&](FTransform& outTransform) -> void
-        {
-            mat4 world;
-            cgltf_node_transform_world(node, reinterpret_cast<float*>(&world));
-            decompose(world, outTransform.scale, outTransform.rotation, outTransform.transform);
-        };
+        CHECK_MSG(scene.mTables.nodes.size() < INT32_MAX, "Scene node count exceeds index range");
+        uint32_t const index = static_cast<uint32_t>(scene.mTables.nodes.size());
+        scene.Add(value);
+        return index;
+    };
+    FUUID const sceneRoot = FUUID::Generate();
+    String const sceneName = activeScene && activeScene->name ? activeScene->name : String(Stem(path));
+    addNode({.id = sceneRoot, .name = internString(sceneName.c_str())});
+    Vector<Pair<cgltf_node const*, FUUID>> pending(scratchAlloc);
+    if (activeScene)
+    {
+        for (size_t i = activeScene->nodes_count; i > 0; --i)
+            pending.emplace_back(activeScene->nodes[i - 1], sceneRoot);
+    }
+    else
+    {
+        for (size_t i = data->nodes_count; i > 0; --i)
+            if (!data->nodes[i - 1].parent)
+                pending.emplace_back(&data->nodes[i - 1], sceneRoot);
+    }
+    Vector<uint8_t> visited(data->nodes_count, 0u, scratchAlloc);
+    while (!pending.empty())
+    {
+        auto const [node, parent] = pending.back();
+        pending.pop_back();
+        size_t const sourceIndex = cgltf_node_index(data, node);
+        CHECK_MSG(sourceIndex < visited.size() && !visited[sourceIndex], "Invalid or repeated glTF hierarchy node");
+        visited[sourceIndex] = 1;
+        FSceneNode sceneNode{.id = FUUID::Generate(), .name = internString(node->name), .parent = parent};
+        cgltf_node_transform_local(node, &sceneNode.localTransform[0][0]);
+        uint32_t const nodeIndex = addNode(sceneNode);
+        for (size_t i = node->children_count; i > 0; --i)
+            pending.emplace_back(node->children[i - 1], sceneNode.id);
         if (node->mesh)
         {
-            mat4 worldMat;
-            cgltf_node_transform_world(node, reinterpret_cast<float*>(&worldMat));
 
             auto meshIndex = cgltf_mesh_index(data, node->mesh);
             auto const& primResources = meshPrimitiveResources[meshIndex];
@@ -1350,16 +1418,12 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
 
             for (size_t inst = 0; inst < instCount; ++inst)
             {
-                FTransform xform{};
-                if (instCount == 1 && tAcc == nullptr && rAcc == nullptr && sAcc == nullptr)
-                {
-                    // Fast path: no instancing, reuse node world directly.
-                    decompose(worldMat, xform.scale, xform.rotation, xform.transform);
-                }
-                else
+                uint32_t instanceNodeIndex = nodeIndex;
+                FUUID instanceNodeId = sceneNode.id;
+                if (node->has_mesh_gpu_instancing)
                 {
                     float3 t{0.0f, 0.0f, 0.0f};
-                    quat r{1.0f, 0.0f, 0.0f, 0.0f}; // (w, x, y, z) identity
+                    quat r = quat_cast(mat3(1.0f));
                     float3 s{1.0f, 1.0f, 1.0f};
                     if (tAcc)
                     {
@@ -1371,8 +1435,11 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
                     {
                         float v[4] = {0, 0, 0, 1};
                         cgltf_accessor_read_float(rAcc, inst, v, 4);
-                        // glTF stores quaternions as (x, y, z, w); glm::quat ctor is (w, x, y, z).
-                        r = quat{v[3], v[0], v[1], v[2]};
+                        // Assign components explicitly: this project configures GLM's ctor as XYZW.
+                        r.x = v[0];
+                        r.y = v[1];
+                        r.z = v[2];
+                        r.w = v[3];
                     }
                     if (sAcc)
                     {
@@ -1380,11 +1447,13 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
                         cgltf_accessor_read_float(sAcc, inst, v, 3);
                         s = float3{v[0], v[1], v[2]};
                     }
-                    mat4 instLocal = translate(mat4(1.0f), t) * mat4_cast(r) * scale(mat4(1.0f), s);
-                    mat4 instWorld = worldMat * instLocal;
-                    decompose(instWorld, xform.scale, xform.rotation, xform.transform);
+                    instanceNodeId = FUUID::Generate();
+                    instanceNodeIndex = addNode({.id = instanceNodeId,
+                                                 .name = internString(Format("Instance {}", inst).c_str()),
+                                                 .parent = sceneNode.id,
+                                                 .localTransform = translate(mat4(1.0f), t) * mat4_cast(r) *
+                                                                   scale(mat4(1.0f), s)});
                 }
-                instance.transform = xform;
                 for (size_t p = 0; p < primResources.size(); ++p)
                 {
                     auto* sub = node->mesh->primitives + p;
@@ -1398,6 +1467,12 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
                     instance.material = sub->material ? gltfMaterialIds[cgltf_material_index(data, sub->material)]
                                                       : kDefaultMaterialUUID;
                     scene.Add(instance);
+                    uint32_t componentNodeIndex = instanceNodeIndex;
+                    if (primResources.size() > 1)
+                        componentNodeIndex = addNode({.id = FUUID::Generate(),
+                                                      .name = internString(Format("Primitive {}", p).c_str()),
+                                                      .parent = instanceNodeId});
+                    scene.mTables.nodes[componentNodeIndex].instance = instance.id;
                 }
             }
         }
@@ -1405,8 +1480,9 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         {
             FCamera camera{};
             camera.id = FUUID::Generate();
-            getTransform(camera.transform);
-            camera.fovY = node->camera->data.perspective.yfov;
+            scene.mTables.nodes[nodeIndex].camera = camera.id;
+            camera.fovY = node->camera->type == cgltf_camera_type_perspective ? node->camera->data.perspective.yfov :
+                                                                              radians(60.0f);
             if (node->camera->has_lens)
             {
                 camera.lensEnabled = true;
@@ -1424,7 +1500,7 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             FLight light{};
             light.id = FUUID::Generate();
             light.name = internString(node->light->name);
-            getTransform(light.transform);
+            scene.mTables.nodes[nodeIndex].light = light.id;
             light.color = float3{node->light->color[0], node->light->color[1], node->light->color[2]};
             light.power = node->light->intensity / 683.0f;
             light.useShadow = node->light->has_foundation_lights ? node->light->use_shadow != 0 : true;
@@ -1455,10 +1531,10 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             FLight light{};
             light.id = FUUID::Generate();
             light.name = internString(node->light_area->name);
-            getTransform(light.transform);
-            float ws = std::max({std::abs(light.transform.scale.x), std::abs(light.transform.scale.y),
-                                 std::abs(light.transform.scale.z)});
-            light.transform.scale = float3{1, 1, 1};
+            if (scene.mTables.nodes[nodeIndex].light.IsNil())
+                scene.mTables.nodes[nodeIndex].light = light.id;
+            else
+                addNode({.id = FUUID::Generate(), .name = light.name, .parent = sceneNode.id, .light = light.id});
 
             const cgltf_light_area* la = node->light_area;
             light.color = float3{la->color[0], la->color[1], la->color[2]};
@@ -1469,13 +1545,13 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
             if (la->type == cgltf_light_area_type_disk)
             {
                 light.type = FLightType::Disk;
-                fullW = fullH = la->size * ws;
+                fullW = fullH = la->size;
             }
             else
             {
                 light.type = FLightType::Rect;
-                fullW = la->size * la->rect_aspect * ws;
-                fullH = la->size * ws;
+                fullW = la->size * la->rect_aspect;
+                fullH = la->size;
             }
             light.width = fullW * 0.5f;
             light.height = fullH * 0.5f;
@@ -1484,9 +1560,11 @@ void BuildGLTFSerializedScene(RHIApplication const& app, JobSystem* jobs, String
         }
     }
     scene.mTables.lights.insert(scene.mTables.lights.begin(), environmentLight);
+    addNode({.id = FUUID::Generate(), .name = internString("Environment"), .light = environmentLight.id});
 }
 
 static_assert(std::is_trivially_copyable_v<FSceneHeader>);
+static_assert(std::is_trivially_copyable_v<FSceneNode>);
 static_assert(std::is_trivially_copyable_v<FSerializedMeshLOD>);
 static_assert(std::is_trivially_copyable_v<FSerializedCurve>);
 
@@ -1618,10 +1696,14 @@ void FImportedScene::RebuildIndex()
 {
     auto fill = [](HashMap<FUUID, uint32_t>& map, auto const& vec)
     {
+        CHECK_MSG(vec.size() <= INT32_MAX, "Scene table exceeds index range");
         map.clear();
         map.reserve(vec.size());
         for (uint32_t i = 0; i < static_cast<uint32_t>(vec.size()); ++i)
-            map.emplace(vec[i].id, i);
+        {
+            CHECK_MSG(!vec[i].id.IsNil(), "Scene table has a nil id");
+            CHECK_MSG(map.emplace(vec[i].id, i).second, "Scene table has a duplicate id");
+        }
     };
     fill(mIndex.strings, mTables.strings);
     fill(mIndex.instances, mTables.instances);
@@ -1630,6 +1712,213 @@ void FImportedScene::RebuildIndex()
     fill(mIndex.textures, mTables.textures);
     fill(mIndex.meshes, mTables.meshes);
     fill(mIndex.curves, mTables.curves);
+    fill(mIndex.cameras, mTables.cameras);
+    fill(mIndex.nodes, mTables.nodes);
+
+    auto& hierarchy = mHierarchy;
+    uint32_t const count = static_cast<uint32_t>(mTables.nodes.size());
+    constexpr uint32_t invalid = FSceneHierarchy::Invalid;
+    hierarchy.roots.clear();
+    hierarchy.parents.assign(count, invalid);
+    hierarchy.firstChild.assign(count, invalid);
+    hierarchy.nextSibling.assign(count, invalid);
+    hierarchy.worldTransforms.resize(count, mat4(1.0f));
+    Vector<uint32_t> lastChild(count, invalid, mScratchAlloc);
+    mIndex.instanceNodes.clear();
+    mIndex.lightNodes.clear();
+    mIndex.cameraNodes.clear();
+    mIndex.instanceNodes.reserve(mTables.instances.size());
+    mIndex.lightNodes.reserve(mTables.lights.size());
+    mIndex.cameraNodes.reserve(mTables.cameras.size());
+    auto bind = [](auto& owners, auto const& components, FUUID id, uint32_t node)
+    {
+        if (id.IsNil())
+            return;
+        CHECK_MSG(components.contains(id), "Scene node references an unknown component");
+        CHECK_MSG(owners.emplace(id, node).second, "Scene component belongs to more than one node");
+    };
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        FSceneNode const& node = mTables.nodes[i];
+        if (node.parent.IsNil())
+            hierarchy.roots.push_back(i);
+        else
+        {
+            int const parent = NodeIndex(node.parent);
+            CHECK_MSG(parent >= 0 && parent != static_cast<int>(i), "Invalid scene node parent");
+            hierarchy.parents[i] = static_cast<uint32_t>(parent);
+            if (lastChild[parent] == invalid)
+                hierarchy.firstChild[parent] = i;
+            else
+                hierarchy.nextSibling[lastChild[parent]] = i;
+            lastChild[parent] = i;
+        }
+        CHECK_MSG(node.name.IsNil() || mIndex.strings.contains(node.name), "Scene node has an unknown name");
+        for (int column = 0; column < 4; ++column)
+            for (int row = 0; row < 4; ++row)
+                CHECK_MSG(std::isfinite(node.localTransform[column][row]), "Scene node has a non-finite transform");
+        CHECK_MSG(node.localTransform[0][3] == 0.0f && node.localTransform[1][3] == 0.0f &&
+                      node.localTransform[2][3] == 0.0f && node.localTransform[3][3] == 1.0f,
+                  "Scene node transform must be affine");
+        bind(mIndex.instanceNodes, mIndex.instances, node.instance, i);
+        bind(mIndex.lightNodes, mIndex.lights, node.light, i);
+        bind(mIndex.cameraNodes, mIndex.cameras, node.camera, i);
+    }
+    CHECK_MSG(mIndex.instanceNodes.size() == mTables.instances.size() &&
+                  mIndex.lightNodes.size() == mTables.lights.size() &&
+                  mIndex.cameraNodes.size() == mTables.cameras.size(),
+              "Every scene component must belong to a node");
+
+    // Breadth-first order is parent-before-child and detects cycles without recursion.
+    hierarchy.order.reserve(count);
+    hierarchy.order = hierarchy.roots;
+    for (size_t cursor = 0; cursor < hierarchy.order.size(); ++cursor)
+        for (uint32_t child = hierarchy.firstChild[hierarchy.order[cursor]]; child != invalid;
+             child = hierarchy.nextSibling[child])
+            hierarchy.order.push_back(child);
+    CHECK_MSG(hierarchy.order.size() == count, "Scene hierarchy contains a parenting cycle");
+    UpdateWorldTransforms();
+}
+
+FLight& FImportedScene::EnsureEnvironmentLight()
+{
+    if (mTables.lights.empty())
+    {
+        FLight const light = MakeDefaultEnvironmentLight();
+        mTables.lights.push_back(light);
+        mTables.nodes.push_back({.id = FUUID::Generate(), .name = InternString("Environment"), .light = light.id});
+        RebuildIndex();
+    }
+    CHECK(mTables.lights.front().type == FLightType::Environment);
+    return mTables.lights.front();
+}
+
+void FImportedScene::UpdateWorldTransforms()
+{
+    for (uint32_t index : mHierarchy.order)
+    {
+        FSceneNode const& node = mTables.nodes[index];
+        uint32_t const parent = mHierarchy.parents[index];
+        mat4 const world = parent == FSceneHierarchy::Invalid ? node.localTransform :
+                              mHierarchy.worldTransforms[parent] * node.localTransform;
+        mHierarchy.worldTransforms[index] = world;
+        auto apply = [&](FTransform& transform)
+        {
+            decompose(world, transform.scale, transform.rotation, transform.transform);
+            float const length2 = dot(transform.rotation, transform.rotation);
+            transform.rotation = length2 > 0.0f ? normalize(transform.rotation) : quat_cast(mat3(1.0f));
+        };
+        if (!node.instance.IsNil())
+            apply(mTables.instances[InstanceIndex(node.instance)].transform);
+        if (!node.light.IsNil())
+            apply(mTables.lights[LightIndex(node.light)].transform);
+        if (!node.camera.IsNil())
+            apply(mTables.cameras[CameraIndex(node.camera)].transform);
+    }
+}
+
+mat4 const& FImportedScene::NodeWorldTransform(FUUID id) const
+{
+    int const index = NodeIndex(id);
+    CHECK(index >= 0);
+    return mHierarchy.worldTransforms[index];
+}
+
+namespace
+{
+bool WorldToLocal(mat4 const& parent, mat4 const& world, mat4& local)
+{
+    float const det = determinant(parent);
+    // Tiny, non-zero scales are common in imported scenes and must remain editable.
+    if (!std::isfinite(det) || det == 0.0f)
+        return false;
+    local = inverse(parent) * world;
+    for (int column = 0; column < 4; ++column)
+        for (int row = 0; row < 4; ++row)
+            if (!std::isfinite(local[column][row]))
+                return false;
+    // Both inputs are affine; remove numerical noise from the homogeneous row.
+    local[0][3] = local[1][3] = local[2][3] = 0.0f;
+    local[3][3] = 1.0f;
+    return true;
+}
+} // namespace
+
+bool FImportedScene::SetNodeWorldTransform(FUUID id, mat4 const& world)
+{
+    int const index = NodeIndex(id);
+    if (index < 0)
+        return false;
+    FSceneNode& node = mTables.nodes[index];
+    mat4 local;
+    mat4 const parent = node.parent.IsNil() ? mat4(1.0f) : NodeWorldTransform(node.parent);
+    if (!WorldToLocal(parent, world, local))
+        return false;
+    node.localTransform = local;
+    UpdateWorldTransforms();
+    return true;
+}
+
+bool FImportedScene::IsNodeInSubtree(FUUID id, FUUID root) const
+{
+    int index = NodeIndex(id);
+    int const rootIndex = NodeIndex(root);
+    if (rootIndex < 0)
+        return false;
+    while (index >= 0)
+    {
+        if (index == rootIndex)
+            return true;
+        uint32_t const parent = mHierarchy.parents[index];
+        index = parent == FSceneHierarchy::Invalid ? -1 : static_cast<int>(parent);
+    }
+    return false;
+}
+
+bool FImportedScene::CanRemoveNode(FUUID id) const
+{
+    if (NodeIndex(id) < 0)
+        return false;
+    FLight const* environment = GetEnvironmentLight();
+    return !environment || !IsNodeInSubtree(LightNode(environment->id), id);
+}
+
+bool FImportedScene::RemoveNode(FUUID id)
+{
+    if (!CanRemoveNode(id))
+        return false;
+    Vector<uint8_t> removed(mTables.nodes.size(), 0u, mScratchAlloc);
+    removed[NodeIndex(id)] = 1;
+    for (uint32_t index : mHierarchy.order)
+    {
+        uint32_t const parent = mHierarchy.parents[index];
+        if (parent != FSceneHierarchy::Invalid && removed[parent])
+            removed[index] = 1;
+    }
+    std::erase_if(mTables.instances, [&](FInstance const& value) { return removed[mIndex.instanceNodes.at(value.id)]; });
+    std::erase_if(mTables.lights, [&](FLight const& value) { return removed[mIndex.lightNodes.at(value.id)]; });
+    std::erase_if(mTables.cameras, [&](FCamera const& value) { return removed[mIndex.cameraNodes.at(value.id)]; });
+    std::erase_if(mTables.nodes, [&](FSceneNode const& value) { return removed[NodeIndex(value.id)]; });
+    RebuildIndex();
+    return true;
+}
+
+bool FImportedScene::ReparentNode(FUUID id, FUUID parent)
+{
+    int const index = NodeIndex(id);
+    if (index < 0 || (!parent.IsNil() && NodeIndex(parent) < 0) || IsNodeInSubtree(parent, id))
+        return false;
+    // The environment is scene-global, not part of an importable object subtree.
+    FLight const* environment = GetEnvironmentLight();
+    if (environment && mTables.nodes[index].light == environment->id)
+        return false;
+    mat4 local;
+    if (!WorldToLocal(parent.IsNil() ? mat4(1.0f) : NodeWorldTransform(parent), NodeWorldTransform(id), local))
+        return false;
+    mTables.nodes[index].parent = parent;
+    mTables.nodes[index].localTransform = local;
+    RebuildIndex();
+    return true;
 }
 
 Span<const unsigned char> FImportedScene::GetPayloadBytes() const
@@ -1678,6 +1967,8 @@ void FinalizeSceneWriter(FImportedScene& scene)
     CHECK(scene.mFile != nullptr);
     uint64_t payloadFileEnd = scene.mWriteOffset;
     CHECK_MSG(payloadFileEnd >= scene.mHeader.payloadOffset, "FScene writer is before payload offset");
+    // Validate the authored hierarchy and evaluate world snapshots before saving metadata.
+    scene.RebuildIndex();
 
     Vector<unsigned char> metadata(scene.mScratchAlloc);
     MemoryWriter metadataWriter(metadata);

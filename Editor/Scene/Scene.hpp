@@ -17,7 +17,7 @@ enum class FInstanceType : uint32_t
 };
 struct FInstance
 {
-    FTransform transform;
+    FTransform transform; // Evaluated world TRS; author FSceneNode::localTransform instead.
     FInstanceType type{FInstanceType::Mesh};
     FUUID id{};
     FUUID name{}; // FStringEntry id; kNilUUID when unnamed.
@@ -139,10 +139,9 @@ struct FLight
     bool environmentMap{false};
     FUUID environmentTexture{};
     float environmentAzimuthOffset{0.0f};
-    // Scene-node hierarchy index for rigid node animation; -1 when static.
-    int32_t node{-1};
 
     bool HasEnvironmentTexture() const { return environmentMap && !environmentTexture.IsNil(); }
+    float2 WorldHalfExtents() const { return abs(float2(transform.scale.x, transform.scale.y)) * float2(width, height); }
 };
 
 inline FLight MakeDefaultEnvironmentLight()
@@ -152,7 +151,6 @@ inline FLight MakeDefaultEnvironmentLight()
     light.type = FLightType::Environment;
     light.color = float3{0.05f, 0.05f, 0.05f};
     light.power = 1.0f;
-    light.node = -1;
     return light;
 }
 
@@ -163,7 +161,27 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 28;
+static constexpr uint32_t kSceneVersion = 29;
+
+inline mat4 SceneTransformMatrix(FTransform const& transform)
+{
+    return translate(mat4(1.0f), transform.transform) * mat4_cast(transform.rotation) *
+           scale(mat4(1.0f), transform.scale);
+}
+
+// Persistent editor hierarchy. UUID links are independent of table/GPU indices.
+// A glTF node may carry several component kinds; multi-primitive meshes and
+// EXT_mesh_gpu_instancing use additional child nodes without flattening the source tree.
+struct FSceneNode
+{
+    FUUID id{};
+    FUUID name{};
+    FUUID parent{}; // nil == scene root
+    mat4 localTransform{1.0f}; // Preserve the source matrix, including inherited shear.
+    FUUID instance{};
+    FUUID light{};
+    FUUID camera{};
+};
 
 // Stringpool entry
 struct FStringEntry
@@ -183,10 +201,11 @@ struct FSceneTables
     Vector<FSerializedMesh> meshes;
     Vector<FSerializedCurve> curves;
     Vector<FSerializedTexture> textures;
+    Vector<FSceneNode> nodes;
 
     explicit FSceneTables(Allocator* alloc = GLOBAL_ALLOC)
         : strings(alloc), cameras(alloc), lights(alloc), instances(alloc), materials(alloc), meshes(alloc), curves(alloc),
-          textures(alloc)
+          textures(alloc), nodes(alloc)
     {
     }
 };
@@ -201,10 +220,16 @@ struct FSceneIndex
     HashMap<FUUID, uint32_t> textures;
     HashMap<FUUID, uint32_t> meshes;
     HashMap<FUUID, uint32_t> curves;
+    HashMap<FUUID, uint32_t> cameras;
+    HashMap<FUUID, uint32_t> nodes;
+    HashMap<FUUID, uint32_t> instanceNodes;
+    HashMap<FUUID, uint32_t> lightNodes;
+    HashMap<FUUID, uint32_t> cameraNodes;
 
     explicit FSceneIndex(Allocator* alloc = GLOBAL_ALLOC)
         : strings(alloc), instances(alloc), materials(alloc), lights(alloc), textures(alloc),
-          meshes(alloc), curves(alloc)
+          meshes(alloc), curves(alloc), cameras(alloc), nodes(alloc), instanceNodes(alloc), lightNodes(alloc),
+          cameraNodes(alloc)
     {
     }
 
@@ -214,6 +239,20 @@ struct FSceneIndex
             return -1;
         auto it = map.find(id);
         return it == map.end() ? -1 : static_cast<int>(it->second);
+    }
+};
+
+// Derived, non-serialized traversal data. Rebuilt after structural edits; no recursive
+// walks or dependency on parents preceding children in the serialized node table.
+struct FSceneHierarchy
+{
+    static constexpr uint32_t Invalid = UINT32_MAX;
+    Vector<uint32_t> roots, parents, firstChild, nextSibling, order;
+    Vector<mat4> worldTransforms;
+
+    explicit FSceneHierarchy(Allocator* alloc = GLOBAL_ALLOC)
+        : roots(alloc), parents(alloc), firstChild(alloc), nextSibling(alloc), order(alloc), worldTransforms(alloc)
+    {
     }
 };
 
@@ -279,6 +318,7 @@ inline void FSerialize(FWriter& writer, FSceneTables const& tables)
     FSerialize(writer, tables.meshes);
     FSerialize(writer, tables.curves);
     FSerialize(writer, tables.textures);
+    FSerialize(writer, tables.nodes);
 }
 
 template <>
@@ -293,6 +333,7 @@ inline void FDeserialize(FReader& reader, FSceneTables& tables)
     FDeserialize(reader, tables.meshes, tables.meshes.get_allocator().mResource);
     FDeserialize(reader, tables.curves);
     FDeserialize(reader, tables.textures, tables.textures.get_allocator().mResource);
+    FDeserialize(reader, tables.nodes);
 }
 
 struct FSceneHeader
@@ -313,6 +354,7 @@ struct FImportedScene
     FSceneHeader mHeader{};
     FSceneTables mTables;
     FSceneIndex mIndex{GLOBAL_ALLOC};
+    FSceneHierarchy mHierarchy{GLOBAL_ALLOC};
     // Non-owning mapped file view where payload blobs are stored. Lifetime is owned by the caller.
     MemoryMappedFile* mFile{nullptr};
     Allocator* mScratchAlloc{GLOBAL_ALLOC};
@@ -333,6 +375,11 @@ struct FImportedScene
     {
         CHECK(mWriting);
         mTables.cameras.push_back(camera);
+    }
+    void Add(FSceneNode const& node)
+    {
+        CHECK(mWriting);
+        mTables.nodes.push_back(node);
     }
     void Add(FLight const& light)
     {
@@ -389,17 +436,7 @@ struct FImportedScene
         CHECK(mTables.lights.front().type == FLightType::Environment);
         return &mTables.lights.front();
     }
-    FLight& EnsureEnvironmentLight()
-    {
-        if (mTables.lights.empty())
-        {
-            // Inserting at the front shifts every light index, so refresh the light lookups.
-            mTables.lights.insert(mTables.lights.begin(), MakeDefaultEnvironmentLight());
-            RebuildIndex();
-        }
-        CHECK(mTables.lights.front().type == FLightType::Environment);
-        return mTables.lights.front();
-    }
+    FLight& EnsureEnvironmentLight();
 
     Span<FInstance const> GetInstances() const { return {mTables.instances.data(), mTables.instances.size()}; }
     Span<FInstance> GetInstances() { return {mTables.instances.data(), mTables.instances.size()}; }
@@ -412,7 +449,18 @@ struct FImportedScene
     Span<FSerializedTexture const> GetTextures() const { return {mTables.textures.data(), mTables.textures.size()}; }
     Span<FStringEntry const> GetStrings() const { return {mTables.strings.data(), mTables.strings.size()}; }
 
+    Span<FSceneNode const> GetNodes() const { return {mTables.nodes.data(), mTables.nodes.size()}; }
+    Span<FSceneNode> GetNodes() { return {mTables.nodes.data(), mTables.nodes.size()}; }
+
     void RebuildIndex();
+    // Component transforms are evaluated world-space snapshots, never authored directly.
+    void UpdateWorldTransforms();
+    mat4 const& NodeWorldTransform(FUUID id) const;
+    bool SetNodeWorldTransform(FUUID id, mat4 const& world);
+    bool IsNodeInSubtree(FUUID id, FUUID root) const;
+    bool CanRemoveNode(FUUID id) const;
+    bool RemoveNode(FUUID id);
+    bool ReparentNode(FUUID id, FUUID parent); // Keep world placement; reject cycles/singular parents.
 
     char const* GetName(FUUID id) const
     {
@@ -425,6 +473,16 @@ struct FImportedScene
     int TextureIndex(FUUID id) const { return FSceneIndex::Find(mIndex.textures, id); }
     int MeshIndex(FUUID id) const { return FSceneIndex::Find(mIndex.meshes, id); }
     int CurveIndex(FUUID id) const { return FSceneIndex::Find(mIndex.curves, id); }
+    int CameraIndex(FUUID id) const { return FSceneIndex::Find(mIndex.cameras, id); }
+    int NodeIndex(FUUID id) const { return FSceneIndex::Find(mIndex.nodes, id); }
+    FUUID InstanceNode(FUUID id) const { return ComponentNode(mIndex.instanceNodes, id); }
+    FUUID LightNode(FUUID id) const { return ComponentNode(mIndex.lightNodes, id); }
+    FUUID CameraNode(FUUID id) const { return ComponentNode(mIndex.cameraNodes, id); }
+    FUUID ComponentNode(HashMap<FUUID, uint32_t> const& owners, FUUID id) const
+    {
+        int const index = FSceneIndex::Find(owners, id);
+        return index < 0 ? kNilUUID : mTables.nodes[index].id;
+    }
 
     // Content-addressed string pool; main-thread only during glTF build.
     FUUID InternString(const char* s)

@@ -13,8 +13,8 @@
 
 using namespace EditorPathUtil;
 
-static void DrawLightGizmos();
-static void DrawInstanceGizmos();
+static void DrawNodeGizmos();
+static void DrawSelectedLightProperties();
 static void DrawViewportSelectionContextMenu();
 
 namespace
@@ -487,75 +487,25 @@ static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
     drawList->AddPolyline(points, pointCount, outline, ImDrawFlags_Closed, 2.0f);
 }
 
-static FInstance& SelectedSceneInstance()
-{
-    int const idx = SceneInstanceIndexFromId(GEditor.selectedInstance);
-    CHECK(idx >= 0);
-    return GEditor.Scene().GetInstances()[idx];
-}
-
 static int SelectedInstanceIndex()
 {
     return SceneInstanceIndexFromId(GEditor.selectedInstance);
 }
 
-static bool IsInstanceIndexValid(int index)
+static bool IsNodeTransformable(FUUID nodeId)
 {
-    return GEditor.HasScene() && GContext->gpuScene &&
-           index >= 0 &&
-           index < static_cast<int>(GContext->gpuScene->GetInstanceCount()) &&
-           index < static_cast<int>(GEditor.Scene().GetInstances().size());
-}
-
-static void SelectInstance(uint32_t index, GSInstance const& inst)
-{
-    ::SelectInstance(GEditor.Scene().GetInstances()[index].id,
-                     GEditor.Scene().GetMaterials()[inst.materialIndex].id);
-}
-
-static mat4 InstanceTransformMatrix(FTransform const& transform)
-{
-    return translate(mat4(1.0f), transform.transform) *
-           mat4_cast(transform.rotation) *
-           scale(mat4(1.0f), transform.scale);
-}
-
-static bool GetInstanceWorldBounds(int index, FSerializedBounds& outBounds)
-{
-    if (!IsInstanceIndexValid(index))
+    int const index = SceneNodeIndexFromId(nodeId);
+    if (index < 0)
         return false;
-
-    FInstance const& instance = GEditor.Scene().GetInstances()[index];
-    FSerializedBounds const* localBounds = InstanceResourceBounds(instance);
-    if (!localBounds)
-        return false;
-
-    mat4 localToWorld = InstanceTransformMatrix(instance.transform);
-    outBounds = FSerializedBounds::Empty();
-    for (int x = 0; x < 2; ++x)
-    {
-        for (int y = 0; y < 2; ++y)
-        {
-            for (int z = 0; z < 2; ++z)
-            {
-                float3 p{
-                    x ? localBounds->max.x : localBounds->min.x,
-                    y ? localBounds->max.y : localBounds->min.y,
-                    z ? localBounds->max.z : localBounds->min.z
-                };
-                float4 world = localToWorld * float4(p, 1.0f);
-                float3 worldPoint{world.x, world.y, world.z};
-                outBounds += worldPoint;
-            }
-        }
-    }
-    return true;
+    auto const& scene = GEditor.Scene();
+    int const light = scene.LightIndex(scene.GetNodes()[index].light);
+    return light < 0 || scene.GetLights()[light].type != FLightType::Environment;
 }
 
-static void FrameInstance(int index)
+static void FrameNode(FUUID nodeId)
 {
     FSerializedBounds bounds{};
-    if (!GetInstanceWorldBounds(index, bounds))
+    if (!SceneNodeWorldBounds(nodeId, bounds))
         return;
 
     float3 center = (bounds.min + bounds.max) * 0.5f;
@@ -569,24 +519,26 @@ static void FrameInstance(int index)
     GEditor.cameraUpdated = true;
 }
 
-static void MoveInstanceToView(int index)
+static void MoveNodeToView(FUUID nodeId, bool align = false)
 {
-    if (!IsInstanceIndexValid(index))
+    if (!IsNodeTransformable(nodeId))
         return;
-
-    GEditor.Scene().GetInstances()[index].transform.transform = GEditor.camera.position;
-    CommitSceneToGPU(true);
-}
-
-static void AlignInstanceWithView(int index)
-{
-    if (!IsInstanceIndexValid(index))
-        return;
-
-    FTransform& transform = GEditor.Scene().GetInstances()[index].transform;
-    transform.transform = GEditor.camera.position;
-    transform.rotation = GEditor.camera.rot;
-    CommitSceneToGPU(true);
+    auto& scene = GEditor.Scene();
+    mat4 world = scene.NodeWorldTransform(nodeId);
+    if (align)
+    {
+        FTransform transform;
+        Math::decompose(world, transform.scale, transform.rotation, transform.transform);
+        transform.transform = GEditor.camera.position;
+        transform.rotation = GEditor.camera.rot;
+        world = SceneTransformMatrix(transform);
+    }
+    else
+        world[3] = float4(GEditor.camera.position, 1.0f);
+    if (scene.SetNodeWorldTransform(nodeId, world))
+        CommitSceneToGPU(true);
+    else
+        LOG(Editor, LogWarn, "Cannot move node through a singular parent transform");
 }
 
 static bool IsLightIndexValid(int index)
@@ -600,28 +552,6 @@ static bool IsLightTransformable(int index)
 {
     return IsLightIndexValid(index) &&
            GEditor.Scene().GetLights()[index].type != FLightType::Environment;
-}
-
-static void MoveLightToView(int index)
-{
-    if (!IsLightTransformable(index))
-        return;
-
-    GEditor.Scene().GetLights()[index].transform.transform = GEditor.camera.position;
-    UpdateSceneLights();
-    GEditor.shaderGlobals.accumulatedFrames = 0;
-}
-
-static void AlignLightWithView(int index)
-{
-    if (!IsLightTransformable(index))
-        return;
-
-    FTransform& transform = GEditor.Scene().GetLights()[index].transform;
-    transform.transform = GEditor.camera.position;
-    transform.rotation = GEditor.camera.rot;
-    UpdateSceneLights();
-    GEditor.shaderGlobals.accumulatedFrames = 0;
 }
 
 static void AlignViewToLight(int index)
@@ -638,19 +568,26 @@ static void AlignViewToLight(int index)
     GEditor.cameraUpdated = true;
 }
 
-static void DeleteLight(int index)
+// Returns a requested deletion; callers apply it after finishing hierarchy traversal.
+static bool DrawNodeActions(FUUID nodeId)
 {
-    if (!IsLightTransformable(index))
-        return;
-
-    auto& lights = GEditor.Scene().mTables.lights;
-    FUUID const deletedId = lights[index].id;
-    lights.erase(lights.begin() + index);
-    GEditor.Scene().RebuildIndex();
-    if (GEditor.selectedLight == deletedId)
-        ClearSelection();
-    UpdateSceneLights();
-    GEditor.shaderGlobals.accumulatedFrames = 0;
+    bool const canTransform = IsNodeTransformable(nodeId);
+    FSerializedBounds bounds{};
+    if (ImGui::MenuItem("Frame Selected", nullptr, false, SceneNodeWorldBounds(nodeId, bounds)))
+        FrameNode(nodeId);
+    int const light = SceneLightIndexFromId(GEditor.selectedLight);
+    if (IsLightTransformable(light) && ImGui::MenuItem("Align View To Selected"))
+        AlignViewToLight(light);
+    if (ImGui::MenuItem("Move to View", nullptr, false, canTransform))
+        MoveNodeToView(nodeId);
+    if (ImGui::MenuItem("Align with View", nullptr, false, canTransform))
+        MoveNodeToView(nodeId, true);
+    ImGui::Separator();
+    bool const canRemove = GEditor.HasScene() && GEditor.Scene().CanRemoveNode(nodeId);
+    bool const remove = ImGui::MenuItem(PSI_TRASH " Delete Subtree", nullptr, false, canRemove);
+    if (!canRemove && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("The environment light is required");
+    return remove;
 }
 
 static const char* InstanceTypeName(uint32_t type)
@@ -2052,7 +1989,6 @@ void EditorDockSpaceAndMenuBar()
         ImGui::DockBuilderDockWindow("Inspector", dockLeftBottom);
         ImGui::DockBuilderDockWindow("Material", dockLeftBottom);
         ImGui::DockBuilderDockWindow("Camera", dockRight);
-        ImGui::DockBuilderDockWindow("Lighting", dockRight);
         ImGui::DockBuilderDockWindow("Rendering", dockRight);
         ImGui::DockBuilderDockWindow("Profiler", dockRight);
         ImGui::DockBuilderFinish(dockspaceID);
@@ -2302,65 +2238,190 @@ void EditorDockSpaceAndMenuBar()
     ImGui::PopStyleColor(); // WindowBg
 }
 
+static void AddHierarchyNode(Optional<FLightType> lightType = {})
+{
+    auto& scene = GEditor.Scene();
+    FUUID const parent = IsNodeTransformable(GEditor.selectedNode) ? GEditor.selectedNode : kNilUUID;
+    String const name = lightType ? Format("{} Light", LightTypeName(*lightType)) : String("Node");
+    FSceneNode node{.id = FUUID::Generate(), .name = scene.InternString(name.c_str()),
+                    .parent = lightType ? kNilUUID : parent};
+    if (lightType)
+    {
+        FLight light{};
+        light.id = FUUID::Generate();
+        light.name = node.name;
+        light.type = *lightType;
+        light.color = float3{1.0f, 0.92f, 0.78f};
+        light.power = *lightType == FLightType::Directional ? 1.0f : 10.0f;
+        light.radius = 0.05f;
+        light.angularDiameter = radians(2.0f);
+        node.light = light.id;
+        node.localTransform = translate(mat4(1.0f), GEditor.camera.position) * mat4_cast(GEditor.camera.rot);
+        scene.mTables.lights.push_back(light);
+    }
+    scene.mTables.nodes.push_back(node);
+    scene.RebuildIndex();
+    // New lights start at the current view, even when inserted under a transformed parent.
+    if (lightType && !parent.IsNil() && !scene.ReparentNode(node.id, parent))
+        LOG(Editor, LogWarn, "Added light at scene root because the selected parent transform is singular");
+    SelectNode(node.id);
+    CommitSceneToGPU(true);
+}
+
+static void DrawHierarchyAddMenu()
+{
+    if (ImGui::Button(PSI_PLUS_SIGN " Add"))
+        ImGui::OpenPopup("HierarchyAdd");
+    if (!ImGui::BeginPopup("HierarchyAdd"))
+        return;
+    if (ImGui::MenuItem("Empty Node"))
+        AddHierarchyNode();
+    if (ImGui::BeginMenu("Light"))
+    {
+        for (uint32_t type = static_cast<uint32_t>(FLightType::Directional);
+             type <= static_cast<uint32_t>(FLightType::Rect); ++type)
+            if (ImGui::MenuItem(LightTypeName(static_cast<FLightType>(type))))
+                AddHierarchyNode(static_cast<FLightType>(type));
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Punctual Light Units"))
+    {
+        float factor = 1.0f;
+        if (ImGui::MenuItem("To SI"))
+            factor = 683.0f;
+        if (ImGui::MenuItem("To Unitless"))
+            factor = 1.0f / 683.0f;
+        if (factor != 1.0f)
+        {
+            for (FLight& light : GEditor.Scene().GetLights())
+                if (light.type == FLightType::Point || light.type == FLightType::Spot ||
+                    light.type == FLightType::Directional)
+                    light.power *= factor;
+            CommitSceneToGPU(true);
+        }
+        ImGui::EndMenu();
+    }
+    ImGui::EndPopup();
+}
+
+static void DrawHierarchyTree()
+{
+    auto& scene = GEditor.Scene();
+    DrawHierarchyAddMenu();
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu nodes / %zu instances / %zu lights", scene.GetNodes().size(),
+                        scene.GetInstances().size(), scene.GetLights().size());
+    ImGui::Separator();
+    auto const nodes = scene.GetNodes();
+    auto const& hierarchy = scene.mHierarchy;
+    constexpr uint32_t invalid = FSceneHierarchy::Invalid;
+    Vector<uint8_t> revealPath(GEditor.revealSelectedNode ? nodes.size() : 0u, 0u, GLOBAL_ALLOC);
+    if (!revealPath.empty())
+    {
+        int index = scene.NodeIndex(GEditor.selectedNode);
+        while (index >= 0)
+        {
+            revealPath[index] = 1;
+            uint32_t const parent = hierarchy.parents[index];
+            index = parent == invalid ? -1 : static_cast<int>(parent);
+        }
+    }
+    Vector<uint32_t> pending(GLOBAL_ALLOC);
+    pending.assign(hierarchy.roots.rbegin(), hierarchy.roots.rend());
+    FUUID deleteNode{};
+    // Explicit stack also handles very deep imported hierarchies without recursive UI calls.
+    while (!pending.empty())
+    {
+        uint32_t const index = pending.back();
+        pending.pop_back();
+        if (index == invalid)
+        {
+            ImGui::TreePop();
+            continue;
+        }
+        FSceneNode const& node = nodes[index];
+        bool const leaf = hierarchy.firstChild[index] == invalid;
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                   ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+        if (leaf)
+            flags |= ImGuiTreeNodeFlags_Leaf;
+        if (hierarchy.parents[index] == invalid)
+            flags |= ImGuiTreeNodeFlags_DefaultOpen;
+        if (GEditor.selectedNode == node.id)
+            flags |= ImGuiTreeNodeFlags_Selected;
+        if (!revealPath.empty() && revealPath[index])
+            ImGui::SetNextItemOpen(true);
+        FUUID name = node.name;
+        char const* kind = "Node";
+        int const light = scene.LightIndex(node.light);
+        int const instance = scene.InstanceIndex(node.instance);
+        if (light >= 0)
+        {
+            kind = LightTypeName(scene.GetLights()[light].type);
+            if (name.IsNil())
+                name = scene.GetLights()[light].name;
+        }
+        else if (instance >= 0)
+            kind = scene.GetInstances()[instance].type == FInstanceType::Curve ? "Curve" : "Mesh";
+        else if (!node.camera.IsNil())
+            kind = "Camera";
+        char label[256];
+        FormatIndexLabelWithName(label, sizeof(label), kind, static_cast<int>(index), name);
+        ImGuiPushUUID(node.id);
+        bool const open = ImGui::TreeNodeEx("##Node", flags, "%s", label);
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+            SelectNode(node.id);
+        if (ImGui::IsItemHovered())
+            SetUUIDTooltip(node.id);
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        {
+            SelectNode(node.id);
+            if (IsLightTransformable(light))
+                AlignViewToLight(light);
+            else
+                FrameNode(node.id);
+        }
+        if (GEditor.selectedNode == node.id && GEditor.revealSelectedNode)
+        {
+            ImGui::SetScrollHereY(0.5f);
+            GEditor.revealSelectedNode = false;
+        }
+        if (ImGui::BeginPopupContextItem())
+        {
+            if (GEditor.selectedNode != node.id)
+                SelectNode(node.id);
+            if (DrawNodeActions(node.id))
+                deleteNode = node.id;
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
+        if (open && !leaf)
+        {
+            char id[40];
+            ImGui::TreePush(node.id.Format(id, sizeof(id)));
+            pending.push_back(invalid);
+            size_t const first = pending.size();
+            for (uint32_t child = hierarchy.firstChild[index]; child != invalid; child = hierarchy.nextSibling[child])
+                pending.push_back(child);
+            std::reverse(pending.begin() + static_cast<std::ptrdiff_t>(first), pending.end());
+        }
+    }
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput &&
+        ImGui::IsKeyPressed(ImGuiKey_Delete, false))
+        deleteNode = GEditor.selectedNode;
+    if (!deleteNode.IsNil())
+        DeleteSceneNode(deleteNode);
+}
+
 void FHierarchyPanel()
 {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Hierarchy"))
     {
-        if (!GContext->gpuScene || GContext->gpuScene->GetInstanceCount() == 0)
-        {
-            ImGui::TextDisabled("No instances loaded");
-        }
+        if (!GEditor.HasScene())
+            ImGui::TextDisabled("No scene loaded");
         else
-        {
-            auto* gpu = GContext->gpuScene;
-            uint32_t instanceCount = gpu->GetInstanceCount();
-            auto sceneInstances = GEditor.Scene().GetInstances();
-            ImGui::Text("%u instances", instanceCount);
-            ImGui::Separator();
-            bool deletedInstance = false;
-            for (uint32_t i = 0; i < instanceCount && !deletedInstance; i++)
-            {
-                GSInstance inst = gpu->GetInstance(i);
-                if (i >= sceneInstances.size())
-                    continue;
-                FUUID const& instanceId = sceneInstances[i].id;
-                ImGuiPushUUID(instanceId);
-
-                char label[128];
-                FormatIndexLabelWithName(label, sizeof(label), InstanceTypeName(inst.type), static_cast<int>(i),
-                                         sceneInstances[i].name);
-                bool selected = (GEditor.selectedInstance == instanceId);                
-                if (ImGui::Selectable(label, selected))
-                {
-                    SelectInstance(i, inst);
-                }
-                if (ImGui::IsItemHovered())
-                    SetUUIDTooltip(instanceId);
-                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                    FrameInstance(static_cast<int>(i));
-                if (ImGui::BeginPopupContextItem())
-                {
-                    SelectInstance(i, inst);
-                    FSerializedBounds bounds{};
-                    bool const hasBounds = GetInstanceWorldBounds(static_cast<int>(i), bounds);
-                    if (ImGui::MenuItem("Frame Selected", nullptr, false, hasBounds))
-                        FrameInstance(static_cast<int>(i));
-                    if (ImGui::MenuItem("Move to View"))
-                        MoveInstanceToView(static_cast<int>(i));
-                    if (ImGui::MenuItem("Align with View"))
-                        AlignInstanceWithView(static_cast<int>(i));
-                    ImGui::Separator();
-                    if (ImGui::MenuItem(PSI_TRASH " Delete"))
-                    {
-                        DeleteSelectedInstance();
-                        deletedInstance = true;
-                    }
-                    ImGui::EndPopup();
-                }
-                ImGui::PopID();
-            }
-        }
+            DrawHierarchyTree();
     }
     ImGui::End();
     ImGui::PopStyleColor();
@@ -2503,427 +2564,212 @@ void FHierarchyPanel()
     ImGui::End();
     ImGui::PopStyleColor();
 
-    // Inspector panel (Instance)
+    // Inspector panel: one transform owner for meshes, groups, cameras, and lights.
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Inspector"))
     {
-        if (IsSelectedInstanceValid())
+        int const index = SceneNodeIndexFromId(GEditor.selectedNode);
+        if (index >= 0)
         {
-            int const idx = SelectedInstanceIndex();
-            auto& pi = SelectedSceneInstance();
-            ImGuiPushUUID(pi.id);
-
-            GSInstance inst = GContext->gpuScene->GetInstance(static_cast<uint32_t>(idx));
-            char instHeader[128];
-            FormatIndexLabelWithName(instHeader, sizeof(instHeader), InstanceTypeName(inst.type), idx, pi.name);
-            ImGui::TextUnformatted(instHeader);
-            DrawUUIDRow(pi.id);
-            ImGui::Separator();
-            bool changed = false;
-            changed |= ImGui::DragFloat3("Position", &pi.transform.transform.x, 0.01f);
-            changed |= ImGui::DragFloat4("Rotation", &pi.transform.rotation.x, 0.001f);
-            changed |= ImGui::DragFloat3("Scale", &pi.transform.scale.x, 0.01f);
-
-            // -- Gizmo controls --
-            ImGui::Separator();
-            if (ImGui::RadioButton(PSI_MOVE " Translate (G)", GEditor.gizmo.op == ImGuizmo::TRANSLATE))
-                GEditor.gizmo.op = ImGuizmo::TRANSLATE;
-            ImGui::SameLine();
-            if (ImGui::RadioButton(PSI_REFRESH " Rotate (R)", GEditor.gizmo.op == ImGuizmo::ROTATE))
-                GEditor.gizmo.op = ImGuizmo::ROTATE;
-            ImGui::SameLine();
-            if (ImGui::RadioButton(PSI_RESIZE_FULL " Scale (Q)", GEditor.gizmo.op == ImGuizmo::SCALE))
-                GEditor.gizmo.op = ImGuizmo::SCALE;
-            if (GEditor.gizmo.op != ImGuizmo::SCALE)
+            auto& scene = GEditor.Scene();
+            FSceneNode& node = scene.GetNodes()[index];
+            ImGuiPushUUID(node.id);
+            DrawUUIDRow(node.id);
+            static FUUID namedNode{};
+            static char nodeName[256]{};
+            if (namedNode != node.id)
             {
-                if (ImGui::RadioButton(PSI_MAP_MARKER " Local", GEditor.gizmo.mode == ImGuizmo::LOCAL))
-                    GEditor.gizmo.mode = ImGuizmo::LOCAL;
+                namedNode = node.id;
+                std::snprintf(nodeName, sizeof(nodeName), "%s", NameOr(node.name, ""));
+            }
+            bool const rename = ImGui::InputText("Name", nodeName, sizeof(nodeName), ImGuiInputTextFlags_EnterReturnsTrue);
+            if (rename || ImGui::IsItemDeactivatedAfterEdit())
+                node.name = scene.InternString(nodeName);
+
+            bool const canTransform = IsNodeTransformable(node.id);
+            if (canTransform)
+            {
+                int const parentIndex = scene.NodeIndex(node.parent);
+                char const* parentName = parentIndex < 0 ? "(Scene root)" :
+                                            NameOr(scene.GetNodes()[parentIndex].name, "Node");
+                FUUID newParent = node.parent;
+                bool reparent = false;
+                if (ImGui::BeginCombo("Parent", parentName))
+                {
+                    if (ImGui::Selectable("(Scene root)", node.parent.IsNil()))
+                    {
+                        newParent = kNilUUID;
+                        reparent = true;
+                    }
+                    for (FSceneNode const& candidate : scene.GetNodes())
+                    {
+                        if (!IsNodeTransformable(candidate.id) || scene.IsNodeInSubtree(candidate.id, node.id))
+                            continue;
+                        ImGuiPushUUID(candidate.id);
+                        if (ImGui::Selectable(NameOr(candidate.name, "Node"), candidate.id == node.parent))
+                        {
+                            newParent = candidate.id;
+                            reparent = true;
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndCombo();
+                }
+                if (reparent && newParent != node.parent)
+                {
+                    if (scene.ReparentNode(node.id, newParent))
+                    {
+                        GEditor.revealSelectedNode = true;
+                        CommitSceneToGPU(true);
+                    }
+                    else
+                        LOG(Editor, LogWarn, "Cannot reparent node: invalid hierarchy or singular parent transform");
+                }
+
+                ImGui::SeparatorText("Local Transform");
+                FTransform local;
+                Math::decompose(node.localTransform, local.scale, local.rotation, local.transform);
+                bool const translationChanged = ImGui::DragFloat3("Position", &local.transform.x, 0.01f);
+                bool basisChanged = ImGui::DragFloat4("Rotation", &local.rotation.x, 0.001f);
+                basisChanged |= ImGui::DragFloat3("Scale", &local.scale.x, 0.01f);
+                if (basisChanged)
+                {
+                    local.rotation = dot(local.rotation, local.rotation) > 0.0f ? normalize(local.rotation) :
+                                                                                 quat_cast(mat3(1.0f));
+                    node.localTransform = SceneTransformMatrix(local);
+                }
+                else if (translationChanged)
+                    node.localTransform[3] = float4(local.transform, 1.0f);
+                if (translationChanged || basisChanged)
+                    CommitSceneToGPU(true);
+                ImGui::TextDisabled("Relative to parent; descendants inherit this transform.");
+
+                ImGui::Separator();
+                if (ImGui::RadioButton(PSI_MOVE " Translate (G)", GEditor.gizmo.op == ImGuizmo::TRANSLATE))
+                    GEditor.gizmo.op = ImGuizmo::TRANSLATE;
                 ImGui::SameLine();
-                if (ImGui::RadioButton(PSI_GLOBE " World", GEditor.gizmo.mode == ImGuizmo::WORLD))
-                    GEditor.gizmo.mode = ImGuizmo::WORLD;
+                if (ImGui::RadioButton(PSI_REFRESH " Rotate (R)", GEditor.gizmo.op == ImGuizmo::ROTATE))
+                    GEditor.gizmo.op = ImGuizmo::ROTATE;
+                ImGui::SameLine();
+                if (ImGui::RadioButton(PSI_RESIZE_FULL " Scale (Q)", GEditor.gizmo.op == ImGuizmo::SCALE))
+                    GEditor.gizmo.op = ImGuizmo::SCALE;
+                if (GEditor.gizmo.op != ImGuizmo::SCALE)
+                {
+                    if (ImGui::RadioButton(PSI_MAP_MARKER " Local", GEditor.gizmo.mode == ImGuizmo::LOCAL))
+                        GEditor.gizmo.mode = ImGuizmo::LOCAL;
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton(PSI_GLOBE " World", GEditor.gizmo.mode == ImGuizmo::WORLD))
+                        GEditor.gizmo.mode = ImGuizmo::WORLD;
+                }
             }
-
-            if (changed)
+            if (IsSelectedInstanceValid())
             {
-                // The transform edit lives on the scene instance; recommit refills the
-                // GPU instance table. Reread the snapshot for the readout below.
-                CommitSceneToGPU(true);
-                inst = GContext->gpuScene->GetInstance(static_cast<uint32_t>(idx));
+                GSInstance const instance = GContext->gpuScene->GetInstance(static_cast<uint32_t>(SelectedInstanceIndex()));
+                ImGui::SeparatorText("Geometry");
+                DrawUUIDRow(GEditor.selectedInstance);
+                ImGui::Text("Type: %s", InstanceTypeName(instance.type));
+                ImGui::Text("Resource Offset: %u", instance.resourceOffset);
+                ImGui::Text("Material Index: %u", instance.materialIndex);
+                ImGui::Text("Resource Index: %u", instance.resourceIndex);
             }
-            ImGui::Separator();
-            ImGui::Text("Type: %s", InstanceTypeName(inst.type));
-            ImGui::Text("Resource Offset: %u", inst.resourceOffset);
-            ImGui::Text("Material Index: %u", inst.materialIndex);
-            ImGui::Text("Resource Index: %u", inst.resourceIndex);
+            DrawSelectedLightProperties();
             ImGui::PopID();
         }
         else
-        {
-            ImGui::TextDisabled("No instance selected");
-        }
+            ImGui::TextDisabled("No node selected");
     }
     ImGui::End();
     ImGui::PopStyleColor();
 }
 
-void FLightingPanel()
+static void DrawSelectedLightProperties()
 {
-    if (GEditor.scrollSelectedLightToTop && !GEditor.selectedLight.IsNil())
-        ImGui::SetWindowFocus("Lighting");
+    if (!GEditor.HasScene())
+        return;
+    auto lights = GEditor.Scene().GetLights();
+    static const char* kLightTypeNames[] = {"Directional", "Point", "Spot", "Disk", "Rect"};
 
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
-    if (ImGui::Begin("Lighting"))
+    int const index = SceneLightIndexFromId(GEditor.selectedLight);
+    if (index < 0 || index >= static_cast<int>(lights.size()))
+        return;
+    FLight& light = lights[index];
+    bool const isEnvironment = light.type == FLightType::Environment;
+    bool changed = false;
+    ImGui::SeparatorText(PSI_BOLT " Light");
+    ImGuiPushUUID(light.id);
+    DrawUUIDRow(light.id);
+    if (isEnvironment)
+        ImGui::TextDisabled("Environment light is scene-global and is not removable.");
+    else
     {
-        if (!GEditor.HasScene())
+        int type = static_cast<int>(light.type) - 1;
+        if (ImGui::Combo("Type", &type, kLightTypeNames, IM_ARRAYSIZE(kLightTypeNames)))
         {
-            ImGui::TextDisabled("No scene loaded");
-            ImGui::End();
-            ImGui::PopStyleColor();
-            return;
-        }
-
-        bool anyChanged = false;
-        static const char* kLightTypeNames[] = {"Environment", "Directional", "Point", "Spot", "Disk", "Rect"};
-        static constexpr int kLightTypeCount = 6;
-
-        // ---- Scene Lights ----
-            GEditor.Scene().EnsureEnvironmentLight();
-            auto& lights = GEditor.Scene().mTables.lights;
-            bool canAddLight = GContext->gpuScene != nullptr;
-            if (!canAddLight)
-                ImGui::BeginDisabled();
-            if (ImModalButton(PSI_PLUS_SIGN " Add Light"))
-            {
-                FLight light{};
-                light.id = FUUID::Generate();
-                light.type = FLightType::Point;
-                light.transform.transform = GEditor.camera.position;
-                light.transform.rotation = GEditor.camera.rot;
-                light.color = float3{1.0f, 0.92f, 0.78f};
-                light.power = 10.0f;
-                light.radius = 0.05f;
-                light.angularDiameter = radians(2.00f);
-                size_t const insertIndex = !lights.empty() && lights.front().type == FLightType::Environment ? 1u : 0u;
-                lights.insert(lights.begin() + static_cast<std::ptrdiff_t>(insertIndex), light);
-                GEditor.Scene().RebuildIndex();
-                SelectLight(lights[insertIndex].id);
-                GEditor.scrollSelectedLightToTop = true;
-                GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
-                anyChanged = true;
-            }
-            if (!canAddLight)
-                ImGui::EndDisabled();
-
-            // ---- Punctual light unit conversion ----
-            auto convertPunctual = [&](float factor)
-            {
-                bool changed = false;
-                for (auto& l : lights)
-                {
-                    if (l.type == FLightType::Point || l.type == FLightType::Spot ||
-                        l.type == FLightType::Directional)
-                    {
-                        l.power *= factor;
-                        changed = true;
-                    }
-                }
-                return changed;
-            };
-            if (ImModalButton("Punc. To SI", 0, 2))
-            {
-                if (convertPunctual(683.0f))
-                    anyChanged = true;
-            }
-            if (ImModalButton("Punc. To Unitless", 1, 2))
-            {
-                if (convertPunctual(1.0f / 683.0f))
-                    anyChanged = true;
-            }
-            ImGui::Separator();
-            static constexpr float kLightHighlightDuration = 1.2f;
-
-            auto selectLight = [&](int i)
-            {
-                SelectLight(lights[i].id);
-                GEditor.scrollSelectedLightToTop = true;
-                GEditor.selectedLightHighlightStart = static_cast<float>(ImGui::GetTime());
-            };
-            auto removeLight = [&](int i)
-            {
-                DeleteLight(i);
-            };
-            auto moveLightToView = [&](int i)
-            {
-                MoveLightToView(i);
-            };
-            auto alignLightWithView = [&](int i)
-            {
-                AlignLightWithView(i);
-            };
-            auto alignViewToLight = [&](int i)
-            {
-                AlignViewToLight(i);
-            };
-
-            int contextLight = -1;
-            for (int i = 0; i < static_cast<int>(lights.size()); i++)
-            {
-                auto& light = lights[i];
-                bool const isEnvironment = light.type == FLightType::Environment;
-                ImGuiPushUUID(light.id);
-
-                char label[128];
-                std::snprintf(label, sizeof(label), PSI_BOLT " Light %d (%s)", i, LightTypeName(light.type));
-                char const* lightName = ResolveSceneName(light.name);
-                if (lightName && lightName[0] != '\0')
-                {
-                    size_t const len = std::strlen(label);
-                    std::snprintf(label + len, sizeof(label) - len, " (%s)", lightName);
-                }
-                bool isLightSelected = (GEditor.selectedLight == light.id);
-
-                bool pushedHeaderTextColor = false;
-                if (isLightSelected && GEditor.selectedLightHighlightStart >= 0.0f)
-                {
-                    float const elapsed = static_cast<float>(ImGui::GetTime()) - GEditor.selectedLightHighlightStart;
-                    float const t = std::clamp(elapsed / kLightHighlightDuration, 0.0f, 1.0f);
-                    float const boost = ImEaseInOutCubic(1.0f - t);
-                    if (boost > 0.0f)
-                    {
-                        ImVec4 const base = ImGui::GetStyleColorVec4(ImGuiCol_Header);
-                        ImVec4 const bright{1.0f, 1.0f, 1.0f, base.w};
-                        ImGui::PushStyleColor(ImGuiCol_Header,
-                                              ImVec4(base.x + (bright.x - base.x) * boost,
-                                                     base.y + (bright.y - base.y) * boost,
-                                                     base.z + (bright.z - base.z) * boost, base.w));
-                        pushedHeaderTextColor = true;
-                    }
-                }
-
-                if (ImGui::Selectable(label, isLightSelected))
-                    selectLight(i);
-                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                {
-                    selectLight(i);
-                    alignViewToLight(i);
-                }
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
-                {
-                    selectLight(i);
-                    contextLight = i;
-                }
-                if (pushedHeaderTextColor)
-                    ImGui::PopStyleColor();
-
-                if (isLightSelected && GEditor.scrollSelectedLightToTop)
-                {
-                    ImGui::SetScrollHereY(0.0f);
-                    GEditor.scrollSelectedLightToTop = false;
-                }
-                ImGui::PopID();
-            }
-            if (contextLight >= 0)
-                ImGui::OpenPopup("LightContextMenu");
-            if (ImGui::BeginPopup("LightContextMenu"))
-            {
-                int const i = SceneLightIndexFromId(GEditor.selectedLight);
-                bool const canRemove = i >= 0 &&
-                    i < static_cast<int>(lights.size()) &&
-                    lights[i].type != FLightType::Environment;
-                bool const canTransform = canRemove;
-                if (ImGui::MenuItem("Move to View", nullptr, false, canTransform))
-                    moveLightToView(i);
-                if (ImGui::MenuItem("Align with View", nullptr, false, canTransform))
-                    alignLightWithView(i);
-                if (ImGui::MenuItem("Align View To Selected", nullptr, false, canTransform))
-                    alignViewToLight(i);
-                ImGui::Separator();
-                if (ImGui::MenuItem(PSI_TRASH " Remove Light", nullptr, false, canRemove))
-                    removeLight(i);
-                if (!canTransform && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                    ImGui::SetTooltip("Environment light is required");
-                ImGui::EndPopup();
-            }
-
-            int const selectedLightIdx = SceneLightIndexFromId(GEditor.selectedLight);
-            if (selectedLightIdx >= 0 && selectedLightIdx < static_cast<int>(lights.size()))
-            {
-                int const i = selectedLightIdx;
-                auto& light = lights[i];
-                bool const isEnvironment = light.type == FLightType::Environment;
-                bool lightChanged = false;
-                ImGui::Separator();
-                ImGuiPushUUID(light.id);
-                char lightHeader[128];
-                std::snprintf(lightHeader, sizeof(lightHeader), "%s %d (%s)", PSI_BOLT " Light", i,
-                              LightTypeName(light.type));
-                char const* lightName = ResolveSceneName(light.name);
-                if (lightName && lightName[0] != '\0')
-                {
-                    size_t const len = std::strlen(lightHeader);
-                    std::snprintf(lightHeader + len, sizeof(lightHeader) - len, " (%s)", lightName);
-                }
-                ImGui::TextUnformatted(lightHeader);
-                DrawUUIDRow(light.id);
-
-                // Type selector
-                if (isEnvironment)
-                {
-                    ImGui::TextDisabled("Environment light is not removable.");
-                }
-                else
-                {
-                    int typeInt = static_cast<int>(light.type);
-                    if (ImGui::Combo("Type", &typeInt, kLightTypeNames, kLightTypeCount))
-                    {
-                        if (typeInt != 0) // No more than 1 env light, which is always #0
-                        {
-                            light.type = static_cast<FLightType>(typeInt);
-                            lightChanged = true;
-                        }
-                    }
-                }
-
-                // Color + Power
-                lightChanged |= ImHDRColorEdit(isEnvironment ? "Ambient" : "Color", light.color, light.power);
-
-                if (isEnvironment)
-                {
-                    ImGui::Separator();
-                    bool hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvironmentMap();
-                    ImGui::Text(hasEnv ? PSI_OK " HDRI Loaded" : PSI_WARNING_SIGN " No HDRI");
-                    if (hasEnv)
-                    {
-                        DrawTexturePreview("HDRI", GContext->gpuScene->mEnvMapIndex.index);
-                        if (!light.environmentTexture.IsNil())
-                        {
-                            uint32_t const envTexIdx = SceneTextureIndexFromId(light.environmentTexture);
-                            if (envTexIdx != kInvalidTexture)
-                            {
-                                char const* envTexName = NameOr(GEditor.Scene().GetTextures()[envTexIdx].name, nullptr);
-                                if (envTexName)
-                                    ImGui::TextDisabled("Source: %s", envTexName);
-                            }
-                            DrawUUIDRow(light.environmentTexture);
-                        }
-                        lightChanged |= ImGui::SliderFloat("Azimuth Offset", &light.environmentAzimuthOffset,
-                                                          -180.0f, 180.0f, "%.1f deg");
-                        bool envEnabled = light.environmentMap;
-                        if (ImGui::Checkbox("Enable Env Map", &envEnabled))
-                        {
-                            light.environmentMap = envEnabled;
-                            lightChanged = true;
-                        }
-                    }
-                    ImGui::TextDisabled(PSI_UPLOAD " Drag & drop .hdr/.hdri to load");
-                }
-
-                // Direction (Euler angles) for lights with orientation
-                bool hasDirection = (light.type == FLightType::Directional || light.type == FLightType::Spot ||
-                                     light.type == FLightType::Disk || light.type == FLightType::Rect);
-                if (hasDirection)
-                {
-                    float sinP = 2.0f *
-                        (light.transform.rotation.w * light.transform.rotation.x -
-                         light.transform.rotation.y * light.transform.rotation.z);
-                    sinP = std::clamp(sinP, -1.0f, 1.0f);
-                    float pitch = degrees(std::asin(sinP));
-
-                    float sinY = 2.0f *
-                        (light.transform.rotation.w * light.transform.rotation.y +
-                         light.transform.rotation.x * light.transform.rotation.z);
-                    float cosY = 1.0f -
-                        2.0f *
-                            (light.transform.rotation.x * light.transform.rotation.x +
-                             light.transform.rotation.y * light.transform.rotation.y);
-                    float yaw = degrees(std::atan2(sinY, cosY));
-
-                    bool dirChanged = false;
-                    dirChanged |= ImGui::SliderFloat("Pitch", &pitch, -90.0f, 90.0f, "%.1f deg");
-                    dirChanged |= ImGui::SliderFloat("Yaw", &yaw, -180.0f, 180.0f, "%.1f deg");
-                    if (dirChanged)
-                    {
-                        // Reconstruct quaternion directly: rotateY(yaw) * rotateX(pitch)
-                        quat yawQ = angleAxis(radians(yaw), vec3(0, 1, 0));
-                        quat pitchQ = angleAxis(radians(pitch), vec3(1, 0, 0));
-                        light.transform.rotation = normalize(yawQ * pitchQ);
-                        lightChanged = true;
-                    }
-                }
-
-                // Position (gizmo anchor; direction is unchanged for directionals)
-                bool hasPosition = (light.type == FLightType::Directional || light.type == FLightType::Point ||
-                                    light.type == FLightType::Spot || light.type == FLightType::Disk ||
-                                    light.type == FLightType::Rect);
-                if (hasPosition)
-                {
-                    lightChanged |= ImGui::DragFloat3("Position", &light.transform.transform.x, 0.1f);
-                }
-
-                if (light.type == FLightType::Directional)
-                {
-                    float angularDiameter = degrees(light.angularDiameter);
-                    ImGui::Separator();
-                    lightChanged |=
-                        ImGui::SliderFloat("Angular Diameter", &angularDiameter, 0.0f, 180.0f, "%.2f deg");
-                    if (lightChanged)
-                        light.angularDiameter = radians(angularDiameter);
-                }
-                if (light.type == FLightType::Point || light.type == FLightType::Spot)
-                {
-                    lightChanged |= ImGui::DragFloat("Radius", &light.radius, 0.01f, 0.0f, 100.0f, "%.3f");
-                }
-
-                // Spot cone angles
-                if (light.type == FLightType::Spot)
-                {
-                    float innerDeg = degrees(light.spotInnerConeAngle);
-                    float outerDeg = degrees(light.spotOuterConeAngle);
-                    bool coneChanged = false;
-                    coneChanged |= ImGui::SliderFloat("Inner Cone", &innerDeg, 0.0f, outerDeg, "%.1f deg");
-                    coneChanged |= ImGui::SliderFloat("Outer Cone", &outerDeg, innerDeg, 90.0f, "%.1f deg");
-                    if (coneChanged)
-                    {
-                        light.spotInnerConeAngle = radians(innerDeg);
-                        light.spotOuterConeAngle = radians(outerDeg);
-                        lightChanged = true;
-                    }
-                }
-
-                // Disk/Rect extents
-                if (light.type == FLightType::Disk || light.type == FLightType::Rect)
-                {
-                    lightChanged |= ImGui::DragFloat("Width", &light.width, 0.01f, 0.001f, 100.0f, "%.3f");
-                    lightChanged |= ImGui::DragFloat("Height", &light.height, 0.01f, 0.001f, 100.0f, "%.3f");
-                }
-
-                if (light.type != FLightType::Environment)
-                    lightChanged |= ImGui::Checkbox("Shadows", &light.useShadow);
-
-                // Two-sided toggle for area lights
-                if (light.type == FLightType::Disk || light.type == FLightType::Rect)
-                {
-                    lightChanged |= ImGui::Checkbox("Two-Sided", &light.twoSided);
-                    ImGui::SameLine();
-                    lightChanged |= ImGui::Checkbox("Normalize", &light.normalize);
-                }
-
-                if (lightChanged)
-                    anyChanged = true;
-                ImGui::PopID();
-            }
-
-        if (anyChanged)
-        {
-            UpdateSceneLights();
-            GEditor.shaderGlobals.accumulatedFrames = 0;
+            light.type = static_cast<FLightType>(type + 1);
+            changed = true;
         }
     }
-    ImGui::End();
-    ImGui::PopStyleColor();
-
-    // ImGuizmo manipulator for the selected light (3D wireframes are drawn in EditorGizmos pass)
-    DrawLightGizmos();
+    changed |= ImHDRColorEdit(isEnvironment ? "Ambient" : "Color", light.color, light.power);
+    if (isEnvironment)
+    {
+        bool const hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvironmentMap();
+        ImGui::TextUnformatted(hasEnv ? PSI_OK " HDRI Loaded" : PSI_WARNING_SIGN " No HDRI");
+        if (hasEnv)
+        {
+            DrawTexturePreview("HDRI", GContext->gpuScene->mEnvMapIndex.index);
+            if (!light.environmentTexture.IsNil())
+            {
+                uint32_t const texture = SceneTextureIndexFromId(light.environmentTexture);
+                if (texture != kInvalidTexture)
+                {
+                    char const* name = NameOr(GEditor.Scene().GetTextures()[texture].name, nullptr);
+                    if (name)
+                        ImGui::TextDisabled("Source: %s", name);
+                }
+                DrawUUIDRow(light.environmentTexture);
+            }
+            changed |= ImGui::SliderFloat("Azimuth Offset", &light.environmentAzimuthOffset, -180.0f, 180.0f, "%.1f deg");
+            changed |= ImGui::Checkbox("Enable Env Map", &light.environmentMap);
+        }
+        ImGui::TextDisabled(PSI_UPLOAD " Drag & drop .hdr/.hdri to load");
+    }
+    if (light.type == FLightType::Directional)
+    {
+        float diameter = degrees(light.angularDiameter);
+        if (ImGui::SliderFloat("Angular Diameter", &diameter, 0.0f, 180.0f, "%.2f deg"))
+        {
+            light.angularDiameter = radians(diameter);
+            changed = true;
+        }
+    }
+    if (light.type == FLightType::Point || light.type == FLightType::Spot)
+        changed |= ImGui::DragFloat("Radius", &light.radius, 0.01f, 0.0f, 100.0f, "%.3f");
+    if (light.type == FLightType::Spot)
+    {
+        float inner = degrees(light.spotInnerConeAngle);
+        float outer = degrees(light.spotOuterConeAngle);
+        bool coneChanged = ImGui::SliderFloat("Inner Cone", &inner, 0.0f, outer, "%.1f deg");
+        coneChanged |= ImGui::SliderFloat("Outer Cone", &outer, inner, 90.0f, "%.1f deg");
+        if (coneChanged)
+        {
+            light.spotInnerConeAngle = radians(inner);
+            light.spotOuterConeAngle = radians(outer);
+            changed = true;
+        }
+    }
+    if (light.type == FLightType::Disk || light.type == FLightType::Rect)
+    {
+        changed |= ImGui::DragFloat("Half Width", &light.width, 0.01f, 0.001f, 100.0f, "%.3f");
+        changed |= ImGui::DragFloat("Half Height", &light.height, 0.01f, 0.001f, 100.0f, "%.3f");
+        changed |= ImGui::Checkbox("Two-Sided", &light.twoSided);
+        ImGui::SameLine();
+        changed |= ImGui::Checkbox("Normalize", &light.normalize);
+    }
+    if (!isEnvironment)
+        changed |= ImGui::Checkbox("Shadows", &light.useShadow);
+    if (changed)
+        CommitSceneToGPU(true);
+    ImGui::PopID();
 }
 
 
@@ -3214,8 +3060,7 @@ void FRunningImGui()
     }
     ImGui::End();
     ImGui::PopStyleColor();
-    FLightingPanel();
-    DrawInstanceGizmos();
+    DrawNodeGizmos();
     DrawViewportSelectionContextMenu();
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Rendering"))
@@ -3839,89 +3684,23 @@ void FRendering(RendererOutputs const& outputs)
     }
 }
 
-static void DrawInstanceGizmos()
+static void DrawNodeGizmos()
 {
-    if (!GEditor.gizmo.showImGuizmo)
+    if (!GEditor.gizmo.showImGuizmo || !GEditor.viewport.HasRect() || !IsNodeTransformable(GEditor.selectedNode))
         return;
-    if (!IsSelectedInstanceValid())
-        return;
-    if (!GEditor.selectedLight.IsNil())
-        return;
-    if (!GEditor.viewport.HasRect())
-        return;
-
-    auto& pi = SelectedSceneInstance();
-    mat4 modelMatrix = translate(mat4(1.0f), vec3(pi.transform.transform)) * mat4_cast(pi.transform.rotation) *
-        glm::scale(mat4(1.0f), vec3(pi.transform.scale));
-
+    auto& scene = GEditor.Scene();
+    mat4 world = scene.NodeWorldTransform(GEditor.selectedNode);
     ImVec2 const displaySize = GEditor.viewport.Size();
-    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-
     ImGuizmo::BeginFrame();
-    ImGuizmo::SetDrawlist(drawList);
+    ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
     ImGuizmo::SetRect(GEditor.viewport.contentMin.x, GEditor.viewport.contentMin.y, displaySize.x, displaySize.y);
-
-    if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0],
-                             static_cast<ImGuizmo::OPERATION>(GEditor.gizmo.op),
-                             static_cast<ImGuizmo::MODE>(GEditor.gizmo.mode), &modelMatrix[0][0], nullptr,
-                             GizmoSnapForOperation(static_cast<ImGuizmo::OPERATION>(GEditor.gizmo.op))))
+    auto const operation = static_cast<ImGuizmo::OPERATION>(GEditor.gizmo.op);
+    if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0], operation,
+                             static_cast<ImGuizmo::MODE>(GEditor.gizmo.mode), &world[0][0], nullptr,
+                             GizmoSnapForOperation(operation)))
     {
-        float3 newTranslation;
-        quat newRotation;
-        float3 newScale;
-        Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
-        pi.transform.transform = newTranslation;
-        pi.transform.rotation = newRotation;
-        pi.transform.scale = newScale;
-        CommitSceneToGPU(true);
-    }
-}
-
-static void DrawLightGizmos()
-{
-    if (!GEditor.gizmo.showImGuizmo)
-        return;
-    if (!GEditor.HasScene())
-        return;
-    auto lights = GEditor.Scene().GetLights();
-    if (lights.empty() || !GEditor.viewport.HasRect())
-        return;
-
-    int const selectedIdx = SceneLightIndexFromId(GEditor.selectedLight);
-    if (selectedIdx < 0 || selectedIdx >= static_cast<int>(lights.size()))
-        return;
-
-    auto& light = lights[selectedIdx];
-    if (light.type == FLightType::Environment)
-        return;
-
-    ImVec2 displaySize = GEditor.viewport.Size();
-    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-
-    mat4 modelMatrix = translate(mat4(1.0f), vec3(light.transform.transform))
-                     * mat4_cast(light.transform.rotation);
-
-    ImGuizmo::BeginFrame();
-    ImGuizmo::SetDrawlist(drawList);
-    ImGuizmo::SetRect(GEditor.viewport.contentMin.x, GEditor.viewport.contentMin.y,
-                      displaySize.x, displaySize.y);
-
-    ImGuizmo::OPERATION op = static_cast<ImGuizmo::OPERATION>(GEditor.gizmo.op);
-    if (op == ImGuizmo::SCALE)
-        op = ImGuizmo::TRANSLATE;
-
-    if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0],
-                             op, static_cast<ImGuizmo::MODE>(GEditor.gizmo.mode), &modelMatrix[0][0], nullptr,
-                             GizmoSnapForOperation(op)))
-    {
-        float3 newTranslation;
-        quat newRotation;
-        float3 newScale;
-        Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
-        light.transform.transform = newTranslation;
-        light.transform.rotation = newRotation;
-        UpdateSceneLights();
-        GEditor.shaderGlobals.accumulatedFrames = 0;
+        if (scene.SetNodeWorldTransform(GEditor.selectedNode, world))
+            CommitSceneToGPU(true);
     }
 }
 
@@ -3930,10 +3709,11 @@ static void DrawViewportSelectionContextMenu()
     if (GEditor.applySelectionDoubleClickAction)
     {
         GEditor.applySelectionDoubleClickAction = false;
-        if (IsSelectedInstanceValid())
-            FrameInstance(SelectedInstanceIndex());
-        else if (IsLightIndexValid(SceneLightIndexFromId(GEditor.selectedLight)))
-            AlignViewToLight(SceneLightIndexFromId(GEditor.selectedLight));
+        int const light = SceneLightIndexFromId(GEditor.selectedLight);
+        if (IsLightTransformable(light))
+            AlignViewToLight(light);
+        else
+            FrameNode(GEditor.selectedNode);
     }
 
     if (GEditor.openSelectionContextMenu)
@@ -3946,35 +3726,8 @@ static void DrawViewportSelectionContextMenu()
     if (!ImGui::BeginPopup("ViewportSelectionContextMenu"))
         return;
 
-    if (IsSelectedInstanceValid())
-    {
-        int const idx = SelectedInstanceIndex();
-        if (ImGui::MenuItem("Frame Selected"))
-            FrameInstance(idx);
-        if (ImGui::MenuItem("Move to View"))
-            MoveInstanceToView(idx);
-        if (ImGui::MenuItem("Align with View"))
-            AlignInstanceWithView(idx);
-        ImGui::Separator();
-        if (ImGui::MenuItem(PSI_TRASH " Delete"))
-            DeleteSelectedInstance();
-    }
-    else if (int const lightIdx = SceneLightIndexFromId(GEditor.selectedLight);
-             IsLightIndexValid(lightIdx))
-    {
-        bool const canTransform = IsLightTransformable(lightIdx);
-        if (ImGui::MenuItem("Align View To Selected", nullptr, false, canTransform))
-            AlignViewToLight(lightIdx);
-        if (ImGui::MenuItem("Move to View", nullptr, false, canTransform))
-            MoveLightToView(lightIdx);
-        if (ImGui::MenuItem("Align with View", nullptr, false, canTransform))
-            AlignLightWithView(lightIdx);
-        ImGui::Separator();
-        if (ImGui::MenuItem(PSI_TRASH " Remove Light", nullptr, false, canTransform))
-            DeleteLight(lightIdx);
-        if (!canTransform && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("Environment light is required");
-    }
-
+    bool const remove = SceneNodeIndexFromId(GEditor.selectedNode) >= 0 && DrawNodeActions(GEditor.selectedNode);
     ImGui::EndPopup();
+    if (remove)
+        DeleteSelectedNode();
 }
