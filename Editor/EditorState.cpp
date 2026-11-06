@@ -130,6 +130,7 @@ void SelectNode(FUUID nodeId)
     int const instance = SceneInstanceIndexFromId(node.instance);
     if (instance >= 0)
         GEditor.selectedMaterial = GEditor.Scene().GetInstances()[instance].material;
+    GEditor.highlightSelectedNodeInHierarchy = true;
     GEditor.revealSelectedNode = true;
 }
 
@@ -159,6 +160,7 @@ void ClearSelection()
     GEditor.selectedLight = kNilUUID;
     GEditor.selectedInstance = kNilUUID;
     GEditor.selectedMaterial = kNilUUID;
+    GEditor.highlightSelectedNodeInHierarchy = false;
     GEditor.revealSelectedNode = false;
 }
 
@@ -678,6 +680,10 @@ static void FRunning()
             else
                 clearSelection();
         }
+        // A single viewport click selects for editing, but only a double-click focuses
+        // the picked node and highlights/reveals it in the hierarchy.
+        GEditor.highlightSelectedNodeInHierarchy = pickedSelection && sPickingDoubleClick;
+        GEditor.revealSelectedNode = pickedSelection && sPickingDoubleClick;
         if (sPickingDoubleClick && pickedSelection)
             GEditor.applySelectionDoubleClickAction = true;
         sPickingPixel = {-1, -1};

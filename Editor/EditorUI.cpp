@@ -2353,7 +2353,7 @@ static void DrawHierarchyTree()
             flags |= ImGuiTreeNodeFlags_Leaf;
         if (hierarchy.parents[index] == invalid)
             flags |= ImGuiTreeNodeFlags_DefaultOpen;
-        if (GEditor.selectedNode == node.id)
+        if (GEditor.highlightSelectedNodeInHierarchy && GEditor.selectedNode == node.id)
             flags |= ImGuiTreeNodeFlags_Selected;
         if (!revealPath.empty() && revealPath[index])
             ImGui::SetNextItemOpen(true);

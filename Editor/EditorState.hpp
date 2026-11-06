@@ -163,6 +163,7 @@ struct EditorState
     FUUID              selectedInstance{};
     FUUID              selectedMaterial{};
     FUUID              selectedLight{};
+    bool               highlightSelectedNodeInHierarchy = false;
     bool               revealSelectedNode = false;
     bool               openSelectionContextMenu = false;
     bool               applySelectionDoubleClickAction = false;
