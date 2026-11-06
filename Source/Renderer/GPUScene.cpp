@@ -1564,7 +1564,12 @@ void GPUSceneImpl::EnqueueUpload(MPMCQueue<T>& queue, T&& item)
 {
     mUploadPending.fetch_add(1, std::memory_order_release);
     while (!queue.Push(std::move(item)))
+    {
+        // The queue is a scheduling hint, not a scene-size limit. An additive import
+        // can exceed its original reservation before the next Editor poll runs.
+        Poll(0u);
         std::this_thread::yield();
+    }
 }
 
 bool GPUSceneImpl::UploadBatchBegin()

@@ -20,36 +20,43 @@ using namespace EditorPathUtil;
 
 static constexpr const char* kTempScenePath = "Cache/Last.fscn";
 
-static String sDeferredScenePath;
-static String sDeferredEnvMapPath;
+enum class SceneRequestKind { Replace, Append, Environment };
+struct SceneLoadRequest
+{
+    SceneRequestKind kind;
+    String path;
+    String envMapPath;
+};
+static Vector<SceneLoadRequest> sSceneRequests{GLOBAL_ALLOC};
+static Vector<String> sImportedSceneCachePaths{GLOBAL_ALLOC};
 
-// Both inputs are produced by the same resolution routine (OpenSceneFile stores the
-// exact string returned by PrepareScenePayloadFile, which itself comes from
-// ResolveRelativePathBase for the temp payload), so they are byte-identical whenever
-// they refer to the same file. A lexical comparison is therefore sufficient and avoids
-// touching the OS filesystem APIs (no equivalent()/weakly_canonical() needed).
+// Compare generated cache paths lexically, including relative spellings and separators.
 static bool PathsReferToSameFile(StringView a, StringView b)
 {
-    if (a.size() != b.size())
-        return false;
-    for (size_t i = 0; i < a.size(); ++i)
-    {
-        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
-            return false;
-    }
-    return true;
+    auto& app = *GContext->application;
+    return NormalizePath(app.ResolveRelativePathBase(a)) == NormalizePath(app.ResolveRelativePathBase(b));
 }
 
-// Drop the editor's read-only mapping when we need to rewrite the same payload file (e.g. the
-// glTF import temp cache while a previous import still has it open).
-static void ReleaseScenePayloadFileForRewrite(StringView payloadPath)
+// Only generated import caches are removed, and only after all metadata/payload views close.
+static void ReleaseScenePayloadFiles(StringView preservePath = {})
 {
-    if (!GEditor.sceneFile.has_value())
-        return;
-    if (!PathsReferToSameFile(GEditor.currentSavePath, payloadPath))
-        return;
     GEditor.scene.reset();
     GEditor.sceneFile.reset();
+    std::erase_if(sImportedSceneCachePaths, [&](String const& path)
+    {
+        if (!preservePath.empty() && PathsReferToSameFile(path, preservePath))
+            return false;
+        if (!GContext->application->RemoveFile(path))
+            LOG(Editor, LogWarn, "Could not remove imported scene cache {}", path);
+        return true;
+    });
+}
+
+// Replace-loads may reuse Last.fscn. Additive imports always use their own payload file.
+static void ReleaseScenePayloadFileForRewrite(StringView payloadPath)
+{
+    if (GEditor.sceneFile && PathsReferToSameFile(GEditor.currentSavePath, payloadPath))
+        ReleaseScenePayloadFiles();
 }
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
 
@@ -437,7 +444,7 @@ static void DestroyGPUScene(GPUScene*& gpu)
     gpu = nullptr;
 }
 
-static String PrepareScenePayloadFile(StringView path)
+static String PrepareScenePayloadFile(StringView path, bool additive = false)
 {
     auto ext = LowerExtension(path);
     if (ext == ".fscn")
@@ -447,8 +454,18 @@ static String PrepareScenePayloadFile(StringView path)
     // In this way we don't need to have the whole scene allocated in memory
     // explicitly - and works the same way as loading from FSCN.
     auto& app = *GContext->application;
-    String scenePayloadPath = app.ResolveRelativePathBase(kTempScenePath);
-    ReleaseScenePayloadFileForRewrite(scenePayloadPath);
+    String scenePayloadPath;
+    if (additive)
+    {
+        char id[40];
+        scenePayloadPath = app.ResolveRelativePathBase(
+            Format("Cache/Imports/{}.fscn", FUUID::Generate().Format(id, sizeof(id))));
+    }
+    else
+    {
+        scenePayloadPath = app.ResolveRelativePathBase(kTempScenePath);
+        ReleaseScenePayloadFileForRewrite(scenePayloadPath);
+    }
     if (auto info = app.QueryFileInfo(scenePayloadPath); info.has_value() && info.Get().isDirectory)
         CHECK_MSG(app.RemoveDirectory(scenePayloadPath),
                   "Failed to remove stale scene cache directory {}", scenePayloadPath);
@@ -533,6 +550,7 @@ static void InstallLoadedScene(String const& scenePayloadPath, GPUScene*& newGPU
     DestroyGPUScene(GContext->gpuScene);
     GContext->gpuScene = newGPUScene;
     newGPUScene = nullptr;
+    ReleaseScenePayloadFiles(scenePayloadPath);
     GEditor.OpenSceneFile(scenePayloadPath);
     ClearSelection();
     GEditor.cameraUpdated = true;
@@ -548,7 +566,8 @@ struct PendingSceneLoad
     Optional<FImportedScene> scene;
     SceneLoadStats stats;
     std::chrono::steady_clock::time_point loadStart;
-    String envMapPath; // optional HDRI to load once the scene finishes streaming
+    String envMapPath; // optional HDRI for replace-loads only
+    bool additive{false};
     FSceneGPUResources resources; // published into GEditor at install
 };
 static PendingSceneLoad* sPendingSceneLoad = nullptr;
@@ -579,35 +598,143 @@ bool PollSceneLoad()
     String envMapPath = sPendingSceneLoad->envMapPath;
     CommitSceneToGPU(true);
     double const loadMs = MillisecondsSince(sPendingSceneLoad->loadStart);
-    LOG(Editor, LogInfo, "Scene streamed in {:.2f} ms, {} meshes, {} instances, {} curves, {} materials",
-        loadMs, sPendingSceneLoad->stats.sceneMeshCount, sPendingSceneLoad->stats.sceneInstanceCount,
+    LOG(Editor, LogInfo, "{} streamed in {:.2f} ms, {} meshes, {} instances, {} curves, {} materials",
+        sPendingSceneLoad->additive ? "Imported subtree" : "Scene", loadMs,
+        sPendingSceneLoad->stats.sceneMeshCount, sPendingSceneLoad->stats.sceneInstanceCount,
         sPendingSceneLoad->stats.sceneCurveCount, sPendingSceneLoad->stats.sceneMaterialCount);
-    DestroyPendingSceneLoad(); // Poll() already joined the worker, so the backing memory is free to release
+    DestroyPendingSceneLoad(); // Join completed all reads of the pending source metadata.
     if (!envMapPath.empty())
         LoadEnvMap(envMapPath);
     return false;
 }
 
+static void EnsureAppendedTextureCapacity(size_t firstTexture)
+{
+    auto* gpu = GContext->gpuScene;
+    BindlessPool* pools[] = {gpu->GetTexture2DPool(), gpu->GetTexture3DPool()};
+    size_t added[2]{};
+    auto const textures = GEditor.Scene().GetTextures();
+    for (size_t i = firstTexture; i < textures.size(); ++i)
+    {
+        if (!textures[i].IsValid() || IsSceneEnvironmentTexture(GEditor.Scene(), i))
+            continue;
+        ++added[textures[i].GetViewDimension() == RHITextureDimension::E3D ? 1 : 0];
+    }
+    uint32_t required[2]{};
+    bool grow = false;
+    for (size_t i = 0; i < 2; ++i)
+    {
+        auto const stats = pools[i]->GetStats();
+        // Leave room for an HDRI and editor-managed textures after this import, too.
+        size_t const capacity = added[i] ? stats.activeBindings + added[i] + 8u : stats.capacity;
+        CHECK_MSG(capacity <= UINT32_MAX, "Appended texture descriptors exceed uint32_t");
+        required[i] = static_cast<uint32_t>(capacity);
+        grow |= required[i] > stats.capacity;
+    }
+    if (!grow)
+        return;
+    // Layouts may change, but texture resources/indices and the paged GPUScene stay intact.
+    GContext->device->WaitIdle();
+    DestroyEditorRenderer(GContext);
+    for (size_t i = 0; i < 2; ++i)
+        pools[i]->Reserve(required[i]);
+    GEditor.state = FERunningEnter;
+}
+
+static void AppendScene(StringView path)
+{
+    CHECK(GEditor.HasScene() && GContext->gpuScene);
+    // GPU upload jobs retain pointers to resource descriptors. Finish them before the
+    // destination's metadata vectors can grow; prior geometry/texture handles remain valid.
+    FinishPendingSceneLoad();
+    GContext->gpuScene->Join();
+    LOG(Editor, LogInfo, "Appending scene: {}", path);
+    auto const loadStart = std::chrono::steady_clock::now();
+    String const payloadPath = PrepareScenePayloadFile(path, true);
+    auto file = ConstructUnique<MemoryMappedFile>(GLOBAL_ALLOC, payloadPath, MemoryMappedAccess::ReadOnly);
+    auto& scene = GEditor.Scene();
+    size_t const firstTexture = scene.GetTextures().size();
+    SceneLoadStats const previous{scene.GetMeshes().size(), scene.GetInstances().size(), scene.GetCurves().size(),
+                                  scene.GetMaterials().size()};
+    FUUID const root = scene.AppendScene(std::move(file), Stem(path));
+    if (LowerExtension(path) != ".fscn")
+        sImportedSceneCachePaths.push_back(payloadPath);
+    EnsureAppendedTextureCapacity(firstTexture);
+    AppendSceneResources(scene, *GContext->gpuScene, GEditor.resources);
+    CommitSceneToGPU(true);
+    SelectNode(root);
+    // Refresh feature-dependent passes (for example, adding the first curve to a raster
+    // scene) and transient render resources, without replacing the resident GPUScene.
+    GEditor.state = FERunningEnter;
+
+    auto* load = Construct<PendingSceneLoad>(GLOBAL_ALLOC);
+    load->scenePayloadPath = payloadPath;
+    load->loadStart = loadStart;
+    load->additive = true;
+    load->stats.sceneMeshCount = scene.GetMeshes().size() - previous.sceneMeshCount;
+    load->stats.sceneInstanceCount = scene.GetInstances().size() - previous.sceneInstanceCount;
+    load->stats.sceneCurveCount = scene.GetCurves().size() - previous.sceneCurveCount;
+    load->stats.sceneMaterialCount = scene.GetMaterials().size() - previous.sceneMaterialCount;
+    // The active scene owns appended descriptors and payloads, not this completion marker.
+    sPendingSceneLoad = load;
+}
+
 void RequestLoadScene(StringView path, StringView envMapPath)
 {
-    sDeferredScenePath = path;
-    sDeferredEnvMapPath = envMapPath;
+    if (!path.empty())
+        sSceneRequests.push_back({SceneRequestKind::Replace, String(path), String(envMapPath)});
+}
+
+void RequestAppendScene(StringView path, StringView envMapPath)
+{
+    if (!path.empty())
+        sSceneRequests.push_back({SceneRequestKind::Append, String(path), String(envMapPath)});
 }
 
 void CheckDeferredSceneLoad()
 {
-    if (sDeferredScenePath.empty())
+    // One request per frame, in drop order. Do not mutate metadata still used by uploads
+    // or replace a render graph while an explicit render/readback task is active.
+    if (sSceneRequests.empty() || sPendingSceneLoad || GEditor.state == FERendering ||
+        GEditor.state == FERenderingEnter)
         return;
-    String path = std::move(sDeferredScenePath);
-    String envMapPath = std::move(sDeferredEnvMapPath);
-    sDeferredScenePath.clear();
-    sDeferredEnvMapPath.clear();
-    LoadScene(path);
-    if (!envMapPath.empty())
+    SceneLoadRequest request = std::move(sSceneRequests.front());
+    sSceneRequests.erase(sSceneRequests.begin());
+    auto const info = GContext->application->QueryFileInfo(request.path);
+    if (!info || info->isDirectory)
+    {
+        LOG(Editor, LogWarn, "Cannot load scene or image file: {}", request.path);
+        return;
+    }
+    if (request.kind == SceneRequestKind::Environment)
+    {
+        LoadEnvMap(request.path);
+        return;
+    }
+    if (request.kind == SceneRequestKind::Append && GEditor.HasScene())
+    {
+        AppendScene(request.path);
+        return; // Never import source exposure, view settings, camera, or HDRI over the current scene.
+    }
+    LoadScene(request.path);
+    if (!request.envMapPath.empty())
+    {
         if (sPendingSceneLoad)
-            sPendingSceneLoad->envMapPath = envMapPath;
+            sPendingSceneLoad->envMapPath = request.envMapPath;
         else
-            LoadEnvMap(envMapPath);
+            LoadEnvMap(request.envMapPath);
+    }
+}
+
+void ShutdownSceneLoading()
+{
+    FinishPendingSceneLoad();
+    if (GContext->gpuScene)
+        GContext->gpuScene->Join();
+    sSceneRequests.clear();
+    ReleaseScenePayloadFiles();
+    GEditor.currentSavePath.clear();
+    ClearSelection();
 }
 
 void LoadScene(StringView path)
@@ -669,19 +796,14 @@ void LoadEnvMap(StringView path)
 
 void HandleFile(const char* filePath)
 {
+    if (!filePath || !*filePath)
+        return;
     StringView pathView(filePath);
-    auto dot = pathView.find_last_of('.');
-    auto sep = pathView.find_last_of("/\\");
-    String ext;
-    if (dot != StringView::npos && (sep == StringView::npos || dot > sep))
-        ext = String(pathView.substr(dot));
-    // Normalize to lowercase
-    for (auto& c : ext)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    String const ext = LowerExtension(pathView);
     if (ext == ".gltf" || ext == ".glb" || ext == ".fscn")
     {
-        // HDRIs sharing the scene's filename load too. The scene load is async, so defer
-        // the env map until the scene is installed (PollSceneLoad applies it).
+        // Drops append by default. A first scene can adopt its sidecar HDRI, but subsequent
+        // imports must not replace the scene-global environment.
         String hdriPath{pathView.substr(0, pathView.length() - ext.length())};
         String envPath;
         auto& app = *GContext->application;
@@ -689,11 +811,11 @@ void HandleFile(const char* filePath)
             envPath = hdriPath + ".hdr";
         else if (auto info = app.QueryFileInfo(hdriPath + ".hdri"); info.has_value() && !info.Get().isDirectory)
             envPath = hdriPath + ".hdri";
-        RequestLoadScene(filePath, envPath);
+        RequestAppendScene(filePath, envPath);
     }
     else if (ext == ".hdr" || ext == ".hdri")
     {
-        LoadEnvMap(filePath);
+        sSceneRequests.push_back({SceneRequestKind::Environment, String(filePath), {}});
     }
     else
     {

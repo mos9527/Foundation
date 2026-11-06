@@ -1999,11 +1999,17 @@ void EditorDockSpaceAndMenuBar()
     {
         if (ImGui::BeginMenu(PSI_FOLDER_CLOSE " File"))
         {
-            if (ImGui::MenuItem(PSI_FOLDER_OPEN " Scene"))
+            if (ImGui::MenuItem(PSI_FOLDER_OPEN " Open Scene (Replace)"))
             {
                 String path;
                 if (OpenFile({"Scene Files", "gltf;glb;fscn"}, path))
                     RequestLoadScene(path);
+            }
+            if (ImGui::MenuItem(PSI_PLUS_SIGN " Import Scene (Add)"))
+            {
+                String path;
+                if (OpenFile({"Scene Files", "gltf;glb;fscn"}, path))
+                    RequestAppendScene(path);
             }
             if (ImGui::MenuItem(PSI_SUN " HDRI"))
             {

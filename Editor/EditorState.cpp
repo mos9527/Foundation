@@ -927,4 +927,5 @@ bool EditorOnFrame(FContext* context)
 void EditorCleanup()
 {
     DestroyEditorRenderer();
+    ShutdownSceneLoading();
 }

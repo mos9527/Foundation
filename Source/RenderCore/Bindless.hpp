@@ -1,7 +1,9 @@
 #pragma once
 #include <RHICore/Resource.hpp>
 #include <RHICore/Command.hpp>
-#include <Core/AtomicPool.hpp>
+#include <Core/Container.hpp>
+#include <Core/Thread.hpp>
+#include <atomic>
 namespace Foundation::RenderCore
 {
     using namespace RHI;
@@ -24,12 +26,15 @@ namespace Foundation::RenderCore
             View view;
             size_t referencedTextureBytes{};
             size_t ownedTextureBytes{};
+            RHITextureView* storageView{};
         };
 
         RHIDevice* const mDevice;
         Allocator* const mAllocator;
 
-        AtomicPool<Binding> mBindings;
+        // Slots, not addresses, identify bindings; growing this table keeps every id intact.
+        Vector<Optional<Binding>> mBindings;
+        Vector<uint32_t> mFreeBindings;
 
         RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> mDescLayout;
         RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mDescPool;
@@ -38,7 +43,7 @@ namespace Foundation::RenderCore
         RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mStorageDescPool;
         RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> mStorageDescSet;
 
-        Mutex mDescMutex;
+        mutable Mutex mDescMutex;
         uint32_t mActiveBindings{0};
         uint32_t mOwnedTextureBindings{0};
         size_t mReferencedTextureBytes{0};
@@ -46,6 +51,10 @@ namespace Foundation::RenderCore
 
         RHIDeviceIdleGuard mIdleGuard;
 
+        // Helpers require mDescMutex (except during construction).
+        void CreateDescriptors(uint32_t capacity);
+        Binding* FindBinding(uint32_t id);
+        uint32_t AllocateBinding(Binding&& binding);
         uint32_t UpdateDescriptor(uint32_t id, RHITextureView* view);
         void UpdateStorageDescriptor(uint32_t id, RHITextureView* view);
         void AddStats(Binding const& binding);
@@ -63,8 +72,13 @@ namespace Foundation::RenderCore
             size_t referencedTextureBytes{};
             size_t ownedTextureBytes{};
         };
-        const BindlessPoolDesc mDesc;
+        BindlessPoolDesc mDesc;
         BindlessPool(RHIDevice* device, Allocator * allocator, BindlessPoolDesc const& desc);
+
+        // Explicitly grow between frames, after releasing dependent renderer/pipeline layouts.
+        // Waits for GPU completion and preserves resources and binding IDs. Returns true if grown.
+        // New recordings must use the new descriptor-set layouts; Allocate never grows implicitly.
+        bool Reserve(uint32_t minimumCapacity);
 
         /**
          * @breif Create a binding for the given texture view, with ownership remaining with the caller.

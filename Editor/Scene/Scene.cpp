@@ -1921,6 +1921,157 @@ bool FImportedScene::ReparentNode(FUUID id, FUUID parent)
     return true;
 }
 
+FUUID FImportedScene::AppendScene(UniquePtr<MemoryMappedFile> file, StringView name)
+{
+    CHECK_MSG(!mWriting && file && !file->IsWritable(), "Appending requires a read-only FSCN source");
+    FImportedScene source(*file, mScratchAlloc);
+    LoadFSCN(source);
+    auto& src = source.mTables;
+
+    // Strings may be shared, but components and editable resources must be isolated.
+    // Remap even the default material: the destination's default may have been edited.
+    auto makeIds = [&](auto const& values)
+    {
+        HashMap<FUUID, FUUID> ids(mScratchAlloc);
+        ids.reserve(values.size());
+        for (auto const& value : values)
+            ids.emplace(value.id, FUUID::Generate());
+        return ids;
+    };
+    auto nodeIds = makeIds(src.nodes);
+    auto instanceIds = makeIds(src.instances);
+    auto materialIds = makeIds(src.materials);
+    auto lightIds = makeIds(src.lights);
+    auto cameraIds = makeIds(src.cameras);
+    auto meshIds = makeIds(src.meshes);
+    auto curveIds = makeIds(src.curves);
+    auto textureIds = makeIds(src.textures);
+    HashMap<FUUID, FUUID> names(mScratchAlloc);
+    for (FStringEntry const& entry : src.strings)
+        names.emplace(entry.id, InternString(entry.value.c_str()));
+    auto remap = [](auto const& ids, FUUID id) -> FUUID
+    {
+        if (id.IsNil())
+            return kNilUUID;
+        auto const found = ids.find(id);
+        CHECK_MSG(found != ids.end(), "Imported scene contains an unresolved UUID reference");
+        return found->second;
+    };
+
+    static constexpr FUUID FMaterial::* textureFields[] = {
+        &FMaterial::baseColorTexture, &FMaterial::emissiveTexture, &FMaterial::metallicRoughnessTexture,
+        &FMaterial::normalTexture, &FMaterial::transmissionTexture, &FMaterial::specularTexture,
+        &FMaterial::specularColorTexture, &FMaterial::anisotropyTexture, &FMaterial::sheenColorTexture,
+        &FMaterial::sheenRoughnessTexture, &FMaterial::clearcoatTexture, &FMaterial::clearcoatRoughnessTexture};
+    FLight const* environment = source.GetEnvironmentLight();
+    FUUID const environmentId = environment ? environment->id : kNilUUID;
+    FUUID environmentOnlyTexture = environment ? environment->environmentTexture : kNilUUID;
+    for (FMaterial const& material : src.materials)
+        for (auto field : textureFields)
+            if (material.*field == environmentOnlyTexture)
+                environmentOnlyTexture = kNilUUID;
+
+    // Do not import the scene-global environment or an otherwise empty environment leaf.
+    // An FSCN may attach other components/children to that node; retain those as a group.
+    FUUID skippedNode{};
+    int const environmentNode = source.NodeIndex(source.LightNode(environmentId));
+    if (environmentNode >= 0)
+    {
+        FSceneNode const& node = src.nodes[environmentNode];
+        if (node.instance.IsNil() && node.camera.IsNil() &&
+            source.mHierarchy.firstChild[environmentNode] == FSceneHierarchy::Invalid)
+            skippedNode = node.id;
+    }
+    auto reserveAppend = [](auto& destination, size_t count)
+    {
+        CHECK_MSG(destination.size() <= INT32_MAX && count <= INT32_MAX - destination.size(),
+                  "Appended scene exceeds table index range");
+        destination.reserve(destination.size() + count);
+    };
+    reserveAppend(mTables.nodes, src.nodes.size() + 1u);
+    reserveAppend(mTables.instances, src.instances.size());
+    reserveAppend(mTables.materials, src.materials.size());
+    reserveAppend(mTables.lights, src.lights.size());
+    reserveAppend(mTables.cameras, src.cameras.size());
+    reserveAppend(mTables.meshes, src.meshes.size());
+    reserveAppend(mTables.curves, src.curves.size());
+    reserveAppend(mTables.textures, src.textures.size());
+    mResourcePayloads.reserve(mResourcePayloads.size() + src.meshes.size() + src.curves.size() + src.textures.size());
+    Span<const unsigned char> const payload = source.GetPayloadBytes();
+    mImportedFiles.push_back(std::move(file));
+
+    for (FSerializedMesh& mesh : src.meshes)
+    {
+        mesh.id = remap(meshIds, mesh.id);
+        mResourcePayloads.emplace(mesh.id, payload);
+        mTables.meshes.push_back(std::move(mesh));
+    }
+    for (FSerializedCurve curve : src.curves)
+    {
+        curve.id = remap(curveIds, curve.id);
+        mResourcePayloads.emplace(curve.id, payload);
+        mTables.curves.push_back(curve);
+    }
+    for (FSerializedTexture& texture : src.textures)
+    {
+        if (texture.id == environmentOnlyTexture)
+            continue;
+        texture.id = remap(textureIds, texture.id);
+        texture.name = remap(names, texture.name);
+        mResourcePayloads.emplace(texture.id, payload);
+        mTables.textures.push_back(std::move(texture));
+    }
+    for (FMaterial material : src.materials)
+    {
+        material.id = remap(materialIds, material.id);
+        material.name = remap(names, material.name);
+        for (auto field : textureFields)
+            material.*field = remap(textureIds, material.*field);
+        mTables.materials.push_back(material);
+    }
+    for (FInstance instance : src.instances)
+    {
+        instance.id = remap(instanceIds, instance.id);
+        instance.name = remap(names, instance.name);
+        instance.material = remap(materialIds, instance.material);
+        instance.resource = remap(instance.type == FInstanceType::Mesh ? meshIds : curveIds, instance.resource);
+        mTables.instances.push_back(instance);
+    }
+    for (FLight light : src.lights)
+    {
+        if (light.id == environmentId)
+            continue;
+        light.id = remap(lightIds, light.id);
+        light.name = remap(names, light.name);
+        light.environmentMap = false;
+        light.environmentTexture = kNilUUID;
+        mTables.lights.push_back(light);
+    }
+    for (FCamera camera : src.cameras)
+    {
+        camera.id = remap(cameraIds, camera.id);
+        mTables.cameras.push_back(camera);
+    }
+
+    FUUID const root = FUUID::Generate();
+    String const rootName(name);
+    mTables.nodes.push_back({.id = root, .name = InternString(rootName.c_str())});
+    for (FSceneNode node : src.nodes)
+    {
+        if (node.id == skippedNode)
+            continue;
+        node.id = remap(nodeIds, node.id);
+        node.name = remap(names, node.name);
+        node.parent = node.parent.IsNil() ? root : remap(nodeIds, node.parent);
+        node.instance = remap(instanceIds, node.instance);
+        node.light = node.light == environmentId ? kNilUUID : remap(lightIds, node.light);
+        node.camera = remap(cameraIds, node.camera);
+        mTables.nodes.push_back(node);
+    }
+    RebuildIndex();
+    return root;
+}
+
 Span<const unsigned char> FImportedScene::GetPayloadBytes() const
 {
     CHECK(mFile != nullptr);
@@ -1929,11 +2080,19 @@ Span<const unsigned char> FImportedScene::GetPayloadBytes() const
     return {mFile->Data() + mHeader.payloadOffset, static_cast<size_t>(mHeader.metadataOffset - mHeader.payloadOffset)};
 }
 
-FBlobDeserializer FImportedScene::GetBlobDeserializer() const { return FBlobDeserializer(GetPayloadBytes()); }
-
-bool FImportedScene::ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const
+FBlobDeserializer FImportedScene::GetBlobDeserializer(FUUID resource) const
 {
-    return GetBlobDeserializer().ReadBytes(blob, dst, size, scratchAlloc);
+    auto const source = mResourcePayloads.find(resource);
+    if (source != mResourcePayloads.end())
+        return FBlobDeserializer(source->second);
+    CHECK_MSG(MeshIndex(resource) >= 0 || CurveIndex(resource) >= 0 || TextureIndex(resource) >= 0,
+              "Blob read requires a known scene resource");
+    return FBlobDeserializer(GetPayloadBytes());
+}
+
+bool FImportedScene::ReadBlob(FUUID resource, FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const
+{
+    return GetBlobDeserializer(resource).ReadBytes(blob, dst, size, scratchAlloc);
 }
 
 GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCapabilities const& caps) const
@@ -2019,6 +2178,9 @@ void LoadFSCN(FImportedScene& scene)
     Span<const unsigned char> metadata(bytes.data() + scene.mHeader.metadataOffset,
                                        static_cast<size_t>(scene.mHeader.metadataSize));
     MemoryReader metadataReader(metadata);
+    // Loading the base FSCN replaces the in-memory composition, including source ownership.
+    scene.mResourcePayloads.clear();
+    scene.mImportedFiles.clear();
     FDeserialize(metadataReader, scene.mTables);
     CHECK_MSG(metadataReader.tell() == metadata.size(), "FScene metadata has trailing or unread bytes");
     ValidateSceneTables(scene.mHeader, scene.mTables);

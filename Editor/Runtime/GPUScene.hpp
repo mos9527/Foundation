@@ -20,6 +20,8 @@ bool IsSceneEnvironmentTexture(FImportedScene const& scene, size_t textureIndex)
 
 GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI::RHIDeviceCapabilities const& caps);
 void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources& outResources);
+// Upload only newly appended resource-table entries; retain existing GPU handles and instance overrides.
+void AppendSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources& resources);
 void UploadSceneEnvironment(FImportedScene const& scene, FLight const& environment, GPUScene& gpu);
 
 // NOTE: For scene it's Instances, Materials and Lights only.

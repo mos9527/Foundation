@@ -19,52 +19,56 @@ GPUSceneDesc CalculateSceneGPUDesc(FImportedScene const& scene, Foundation::RHI:
 
 void UploadSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources& outResources)
 {
-    FBlobDeserializer blobs = scene.GetBlobDeserializer();
+    outResources = FSceneGPUResources{};
+    AppendSceneResources(scene, gpu, outResources);
+}
 
-    outResources.meshGeometry.clear();
-    outResources.curveGeometry.clear();
-    outResources.instanceGeometry.assign(scene.GetInstances().size(), GeometryHandle{});
-    outResources.meshGeometry.reserve(scene.GetMeshes().size());
-    outResources.curveGeometry.reserve(scene.GetCurves().size());
-    outResources.meshById.clear();
-    outResources.curveById.clear();
-    outResources.textureById.clear();
-    outResources.materialById.clear();
-    for (FSerializedMesh const& mesh : scene.GetMeshes())
+void AppendSceneResources(FImportedScene& scene, GPUScene& gpu, FSceneGPUResources& resources)
+{
+    CHECK(resources.meshGeometry.size() <= scene.GetMeshes().size());
+    CHECK(resources.curveGeometry.size() <= scene.GetCurves().size());
+    CHECK(resources.textureIDMap.size() <= scene.GetTextures().size());
+    resources.instanceGeometry.resize(scene.GetInstances().size());
+    resources.meshGeometry.reserve(scene.GetMeshes().size());
+    resources.curveGeometry.reserve(scene.GetCurves().size());
+    for (size_t i = resources.meshGeometry.size(); i < scene.GetMeshes().size(); ++i)
     {
+        FSerializedMesh const& mesh = scene.GetMeshes()[i];
+        FBlobDeserializer blobs = scene.GetBlobDeserializer(mesh.id);
         GeometryHandle handle{};
-        GPUScene::Result r = gpu.Upload(&blobs, mesh, handle);
-        CHECK_MSG(r == GPUScene::Result::InProgress || r == GPUScene::Result::Ready, "Mesh upload rejected ({})",
-                  static_cast<int>(r));
-        outResources.meshGeometry.push_back(handle);
-        outResources.meshById.emplace(mesh.id, static_cast<uint32_t>(outResources.meshGeometry.size() - 1));
+        GPUScene::Result const result = gpu.Upload(&blobs, mesh, handle);
+        CHECK_MSG(result == GPUScene::Result::InProgress || result == GPUScene::Result::Ready,
+                  "Mesh upload rejected ({})", static_cast<int>(result));
+        resources.meshGeometry.push_back(handle);
+        resources.meshById.emplace(mesh.id, static_cast<uint32_t>(i));
     }
-    for (FSerializedCurve const& curve : scene.GetCurves())
+    for (size_t i = resources.curveGeometry.size(); i < scene.GetCurves().size(); ++i)
     {
-        GeometryHandle handle;
-        GPUScene::Result r = gpu.Upload(&blobs, curve, handle);
-        CHECK_MSG(r == GPUScene::Result::InProgress, "Curve upload rejected ({})", static_cast<int>(r));
-        outResources.curveGeometry.push_back(handle);
-        outResources.curveById.emplace(curve.id, static_cast<uint32_t>(outResources.curveGeometry.size() - 1));
+        FSerializedCurve const& curve = scene.GetCurves()[i];
+        FBlobDeserializer blobs = scene.GetBlobDeserializer(curve.id);
+        GeometryHandle handle{};
+        GPUScene::Result const result = gpu.Upload(&blobs, curve, handle);
+        CHECK_MSG(result == GPUScene::Result::InProgress, "Curve upload rejected ({})", static_cast<int>(result));
+        resources.curveGeometry.push_back(handle);
+        resources.curveById.emplace(curve.id, static_cast<uint32_t>(i));
     }
 
-    outResources.textureIDMap.assign(scene.GetTextures().size(), TextureHandle{});
-    for (size_t textureIndex = 0; textureIndex < scene.GetTextures().size(); ++textureIndex)
+    size_t const firstTexture = resources.textureIDMap.size();
+    resources.textureIDMap.resize(scene.GetTextures().size());
+    for (size_t i = firstTexture; i < scene.GetTextures().size(); ++i)
     {
-        FSerializedTexture const& srcDesc = scene.GetTextures()[textureIndex];
-        outResources.textureById.emplace(srcDesc.id, static_cast<uint32_t>(textureIndex));
-        if (!srcDesc.IsValid() || IsSceneEnvironmentTexture(scene, textureIndex))
+        FSerializedTexture const& texture = scene.GetTextures()[i];
+        resources.textureById.emplace(texture.id, static_cast<uint32_t>(i));
+        if (!texture.IsValid() || IsSceneEnvironmentTexture(scene, i))
             continue;
-        TextureHandle handle;
-        GPUScene::Result r = gpu.Upload(&blobs, srcDesc, handle);
-        CHECK_MSG(r == GPUScene::Result::InProgress, "Texture {} upload rejected ({})", textureIndex,
-                  static_cast<int>(r));
-        outResources.textureIDMap[textureIndex] = handle;
+        FBlobDeserializer blobs = scene.GetBlobDeserializer(texture.id);
+        GPUScene::Result const result = gpu.Upload(&blobs, texture, resources.textureIDMap[i]);
+        CHECK_MSG(result == GPUScene::Result::InProgress, "Texture {} upload rejected ({})", i,
+                  static_cast<int>(result));
     }
-
-    auto const& materials = scene.GetMaterials();
-    for (size_t i = 0; i < materials.size(); ++i)
-        outResources.materialById.emplace(materials[i].id, static_cast<uint32_t>(i));
+    auto const materials = scene.GetMaterials();
+    for (size_t i = resources.materialById.size(); i < materials.size(); ++i)
+        resources.materialById.emplace(materials[i].id, static_cast<uint32_t>(i));
 }
 
 namespace
@@ -98,7 +102,7 @@ FTexture ReadSceneTexture(FImportedScene const& scene, FSerializedTexture const&
             CHECK_MSG(blob.decodedSize == dst.size_bytes(),
                       "Serialized texture subresource size mismatch: layer {}, mip {}, blob {}, expected {}", layer,
                       mip, blob.decodedSize, dst.size_bytes());
-            CHECK(scene.ReadBlob(blob, dst.data(), dst.size_bytes(), alloc));
+            CHECK(scene.ReadBlob(source.id, blob, dst.data(), dst.size_bytes(), alloc));
         }
     }
     return texture;

@@ -355,8 +355,11 @@ struct FImportedScene
     FSceneTables mTables;
     FSceneIndex mIndex{GLOBAL_ALLOC};
     FSceneHierarchy mHierarchy{GLOBAL_ALLOC};
-    // Non-owning mapped file view where payload blobs are stored. Lifetime is owned by the caller.
+    // The base file is owned by the caller. Appended payload files stay mapped for the
+    // lifetime of this scene; blob offsets remain local to their resource's source file.
     MemoryMappedFile* mFile{nullptr};
+    Vector<UniquePtr<MemoryMappedFile>> mImportedFiles{GLOBAL_ALLOC};
+    HashMap<FUUID, Span<const unsigned char>> mResourcePayloads{GLOBAL_ALLOC};
     Allocator* mScratchAlloc{GLOBAL_ALLOC};
     uint64_t mWriteOffset{0};
     bool mWriting{false};
@@ -461,6 +464,10 @@ struct FImportedScene
     bool CanRemoveNode(FUUID id) const;
     bool RemoveNode(FUUID id);
     bool ReparentNode(FUUID id, FUUID parent); // Keep world placement; reject cycles/singular parents.
+    // Takes ownership of a current-format FSCN mapping and copies its metadata under
+    // a new root. Every entity/resource gets a fresh UUID; scene globals/environment stay local.
+    // Call only after outstanding uploads have released pointers into the metadata tables.
+    FUUID AppendScene(UniquePtr<MemoryMappedFile> file, StringView name);
 
     char const* GetName(FUUID id) const
     {
@@ -499,14 +506,14 @@ struct FImportedScene
     }
 
     Span<const unsigned char> GetPayloadBytes() const;
-    FBlobDeserializer GetBlobDeserializer() const;
-    bool ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const;
+    FBlobDeserializer GetBlobDeserializer(FUUID resource) const;
+    bool ReadBlob(FUUID resource, FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const;
     [[nodiscard]] GPUSceneDesc CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCapabilities const& caps) const;
 
     template <typename T>
-    Vector<T> ReadBlobArray(FBlobRef const& blob, Allocator* alloc = GLOBAL_ALLOC) const
+    Vector<T> ReadBlobArray(FUUID resource, FBlobRef const& blob, Allocator* alloc = GLOBAL_ALLOC) const
     {
-        return GetBlobDeserializer().ReadArray<T>(blob, alloc);
+        return GetBlobDeserializer(resource).ReadArray<T>(blob, alloc);
     }
 };
 
