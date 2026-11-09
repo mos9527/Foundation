@@ -566,8 +566,10 @@ float3 GeneratePaniniRayDirection(float2 pixelSample)
 {
     static const float d = 1.0f;
     float2 halfFov = atan(globalParams.cameraTanHalfFov);
+    float aspect = globalParams.fbWidth / globalParams.fbHeight;
+    float screenHalfWidth = (d + 1.0f) * tan(halfFov.x * 0.5f);
     float2 screen = CameraNDC(pixelSample) *
-        float2((d + 1.0f) * tan(halfFov.x * 0.5f), globalParams.cameraTanHalfFov.y);
+    float2(screenHalfWidth, screenHalfWidth / aspect);
 
     float x = screen.x / (d + 1.0f);
     float x2 = x * x;
