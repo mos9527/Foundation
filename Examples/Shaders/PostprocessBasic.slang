@@ -30,10 +30,18 @@ float3 SampleRadiance(float2 uv)
     return bufferA.SampleLevel(sampler, uv, 0.0f).xyz + bufferB.SampleLevel(sampler, uv, 0.0f).xyz;
 }
 
+// Narkowicz's fitted ACES filmic curve, applied to linear radiance.
+float3 ACESFilm(float3 color)
+{
+    color = max(color, 0.0f);
+    return saturate((color * (2.51f * color + 0.03f)) /
+                    (color * (2.43f * color + 0.59f) + 0.14f));
+}
+
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0) : SV_TARGET {
     float3 src = SampleRadiance(uv);
-    src = clamp(src, 0.0f, 1.0f);
+    src = ACESFilm(src);
     src = pow(src, float3(1.0f / 2.2f));
     return float4(src, 1.0f);
 }
