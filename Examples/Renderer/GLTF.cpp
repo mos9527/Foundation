@@ -1,4 +1,4 @@
-// Demonstrates loading a glTF/GLB/FSCN into GPUScene with the Pathtracer integrator
+// Demonstrates loading a glTF/GLB/FSCN into GPUScene with selectable renderers
 #include <Editor/Runtime/GPUScene.hpp>
 #include <RenderCore/ImmediateContext.hpp> // For ImmediateReadback
 #include <Renderer/Renderer.hpp>
@@ -6,7 +6,6 @@
 #include <Renderer/ProgressivePathtracer.hpp>
 #include <algorithm>
 #include <argh.h>
-#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -98,16 +97,35 @@ int main(int argc, char** argv)
 {
     // --- Command line ---------------------------------------------------------------------
     // Positional: <scene path> (glTF/GLB/FSCN). Omit it to get a native file picker (windowed mode only).
-    // Headless single-image render (no window, path traced):
+    //   -r, --renderer <index>   Initial renderer: 0 = Progressive PT, 1 = Raster, 2 = Realtime PT (default: 1)
+    // Headless single-image render (no window):
     //   --headless               Render one image and exit (implied when -o/--output is given)
     //   -o, --output  <path>     Output PNG path (default: render.png)
     //   -w, --width   <px>       Output width  (default: 1920)
     //       --height  <px>       Output height (default: 1080)
     //   -s, --samples <n>        Path-tracer samples to accumulate (default: 256)
-    // (Shared -h/--help, -g/--gpu, -l/--list-gpus are handled by Examples_InitVulkan.)
+    // Handle -h/--help before scene selection; shared GPU options are handled by Examples_InitVulkan.
     argh::parser cmdl;
-    cmdl.add_params({"-o", "--output", "-w", "--width", "--height", "-s", "--samples", "-g", "--gpu"});
+    cmdl.add_params({"-o", "--output", "-w", "--width", "--height", "-s", "--samples", "-g", "--gpu",
+                     "-r", "--renderer"});
     cmdl.parse(argc, argv);
+
+    if (cmdl[{"-h", "--help"}])
+    {
+        Println("Usage: {} [options] [scene path]", argv[0]);
+        Println("Scene path: glTF/GLB/FSCN file; omit to open a file picker in windowed mode.");
+        Println("Options:");
+        Println("\t-h, --help\t\tShow this help message");
+        Println("\t-r, --renderer <index>\tInitial renderer: 0 = Progressive PT, 1 = Raster, 2 = Realtime PT (default: 1)");
+        Println("\t    --headless\t\tRender one image and exit (requires a scene path)");
+        Println("\t-o, --output <path>\tOutput PNG path; implies --headless (default: render.png)");
+        Println("\t-w, --width <px>\t\tOutput width (default: 1920)");
+        Println("\t    --height <px>\tOutput height (default: 1080)");
+        Println("\t-s, --samples <n>\tPath-tracer samples to accumulate (default: 256)");
+        Println("\t-g, --gpu <id>\t\tSpecify GPU device index");
+        Println("\t-l, --list-gpus\t\tList available GPU devices");
+        return 0;
+    }
 
     uint32_t renderWidth = 1920u;
     uint32_t renderHeight = 1080u;
@@ -122,6 +140,30 @@ int main(int argc, char** argv)
     if (auto out = cmdl({"-o", "--output"}))
         outputPath = out.str();
     const bool headless = cmdl[{"--headless"}] || static_cast<bool>(cmdl({"-o", "--output"}));
+
+    ExampleRenderer renderer = ExampleRenderer::Raster;
+    if (cmdl[{"-r", "--renderer"}])
+    {
+        Println("Missing renderer index. Use -r/--renderer 0, 1, or 2.");
+        return 1;
+    }
+    if (auto selectedRenderer = cmdl({"-r", "--renderer"}))
+    {
+        int rendererIndex = 1;
+        if (!(selectedRenderer >> rendererIndex) || rendererIndex < 0 || rendererIndex > 2)
+        {
+            Println("Invalid renderer index '{}'. Expected 0 (Progressive PT), 1 (Raster), or 2 (Realtime PT).",
+                    selectedRenderer.str());
+            return 1;
+        }
+        // Match the Editor's CLI indices, which differ from ExampleRenderer's enum order.
+        switch (rendererIndex)
+        {
+        case 0: renderer = ExampleRenderer::ProgressivePT; break;
+        case 1: renderer = ExampleRenderer::Raster; break;
+        case 2: renderer = ExampleRenderer::RealtimePT; break;
+        }
+    }
 
     String scenePathArg;
     if (auto positional = cmdl(1))
@@ -170,7 +212,6 @@ int main(int argc, char** argv)
         ApplySceneCamera(scene, ubo, camera);
         CommitSceneToGPU(scene, gpu, resources, ubo);
         ExampleInputState input{};
-        ExampleRenderer renderer = ExampleRenderer::Raster;
         if (headless)
         {
             cfg.renderExtent = RHIExtent2D{renderWidth, renderHeight};
