@@ -8,6 +8,7 @@
 #include <cstring>
 #include <cstdio>
 #include <exception>
+#include <filesystem>
 #include <optional>
 #include <SDL3/SDL_iostream.h>
 #include <stb_image_write.h>
@@ -927,7 +928,8 @@ void Examples_DestroyVulkan(SDL_Window* window, ExampleVulkanContext& ctx)
 void Examples_DumpAndOpenImage(RHIApplication const& app, StringView path, RHIExtent2D extent, void const* data,
                                int channels, int strideBytes)
 {
-    const auto outPath = app.ResolveRelativePathBase(path);
+    const auto outPath = std::filesystem::path(String(path)).is_absolute() ? String(path)
+                                                                         : app.ResolveRelativePathBase(path);
     const int stride = strideBytes ? strideBytes : static_cast<int>(extent.x) * channels;
     if (!stbi_write_png(outPath.c_str(), static_cast<int>(extent.x), static_cast<int>(extent.y), channels, data,
                         stride))
