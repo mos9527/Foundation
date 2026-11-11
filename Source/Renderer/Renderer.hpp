@@ -86,6 +86,8 @@ struct RendererUBO
     uint32_t adaptiveMinSamples{32u};
     float adaptiveThreshold{0.01f}; // 0 = disabled
     float rasterRTShadowBias{0.01f};
+    // Increment on scene edits/camera cuts, not ordinary camera movement. Applied on the next trace.
+    uint32_t ptDenoiseHistoryEpoch{0u};
 };
 
 struct PostprocessUBO
@@ -148,6 +150,18 @@ struct RendererConfig
     uint32_t ptSharcStaleFrames{60u};
     float ptSharcRoughnessThreshold{0.4f};
     uint32_t ptSharcUpdateDownscale{5u};
+    // Primary-hit-guided denoiser for the realtime path tracer.
+    bool ptDenoise{true};
+    bool ptDenoiseTemporal{true};
+    uint32_t ptDenoiseDiffuseHistory{16u};
+    uint32_t ptDenoiseSpecularHistory{4u};
+    float ptDenoiseTemporalDepthThreshold{0.01f};
+    float ptDenoiseTemporalNormalThreshold{0.9f};
+    float ptDenoiseHistoryClampSigma{3.0f};
+    float ptDenoiseNormalPower{32.0f};
+    float ptDenoiseRelativeDepthSigma{0.02f};
+    float ptDenoiseAlbedoSigma{0.2f};
+    float ptDenoiseLuminanceSigma{1.0f};
     bool textureAnisoEnable{true};
     float textureAnisoLevel{16.0f};
     bool textureTrilinear{true};

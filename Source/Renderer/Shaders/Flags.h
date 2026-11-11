@@ -70,7 +70,8 @@ SHARED_BITMASK_ENUM_BEGIN(PTCompileOptions, uint32_t)
     SamplerPCG = 1u << 2,
     ForceTextureLOD0 = 1u << 3,
     LightSamplerUniform = 1u << 4,
-    EnergyCompensation = 1u << 5
+    EnergyCompensation = 1u << 5,
+    DenoiserGuides = 1u << 6
 SHARED_BITMASK_ENUM_END()
 
 SHARED_BITMASK_ENUM_BEGIN(GSInstanceFlags, uint32_t)

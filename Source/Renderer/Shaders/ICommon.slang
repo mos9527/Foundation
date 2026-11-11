@@ -351,6 +351,7 @@ public struct UBO
     public uint32_t adaptiveMinSamples;
     public float adaptiveThreshold;
     public float rasterRTShadowBias;
+    public uint32_t ptDenoiseHistoryEpoch;
 };
 
 public struct PostprocessUBO

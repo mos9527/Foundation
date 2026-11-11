@@ -1,6 +1,6 @@
 include(slangc_compile)
 
-file(GLOB SLANG_FILES "${CMAKE_CURRENT_LIST_DIR}/*.slang")
+file(GLOB SLANG_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/*.slang")
 
 add_custom_target(Foundation_Shaders)
 foreach(SlangFile IN LISTS SLANG_FILES)

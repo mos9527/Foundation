@@ -58,6 +58,7 @@ target_include_directories(Foundation_ProgressivePathtracer PUBLIC ..)
 
 add_library(Foundation_RealtimePathtracer STATIC
     RealtimePathtracer.cpp
+    PathtracerDenoiser.cpp
 )
 target_link_libraries(Foundation_RealtimePathtracer PUBLIC
     Foundation_GPUScene

@@ -1,9 +1,8 @@
-#include <RenderUtils/CSClearBuffer.hpp>
-#include <RenderUtils/CSMipGeneration.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
 #include <algorithm>
 #include "GPUScene.hpp"
-#include "ProgressivePathtracer.hpp"
+#include "PathtracerDenoiser.hpp"
+#include "RealtimePathtracer.hpp"
 
 namespace
 {
@@ -121,6 +120,22 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::R32Uint});
+    // Guides come from the same sampled primary hit as the radiance, including lens/alpha sampling.
+    // The disabled specialization never writes them; keep small valid descriptor bindings in that case.
+    RHIExtent2D const guideExtent = cfg.ptDenoise ? RHIExtent2D{w, h} : RHIExtent2D{1u, 1u};
+    auto createGuide = [&](char const* name, RHIResourceFormat format)
+    {
+        return renderer->CreateResource(
+            name, RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+                                 .extent = {guideExtent.x, guideExtent.y, 1u},
+                                 .format = format});
+    };
+    PTDenoiserGuides const DenoiserGuides{
+        .normalRoughness = createGuide("PT Guide Normal Roughness", kPTDenoiserGuideFormat),
+        .albedoMetallic = createGuide("PT Guide Albedo Metallic", kPTDenoiserGuideFormat),
+        .linearDepth = createGuide("PT Guide Linear Depth", kPTDenoiserDepthFormat),
+        .temporalSupported = !gpu.hasDynamicGeometry && !gpu.hasDynamicTextures,
+    };
     ResourceHandle EnvMapSampler = renderer->CreateSampler({
         .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear, RHIDeviceSampler::SamplerDesc::Filter::Linear},
     });
@@ -131,7 +146,8 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                                                }});
     const bool shaderExecutionReordering =
         cfg.ptShaderExecutionReordering && renderer->GetDevice()->GetCapabilities().shaderExecutionReordering;
-    const uint32_t compileOptions = PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode);
+    const uint32_t compileOptions = PackCompileOptions(cfg.ptSampler, cfg.forceTextureLOD0, cfg.lightSamplerMode) |
+        (cfg.ptDenoise ? to_integer(PTCompileOptionsBits::DenoiserGuides) : 0u);
     renderer->CreatePass(
         "SHARC Initialize", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -211,10 +227,7 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
                 }
             });
     }
-    RenderUtils::createCSClearTexture(
-        renderer, "Trace Clear Depth", DepthUAV,
-        RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat, .range = RHITextureSubresourceRange::Create()},
-        float4{0.0f, 0.0f, 0.0f, 0.0f});
+    // Trace writes depth (including misses) for every pixel. Preserve it when tracing is paused.
     String tracePassName =
         Format("{} {}", sharcEnabled ? "SHaRC Query" : "Trace", shaderExecutionReordering ? "SER" : "Compute");
     renderer->CreatePass(
@@ -275,20 +288,28 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
             r->BindTextureUAV(self, InstanceIDBuffer, "instanceIDBuffer", pipelineStage,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});
+            RHITextureViewDesc const guideView{.format = kPTDenoiserGuideFormat,
+                                               .range = RHITextureSubresourceRange::Create()};
+            r->BindTextureUAV(self, DenoiserGuides.normalRoughness, "denoiserNormalRoughness", pipelineStage, guideView);
+            r->BindTextureUAV(self, DenoiserGuides.albedoMetallic, "denoiserAlbedoMetallic", pipelineStage, guideView);
+            r->BindTextureUAV(self, DenoiserGuides.linearDepth, "denoiserLinearDepth", pipelineStage,
+                              {.format = kPTDenoiserDepthFormat, .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, EnvMapSampler, "gEnvMapSampler");
             r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
         },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        [=, initialized = false](PassHandle self, Renderer* r, RHICommandList* cmd) mutable
         {
-            r->CmdSetPipeline(self, cmd);
-            r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
-            bool canTrace = (!cfg.ptRenderPaused || !*cfg.ptRenderPaused);
+            // A newly built graph has no previous image, even if the caller is already paused.
+            bool const canTrace = !initialized || !cfg.ptRenderPaused || !*cfg.ptRenderPaused;
             if (canTrace)
             {
+                r->CmdSetPipeline(self, cmd);
+                r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
                 if (shaderExecutionReordering)
                     cmd->TraceRays(w, h, 1);
                 else
                     cmd->Dispatch((w - 1) / 8 + 1, (h - 1) / 8 + 1, 1);
+                initialized = true;
             }
         });
     RenderUtils::createPSDepthCopyPass(renderer, "Copy Depth UAV to DSV", DepthUAV, Depth.Current(), {w, h});
@@ -298,4 +319,5 @@ void BuildRealtimePathTracerRenderGraph(Renderer* renderer, RendererUBO* globals
     out.specular = Specular;
     out.depth = Depth;
     out.instanceID = InstanceIDBuffer;
+    BuildPTDenoisePasses(renderer, globals, cfg, DenoiserGuides, out);
 }

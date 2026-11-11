@@ -517,6 +517,7 @@ static void FrameNode(FUUID nodeId)
     GEditor.camera.center = center;
     GEditor.camera.radius = std::max(radius / std::sin(halfFov), 1e-3f);
     GEditor.cameraUpdated = true;
+    ++GEditor.shaderGlobals.ptDenoiseHistoryEpoch;
 }
 
 static void MoveNodeToView(FUUID nodeId, bool align = false)
@@ -566,6 +567,7 @@ static void AlignViewToLight(int index)
     GEditor.camera.center = transform.transform - dir * GEditor.camera.radius;
     GEditor.camera.position = transform.transform;
     GEditor.cameraUpdated = true;
+    ++GEditor.shaderGlobals.ptDenoiseHistoryEpoch;
 }
 
 // Returns a requested deletion; callers apply it after finishing hierarchy traversal.
@@ -3446,6 +3448,56 @@ void FRunningImGui()
                 GEditor.rendererConfig.ptSampler = static_cast<PTSampler>(ptSampler);
                 GEditor.shaderGlobals.accumulatedFrames = 0;
                 GEditor.state = FERunningEnter;
+            }
+            if (GEditor.rendererMode == ERendererMode::RealtimePT &&
+                ImGui::CollapsingHeader("Denoiser (Lab)", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                ImGui::PushID("PTDenoise");
+                auto& config = GEditor.rendererConfig;
+                bool denoiserChanged = ImGui::Checkbox("Enable Denoiser", &config.ptDenoise);
+                ImGui::BeginDisabled(!config.ptDenoise);
+                denoiserChanged |= ImGui::Checkbox("Camera-only Temporal", &config.ptDenoiseTemporal);
+                ImGui::BeginDisabled(!config.ptDenoiseTemporal);
+                int diffuseHistory = static_cast<int>(config.ptDenoiseDiffuseHistory);
+                if (ImGui::SliderInt("Diffuse History", &diffuseHistory, 1, 64))
+                {
+                    config.ptDenoiseDiffuseHistory = static_cast<uint32_t>(diffuseHistory);
+                    denoiserChanged = true;
+                }
+                int specularHistory = static_cast<int>(config.ptDenoiseSpecularHistory);
+                if (ImGui::SliderInt("Max Rough Specular History", &specularHistory, 1, 16))
+                {
+                    config.ptDenoiseSpecularHistory = static_cast<uint32_t>(specularHistory);
+                    denoiserChanged = true;
+                }
+                denoiserChanged |= ImGui::SliderFloat("Temporal Depth Threshold", &config.ptDenoiseTemporalDepthThreshold,
+                                                      0.001f, 0.1f, "%.3f", ImGuiSliderFlags_Logarithmic);
+                denoiserChanged |= ImGui::SliderFloat("Temporal Normal Threshold", &config.ptDenoiseTemporalNormalThreshold,
+                                                      0.5f, 0.999f, "%.3f");
+                denoiserChanged |= ImGui::SliderFloat("History Clamp Sigma", &config.ptDenoiseHistoryClampSigma,
+                                                      0.5f, 8.0f, "%.1f");
+                if (ImGui::Button("Reset History (Next Trace)"))
+                    ++GEditor.shaderGlobals.ptDenoiseHistoryEpoch;
+                ImGui::EndDisabled();
+                ImGui::SeparatorText("Spatial Filter");
+                denoiserChanged |= ImGui::SliderFloat("Normal Power", &config.ptDenoiseNormalPower,
+                                                      1.0f, 128.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+                denoiserChanged |= ImGui::SliderFloat("Relative Depth Sigma", &config.ptDenoiseRelativeDepthSigma,
+                                                      0.001f, 0.1f, "%.3f", ImGuiSliderFlags_Logarithmic);
+                denoiserChanged |= ImGui::SliderFloat("Albedo Sigma", &config.ptDenoiseAlbedoSigma,
+                                                      0.01f, 1.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+                denoiserChanged |= ImGui::SliderFloat("Luminance Sigma", &config.ptDenoiseLuminanceSigma,
+                                                      0.05f, 8.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+                ImGui::EndDisabled();
+                ImGui::TextDisabled("Camera-only temporal resolve, then 3 a-trous passes.");
+                ImGui::TextDisabled("Temporal requires static scenes and perspective pinhole cameras.");
+                ImGui::TextDisabled("Background, emitters, and sharp/transmissive specular stay unfiltered.");
+                ImGui::PopID();
+                if (denoiserChanged)
+                {
+                    GEditor.shaderGlobals.accumulatedFrames = 0;
+                    GEditor.state = FERunningEnter;
+                }
             }
         }
         if (IsRaster(GEditor.rendererMode))

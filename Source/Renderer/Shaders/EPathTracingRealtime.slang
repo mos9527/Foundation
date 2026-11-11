@@ -1,7 +1,7 @@
 // "Realtime" Path Tracer
 // TODO:
 //  [] ReSTIR DI
-//  [] Denoiser
+//  [] Motion-aware denoiser history for dynamic scenes and sharp specular
 #include "IPathTracing.slang"
 #ifndef SHARC_QUERY
 #define SHARC_QUERY 0
@@ -9,6 +9,19 @@
 #if SHARC_QUERY || SHARC_UPDATE
 #include "ISharcIntegration.slang"
 #endif
+
+#if !SHARC_UPDATE
+RWTexture2D<float4> denoiserNormalRoughness;
+RWTexture2D<float4> denoiserAlbedoMetallic;
+RWTexture2D<float> denoiserLinearDepth;
+#endif
+
+struct DenoiserMaterialGuide
+{
+    float4 albedoMetallic;
+    float roughness; // Negative for transmission: do not spatially filter its specular AOV.
+    bool emissive;
+};
 
 // Raygen
 void RayGenerationImpl(uint2 launchPixel)
@@ -73,7 +86,7 @@ void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
 }
 
 IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 view, out float3 wo,
-                       out float3 outBaseColor, out float3 sharcMaterialDemodulation, out float sharcRoughness)
+                       out DenoiserMaterialGuide guide, out float3 sharcMaterialDemodulation, out float sharcRoughness)
 {
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
     float transmission;
@@ -81,7 +94,10 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 view, out 
     GSMaterial material = LoadMaterial(inst.materialIndex);
     SampleMaterials(material, hit.uv, hit.uvDX, hit.uvDY,
                              baseColor4, normalTBN, pbrMetalRough, emissive4, transmission);
-    outBaseColor = baseColor4.xyz;
+    // Use the actual material roughness even in NoSHARC variants, before any cache-update clamp.
+    guide.albedoMetallic = float4(baseColor4.xyz, saturate(pbrMetalRough.z));
+    guide.roughness = transmission > 0.0f ? -1.0f : saturate(pbrMetalRough.y);
+    guide.emissive = any(emissive4.xyz > 0.0f);
     SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
     wo = WorldToShadingLocal(hit, view);
 
@@ -132,6 +148,17 @@ SharcHitData MakeSharcHitData(HitState hit, float3 materialDemodulation)
 
 void PathTrace<S : ISampler>(uint2 pix, inout S rng)
 {
+#if !SHARC_UPDATE
+    const bool writeDenoiserGuides = (kCompileOptions & uint32_t(PTCompileOptionsBits.DenoiserGuides)) != 0u;
+    bool primaryGuideValid = true;
+    if (writeDenoiserGuides)
+    {
+        // Initialize every pixel, including misses and all debug/early-return paths.
+        denoiserNormalRoughness[pix] = float4(0.0f);
+        denoiserAlbedoMetallic[pix] = float4(0.0f);
+        denoiserLinearDepth[pix] = 0.0f;
+    }
+#endif
     float3 beta = float3(1);
 #if !SHARC_UPDATE
     float etaScale = 1.0f;
@@ -251,6 +278,12 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             AddAnalyticLightHitEmission(hit, ray.Direction, view, beta, bounce, firstBounceCategory,
                                         lastSamplePDF, lastLightCtx, radiance, hitPoint))
         {
+#if !SHARC_UPDATE
+            // Analytic emitters can be followed by another primary hit; its guides do not
+            // describe the visible emitter, so leave this pixel out of spatial filtering.
+            if (bounce == 0u)
+                primaryGuideValid = false;
+#endif
             currentRayCone.width += currentRayCone.spreadSlope * hit.raw.hitT;
             if (++analyticPasses > 64u)
                 break;
@@ -290,11 +323,11 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         }
 
         float3 wo;
-        float3 baseColorOut;
+        DenoiserMaterialGuide materialGuide;
         float3 sharcMaterialDemodulation;
         float sharcRoughness;
         IMaterial material = MakeMaterial(
-            hit.raw, hitState, view, wo, baseColorOut, sharcMaterialDemodulation, sharcRoughness);
+            hit.raw, hitState, view, wo, materialGuide, sharcMaterialDemodulation, sharcRoughness);
 
 #if !SHARC_UPDATE
         if (hasAnyDebugView && bounce == 0)
@@ -302,7 +335,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             specular[pix] = diffuse[pix] = float4(0.0f);
             uint flags = globalParams.dbgViewFlags;
             if ((flags & uint32_t(ViewFlagsBits.BaseColor)) != 0u)
-                diffuse[pix] = float4(baseColorOut, 1.0f);
+                diffuse[pix] = float4(materialGuide.albedoMetallic.xyz, 1.0f);
             if ((flags & uint32_t(ViewFlagsBits.Normal)) != 0u)
                 diffuse[pix] = float4(hitState.normal * 0.5f + 0.5f, 1.0f);
             if ((flags & uint32_t(ViewFlagsBits.Position)) != 0u)
@@ -319,6 +352,15 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         {
             primaryInstance = hit.raw.instance;
             primaryDepth = WorldToNDCDepth(hitState.position);
+#if !SHARC_UPDATE
+            if (writeDenoiserGuides && primaryGuideValid && !materialGuide.emissive)
+            {
+                denoiserNormalRoughness[pix] = float4(hitState.normal, materialGuide.roughness);
+                denoiserAlbedoMetallic[pix] = materialGuide.albedoMetallic;
+                // Linear distance along the sampled camera ray also works for panoramic/lens rays.
+                denoiserLinearDepth[pix] = length(hitState.position - cameraRay.ray.Origin);
+            }
+#endif
         }
 
 #if !SHARC_UPDATE

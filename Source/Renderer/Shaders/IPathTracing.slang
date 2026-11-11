@@ -8,6 +8,7 @@ import IBSSRDF;
 import IMaterial;
 import IMath;
 import IBxDF;
+import IPTCamera;
 
 #ifndef SHARC_UPDATE
 #define SHARC_UPDATE 0
@@ -536,9 +537,7 @@ bool IsPanoramicCamera()
 
 float2 CameraNDC(float2 pixelSample)
 {
-    float2 ndc = pixelSample / float2(globalParams.fbWidth, globalParams.fbHeight) * 2.0f - 1.0f;
-    ndc.y = -ndc.y;
-    return ndc;
+    return PTCameraNDC(pixelSample, float2(globalParams.fbWidth, globalParams.fbHeight));
 }
 
 float3 ViewToWorldDirection(float3 viewDirection)
@@ -609,9 +608,8 @@ float3 GeneratePrimaryRayDirection(float2 pixelSample)
     if (globalParams.cameraProjection == uint32_t(CameraProjection::Fisheye))
         return GenerateFisheyeRayDirection(pixelSample);
 
-    float2 ndc = CameraNDC(pixelSample);
-    float3 viewDirection = normalize(float3(ndc * globalParams.cameraTanHalfFov, -1.0f));
-    return ViewToWorldDirection(viewDirection);
+    return PTPinholeRayDirection(pixelSample, float2(globalParams.fbWidth, globalParams.fbHeight),
+                                 globalParams.cameraTanHalfFov, globalParams.inverseView);
 }
 
 float WorldToNDCDepth(float3 worldPosition)
@@ -663,14 +661,10 @@ RayDesc MakeCameraRay(float3 direction, float2 lensSample)
 
 CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng, bool debugView = false)
 {
-    float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2D());
-    float2 pixelSample = float2(pixel) + 0.5f;
+    float2 pixelSample = PTSampleCameraPixel(pixel, rng, debugView);
     float2 lensSample = float2(0.0f);
-    if (!debugView) {
-        pixelSample += jitter;
-        if (!IsPanoramicCamera() && globalParams.aperture > EPS)
-            lensSample = SampleAnamorphicLens(rng.sample2D()) * globalParams.aperture;
-    }
+    if (!debugView && !IsPanoramicCamera() && globalParams.aperture > EPS)
+        lensSample = SampleAnamorphicLens(rng.sample2D()) * globalParams.aperture;
     CameraRay cameraRay;
     cameraRay.ray = MakeCameraRay(GeneratePrimaryRayDirection(pixelSample), lensSample);
     cameraRay.rayCone.width = 0.0f;

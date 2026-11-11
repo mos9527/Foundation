@@ -299,5 +299,7 @@ GPUScene::UpdateResult CommitSceneToGPU(FImportedScene& scene, GPUScene& gpu, FS
 
     GPUScene::UpdateResult result = gpu.EndScene(tables, flag);
     gpu.UpdateUBO(globals);
+    // Recommitting geometry/materials/lights can change radiance without changing camera motion.
+    ++globals.ptDenoiseHistoryEpoch;
     return result;
 }
