@@ -3354,7 +3354,7 @@ void FRunningImGui()
             }
             if (ImModalButton(PSI_BOLT " Fast", 1, 4))
             {
-                GEditor.shaderGlobals.ptMaxBounces = 4;
+                GEditor.shaderGlobals.ptMaxBounces = 8;
                 GEditor.shaderGlobals.ptFireflyClamp = GContext->rendererSettings.energyClampOverride; // Default 1.0
                 GEditor.shaderGlobals.accumulatedFrames = 0;
             }
