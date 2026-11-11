@@ -3676,10 +3676,10 @@ void FRunningImGui()
             }
         }
         {
-            const char* items[] = {"White Base Color"};
-            const MaterialFlagsBits values[] = {MaterialFlagsBits::DbgWhiteBaseColor};
+            const char* items[] = {"White Base Color", "Diffuse Only"};
+            const MaterialFlagsBits values[] = {MaterialFlagsBits::DbgWhiteBaseColor, MaterialFlagsBits::DbgDiffuseOnly};
             ImGui::SeparatorText(PSI_ADJUST " Material Debug");
-            if (ImBitmaskOptionPicker(GEditor.rendererConfig.materialFlags, items, values, true /* solo */))
+            if (ImBitmaskOptionPicker(GEditor.rendererConfig.materialFlags, items, values))
             {
                 if (IsPathTracer(GEditor.rendererMode))
                     GEditor.shaderGlobals.accumulatedFrames = 0;

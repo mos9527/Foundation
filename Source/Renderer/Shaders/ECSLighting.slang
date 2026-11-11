@@ -236,7 +236,8 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
         quat toLocal = quatRotateToZ(normalWS);
         float3 wo = toLocal.rotate(v);
 
-        BasicPBRBSDF bsdf = BasicPBRBSDF(baseColor, metallic, roughness);
+        bool diffuseOnly = (globalParams.dbgMaterialFlags & uint32_t(MaterialFlagsBits.DbgDiffuseOnly)) != 0u;
+        BasicPBRBSDF bsdf = BasicPBRBSDF(baseColor, metallic, roughness, false, diffuseOnly);
 
         bool useFullLightList = tileLightOverflow != 0u;
         uint lightCount = useFullLightList ? globalParams.lights.count : min(tileLightCount, kTileLightCapacity);
@@ -309,19 +310,21 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
                      : 1.0f;
         Ld += ao * diffuseAlbedo * (envHasEnvMap ? SHIrradiance(globalParams.envSHCoeffs, normalWS) * envTint : envTint);
 
-        float NoV = clamp(dot(normalWS, v), 0.0f, 1.0f);
-        float3 F0 = lerp(float3(F0FromIor(1.5f)), baseColor, metallic);
-        float2 lutE = SampleGGXLutE(globalParams.ggxLutEIndex, NoV, roughness);
-        float3 F = F0 * lutE.x + (1.0f - F0) * lutE.y;
-        if (envHasEnvMap) {
-            float3 R = 2.0f * NoV * normalWS - v;
-            float mip = ReflectionMipFromRoughness(roughness, globalParams.envMapPrefilteredMips);
-            float azimuth = EnvLightAzimuth();
-            float3 prefiltered = gTextures2D[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
-                                     .SampleLevel(gLutSampler, EnvMapDirToUV(R, azimuth), mip).xyz;
-            Ls += prefiltered * envTint * F;
-        } else
-            Ls += envTint * F;
+        if (!diffuseOnly) {
+            float NoV = clamp(dot(normalWS, v), 0.0f, 1.0f);
+            float3 F0 = lerp(float3(F0FromIor(1.5f)), baseColor, metallic);
+            float2 lutE = SampleGGXLutE(globalParams.ggxLutEIndex, NoV, roughness);
+            float3 F = F0 * lutE.x + (1.0f - F0) * lutE.y;
+            if (envHasEnvMap) {
+                float3 R = 2.0f * NoV * normalWS - v;
+                float mip = ReflectionMipFromRoughness(roughness, globalParams.envMapPrefilteredMips);
+                float azimuth = EnvLightAzimuth();
+                float3 prefiltered = gTextures2D[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
+                                         .SampleLevel(gLutSampler, EnvMapDirToUV(R, azimuth), mip).xyz;
+                Ls += prefiltered * envTint * F;
+            } else
+                Ls += envTint * F;
+        }
 
         Ld += emissive;
 

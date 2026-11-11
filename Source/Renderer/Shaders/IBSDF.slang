@@ -1166,14 +1166,17 @@ public struct BasicPBRBSDF : IBSDF {
     bool hasBottom;
     bool hasSpecular;
     bool isGlass;
+    bool isDiffuseOnly;
 
-    public __init(float3 baseColor, float metallic, float roughness, bool transmissive = false) {
+    public __init(float3 baseColor, float metallic, float roughness, bool transmissive = false,
+                  bool diffuseOnly = false) {
         baseColor = max(baseColor, float3(0.0f));
-        metallic = saturate(metallic);
-        this.isGlass = transmissive;
+        metallic = diffuseOnly ? 0.0f : saturate(metallic);
+        this.isGlass = transmissive && !diffuseOnly;
+        this.isDiffuseOnly = diffuseOnly;
 
         this.diffuseColor = baseColor * (1.0f - metallic);
-                this.F0 = lerp(float3(transmissive ? 0.08f : 0.04f), baseColor, metallic);
+        this.F0 = diffuseOnly ? float3(0.0f) : lerp(float3(transmissive ? 0.08f : 0.04f), baseColor, metallic);
 
         roughness = max(8e-3f, roughness);
         float alpha = roughness * roughness;
@@ -1189,6 +1192,9 @@ public struct BasicPBRBSDF : IBSDF {
     }
 
     float3 Fresnel(float3 wo, float3 wi) {
+        // Zero F0 alone still has grazing-angle Schlick reflection.
+        if (isDiffuseOnly)
+            return float3(0.0f);
         float3 wm = wo + wi;
         if (LengthSquared(wm) <= EPS)
             return F0;

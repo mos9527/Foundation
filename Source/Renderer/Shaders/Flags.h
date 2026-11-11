@@ -54,7 +54,8 @@ SHARED_BITMASK_ENUM_BEGIN(ViewFlags, uint32_t)
 SHARED_BITMASK_ENUM_END()
 
 SHARED_BITMASK_ENUM_BEGIN(MaterialFlags, uint32_t)
-    DbgWhiteBaseColor = 1u << 0
+    DbgWhiteBaseColor = 1u << 0,
+    DbgDiffuseOnly = 1u << 1
 SHARED_BITMASK_ENUM_END()
 
 SHARED_BITMASK_ENUM_BEGIN(CullFlags, uint32_t)

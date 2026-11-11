@@ -83,6 +83,13 @@ void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
     transmission = material.transmissionFactor;
     if (material.transmissionTexture != ~0u)
         transmission *= SampleMaterialTexture(material.transmissionTexture, uv, uvDX, uvDY).r;
+
+    if ((globalParams.dbgMaterialFlags & uint32_t(MaterialFlagsBits.DbgDiffuseOnly)) != 0u)
+    {
+        pbrMetalRough.y = 1.0f;
+        pbrMetalRough.z = 0.0f;
+        transmission = 0.0f;
+    }
 }
 
 IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 view, out float3 wo,
@@ -100,15 +107,17 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 view, out 
     guide.emissive = any(emissive4.xyz > 0.0f);
     SetHitShadingNormal(hit, hit.tangent * normalTBN.x + hit.bitangent * normalTBN.y + hit.normal * normalTBN.z);
     wo = WorldToShadingLocal(hit, view);
+    bool diffuseOnly = (globalParams.dbgMaterialFlags & uint32_t(MaterialFlagsBits.DbgDiffuseOnly)) != 0u;
 
 #if SHARC_QUERY || SHARC_UPDATE
     sharcRoughness = pbrMetalRough.y;
     float3 diffuseAlbedo = baseColor4.xyz * (1.0f - pbrMetalRough.z);
     float3 specularF0 = lerp(float3(transmission > 0.0f ? 0.08f : 0.04f), baseColor4.xyz, pbrMetalRough.z);
     float3 specularFAvg = specularF0 + (1.0f - specularF0) * (1.0f / 21.0f);
-    sharcMaterialDemodulation =
-        max(diffuseAlbedo, float3(0.05f)) +
-        max(specularF0, float3(0.02f)) * dot(specularFAvg, float3(0.2126f, 0.7152f, 0.0722f));
+    sharcMaterialDemodulation = diffuseOnly
+        ? max(diffuseAlbedo, float3(0.05f))
+        : max(diffuseAlbedo, float3(0.05f)) +
+          max(specularF0, float3(0.02f)) * dot(specularFAvg, float3(0.2126f, 0.7152f, 0.0722f));
 #else
     sharcRoughness = 0.0f;
     sharcMaterialDemodulation = float3(0.0f);
@@ -116,7 +125,7 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 view, out 
 #if SHARC_UPDATE
     pbrMetalRough.y = max(globalParams.sharcRoughnessThreshold, pbrMetalRough.y);
 #endif
-    return BasicPBRMaterial(baseColor4.xyz, pbrMetalRough.z, pbrMetalRough.y, emissive4.xyz, transmission);
+    return BasicPBRMaterial(baseColor4.xyz, pbrMetalRough.z, pbrMetalRough.y, emissive4.xyz, transmission, diffuseOnly);
 }
 
 float3 VisualizeTextureLOD(HitPayload payload, float2 uvDX, float2 uvDY)

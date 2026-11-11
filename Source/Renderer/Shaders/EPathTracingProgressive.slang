@@ -314,6 +314,9 @@ IMaterial MakeMaterial(HitPayload payload, inout HitState hit, float3 view, out 
     RotateHitTangentFrame(hit, anisotropyDirection);
     wo = WorldToShadingLocal(hit, view);
 
+    if ((globalParams.dbgMaterialFlags & uint32_t(MaterialFlagsBits.DbgDiffuseOnly)) != 0u)
+        return BasicPBRMaterial(baseColor4.xyz, 0.0f, 1.0f, emissive4.xyz, 0.0f, true);
+
     if (material.shaderBlockID == kMaterialShaderBlockHair)
     {
         float h = isCurve ? 2.0f * saturate(hit.uv.y) - 1.0f : 0.0f;

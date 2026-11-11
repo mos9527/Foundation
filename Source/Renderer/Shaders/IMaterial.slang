@@ -17,11 +17,11 @@ public struct BasicPBRMaterial : IMaterial {
     float3 emission;
     float transmission;
     public __init(float3 baseColor, float metallic, float roughness,
-                  float3 emission = float3(0.0f), float transmission = 0.0f) {
-        this.surface = BasicPBRBSDF(baseColor, metallic, roughness, transmission > 0.0f);
+                  float3 emission = float3(0.0f), float transmission = 0.0f, bool diffuseOnly = false) {
+        this.surface = BasicPBRBSDF(baseColor, metallic, roughness, transmission > 0.0f, diffuseOnly);
         this.subsurface = StubBSSRDF();
         this.emission = max(float3(0.0f), emission);
-        this.transmission = transmission;
+        this.transmission = diffuseOnly ? 0.0f : transmission;
     }
 
     public IBSDF GetSurface() {

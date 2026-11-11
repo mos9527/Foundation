@@ -150,9 +150,10 @@ bool Examples_RendererFlagsControls(ExampleInputState& input, ExampleRenderer re
     }
 
     {
-        const char* items[] = {"White Base Color"};
-        const MaterialFlagsBits values[] = {MaterialFlagsBits::DbgWhiteBaseColor};
-        changed |= Examples_BitmaskCycleButton(input, "Material Debug", cfg.materialFlags, items, values);
+        Examples_Text(input, "Material Debug");
+        const char* items[] = {"White Base Color", "Diffuse Only"};
+        const MaterialFlagsBits values[] = {MaterialFlagsBits::DbgWhiteBaseColor, MaterialFlagsBits::DbgDiffuseOnly};
+        changed |= Examples_BitmaskOptionPicker(input, cfg.materialFlags, items, values);
     }
 
     return changed;

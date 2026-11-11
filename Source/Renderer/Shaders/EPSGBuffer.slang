@@ -76,8 +76,10 @@ Fragment drawGBuffer(V2F input, float2 fragCoord){
         baseColor *= SampleMaterialTexture(material.baseColorTexture, input.uv);
     if ((materialFlags & uint32_t(MaterialFlagsBits.DbgWhiteBaseColor)) != 0u)
         baseColor = float4(1.0f, 1.0f, 1.0f, baseColor.a);
+    bool diffuseOnly = (materialFlags & uint32_t(MaterialFlagsBits.DbgDiffuseOnly)) != 0u;
+    float transmission = diffuseOnly ? 0.0f : material.transmissionFactor;
     // TODO basic refraction
-    if (min(baseColor.a, max(0.5f, 1.0f - material.transmissionFactor)) < Bayer4x4(uint2(fragCoord)))
+    if (min(baseColor.a, max(0.5f, 1.0f - transmission)) < Bayer4x4(uint2(fragCoord)))
         discard;
     float4 normalTBN = float4(0,0,1,0);
     if (material.normalTexture != ~0u)
@@ -88,6 +90,11 @@ Fragment drawGBuffer(V2F input, float2 fragCoord){
     float4 pbrMetalRough = float4(1, material.roughnessFactor, material.metallicFactor, 1);
     if (material.metallicRoughnessTexture != ~0u)
         pbrMetalRough *= SampleMaterialTexture(material.metallicRoughnessTexture, input.uv);
+    if (diffuseOnly)
+    {
+        pbrMetalRough.y = 1.0f;
+        pbrMetalRough.z = 0.0f;
+    }
     float4 emissive = float4(material.emissiveFactor,0);
     if (material.emissiveTexture != ~0u)
         emissive *= SampleMaterialTexture(material.emissiveTexture, input.uv);
