@@ -3508,6 +3508,18 @@ void FRunningImGui()
             GEditor.shaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
             ImGui::SeparatorText(PSI_DASHBOARD " Performance");
             changed |= ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0);
+            if (ImGui::SliderFloat("Min Point/Spot Incident Light",
+                                   &GEditor.rendererConfig.rasterMinLightTileIncidentEnergy,
+                                   0.0f, 1.0f, "%.6f", ImGuiSliderFlags_Logarithmic))
+            {
+                GEditor.rendererConfig.rasterMinLightTileIncidentEnergy =
+                    std::max(GEditor.rendererConfig.rasterMinLightTileIncidentEnergy, 0.0f);
+                changed = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Scene-linear max RGB incident-light cutoff before the BRDF.\n"
+                                  "Higher values shorten point/spot light range and discard more illumination.\n"
+                                  "Independent of exposure; not a bound on final image error. Zero disables the cutoff.");
             {
                 const char* names[] = {"Overdraw", "Meshlet", "Matcap", "Light Tiles"};
                 const ViewFlagsBits values[] = {ViewFlagsBits::Overdraw, ViewFlagsBits::Meshlet,

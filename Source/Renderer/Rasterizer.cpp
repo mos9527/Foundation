@@ -75,6 +75,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         renderExtent = renderer->GetSwapchainExtent();
     globals->fbWidth = static_cast<float>(renderExtent.x);
     globals->fbHeight = static_cast<float>(renderExtent.y);
+    globals->rasterMinLightTileIncidentEnergy = std::max(cfg.rasterMinLightTileIncidentEnergy, 0.0f);
     /* UBO for everyone */
     auto GlobalUBO = renderer->CreateTemporalResource(
         "Global UBO",

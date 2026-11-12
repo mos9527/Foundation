@@ -86,6 +86,7 @@ struct RendererUBO
     uint32_t adaptiveMinSamples{32u};
     float adaptiveThreshold{0.01f}; // 0 = disabled
     float rasterRTShadowBias{0.01f};
+    float rasterMinLightTileIncidentEnergy{1e-1f};
     // Increment on scene edits/camera cuts, not ordinary camera movement. Applied on the next trace.
     uint32_t ptDenoiseHistoryEpoch{0u};
 };
@@ -162,6 +163,9 @@ struct RendererConfig
     float ptDenoiseRelativeDepthSigma{0.02f};
     float ptDenoiseAlbedoSigma{0.2f};
     float ptDenoiseLuminanceSigma{1.0f};
+    // Raster-only biased cutoff on scene-linear max RGB incident light, before the BRDF.
+    // Independent of exposure; not a bound on outgoing radiance. Zero disables the cutoff.
+    float rasterMinLightTileIncidentEnergy{1e-2f};
     bool textureAnisoEnable{true};
     float textureAnisoLevel{16.0f};
     bool textureTrilinear{true};

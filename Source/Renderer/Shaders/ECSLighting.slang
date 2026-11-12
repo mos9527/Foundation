@@ -23,7 +23,6 @@ static const uint kCurveMask = 0x04;
 static const uint kTileWidth = 16;
 static const uint kTileThreadCount = kTileWidth * kTileWidth;
 static const uint kTileLightCapacity = 256;
-static const float kMinPointSpotIncidentLight = 1e-2f;
 static const float kMinLightDistanceSquared = 1e-8f;
 
 struct TileBounds
@@ -40,11 +39,16 @@ groupshared uint tileLightIndices[kTileLightCapacity];
 // TODO Spot cone culling
 bool PointSpotIntersectsAABB(GSLight light, TileBounds bounds)
 {
+    // With the cutoff disabled, inverse-square lights have no finite influence radius.
+    float minIncidentLight = globalParams.rasterMinLightTileIncidentEnergy;
+    if (minIncidentLight <= 0.0f)
+        return true;
+
     float3 closest = clamp(light.position, bounds.minPosition, bounds.maxPosition);
     float3 delta = light.position - closest;
     float distanceSquared = dot(delta, delta);
     float peakIntensity = MaxComponent(light.color * light.power);
-    float radiusSquared = peakIntensity / kMinPointSpotIncidentLight;
+    float radiusSquared = peakIntensity / minIncidentLight;
     return distanceSquared <= radiusSquared;
 }
 
@@ -272,9 +276,10 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
                         atten *= (delta * delta) * (delta * delta);
                     }
                 }
-                // Use the same cutoff with either the tile list or the overflow full-list path.
+                // Use the same scene-linear cutoff with either the tile list or the overflow full-list path.
                 if ((lightType == kGSLightTypePoint || lightType == kGSLightTypeSpot) &&
-                    MaxComponent(lightColor) * atten < kMinPointSpotIncidentLight)
+                    globalParams.rasterMinLightTileIncidentEnergy > 0.0f &&
+                    MaxComponent(lightColor) * atten < globalParams.rasterMinLightTileIncidentEnergy)
                     continue;
             }
 
