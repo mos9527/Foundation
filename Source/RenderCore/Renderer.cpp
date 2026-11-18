@@ -1909,6 +1909,19 @@ void Renderer::ExecuteBarrierAccelerationStructure(PassHandle pass, TrackedResou
         tres.lastASState.lastProducer = pass;
         tres.lastASState.lastProducedFrame = mFrameSwapped;
     }
+    if (pass != kInvalidHandle)
+        tres.lastASState.lastOwnerQueue = mSetup->trackedPasses[pass].queue;
+    auto const& prepared = tres.lastASState.preparedTransition;
+    if (prepared.consumer != kInvalidHandle)
+    {
+        CHECK_MSG(prepared.consumer == pass && prepared.frame == mFrameSwapped && prepared.access == access &&
+                      prepared.stage == stage,
+                  "Prepared acceleration structure transition does not match its consumer");
+        tres.lastASState.access = access;
+        tres.lastASState.stage = stage;
+        tres.lastASState.preparedTransition = {};
+        return;
+    }
     RHIAccelerationStructure* res = DerefPhysicalResource(tres.handle).Get<RHIAccelerationStructure*>();
     /* Same as textures */
     if ((tres.lastASState.access & kASWrites) != 0 || (access & kASWrites) != 0)
@@ -2114,6 +2127,7 @@ void Renderer::ExecuteFrame()
             {
                 auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
                 UpdateSyncGroup(tres.lastASState.lastProducer, tres.lastASState.lastProducedFrame);
+                UpdatePreparedSync(tres.lastASState.preparedTransition);
             }
             // Backbuffer
             if (pass.backbufferRTV || pass.backbufferUAV)
@@ -2230,6 +2244,7 @@ void Renderer::ExecuteFrame()
                     RHIPipelineStageBits::LateFragmentTests | RHIPipelineStageBits::AllGraphics;
                 Vector<TrackedResource::SubresourceState*> seenTextures(mExecuteAlloc.Ptr());
                 Vector<TrackedResource::BufferState*> seenBuffers(mExecuteAlloc.Ptr());
+                Vector<TrackedResource::AccelerationStructureState*> seenAS(mExecuteAlloc.Ptr());
                 auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
                 cmd->Begin(mExecuteAlloc.Ptr());
                 cmd->DebugBegin("Graphics Pre Compute");
@@ -2292,6 +2307,34 @@ void Renderer::ExecuteFrame()
                                 .dstStage = stage,
                             };
                             cmd->SetBufferTransition(DerefPhysicalResource(tres.handle).Get<RHIBuffer*>(), desc);
+                            sta.preparedTransition = {.consumer = pass,
+                                                      .frame = mFrameSwapped,
+                                                      .graphicsGroupIndex = group.graphicsGroupIndex,
+                                                      .access = access,
+                                                      .stage = stage};
+                        }
+                        // A TLAS read by Lighting PS may be rebuilt on compute next frame.
+                        // Its backing-buffer barrier needs the same graphics-side handoff as
+                        // ordinary buffers; the compute queue cannot name FragmentShader.
+                        for (auto [hdl, access, stage] : tracked.asUsages)
+                        {
+                            auto& tres = mSetup->trackedResources[ResolveResourceHandle(hdl, mFrameSwapped)];
+                            auto& sta = tres.lastASState;
+                            if (Ranges::find(seenAS, &sta) != seenAS.end())
+                                continue;
+                            seenAS.emplace_back(&sta);
+                            if (!(sta.stage & graphicsOnlyStages))
+                                continue;
+                            CHECK_MSG(sta.preparedTransition.consumer == kInvalidHandle,
+                                      "Acceleration structure already has a prepared transition");
+                            RHICommandList::TransitionDesc desc{
+                                .srcAccess = sta.access,
+                                .dstAccess = access,
+                                .srcStage = sta.stage,
+                                .dstStage = stage,
+                            };
+                            cmd->SetAccelerationStructureTransition(
+                                DerefPhysicalResource(tres.handle).Get<RHIAccelerationStructure*>(), desc);
                             sta.preparedTransition = {.consumer = pass,
                                                       .frame = mFrameSwapped,
                                                       .graphicsGroupIndex = group.graphicsGroupIndex,

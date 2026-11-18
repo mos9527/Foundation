@@ -10,6 +10,7 @@ using namespace Math;
 
 constexpr uint32_t kMeshletMaxVertices = 64; // max vertices per meshlet
 constexpr uint32_t kMeshletMaxTriangles = 96; // max triangles per meshlet (indices=3*triangles)
+constexpr uint32_t kMeshletCullWorkGroupSize = 64; // Must match ICommon.slang::kMeshWorkGroupSize.
 
 #pragma pack(push,4)
 struct FVertex

@@ -247,8 +247,17 @@ public:
 
     void UpdateUBO(RendererUBO& globals) const;
 
+    struct RasterWorkload
+    {
+        // Per-instance upper bounds over all DAG LODs, independent of culling/residency.
+        uint64_t meshletCount{0u};
+        uint64_t meshletTaskCount{0u};
+        uint32_t staticMeshInstanceCount{0u};
+    };
+
     struct UpdateResult
     {
+        RasterWorkload rasterWorkload;
         GSOffsetCount instances;
         GSOffsetCount materials;
         GSOffsetCount lights;
@@ -381,6 +390,7 @@ public:
         return mCommittedInstances[index];
     }
     [[nodiscard]] uint32_t GetInstanceCount() const { return static_cast<uint32_t>(mCommittedInstances.size()); }
+    [[nodiscard]] RasterWorkload GetRasterWorkload() const { return mLastUpdateResult.rasterWorkload; }
     [[nodiscard]] uint32_t InstanceFromTLAS(uint32_t tlasID) const
     {
         if (tlasID >= mTLASInstanceMap.size())

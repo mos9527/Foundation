@@ -1,7 +1,8 @@
 import IMath;
 import IFlags;
 public static const uint kMeshWorkGroupSize = 64;
-public static const uint kMeshIndirectPerDrawMeshlets = 65536;
+// Stay within the 65,535 workgroups-per-dimension limit when spilling into a 2D dispatch.
+public static const uint kMeshIndirectPerDrawMeshlets = 65535;
 public static const uint kMaterialShaderBlockPrincipled = 0;
 public static const uint kMaterialShaderBlockHair = 1;
 // Definitions From C++ sources
@@ -376,11 +377,10 @@ public struct V2F
     public float3 normal : NORMAL;
     public float3 tangent : TANGENT;
     public float3 bitangent : BITANGENT;
-    public float bitangentSign : BITSIGN;
     public float2 uv : TEXCOORD0;
-    public uint32_t meshlet : ID;
-    public uint32_t materialIndex : MATID;
-    public uint32_t instanceID : INSTID;
+    public nointerpolation uint32_t meshlet : ID;
+    public nointerpolation uint32_t materialIndex : MATID;
+    public nointerpolation uint32_t instanceID : INSTID;
 };
 
 public float ApproximateMipLevelFromUVGradient(float2 uvDX, float2 uvDY, uint width, uint height)

@@ -67,7 +67,6 @@ V2F main(uint vertexID: SV_VertexID, uint drawID: SV_DrawIndex)
     v2f.normal = normal;
     v2f.tangent = tangent;
     v2f.bitangent = bitangent;
-    v2f.bitangentSign = 1.0f;
     v2f.uv = float2(lerp(leaf.u0, leaf.u1, localU), 0.5f * (h + 1.0f));
     v2f.meshlet = 0u;
     v2f.materialIndex = inst.materialIndex;

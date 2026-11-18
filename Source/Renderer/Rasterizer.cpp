@@ -35,10 +35,7 @@ struct DrawIndirectCommand
 };
 static_assert(sizeof(DrawIndirectCommand) == 16);
 #pragma pack(pop)
-constexpr size_t kMeshWorkGroupSize = 64;
-constexpr size_t kMaxMeshletCount = 1e6;
-constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
-constexpr size_t kMaxInstanceCount = 65536;
+constexpr size_t kMeshWorkGroupSize = kMeshletCullWorkGroupSize;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
 constexpr size_t kMaxCurveDraws = 4096; // curve (DOTS) instances drawn per frame (raster)
 const ViewFlags kDisableRTBuildFlags = ViewFlagsBits::Overdraw | ViewFlagsBits::Meshlet | ViewFlagsBits::BaseColor |
@@ -110,6 +107,23 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
     CHECK(globals);
     CHECK(gpu.scene);
     bool const hasMeshShaders = renderer->GetDevice()->GetCapabilities().meshShaders;
+    size_t meshletTaskCapacity = 1u;
+    size_t meshletCapacity = 1u;
+    size_t staticMeshInstanceCapacity = 1u;
+    if (hasMeshShaders)
+    {
+        auto const workload = gpu.scene->GetRasterWorkload();
+        CHECK_MSG(workload.meshletTaskCount <= UINT32_MAX / kMeshWorkGroupSize &&
+                      workload.meshletTaskCount <= std::numeric_limits<size_t>::max() / sizeof(MeshletTaskWork),
+                  "Raster task/visibility workload exceeds the addressable range");
+        CHECK_MSG(workload.meshletCount <= UINT32_MAX - 65535u &&
+                      workload.meshletCount <= std::numeric_limits<size_t>::max() / (2u * sizeof(uint32_t)),
+                  "Raster meshlet output workload exceeds the addressable range");
+        // A zero-work scene still needs non-empty buffers for its shader bindings.
+        meshletTaskCapacity = static_cast<size_t>(std::max(workload.meshletTaskCount, uint64_t{1u}));
+        meshletCapacity = static_cast<size_t>(std::max(workload.meshletCount, uint64_t{1u}));
+        staticMeshInstanceCapacity = std::max(workload.staticMeshInstanceCount, 1u);
+    }
     out = {};
     RHIExtent2D renderExtent = cfg.renderExtent;
     if (renderExtent.x == 0u || renderExtent.y == 0u)
@@ -147,7 +161,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         IndirectTasks =
             renderer->CreateResource("Indirect Meshlet Cull CS Buffer", // Instance IDs -> Task Work
                                      RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer,
-                                                   .size = sizeof(MeshletTaskWork) * kMaxMeshletTaskWorkCount});
+                                                   .size = sizeof(MeshletTaskWork) * meshletTaskCapacity});
         IndirectTaskCounter = renderer->CreateResource(
             "Indirect Meshlet Cull CS Counter",
             RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(int)});
@@ -159,7 +173,7 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         IndirectMeshlets = renderer->CreateResource(
             "Indirect Draw MS Buffer", // Task Work -> UINT2 Meshlet IDs [x: Meshlet, y: Instance]
             RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                          .size = 2 * sizeof(int) * kMaxMeshletCount});
+                          .size = 2u * sizeof(uint32_t) * meshletCapacity});
         IndirectMeshletCounter = renderer->CreateResource(
             "Indirect Draw MS Counter",
             RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(int)});
@@ -168,12 +182,15 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             renderer->CreateResource("Indirect Draw MS Dispatch",
                                      RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
                                                    .size = sizeof(MeshletTaskDispatch)});
-        // We pack meshlet visibility in uint32 bitmaps
+        // Visibility is indexed by task slot, including the padding of every instance's last task.
+        static_assert(kMeshWorkGroupSize % 32u == 0u);
         Visibility = renderer->CreateResource("Visibility Buffer",
                                               RHIBufferDesc{.usage = StorageBuffer | TransferDestination,
-                                                            .size = AlignUp(kMaxMeshletCount, 32) / 32 * sizeof(uint32_t)});
+                                                            .size = meshletTaskCapacity * (kMeshWorkGroupSize / 32u) *
+                                                                sizeof(uint32_t)});
         OccludedInstances = renderer->CreateResource(
-            "Occluded Instances", RHIBufferDesc{.usage = StorageBuffer, .size = sizeof(uint32_t) * kMaxInstanceCount});
+            "Occluded Instances",
+            RHIBufferDesc{.usage = StorageBuffer, .size = sizeof(uint32_t) * staticMeshInstanceCapacity});
         OccludedInstanceCounter = renderer->CreateResource(
             "Occluded Instance Counter",
             RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t)});
@@ -195,6 +212,19 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
         },
         [=](PassHandle, Renderer* r, RHICommandList* cmd)
         {
+            if (hasMeshShaders)
+            {
+                auto const workload = gpu.scene->GetRasterWorkload();
+                CHECK_MSG(workload.meshletTaskCount <= meshletTaskCapacity &&
+                              workload.meshletCount <= meshletCapacity &&
+                              workload.staticMeshInstanceCount <= staticMeshInstanceCapacity,
+                          "Raster workload grew beyond the allocated buffers; rebuild the raster render graph");
+                CHECK_MSG(globals->instances.count == gpu.scene->GetInstanceCount(),
+                          "Raster instance range does not match the committed GPUScene");
+            }
+            CHECK_MSG(globals->materials.count == gpu.scene->GetMaterialCount() &&
+                          globals->materials.count <= UINT32_MAX - globals->materials.offset,
+                      "Raster material range is stale or overflows the virtual address space");
             auto* ubo = r->DerefResource(GlobalUBO.Current()).Get<RHIBuffer*>();
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*globals)));
             if (hasMeshShaders)
@@ -294,8 +324,6 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
-                CHECK_MSG(globals->instances.count <= kMaxInstanceCount,
-                          "Raster instance culling supports at most {} instances", kMaxInstanceCount);
                 r->CmdSetPipeline(self, cmd);
                 r->CmdDispatch(self, cmd, {globals->instances.count, 1, 1});
             });

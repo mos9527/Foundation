@@ -27,10 +27,36 @@ Fragment drawMeshlet(V2F input)
     return output;
 }
 
-Fragment drawTextureLOD(V2F input)
+Fragment invalidMaterial()
+{
+    // Obvious diagnostic output, with no material/texture/payload access and no picking target.
+    Fragment output;
+    output.RT0 = float4(1, 0, 1, 1);
+    output.RT1 = float4(0.5, 0.5, 0, 0);
+    output.RT2 = float3(1, 0, 1);
+    output.RT3 = ~0u;
+    return output;
+}
+
+bool loadRasterMaterial(V2F input, out GSMaterial material)
+{
+    material = (GSMaterial)0;
+    if (input.instanceID < globalParams.instances.offset ||
+        input.instanceID - globalParams.instances.offset >= globalParams.instances.count ||
+        input.materialIndex >= globalParams.materials.count ||
+        input.materialIndex > ~0u - globalParams.materials.offset)
+        return false; // Never resolve a page for an invalid index, even in helper invocations.
+    GSAddressInfo info = GSInspectElementAddress<GSMaterial>(materials,
+        globalParams.materials.offset + input.materialIndex);
+    if (info.status != 0u || (info.address & uint64_t(3)) != 0)
+        return false; // Do not add an element offset to a null page or load from it.
+    material = *Ptr<GSMaterial, Access.Read, AddressSpace.Device, ScalarDataLayout>(info.address);
+    return true;
+}
+
+Fragment drawTextureLOD(V2F input, GSMaterial material)
 {
     Fragment output;
-    GSMaterial material = GSLoad<GSMaterial>(materials, globalParams.materials.offset + input.materialIndex);
     float3 color = float3(0.0f);
     if (material.baseColorTexture != ~0u)
     {
@@ -67,10 +93,9 @@ float Bayer4x4(uint2 pixel)
     return (float(Bayer2x2(low) * 4u + Bayer2x2(high)) + 0.5f) / 16.0f;
 }
 
-Fragment drawGBuffer(V2F input, float2 fragCoord){
+Fragment drawGBuffer(V2F input, float2 fragCoord, GSMaterial material){
     Fragment output;
     int materialFlags = globalParams.dbgMaterialFlags;
-    GSMaterial material = GSLoad<GSMaterial>(materials, globalParams.materials.offset + input.materialIndex);
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
         baseColor *= SampleMaterialTexture(material.baseColorTexture, input.uv);
@@ -115,10 +140,16 @@ Fragment main(V2F input, float2 fragCoord : SV_Position /* pixel space */)
     Fragment output;
     if ((flags & uint32_t(ViewFlagsBits.Meshlet)) != 0)
         output = drawMeshlet(input);
-    else if ((flags & uint32_t(ViewFlagsBits.TextureLOD)) != 0)
-        output = drawTextureLOD(input);
     else
-        output = drawGBuffer(input, fragCoord);
+    {
+        GSMaterial material;
+        if (!loadRasterMaterial(input, material))
+            return invalidMaterial();
+        if ((flags & uint32_t(ViewFlagsBits.TextureLOD)) != 0)
+            output = drawTextureLOD(input, material);
+        else
+            output = drawGBuffer(input, fragCoord, material);
+    }
     if ((flags & uint32_t(ViewFlagsBits.Overdraw)) != 0)
         imageAtomicAdd(overdraw, int2(fragCoord), 1);
     return output;

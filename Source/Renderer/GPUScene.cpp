@@ -798,6 +798,9 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
     // Resolve instance resources
     for (auto& inst : tables.instances)
     {
+        CHECK_MSG(inst.materialIndex < tables.materials.size(),
+                  "Instance {} references material {} but the scene has only {} materials",
+                  &inst - tables.instances.data(), inst.materialIndex, tables.materials.size());
         Geometry* g = ResolveGeometry({inst.resourceIndex, 0u});
         CHECK_MSG(g, "Instance isn't assigned with a valid resourceIndex");
         uint32_t const resourceOffset = g->offset;
@@ -806,6 +809,16 @@ GPUScene::UpdateResult GPUSceneImpl::EndScene(GPUSceneTables& tables, GPUSceneUp
         inst.resourceOffset = resourceOffset;
         inst.type = type;
         inst.emissiveClusterOffset = UINT32_MAX;
+        if (g->type == kGSInstanceTypeMesh && !g->dynamic)
+        {
+            // ReserveMesh records the full DAG count before the payload starts streaming.
+            // Count each instance separately: each consumes a rounded-up task batch.
+            uint64_t const meshletCount = g->mesh.meshlets.count;
+            res.rasterWorkload.meshletCount += meshletCount;
+            res.rasterWorkload.meshletTaskCount +=
+                (meshletCount + kMeshletCullWorkGroupSize - 1u) / kMeshletCullWorkGroupSize;
+            ++res.rasterWorkload.staticMeshInstanceCount;
+        }
     }
     Vector<GSEmissiveCluster> emissiveClusters(mAllocator);
     // Emissive Triangles in NEE

@@ -186,6 +186,7 @@ public:
         CHECK(local != RHIVirtualAllocator::kInvalidOffset);
         uint32_t base = static_cast<uint32_t>(mCapacity);
         uint64_t address = buffer->GetBufferAddress();
+        CHECK_MSG(address != 0u, "GPUScene {} payload has a null device address", mDebugName);
         uint32_t owner = static_cast<uint32_t>(mPages.size());
         mPages.push_back({std::move(buffer), std::move(allocator), base, static_cast<uint32_t>(capacity)});
         uint32_t firstPage = base >> PageShift;
@@ -198,13 +199,16 @@ public:
             uint32_t leafIndex = pageIndex >> GS_PAGE_TABLE_LEAF_SHIFT;
             if (leafIndex >= mLeaves.size())
                 mLeaves.resize(size_t(leafIndex) + 1u);
-            if (!mLeaves[leafIndex])
-            {
+            bool const newLeaf = !mLeaves[leafIndex];
+            if (newLeaf)
                 mLeaves[leafIndex] = CreateAddressTable(GS_PAGE_TABLE_LEAF_ENTRIES, false, leafIndex);
-                root[leafIndex] = mLeaves[leafIndex]->GetBufferAddress();
-            }
+            uint64_t const leafAddress = mLeaves[leafIndex]->GetBufferAddress();
+            CHECK_MSG(leafAddress != 0u && (leafAddress & 7u) == 0u,
+                      "GPUScene {} leaf {} has an invalid device address 0x{:x}", mDebugName, leafIndex, leafAddress);
             mLeaves[leafIndex]->Map<uint64_t>()[pageIndex & (GS_PAGE_TABLE_LEAF_ENTRIES - 1u)] =
                 address + uint64_t(i) * kPageUnits * sizeof(T);
+            if (newLeaf)
+                root[leafIndex] = leafAddress; // Initialize its first payload entry before publishing the leaf.
         }
         mCapacity += capacity;
         return base + static_cast<uint32_t>(local);

@@ -32,7 +32,6 @@ V2F main(uint vertexID: SV_VertexID, uint drawID: SV_DrawIndex)
     v2f.normal = normal;
     v2f.tangent = tangent;
     v2f.bitangent = cross(normal, tangent) * bitangentSign;
-    v2f.bitangentSign = bitangentSign;
     v2f.uv = uv;
     v2f.meshlet = 0u; // dynamic geo has no meshlets
     v2f.materialIndex = inst.materialIndex;

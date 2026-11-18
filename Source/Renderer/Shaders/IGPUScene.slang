@@ -12,6 +12,61 @@ public uint64_t GSResolvePageAddress(ByteAddressBuffer pages, uint pageIndex)
     return leaf[pageIndex & (GS_PAGE_TABLE_LEAF_ENTRIES - 1u)];
 }
 
+// Checked inspection for externally supplied indices. Status: 0=valid, 1=root OOB,
+// 2=null/misaligned leaf, 3=unmapped payload page. This cannot validate the lifetime
+// of an arbitrary nonzero/corrupt device address; scene ownership still must be correct.
+public struct GSAddressInfo
+{
+    public uint status;
+    public uint rootIndex;
+    public uint leafSlot;
+    public uint64_t leafAddress;
+    public uint64_t pageAddress;
+    public uint64_t address;
+};
+
+public GSAddressInfo GSInspectPageAddress(ByteAddressBuffer pages, uint pageIndex)
+{
+    GSAddressInfo info;
+    info.status = 1u;
+    info.rootIndex = pageIndex >> GS_PAGE_TABLE_LEAF_SHIFT;
+    info.leafSlot = pageIndex & (GS_PAGE_TABLE_LEAF_ENTRIES - 1u);
+    info.leafAddress = 0;
+    info.pageAddress = 0;
+    info.address = 0;
+    uint rootBytes;
+    pages.GetDimensions(rootBytes);
+    if (info.rootIndex >= rootBytes / 8u)
+        return info;
+    info.leafAddress = pages.Load<uint64_t>(info.rootIndex * 8u);
+    info.status = 2u;
+    if (info.leafAddress == 0 || (info.leafAddress & uint64_t(7)) != 0)
+        return info;
+    info.pageAddress = Ptr<uint64_t, Access.Read>(info.leafAddress)[info.leafSlot];
+    info.status = 3u;
+    if (info.pageAddress == 0)
+        return info;
+    info.address = info.pageAddress;
+    info.status = 0u;
+    return info;
+}
+
+public GSAddressInfo GSInspectElementAddress<T>(ByteAddressBuffer pages, uint index)
+{
+    GSAddressInfo info = GSInspectPageAddress(pages, index >> GS_TABLE_PAGE_SHIFT);
+    if (info.status == 0u)
+        info.address += uint64_t(index & ((1u << GS_TABLE_PAGE_SHIFT) - 1u)) * uint64_t(sizeof(T));
+    return info;
+}
+
+public GSAddressInfo GSInspectPrimitiveAddress(ByteAddressBuffer pages, uint byteOffset)
+{
+    GSAddressInfo info = GSInspectPageAddress(pages, byteOffset >> GS_PRIMITIVE_PAGE_SHIFT);
+    if (info.status == 0u)
+        info.address += uint64_t(byteOffset & ((1u << GS_PRIMITIVE_PAGE_SHIFT) - 1u));
+    return info;
+}
+
 // Absolute virtual element indices, including GSOffsetCount.offset when applicable.
 // Each table is typed on the CPU; T must match that table's element type.
 public uint64_t GSResolveElementAddress<T>(ByteAddressBuffer pages, uint index)
