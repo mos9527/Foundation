@@ -50,6 +50,7 @@ SHARED_BITMASK_ENUM_BEGIN(ViewFlags, uint32_t)
     LightTiles = 1u << 14,
     EnableRasterRTShadows = 1u << 16,
     EnableRasterAmbientOcclusion = 1u << 17,
+    EnableRasterRTScreenReflections = 1u << 18,
     ForceTextureLOD0 = 1u << 24
 SHARED_BITMASK_ENUM_END()
 

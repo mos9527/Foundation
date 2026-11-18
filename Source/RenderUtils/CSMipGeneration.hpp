@@ -58,8 +58,11 @@ namespace Foundation::RenderUtils
         }
     }
     /**
-     * @brief Generates full mip-chain with a single compute dispatch.
-     * @note When src != dst, the first *generated* mip (i.e. mip 1 of the src) is written to the dst's mip *0*.
+     * @brief Generates a mip-chain with one SPD compute dispatch (up to 12 generated mips, 6 layers).
+     * @note numMips is the destination mip count, including mip 0. In place, mip 0 is left untouched.
+     *       When src != dst, the first generated mip is written to dst mip 0; the source is sampled
+     *       on a virtual grid twice the destination extent (e.g. power-of-two Hi-Z resampling).
+     *       SPD uses fixed 2x2 reductions, not area-weighted filtering of odd-sized mips.
      */
     inline void createCSMipGenerationSinglePass(
         Renderer* renderer, StringView name, RHIDeviceQueueType queue, ResourceHandle src, ResourceHandle dst,
@@ -68,6 +71,12 @@ namespace Foundation::RenderUtils
         RHIDeviceSampler::SamplerDesc::Reduction reduction = RHIDeviceSampler::SamplerDesc::Reduction::WeightedAverage)
     {
         using namespace Math;
+        CHECK_MSG(numMips > 0, "SPD requires at least one destination mip.");
+        CHECK_MSG(numLayer > 0 && numLayer <= 6, "SPD supports between 1 and 6 layers.");
+        const uint32_t generatedMips = numMips - (src == dst ? 1u : 0u);
+        if (generatedMips == 0)
+            return;
+        CHECK_MSG(generatedMips <= 12, "SPD supports up to 12 generated mips.");
         struct PushConstants
         {
             uint2 extents;
@@ -116,8 +125,6 @@ namespace Foundation::RenderUtils
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstants));
                 r->BindTextureSampler(self, srcSampler, "srcSampler");
                 r->BindBufferUnordered(self, SpdCounter, RHIPipelineStageBits::ComputeShader, "spdGlobalAtomic");
-                CHECK_MSG(numMips <= 12, "Single Pass CS Mip version supports up to 12 mips.");
-                CHECK_MSG(numMips > 1, "Single Pass CS Mip version requires at least 2 mips.");
                 r->BindTextureSRV(self, src, "imgSrc", RHIPipelineStageBits::ComputeShader,
                                   {
                                       .format = srcFormat,
@@ -150,9 +157,11 @@ namespace Foundation::RenderUtils
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
                 auto* dstTex = r->DerefResource(dst).Get<RHITexture*>();
-                PushConstants pc{.extents = {dstTex->mDesc.extent.x, dstTex->mDesc.extent.y}, .mips = numMips};
-                if (src != dst) // Work starts from src mip 0
-                    pc.extents *= 2, pc.mips++;
+                PushConstants pc{.extents = {dstTex->mDesc.extent.x, dstTex->mDesc.extent.y}, .mips = generatedMips};
+                if (src != dst) // Work starts from a virtual source grid twice the destination extent.
+                    pc.extents *= 2;
+                CHECK_MSG(pc.extents.x > 0 && pc.extents.y > 0 && pc.extents.x <= 4096 && pc.extents.y <= 4096,
+                          "SPD source grid must be between 1 and 4096 texels per axis.");
                 uint2 dispatchThreadGroupCountXY;
                 SpdSetup(dispatchThreadGroupCountXY, pc.numWorkGroups, pc.extents);
                 if (r->GetFrame() == 0)
@@ -164,15 +173,15 @@ namespace Foundation::RenderUtils
                         ctr,
                         {
                             .srcAccess = RHIResourceAccessBits::TransferWrite,
-                            .dstAccess = RHIResourceAccessBits::ShaderWrite,
-                            .srcStage = RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::Transfer,
+                            .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+                            .srcStage = RHIPipelineStageBits::Transfer,
                             .dstStage = RHIPipelineStageBits::ComputeShader,
                         });
                     cmd->EndTransition();
                 }
                 r->CmdSetPipeline(self, cmd);
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
-                cmd->Dispatch(dispatchThreadGroupCountXY.x, dispatchThreadGroupCountXY.y, 1);
+                cmd->Dispatch(dispatchThreadGroupCountXY.x, dispatchThreadGroupCountXY.y, numLayer);
             });
     }
 } // namespace Foundation::RenderUtils

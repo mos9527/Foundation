@@ -1,4 +1,6 @@
 #include "Rasterizer.hpp"
+#include "Rasterizer/RTScreenReflections.hpp"
+#include "Shaders/LightTiles.h"
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
@@ -40,7 +42,8 @@ constexpr size_t kMaxInstanceCount = 65536;
 constexpr size_t kMaxDynamicDraws = 4096; // dynamic geometry instances drawn per frame (raster)
 constexpr size_t kMaxCurveDraws = 4096; // curve (DOTS) instances drawn per frame (raster)
 const ViewFlags kDisableRTBuildFlags = ViewFlagsBits::Overdraw | ViewFlagsBits::Meshlet | ViewFlagsBits::BaseColor |
-    ViewFlagsBits::Normal | ViewFlagsBits::Position | ViewFlagsBits::Matcap | ViewFlagsBits::LightTiles;
+    ViewFlagsBits::Normal | ViewFlagsBits::Position | ViewFlagsBits::Matcap | ViewFlagsBits::LightTiles |
+    ViewFlagsBits::TextureLOD;
 const RHIResourceFormat kGBufferNormalFormat = RHIResourceFormat::A2B10G10R10Unorm;
 
 static void BuildRasterFeature(RasterFeatureContext& ctx, RasterInjectionPoint point,
@@ -60,6 +63,44 @@ static void BuildRasterFeature(RasterFeatureContext& ctx, RasterInjectionPoint p
                 effect.callback(ctx, effect.config);
         lastOrder = nextOrder;
     }
+}
+
+struct RasterLightTileResources
+{
+    ResourceHandle tiles;
+    ResourceHandle indices;
+};
+
+static RasterLightTileResources BuildRasterLightTiles(Renderer* renderer, RHIExtent2D extent,
+                                                      ResourceHandle globalUBO, ResourceHandle lights)
+{
+    uint32_t tilesX = (extent.x + kRasterLightTileWidth - 1u) / kRasterLightTileWidth;
+    uint32_t tilesY = (extent.y + kRasterLightTileWidth - 1u) / kRasterLightTileWidth;
+    size_t tileCount = size_t(tilesX) * tilesY;
+    RasterLightTileResources resources{
+        .tiles = renderer->CreateResource("Raster Light Tiles",
+            RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer, .size = tileCount * sizeof(uint32_t) * 2u}),
+        .indices = renderer->CreateResource("Raster Tile Light Indices",
+            RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer,
+                          .size = tileCount * kRasterLightTileCapacity * sizeof(uint32_t)}),
+    };
+    renderer->CreatePass(
+        "Raster Light Tile Culling", RHIDeviceQueueType::Compute, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                          r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSLightTiles.spv"));
+            r->BindBufferUniform(self, globalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+            r->BindBufferStorageRead(self, lights, RHIPipelineStageBits::ComputeShader, "lights");
+            r->BindBufferUnordered(self, resources.tiles, RHIPipelineStageBits::ComputeShader, "lightTiles");
+            r->BindBufferUnordered(self, resources.indices, RHIPipelineStageBits::ComputeShader, "tileLightIndices");
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            r->CmdSetPipeline(self, cmd);
+            r->CmdDispatch(self, cmd, {extent.x, extent.y, 1});
+        });
+    return resources;
 }
 
 void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererResources& gpu, RendererConfig const& cfg,
@@ -160,8 +201,14 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                 cmd->FillBuffer(r->DerefResource(IndirectTaskCounter).Get<RHIBuffer*>(), 0u);
         });
     bool disableRT = cfg.viewFlags & kDisableRTBuildFlags;
-    bool useRTShadows = (cfg.viewFlags & ViewFlagsBits::EnableRasterRTShadows) && !disableRT && hasTLAS;
-    uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~ViewFlagsBits::EnableRasterRTShadows);
+    bool const hasInlineRT = hasTLAS && renderer->GetDevice()->GetCapabilities().raytracingInline;
+    bool useRTShadows = (cfg.viewFlags & ViewFlagsBits::EnableRasterRTShadows) && !disableRT && hasInlineRT;
+    bool useRTReflections = (cfg.viewFlags & ViewFlagsBits::EnableRasterRTScreenReflections) && !disableRT && hasInlineRT;
+    uint32_t lightingViewFlags = cfg.viewFlags;
+    if (!useRTShadows)
+        lightingViewFlags &= ~to_integer(ViewFlagsBits::EnableRasterRTShadows);
+    if (!useRTReflections)
+        lightingViewFlags &= ~to_integer(ViewFlagsBits::EnableRasterRTScreenReflections);
     ViewFlags gbufferViewFlags = cfg.viewFlags;
     if (cfg.forceTextureLOD0)
         gbufferViewFlags |= ViewFlagsBits::ForceTextureLOD0;
@@ -841,6 +888,8 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                                    RHITextureUsageBits::TransferSource | RHITextureUsageBits::RenderTarget,
                                .extent = {w, h, 1},
                                .format = RHIResourceFormat::R16G16B16A16SignedFloat});
+            RasterReflectionResources reflectionResources = useRTReflections
+                ? CreateRasterReflectionResources(renderer, {w, h}) : RasterReflectionResources{};
             auto LUTSampler = renderer->CreateSampler({.addressMode = {
                                                            .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                            .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -899,52 +948,79 @@ void BuildRasterRenderGraph(Renderer* renderer, RendererUBO* globals, RendererRe
                         r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
                     });
             }
-            // Shadows require AS updates
-            if (useRTShadows)
+            // Either RT consumer requires current geometry, even when RT shadows are disabled.
+            if (useRTShadows || useRTReflections)
                 BuildGPUSceneAccelerationStructureUpdatePass(renderer, gpu);
+            auto lightTiles = BuildRasterLightTiles(renderer, {w, h}, GlobalUBO.Current(), LightBuffer);
             renderer->CreatePass(
-                "Lighting", RHIDeviceQueueType::Graphics, 0u,
+                "Lighting PS", RHIDeviceQueueType::Graphics, 0u,
                 [=](PassHandle self, Renderer* r)
                 {
                     uint32_t lightingFlags = lightingViewFlags |
                         (hasAmbientOcclusion ? to_integer(ViewFlagsBits::EnableRasterAmbientOcclusion) : 0u);
-                    r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/ECSLighting.spv"), AsBytes(AsSpan(lightingFlags)));
-                    r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::ComputeShader, "globalParams");
-                    r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
+                    auto lightingShader = useRTReflections ? "Data/Shaders/EPSLighting_Reflections.spv" :
+                        useRTShadows ? "Data/Shaders/EPSLighting.spv" : "Data/Shaders/EPSLighting_NoRT.spv";
+                    r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain",
+                                  r->GetApplication()->ResolveRelativePathBase("Data/Shaders/VSFullscreen.spv"));
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                                  r->GetApplication()->ResolveRelativePathBase(lightingShader), AsBytes(AsSpan(lightingFlags)));
+                    r->BindBufferUniform(self, GlobalUBO.Current(), RHIPipelineStageBits::FragmentShader, "globalParams");
+                    r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::FragmentShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
                                                          .range = RHITextureSubresourceRange::Create()});
-                    r->BindTextureSRV(self, GBufferRT1.Current(), "RT1", RHIPipelineStageBits::ComputeShader,
+                    r->BindTextureSRV(self, GBufferRT1.Current(), "RT1", RHIPipelineStageBits::FragmentShader,
                                       RHITextureViewDesc{.format = kGBufferNormalFormat,
                                                          .range = RHITextureSubresourceRange::Create()});
-                    r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::ComputeShader,
+                    r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::FragmentShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                          .range = RHITextureSubresourceRange::Create()});
-                    r->BindTextureSRV(self, Depth.Current(), "depth", RHIPipelineStageBits::ComputeShader,
+                    r->BindTextureSRV(self, Depth.Current(), "depth", RHIPipelineStageBits::FragmentShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create(
                                                              RHITextureAspectFlagBits::Depth)});
-                    r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
-                    r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
+                    if (useRTShadows || useRTReflections)
+                        r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::FragmentShader, "AS");
+                    r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::FragmentShader, "lights");
+                    r->BindBufferStorageRead(self, lightTiles.tiles, RHIPipelineStageBits::FragmentShader, "lightTiles");
+                    r->BindBufferStorageRead(self, lightTiles.indices, RHIPipelineStageBits::FragmentShader, "tileLightIndices");
                     r->BindTextureSampler(self, LUTSampler, "gLutSampler");
                     r->BindTextureSRV(self, effectCtx.ambientOcclusion, "ambientOcclusion",
-                                      RHIPipelineStageBits::ComputeShader,
+                                      RHIPipelineStageBits::FragmentShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R16Unorm,
                                                          .range = RHITextureSubresourceRange::Create()});
                     r->BindDescriptorSetRead(self, "gTextures2D", gpu.textures2D->GetDescriptorSetLayout());
-                    r->BindTextureUAV(self, DiffuseBuffer, "diffuseOutput", RHIPipelineStageBits::ComputeShader,
-                                      RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
-                                                         .range = RHITextureSubresourceRange::Create()});
-                    r->BindTextureUAV(self, SpecularBuffer, "specularOutput", RHIPipelineStageBits::ComputeShader,
-                                      RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
-                                                         .range = RHITextureSubresourceRange::Create()});
+                    RHITextureViewDesc color{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                             .range = RHITextureSubresourceRange::Create()};
+                    // MRT insertion order matches SV_Target0/1/2 in EPSLighting.
+                    r->BindTextureRTV(self, DiffuseBuffer, color);
+                    r->BindTextureRTV(self, SpecularBuffer, color);
+                    if (useRTReflections)
+                    {
+                        r->BindTextureRTV(self, reflectionResources.environmentSpecular, color);
+                        r->BindTextureUAV(self, reflectionResources.radiance, "reflectionRadianceBase",
+                                          RHIPipelineStageBits::FragmentShader, color);
+                    }
+                    r->PassSetRasterizerFlags(self,
+                        {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone},
+                        {.depthTest = false, .depthWrite = false});
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
+                    RHIColorAttachmentLoad loads[] = {{RHIAttachmentLoadOp::DontCare},
+                                                      {RHIAttachmentLoadOp::DontCare},
+                                                      {RHIAttachmentLoadOp::DontCare}};
+                    r->CmdBeginGraphics(self, cmd, {w, h},
+                        Span<const RHIColorAttachmentLoad>(loads, useRTReflections ? 3u : 2u),
+                        {RHIAttachmentLoadOp::DontCare});
                     r->CmdSetPipeline(self, cmd);
                     r->CmdBindDescriptorSet(self, cmd, "gTextures2D", gpu.textures2D->GetDescriptorSet());
-                    r->CmdDispatch(self, cmd, {w, h, 1});
+                    // Origin (0,0), single full-screen triangle: spatial quads match integer pixel parity.
+                    cmd->SetViewport(0, 0, w, h).SetScissor(0, 0, w, h);
+                    cmd->Draw(3);
+                    cmd->EndGraphics();
                 });
+            if (useRTReflections)
+                BuildRasterRTScreenReflections(effectCtx, reflectionResources);
             BuildRasterFeature(effectCtx, RasterInjectionPoint::AfterLighting, features);
             out.diffuse = effectCtx.diffuse;
             out.specular = effectCtx.specular;

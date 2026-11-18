@@ -100,8 +100,9 @@ bool Examples_RendererFlagsControls(ExampleInputState& input, ExampleRenderer re
             changed |= Examples_BitmaskCycleButton(input, "Raster Debug", cfg.viewFlags, names, values);
         }
         {
-            const char* items[] = {"RT Shadows"};
-            const ViewFlagsBits values[] = {ViewFlagsBits::EnableRasterRTShadows};
+            const char* items[] = {"RT Shadows", "RT Screen Reflections"};
+            const ViewFlagsBits values[] = {ViewFlagsBits::EnableRasterRTShadows,
+                                           ViewFlagsBits::EnableRasterRTScreenReflections};
             changed |= Examples_BitmaskOptionPicker(input, cfg.viewFlags, items, values);
         }
         {

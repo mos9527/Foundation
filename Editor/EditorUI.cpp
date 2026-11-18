@@ -3528,8 +3528,9 @@ void FRunningImGui()
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, names, values, true /* solo */);
             }
             {
-                const char* items[] = {"RT Shadows"};
-                const ViewFlagsBits values[] = {ViewFlagsBits::EnableRasterRTShadows};
+                const char* items[] = {"RT Shadows", "RT Screen Reflections"};
+                const ViewFlagsBits values[] = {ViewFlagsBits::EnableRasterRTShadows,
+                                                ViewFlagsBits::EnableRasterRTScreenReflections};
                 ImGui::SeparatorText(PSI_COG " Options");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values);
                 ImGui::BeginDisabled((GEditor.rendererConfig.viewFlags & ViewFlagsBits::EnableRasterRTShadows) == 0u);
@@ -3556,6 +3557,30 @@ void FRunningImGui()
                     if (ImGui::SliderInt("Steps", &steps, 1, 16))
                         gtao.stepCount = static_cast<uint32_t>(steps);
                     ImGui::EndDisabled();
+                    ImGui::PopID();
+                }
+                if (ImGui::CollapsingHeader("RT Screen Reflections##Settings", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    ImGui::PushID("RTScreenReflections");
+                    bool const supported = GContext->renderer->GetDevice()->GetCapabilities().raytracingInline;
+                    ImGui::BeginDisabled(!supported ||
+                        (GEditor.rendererConfig.viewFlags & ViewFlagsBits::EnableRasterRTScreenReflections) == 0u);
+                    auto& reflections = GEditor.rendererConfig;
+                    changed |= ImGui::SliderFloat("Strength", &reflections.rasterReflectionStrength, 0.0f, 1.0f);
+                    changed |= ImGui::SliderFloat("Max Roughness", &reflections.rasterReflectionMaxRoughness, 0.01f, 1.0f);
+                    changed |= ImGui::SliderFloat("Cone Scale", &reflections.rasterReflectionConeScale, 0.0f, 4.0f);
+                    changed |= ImGui::SliderFloat("Ray Distance", &reflections.rasterReflectionMaxDistance,
+                                                  0.01f, 10000.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+                    changed |= ImGui::SliderFloat("Origin Bias", &reflections.rasterReflectionOriginBias,
+                                                  0.0f, 0.05f, "%.4f");
+                    changed |= ImGui::SliderFloat("Relative Depth Tolerance", &reflections.rasterReflectionDepthTolerance,
+                                                  0.0f, 0.1f, "%.4f");
+                    changed |= ImGui::SliderFloat("Screen Border Fade", &reflections.rasterReflectionScreenFade,
+                                                  0.0f, 0.25f, "%.3f");
+                    ImGui::EndDisabled();
+                    ImGui::TextDisabled("TLAS hit + HDR screen color; hidden/off-screen hits use environment.");
+                    if (!supported)
+                        ImGui::TextDisabled("Inline ray tracing is unavailable on this device.");
                     ImGui::PopID();
                 }
                 if (ImGui::CollapsingHeader("TAA", ImGuiTreeNodeFlags_DefaultOpen))

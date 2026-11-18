@@ -132,7 +132,7 @@ inline void UpdateRendererCameraUBO(RendererUBO& ubo, uint32_t frameNumber, floa
 
 struct RendererConfig
 {
-    ViewFlags viewFlags{ViewFlagsBits::EnableRasterRTShadows};
+    ViewFlags viewFlags{ViewFlagsBits::EnableRasterRTShadows | ViewFlagsBits::EnableRasterRTScreenReflections};
     MaterialFlags materialFlags{0u};
     CullFlags cullFlags{CullFlagsBits::Frustum | CullFlagsBits::Occlusion | CullFlagsBits::Backface};
     RHIExtent2D renderExtent{0u, 0u};
@@ -166,6 +166,14 @@ struct RendererConfig
     // Raster-only biased cutoff on scene-linear max RGB incident light, before the BRDF.
     // Independent of exposure; not a bound on outgoing radiance. Zero disables the cutoff.
     float rasterMinLightTileIncidentEnergy{1e-2f};
+    // One central TLAS reflection ray, screen-linear radiance lookup, environment fallback.
+    float rasterReflectionMaxDistance{1000.0f};
+    float rasterReflectionOriginBias{0.001f};
+    float rasterReflectionDepthTolerance{0.01f}; // Relative view-depth visibility tolerance
+    float rasterReflectionConeScale{1.0f}; // GGX reflected-lobe slope = 2 * roughness^2 * scale
+    float rasterReflectionMaxRoughness{0.8f};
+    float rasterReflectionScreenFade{0.05f}; // UV border confidence fade
+    float rasterReflectionStrength{1.0f}; // Blend with existing environment specular
     bool textureAnisoEnable{true};
     float textureAnisoLevel{16.0f};
     bool textureTrilinear{true};

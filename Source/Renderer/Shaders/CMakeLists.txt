@@ -35,6 +35,26 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             CAPABILITIES    ${ShaderCapabilities}
             DEFINES         ${ShaderDefines}
     )
+    # Optional descriptors must be compiled out: shader reflection runs before Vulkan specialization.
+    if (ShaderName STREQUAL "EPSLighting")
+        slangc_compile(
+                "Shader_EPSLighting_Reflections"
+                SOURCE          "${SlangFile}"
+                OUTPUT_DIR      "${SHADER_BUILD_DIR}"
+                OUTPUT_NAME     "EPSLighting_Reflections"
+                CAPABILITIES    ${ShaderCapabilities}
+                DEFINES         "RASTER_REFLECTIONS=1"
+        )
+        slangc_compile(
+                "Shader_EPSLighting_NoRT"
+                SOURCE          "${SlangFile}"
+                OUTPUT_DIR      "${SHADER_BUILD_DIR}"
+                OUTPUT_NAME     "EPSLighting_NoRT"
+                CAPABILITIES    ${ShaderCapabilities}
+                DEFINES         "RASTER_RT_SHADOWS=0"
+        )
+        add_dependencies(Foundation_Shaders "Shader_EPSLighting_Reflections" "Shader_EPSLighting_NoRT")
+    endif()
     # Variants (Yes, in CMake.)
     # SER is a special case since it's always there in the IR - and some drivers (Lavapipe) doesn't understand it.
     # Avoid emitting them in the first place with a macro guard.

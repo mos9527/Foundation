@@ -5,7 +5,14 @@ import IBxDF;
 import IBSDF;
 import IFlags;
 import IMath;
+import IScreenSpace;
 [[SpecializationConstant]] int flags;
+#ifndef RASTER_REFLECTIONS
+#define RASTER_REFLECTIONS 0
+#endif
+#ifndef RASTER_RT_SHADOWS
+#define RASTER_RT_SHADOWS 1
+#endif
 
 uniform UBO globalParams;
 ByteAddressBuffer lights;
@@ -16,7 +23,13 @@ Texture2D<float> depth;
 Texture2D<float> ambientOcclusion;
 RWTexture2D<float4> diffuseOutput;
 RWTexture2D<float4> specularOutput;
+#if RASTER_REFLECTIONS
+RWTexture2D<float4> environmentSpecularOutput;
+RWTexture2D<float4> reflectionRadianceBase;
+#endif
+#if RASTER_RT_SHADOWS
 RaytracingAccelerationStructure AS;
+#endif
 
 static const uint kMeshMask = 0x01;
 static const uint kCurveMask = 0x04;
@@ -35,6 +48,9 @@ groupshared TileBounds tileBounds[kTileThreadCount];
 groupshared uint tileLightCount;
 groupshared uint tileLightOverflow;
 groupshared uint tileLightIndices[kTileLightCapacity];
+#if RASTER_REFLECTIONS
+groupshared float3 reflectionQuadColors[kTileThreadCount];
+#endif
 
 // TODO Spot cone culling
 bool PointSpotIntersectsAABB(GSLight light, TileBounds bounds)
@@ -52,6 +68,7 @@ bool PointSpotIntersectsAABB(GSLight light, TileBounds bounds)
     return distanceSquared <= radiusSquared;
 }
 
+#if RASTER_RT_SHADOWS
 bool shadow(float3 p, float3 l, float tMax = INF)
 {
     RayDesc ray;
@@ -68,6 +85,7 @@ bool shadow(float3 p, float3 l, float tMax = INF)
     bool hit = q.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
     return hit;
 }
+#endif
 
 float EnvLightAzimuth()
 {
@@ -88,9 +106,12 @@ float ReflectionMipFromRoughness(float roughness, uint32_t numMips)
     return float(numMips - 1u) - levelFrom1x1;
 }
 
-[shader("compute")]
-[numthreads(kTileWidth, kTileWidth, 1)]
-void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
+void ShadeRasterLighting(uint2 tid, uint groupIndex, out float3 diffuseColor,
+                         out float3 specularColor, out float3 environmentSpecular)
+{
+    diffuseColor = float3(0.0f);
+    specularColor = float3(0.0f);
+    environmentSpecular = float3(0.0f);
     bool validPixel = tid.x < globalParams.fbWidth && tid.y < globalParams.fbHeight;
     float4 color0 = 0.0f;
     float4 color1 = 0.0f;
@@ -106,11 +127,8 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
     bool hasSurface = validPixel && ndcDepth > EPS;
     float3 p = 0.0f;
     if (hasSurface) {
-        float4 ndcPosition = float4(tid.xy / float2(globalParams.fbWidth, globalParams.fbHeight), ndcDepth, 1.0f);
-        ndcPosition.y = 1 - ndcPosition.y;
-        ndcPosition.xy = ndcPosition.xy * 2.0f - 1.0f;
-        float4 wsPosition = mul(globalParams.inverseViewProj, ndcPosition);
-        p = wsPosition.xyz / wsPosition.w;
+        p = ReconstructScreenPosition(tid, ndcDepth, float2(globalParams.fbWidth, globalParams.fbHeight),
+                                      globalParams.inverseViewProj);
     }
 
     const uint bypassLightingFlags = uint32_t(ViewFlagsBits.BaseColor) | uint32_t(ViewFlagsBits.Meshlet) |
@@ -173,14 +191,14 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
             tileColor = float3(1.0f, 0.0f, 1.0f);
         if ((tid.x & (kTileWidth - 1u)) == 0u || (tid.y & (kTileWidth - 1u)) == 0u)
             tileColor *= 0.2f;
-        diffuseOutput[tid] = float4(tileColor, 1.0f);
-        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        diffuseColor = tileColor;
+        specularColor = float3(0.0f);
         return;
     }
 
     float3 baseColor = color0.xyz;
     if (ndcDepth <= EPS) {
-        diffuseOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        diffuseColor = float3(0.0f);
         float3 envLight = EnvLightTint();
         if (globalParams.hasEnvMap != 0u &&
             GSLightHasFlag(GSLoad<GSLight>(lights, globalParams.lights.offset), uint32_t(GSLightFlagsBits.EnvironmentMap))) {
@@ -193,7 +211,7 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
                            .SampleLevel(gLutSampler, EnvMapDirToUV(dir, azimuth), 0).xyz;
             envLight = Le * EnvLightTint();
         }
-        specularOutput[tid] = float4(envLight, 1.0f);
+        specularColor = envLight;
         return;
     }
 
@@ -208,12 +226,12 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
     if ((flags & (uint32_t(ViewFlagsBits.BaseColor) | uint32_t(ViewFlagsBits.Meshlet) |
                   uint32_t(ViewFlagsBits.TextureLOD))) != 0) {
         // Meshlet and Texture LOD are passed down to GBuffer RT0.
-        diffuseOutput[tid] = float4(baseColor, 1.0f);
-        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        diffuseColor = baseColor;
+        specularColor = float3(0.0f);
         return;
     } else if ((flags & uint32_t(ViewFlagsBits.Normal)) != 0) {
-        diffuseOutput[tid] = float4(normalWS * 0.5f + 0.5f, 1.0f);
-        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        diffuseColor = normalWS * 0.5f + 0.5f;
+        specularColor = float3(0.0f);
         return;
     } else if ((flags & uint32_t(ViewFlagsBits.Matcap)) != 0) {
         // https://projects.blender.org/blender/blender/src/commit/e1d15b8920616df11437fd24189064275995b6f6/source/blender/draw/engines/workbench/shaders/workbench_matcap.bsl.hh#L13
@@ -223,12 +241,12 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
         float3 matcap = float3(1.0f, 1.0f, 1.0f);
         if (globalParams.matcapTextureIndex != ~0u)
             matcap = gTextures2D[NonUniformResourceIndex(globalParams.matcapTextureIndex)].SampleLevel(gLutSampler, uv, 0.0f).xyz;
-        diffuseOutput[tid] = float4(matcap * baseColor, 1.0f);
-        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        diffuseColor = matcap * baseColor;
+        specularColor = float3(0.0f);
         return;
     } else if ((flags & uint32_t(ViewFlagsBits.Position)) != 0) {
-        diffuseOutput[tid] = float4(p.xyz, 1.0f);
-        specularOutput[tid] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        diffuseColor = p.xyz;
+        specularColor = float3(0.0f);
         return;
     } else {
         float3 v = normalize(eye - p);
@@ -290,6 +308,7 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
             float3 fs;
             bsdf.f(wo, wi, TransportMode::Radiance, fd, fs);
             float vis = 1.0f;
+#if RASTER_RT_SHADOWS
             if ((flags & uint32_t(ViewFlagsBits.EnableRasterRTShadows)) != 0 &&
                 GSLightHasFlag(gl, uint32_t(GSLightFlagsBits.UseShadow))) {
                 if (lightType < kGSLightTypeDisk /* Anything not area lights */) {
@@ -301,6 +320,7 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
             }
             else
                 vis = 1.0f;
+#endif
             float3 lightContrib = AbsCosTheta(wi) * vis * lightColor * atten;
             Ld += fd * lightContrib;
             Ls += fs * lightContrib;
@@ -326,14 +346,52 @@ void main(uint2 tid: SV_DispatchThreadID, uint groupIndex: SV_GroupIndex) {
                 float azimuth = EnvLightAzimuth();
                 float3 prefiltered = gTextures2D[NonUniformResourceIndex(globalParams.envMapTextureIndex)]
                                          .SampleLevel(gLutSampler, EnvMapDirToUV(R, azimuth), mip).xyz;
-                Ls += prefiltered * envTint * F;
+                environmentSpecular = prefiltered * envTint * F;
             } else
-                Ls += envTint * F;
+                environmentSpecular = envTint * F;
+            Ls += environmentSpecular;
         }
 
         Ld += emissive;
 
-        diffuseOutput[tid] = float4(Ld, 1.0f);
-        specularOutput[tid] = float4(Ls, 1.0f);
+        diffuseColor = Ld;
+        specularColor = Ls;
     }
+}
+
+[shader("compute")]
+[numthreads(kTileWidth, kTileWidth, 1)]
+void main(uint2 tid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
+{
+    float3 diffuseColor, specularColor, environmentSpecular;
+    // All threads call shading, including padding threads needed by the light-tile barriers.
+    ShadeRasterLighting(tid, groupIndex, diffuseColor, specularColor, environmentSpecular);
+    uint2 extent = uint2(uint(globalParams.fbWidth), uint(globalParams.fbHeight));
+    bool validPixel = all(tid < extent);
+    if (validPixel)
+    {
+        diffuseOutput[tid] = float4(diffuseColor, 1.0f);
+        specularOutput[tid] = float4(specularColor, 1.0f);
+    }
+
+#if RASTER_REFLECTIONS
+    if ((flags & uint32_t(ViewFlagsBits.EnableRasterRTScreenReflections)) != 0)
+    {
+        if (validPixel)
+            environmentSpecularOutput[tid] = float4(environmentSpecular, 1.0f);
+        // SV_GroupIndex is row-major in this 16x16 group. No subgroup/quad layout assumptions.
+        // Each lane contributes register-resident HDR color; no full-resolution lighting reread.
+        reflectionQuadColors[groupIndex] = diffuseColor + specularColor;
+        GroupMemoryBarrierWithGroupSync();
+        if ((tid.x & 1u) == 0u)
+            reflectionQuadColors[groupIndex] += reflectionQuadColors[groupIndex + 1u];
+        GroupMemoryBarrierWithGroupSync();
+        if (((tid.x | tid.y) & 1u) == 0u && validPixel)
+        {
+            float3 sum = reflectionQuadColors[groupIndex] + reflectionQuadColors[groupIndex + kTileWidth];
+            uint count = min(2u, extent.x - tid.x) * min(2u, extent.y - tid.y);
+            reflectionRadianceBase[tid >> 1u] = float4(sum / float(count), 1.0f);
+        }
+    }
+#endif
 }

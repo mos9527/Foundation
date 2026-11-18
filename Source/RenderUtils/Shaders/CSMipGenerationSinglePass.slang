@@ -49,10 +49,17 @@ AH4 SpdLoadSourceImageH(AF2 tex, AU1 slice)
 }
 AH4 SpdLoadH(ASU2 tex, AU1 slice)
 {
-    return imgDst6[uint3(tex, slice)];
+    // The final workgroup covers a full 64x64 tile, even for rectangular/small mip 6 views.
+    int2 extent = int2(max(pc.extents >> 6u, uint2(1u)));
+    return imgDst6[uint3(clamp(tex, int2(0), extent - 1), slice)];
 }
 void SpdStoreH(ASU2 pix, AH4 outValue, AU1 index, AU1 slice)
 {
+    // Partial 64x64 source tiles still participate in reductions and the global atomic rendezvous.
+    // Discard only their out-of-bounds stores; never early-return those lanes from the dispatch.
+    uint2 extent = max(pc.extents >> (index + 1u), uint2(1u));
+    if (index >= pc.mips || any(pix < int2(0)) || any(uint2(pix) >= extent))
+        return;
     if (index != 5){
         imgDst[index][uint3(pix, slice)] = outValue;
         return;
@@ -90,7 +97,8 @@ AH4 SpdReduce4H(AH4 v0, AH4 v1, AH4 v2, AH4 v3)
         return min(min(v0, v1), min(v2, v3));
     if (reductionMode == 2)
         return max(max(v0, v1), max(v2, v3));
-    return (v0+v1+v2+v3)*half(0.25);
+    // HDR radiance can overflow a half-precision sum even when the average is representable.
+    return AH4((float4(v0) + float4(v1) + float4(v2) + float4(v3)) * 0.25f);
 }
 #include "ThirdParty/ffx_spd.h"
 // -- end SPD definitions

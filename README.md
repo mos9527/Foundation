@@ -20,6 +20,10 @@ Please check out the [Documentation](https://mos9527.com/Foundation/) for more i
 
 ## Labs
 
+### Rasterizer with RT features
+- Screen-space lighting prefilter (with some pixel derivative tricks)
+- RT Specular with screen trace only
+
 ### Denoisers, Reconstruction and Spatio-Temporal Reuse
 #### Denoising 
 - Basic temporal accumulation super-sampling [Rasterizer]
